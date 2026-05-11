@@ -1427,10 +1427,19 @@ function PromoFlow({ revenues }) {
   const datePct=d=>{const ms=new Date(d).getTime();return Math.min(100,Math.max(0,(ms-startMs)/totalMs*100));};
 
   const revenueData=useMemo(()=>{
-    const filtered=revenues.filter(r=>r.date>=viewStart&&r.date<=viewEnd);
+    if(!viewStart||!viewEnd||viewStart>viewEnd) return [];
+    // viewStart~viewEnd 전체 날짜를 먼저 생성 (프로모션 캘린더와 동일 범위)
     const byDate={};
-    filtered.forEach(r=>{
-      if(!byDate[r.date])byDate[r.date]={date:r.date.slice(5)};
+    const cur=new Date(viewStart);
+    const end=new Date(viewEnd);
+    while(cur<=end){
+      const key=cur.toISOString().slice(0,10);
+      byDate[key]={date:key.slice(5),...Object.fromEntries(PROMO_PLATFORMS.map(p=>[p,null]))};
+      cur.setDate(cur.getDate()+1);
+    }
+    // 실제 매출 데이터 채우기
+    revenues.filter(r=>r.date>=viewStart&&r.date<=viewEnd).forEach(r=>{
+      if(!byDate[r.date]) return;
       byDate[r.date][r.channel]=(byDate[r.date][r.channel]||0)+(r.amount||0);
     });
     return Object.values(byDate).sort((a,b)=>a.date>b.date?1:-1);
@@ -1570,7 +1579,7 @@ function PromoFlow({ revenues }) {
       {/* 기간별 플랫폼 매출 그래프 */}
       <Card>
         <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
-        {revenueData.length>0?(
+        {revenueData.length>0&&revenues.some(r=>r.date>=viewStart&&r.date<=viewEnd)?(
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
@@ -1580,7 +1589,7 @@ function PromoFlow({ revenues }) {
               <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
               {PROMO_PLATFORMS.map(p=>(
                 <Line key={p} type="monotone" dataKey={p} name={p}
-                  stroke={chColor(p)} strokeWidth={2} dot={false}/>
+                  stroke={chColor(p)} strokeWidth={2} dot={false} connectNulls={false}/>
               ))}
             </LineChart>
           </ResponsiveContainer>
