@@ -869,6 +869,34 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     }));
   },[filteredOrders]);
 
+  // 플랫폼별 반품률 높은 옵션
+  const returnOptionStats=useMemo(()=>{
+    const map={};
+    filteredOrders.filter(r=>r.channel!=="오프라인스토어").forEach(r=>{
+      const ch=r.channel||"미분류";
+      if(!map[ch]) map[ch]={};
+      const {color,size}=parseOption(r.product_name,r.option_name);
+      const isShipped=r.status==="배송";
+      const isReturned=["반품","교환"].includes(r.status);
+      if(!isShipped&&!isReturned) return;
+      [[color,"c"],[size,"s"]].forEach(([val,type])=>{
+        if(!val) return;
+        const key=`${type}:${val}`;
+        if(!map[ch][key]) map[ch][key]={name:val,type,shipped:0,returned:0};
+        if(isShipped) map[ch][key].shipped++;
+        if(isReturned) map[ch][key].returned++;
+      });
+    });
+    return Object.entries(map).map(([ch,opts])=>{
+      const all=Object.values(opts).filter(o=>(o.shipped+o.returned)>=3);
+      const toRows=type=>all
+        .filter(o=>o.type===type)
+        .map(o=>({name:o.name,rate:o.returned/(o.shipped+o.returned)*100,returned:o.returned,total:o.shipped+o.returned}))
+        .sort((a,b)=>b.rate-a.rate).slice(0,5);
+      return {ch,colors:toRows("c"),sizes:toRows("s")};
+    }).filter(d=>d.colors.length>0||d.sizes.length>0);
+  },[filteredOrders]);
+
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
   const activeChannels=useMemo(()=>{
     const fixed=["자사몰","29CM","무신사"];
@@ -1372,6 +1400,59 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
       </Card>
+
+      {/* 플랫폼별 반품률 높은 옵션 */}
+      {returnOptionStats.length>0&&(
+        <Card style={{marginBottom:12}}>
+          <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
+            {returnOptionStats.map(({ch,colors,sizes})=>(
+              <div key={ch}>
+                <div style={{fontWeight:700,fontSize:12,color:D.textSub,marginBottom:10,letterSpacing:"0.04em"}}>{ch}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>
+                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>컬러</div>
+                    {colors.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
+                    {colors.map(({name,rate,returned,total},i)=>(
+                      <div key={name} style={{marginBottom:6}}>
+                        <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2,alignItems:"center"}}>
+                          <span style={{display:"flex",alignItems:"center",color:i===0?D.red:D.textSub,fontWeight:i===0?700:400}}>
+                            {colorSwatch(name)}{name}
+                          </span>
+                          <span style={{color:i===0?D.red:D.textMeta,fontWeight:i===0?600:400}}>{rate.toFixed(1)}%</span>
+                        </div>
+                        <div style={{height:4,borderRadius:2,background:D.border}}>
+                          <div style={{height:4,borderRadius:2,
+                            background:COLOR_HEX[name]||COLOR_HEX[name?.toUpperCase()]||D.red,
+                            opacity:0.7,width:`${Math.min(100,rate*4).toFixed(0)}%`}}/>
+                        </div>
+                        <div style={{fontSize:9,color:D.textMeta,marginTop:1}}>{returned}건 반품 / {total}건</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>사이즈</div>
+                    {sizes.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
+                    {sizes.map(({name,rate,returned,total},i)=>(
+                      <div key={name} style={{marginBottom:6}}>
+                        <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                          <span style={{color:i===0?D.red:D.textSub,fontWeight:i===0?700:400}}>{name}</span>
+                          <span style={{color:i===0?D.red:D.textMeta,fontWeight:i===0?600:400}}>{rate.toFixed(1)}%</span>
+                        </div>
+                        <div style={{height:4,borderRadius:2,background:D.border}}>
+                          <div style={{height:4,borderRadius:2,background:D.red,opacity:0.5+(i===0?0.3:0),
+                            width:`${Math.min(100,rate*4).toFixed(0)}%`}}/>
+                        </div>
+                        <div style={{fontSize:9,color:D.textMeta,marginTop:1}}>{returned}건 반품 / {total}건</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* 전체 데이터 삭제 */}
       <div style={{marginTop:24,paddingTop:16,borderTop:`1px solid ${D.border}`,display:"flex",justifyContent:"flex-end"}}>
