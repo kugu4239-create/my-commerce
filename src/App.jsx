@@ -778,7 +778,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [rankBestChannel,setRankBestChannel]=useState("전체");
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
-  const [rankWorstPeriod,setRankWorstPeriod]=useState("1m"); // 최근 한달 기본
+  const [rankWorstPeriod,setRankWorstPeriod]=useState("7d");
   const [rankWorstChannel,setRankWorstChannel]=useState("전체");
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
