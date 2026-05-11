@@ -167,7 +167,7 @@ function detectFields(columns) {
     option:       f("옵션","option","size","color","사이즈","색상"),
     qty:          f("수량","qty","quantity","개수","판매수량","입고"),
     cs:           f("cs","처리","cs처리","cs상태"),
-    date:         f("배송일","주문일","날짜","date","order_date","주문날짜","reg_date","delivery_date"),
+    date:         f("배송일","delivery_date")||f("주문일","날짜","date","order_date","주문날짜","reg_date"),
     orderId:      f("관리번호","order_id","주문번호","orderid"),
     memo:         f("메모","memo","비고","note"),
     revenue:      f("금액","revenue","sales","매출","price","가격","결제금액","주문금액"),
@@ -582,7 +582,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const n = prods.length;
 
   // ── 레이아웃 상수 ──
-  const PAD_T=36, PAD_H=8, ROW_GAP=6, MIN_H=17;
+  const PAD_T=36, PAD_H=8, ROW_GAP=4, MIN_H=10;
   const NODE_W=200;
   // 좌우 끝까지 사용: col0=왼쪽 끝, col1=중앙, col2=오른쪽 끝
   const COLS_X = [
@@ -596,7 +596,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
   // 상품마다 충분한 높이 확보 — 압축 없이 총 높이를 늘림
-  const ROW_H = 34;
+  const ROW_H = 17;
   const TARGET_H = n * ROW_H;
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
@@ -782,15 +782,22 @@ function analyze(orderRows, stockRows, revenueRows) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
+  // 채널별 unique 주문번호 집계 (order_id = "oid||prod||opt" 형식)
+  const chOrderIds={};
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(r.status==="배송") byChannel[ch].shipped++;
     if(r.status==="반품") byChannel[ch].returned++;
+    if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
+    // order_id = "oid||prod||opt" → oid 부분만 추출
+    const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
+    if(oid) chOrderIds[ch].add(oid);
   });
   // 판교점+일산점 → 오프라인 스토어 합산
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
+  const offlineOrderIds=new Set();
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
     if(OFFLINE_CHS.has(ch)){
@@ -800,15 +807,23 @@ function analyze(orderRows, stockRows, revenueRows) {
       offlineAgg.refundCount+=byChannel[ch].refundCount;
       offlineAgg.shipped+=byChannel[ch].shipped;
       offlineAgg.returned+=byChannel[ch].returned;
+      (chOrderIds[ch]||new Set()).forEach(id=>offlineOrderIds.add(id));
       delete byChannel[ch];
+      delete chOrderIds[ch];
     }
   });
-  if(hasOffline) byChannel["오프라인 스토어"]=offlineAgg;
+  if(hasOffline){
+    byChannel["오프라인 스토어"]=offlineAgg;
+    chOrderIds["오프라인 스토어"]=offlineOrderIds;
+  }
   const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
     c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
+    const uq=(chOrderIds[c.name]||new Set()).size;
+    c.uniqueOrders=uq;
+    c.avgOrderValue=uq>0?Math.round(c.revenue/uq):0;
   });
 
   // 월별 배송/반품
@@ -955,8 +970,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       ch,
       colors:Object.entries(d.colors).sort((a,b)=>b[1]-a[1]).slice(0,7),
       sizes: Object.entries(d.sizes ).sort((a,b)=>b[1]-a[1]).slice(0,7),
-    }));
-  },[optionFilteredOrders]);
+    })).sort((a,b)=>chRank(a.ch)-chRank(b.ch));
+  },[optionFilteredOrders,chRank]);
 
   // 플랫폼별 반품률 높은 옵션 — 독립 기간 필터
   const returnOptionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",returnOptionPeriod,"",""),[orders,returnOptionPeriod]);
@@ -984,14 +999,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         .map(o=>({name:o.name,rate:o.returned/(o.shipped+o.returned)*100,returned:o.returned,total:o.shipped+o.returned}))
         .sort((a,b)=>b.rate-a.rate).slice(0,5);
       return {ch,colors:toRows("c"),sizes:toRows("s")};
-    }).filter(d=>d.colors.length>0||d.sizes.length>0);
-  },[returnOptionFilteredOrders]);
+    }).filter(d=>d.colors.length>0||d.sizes.length>0)
+      .sort((a,b)=>chRank(a.ch)-chRank(b.ch));
+  },[returnOptionFilteredOrders,chRank]);
 
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
+  const CH_ORDER=["자사몰","29CM","무신사","오프라인 스토어"];
+  const chRank=ch=>{const i=CH_ORDER.indexOf(ch);return i>=0?i:99;};
   const activeChannels=useMemo(()=>{
-    const fixed=["자사몰","29CM","무신사","오프라인 스토어"];
+    const dynamic=["자사몰","29CM","무신사"];
     const inData=new Set(orders.map(r=>r.channel||"미분류").filter(Boolean));
-    return fixed.filter(c=>inData.has(c));
+    return [...dynamic.filter(c=>inData.has(c)),"오프라인 스토어"];
   },[orders]);
 
   // 판매 Top 랭킹
@@ -1264,7 +1282,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             {key:"shipped",label:"배송",   val:c=>c.shipped},
             {key:"returned",label:"반품",  val:c=>c.returned},
             {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
-            {key:"aov",    label:"객단가", val:c=>c.orderCount>0?c.revenue/c.orderCount:0},
+            {key:"aov",    label:"객단가", val:c=>c.avgOrderValue||0},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
@@ -1295,7 +1313,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                     <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
                       color:c.shipped>0&&(c.returned/c.shipped)>0.1?D.red:D.textSub}}>
                       {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):0}%</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="aov"?700:400}}>{c.orderCount>0?fmtWon(Math.round(c.revenue/c.orderCount)):"—"}</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="aov"?700:400}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
                   </tr>
                 ))}
                 <tr style={{borderTop:`1px solid ${D.borderMid}`}}>
@@ -1621,6 +1639,236 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 }
 
 // ─────────────────────────────────────────────
+// INVENTORY AGING BOARD
+// ─────────────────────────────────────────────
+const AGING_STAGES=[
+  {key:"normal",  label:"정상",   min:0,  max:30,  color:"#22c55e", bg:"#f0fdf4"},
+  {key:"caution", label:"주의",   min:31, max:90,  color:"#f59e0b", bg:"#fffbeb"},
+  {key:"slow",    label:"저회전", min:91, max:180, color:"#f97316", bg:"#fff7ed"},
+  {key:"dead",    label:"악성",   min:181,max:Infinity, color:"#ef4444", bg:"#fef2f2"},
+];
+function getAgingStage(days){
+  return AGING_STAGES.find(s=>days>=s.min&&days<=s.max)||AGING_STAGES[3];
+}
+
+function InventoryAgingUploader({ onDone }){
+  const today=new Date().toISOString().slice(0,10);
+  const [diagDate,setDiagDate]=useState(today);
+  const [fileName,setFileName]=useState("");
+  const [preview,setPreview]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [infoOpen,setInfoOpen]=useState(false);
+
+  const handleFile=useCallback(file=>{
+    if(!file) return;
+    setFileName(file.name); setResult(null);
+    Papa.parse(file,{header:true,skipEmptyLines:true,
+      complete:({data})=>{
+        try{
+          if(!data.length) throw new Error("CSV 데이터가 없습니다");
+          const cols=Object.keys(data[0]);
+          const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
+          const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
+          const prodCol=find("상품명","상품","product","품명");
+          const optCol=find("옵션","option","사이즈","색상");
+          const qtyCol=find("수량","qty","quantity","개수","재고");
+          const recCol=find("처음입고일","입고일","최초입고","first","입고");
+          const shipCol=find("마지막배송일","최종배송일","마지막출고","last","배송일","출고일");
+          if(!prodCol) throw new Error("상품명 컬럼을 찾을 수 없습니다");
+          if(!recCol)  throw new Error("처음입고일 컬럼을 찾을 수 없습니다");
+          const rows=data.map(r=>({
+            product_name:String(r[prodCol]||"").trim(),
+            option_name:optCol?String(r[optCol]||"").trim():"",
+            qty:toNum(r[qtyCol]||"0"),
+            first_received_date:toDate(r[recCol]),
+            last_shipped_date:shipCol&&r[shipCol]?toDate(r[shipCol]):null,
+            diagnosis_date:diagDate,
+          })).filter(r=>r.product_name&&r.first_received_date);
+          if(!rows.length) throw new Error("유효한 데이터가 없습니다");
+          setPreview(rows);
+        }catch(e){setResult({type:"error",msg:e.message});}
+      },error:e=>setResult({type:"error",msg:e.message})});
+  },[diagDate]);
+
+  const handleUpload=async()=>{
+    if(!preview?.length) return;
+    setLoading(true); setResult(null);
+    const db=await getSupabase();
+    const {error:delErr}=await db.from("inventory_aging").delete().gte("diagnosis_date","2000-01-01");
+    if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
+    for(let i=0;i<preview.length;i+=500){
+      const {error}=await db.from("inventory_aging").insert(preview.slice(i,i+500));
+      if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
+    }
+    try{localStorage.setItem("merryon_aging_date",diagDate);}catch{}
+    setResult({type:"success",msg:`${preview.length}건 저장 완료`});
+    setPreview(null); setFileName("");
+    onDone?.();
+    setLoading(false);
+  };
+
+  return (
+    <Card style={{marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+        <SecTitle>재고 현황 업로드</SecTitle>
+        <InfoBtn onClick={()=>setInfoOpen(true)}/>
+        <span style={{fontSize:10,color:D.textMeta,marginLeft:4}}>
+          진단 날짜: <input type="date" value={diagDate} onChange={e=>setDiagDate(e.target.value)}
+            style={{fontSize:10,border:`1px solid ${D.border}`,borderRadius:4,padding:"1px 5px",color:D.black}}/>
+        </span>
+      </div>
+      <div style={{fontSize:11,color:D.textMeta,marginBottom:12,lineHeight:1.7,padding:"8px 10px",
+        background:D.bg,borderRadius:6,border:`1px solid ${D.border}`}}>
+        ⚠ 해당 데이터는 현재고를 기반으로 진단해야하므로 누적 데이터가 유의미하지 않습니다.<br/>
+        필요 시 <strong>정상재고 1 이상</strong>으로 검색한 애널리틱스용 파일을 업로드해주세요.
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <label style={{cursor:"pointer",background:D.black,color:"#fff",borderRadius:6,
+          padding:"6px 14px",fontSize:12,fontWeight:600}}>
+          {fileName||"CSV 파일 선택"}
+          <input type="file" accept=".csv" style={{display:"none"}}
+            onChange={e=>{if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value="";}}/>
+        </label>
+        {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
+        {preview&&(
+          <button onClick={handleUpload} disabled={loading}
+            style={{background:D.blue,color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            {loading?"저장 중…":"저장"}
+          </button>
+        )}
+      </div>
+      {result&&<div style={{marginTop:8,fontSize:11,color:result.type==="error"?D.red:D.green}}>{result.msg}</div>}
+      {infoOpen&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}
+          onClick={()=>setInfoOpen(false)}>
+          <div style={{background:"#fff",borderRadius:12,padding:28,maxWidth:340,width:"90%"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>재고 에이징 기준</div>
+            {AGING_STAGES.map(s=>(
+              <div key={s.key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:12,height:12,borderRadius:"50%",background:s.color,flexShrink:0}}/>
+                <div style={{fontSize:13}}>
+                  <strong style={{color:s.color}}>{s.label}</strong>
+                  <span style={{color:D.textMeta,marginLeft:6}}>
+                    {s.max===Infinity?`${s.min}일 이상`:`${s.min}~${s.max}일`}
+                  </span>
+                </div>
+              </div>
+            ))}
+            <div style={{fontSize:11,color:D.textMeta,marginTop:12,lineHeight:1.6}}>
+              기준: <strong>마지막 배송일</strong> 기준, 없는 경우 <strong>처음 입고일</strong> 기준
+            </div>
+            <button onClick={()=>setInfoOpen(false)}
+              style={{marginTop:16,width:"100%",padding:"8px",background:D.black,color:"#fff",
+                border:"none",borderRadius:6,fontSize:13,cursor:"pointer"}}>닫기</button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function InventoryAgingBoard({ diagDate }){
+  const [rows,setRows]=useState([]);
+  const [selectedStage,setSelectedStage]=useState(null);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      const db=await getSupabase();
+      const {data}=await db.from("inventory_aging").select("*");
+      setRows(data||[]);
+      setLoading(false);
+    })();
+  },[diagDate]);
+
+  const enriched=useMemo(()=>{
+    if(!diagDate) return [];
+    const base=new Date(diagDate);
+    return rows.map(r=>{
+      const refDate=r.last_shipped_date||r.first_received_date;
+      const days=refDate?Math.max(0,Math.round((base-new Date(refDate))/(1000*60*60*24))):0;
+      return {...r,days,stage:getAgingStage(days)};
+    });
+  },[rows,diagDate]);
+
+  const stageSummary=useMemo(()=>
+    AGING_STAGES.map(s=>({
+      ...s,
+      items:enriched.filter(r=>r.stage.key===s.key),
+      totalQty:enriched.filter(r=>r.stage.key===s.key).reduce((sum,r)=>sum+(r.qty||0),0),
+    }))
+  ,[enriched]);
+
+  const shown=selectedStage
+    ? enriched.filter(r=>r.stage.key===selectedStage).sort((a,b)=>b.days-a.days)
+    : [];
+
+  if(loading) return <div style={{padding:20,color:D.textMeta,fontSize:12}}>불러오는 중…</div>;
+  if(!enriched.length) return null;
+
+  return (
+    <Card>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+        <SecTitle>재고 에이징 보드</SecTitle>
+        {diagDate&&<span style={{fontSize:11,color:D.textMeta}}>진단 기준일: {diagDate}</span>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+        {stageSummary.map(s=>(
+          <div key={s.key} onClick={()=>setSelectedStage(selectedStage===s.key?null:s.key)}
+            style={{padding:"12px 14px",borderRadius:8,background:selectedStage===s.key?s.color:s.bg,
+              border:`1.5px solid ${selectedStage===s.key?s.color:s.color+"44"}`,
+              cursor:"pointer",transition:"all 0.15s"}}>
+            <div style={{fontSize:11,fontWeight:700,color:selectedStage===s.key?"#fff":s.color,marginBottom:4}}>
+              {s.label}
+              <span style={{fontSize:10,fontWeight:400,marginLeft:4}}>
+                {s.max===Infinity?`${s.min}일+`:`${s.min}~${s.max}일`}
+              </span>
+            </div>
+            <div style={{fontSize:18,fontWeight:800,color:selectedStage===s.key?"#fff":s.color}}>{s.items.length}<span style={{fontSize:11,fontWeight:400,marginLeft:2}}>종</span></div>
+            <div style={{fontSize:11,color:selectedStage===s.key?"rgba(255,255,255,0.85)":D.textMeta,marginTop:2}}>
+              재고 {s.totalQty.toLocaleString()}개
+            </div>
+          </div>
+        ))}
+      </div>
+      {selectedStage&&shown.length>0&&(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{borderBottom:`2px solid ${D.border}`}}>
+              {["상품명","옵션","수량","처음입고일","마지막배송일","경과일","단계"].map(h=>(
+                <th key={h} style={{padding:"7px 9px",textAlign:h==="수량"||h==="경과일"?"right":"left",
+                  color:D.textMeta,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {shown.map((r,i)=>(
+                <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
+                  <td style={{padding:"7px 9px",fontWeight:500,maxWidth:200,overflow:"hidden",
+                    textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
+                  <td style={{padding:"7px 9px",color:D.textMeta,maxWidth:120,overflow:"hidden",
+                    textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.option_name||"—"}</td>
+                  <td style={{padding:"7px 9px",textAlign:"right",fontWeight:600}}>{(r.qty||0).toLocaleString()}</td>
+                  <td style={{padding:"7px 9px",color:D.textMeta,whiteSpace:"nowrap"}}>{r.first_received_date||"—"}</td>
+                  <td style={{padding:"7px 9px",color:D.textMeta,whiteSpace:"nowrap"}}>{r.last_shipped_date||"—"}</td>
+                  <td style={{padding:"7px 9px",textAlign:"right",fontWeight:700,color:r.stage.color}}>{r.days}일</td>
+                  <td style={{padding:"7px 9px"}}>
+                    <span style={{background:r.stage.bg,color:r.stage.color,border:`1px solid ${r.stage.color}55`,
+                      borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700}}>{r.stage.label}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────
 // LOGISTICS FLOW PAGE
 // ─────────────────────────────────────────────
 function LogisticsFlow({ orders, stocks, ts }) {
@@ -1632,6 +1880,11 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [sankeyLimit,setSankeyLimit]=useState(30);
   const [tableLimit,setTableLimit]=useState(30);
   const [tablePeriod,setTablePeriod]=useState("1m");
+  const [agingKey,setAgingKey]=useState(0);
+  const [agingDiagDate,setAgingDiagDate]=useState(()=>{
+    try{return localStorage.getItem("merryon_aging_date")||new Date().toISOString().slice(0,10);}
+    catch{return new Date().toISOString().slice(0,10);}
+  });
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
@@ -1813,6 +2066,13 @@ function LogisticsFlow({ orders, stocks, ts }) {
           </div>
         </Card>
       )}
+
+      {/* 재고 에이징 */}
+      <InventoryAgingUploader onDone={()=>{
+        try{setAgingDiagDate(localStorage.getItem("merryon_aging_date")||new Date().toISOString().slice(0,10));}catch{}
+        setAgingKey(k=>k+1);
+      }}/>
+      <InventoryAgingBoard key={agingKey} diagDate={agingDiagDate}/>
     </div>
   );
 }
@@ -2710,7 +2970,7 @@ function EasyAdminUploader({ onUpdate }) {
     const {error:delErr}=await db.from("orders").delete().gte("order_date",startDate).lte("order_date",endDate);
     if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
     for(let i=0;i<inRange.length;i+=500){
-      const {error}=await db.from("orders").insert(inRange.slice(i,i+500));
+      const {error}=await db.from("orders").upsert(inRange.slice(i,i+500),{onConflict:"order_id"});
       if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
