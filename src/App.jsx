@@ -446,16 +446,17 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     const prodMap = {};
     stockRows.forEach(r => {
       const key = r.product_name || "미분류";
-      if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, byChannel:{} };
+      if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, exchanged:0, byChannel:{} };
       prodMap[key].stock += (r.qty||0);
     });
     filteredOrders.forEach(r => {
       const key = r.product_name || "미분류";
       const ch = r.channel || "미분류";
-      if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, byChannel:{} };
-      if (!prodMap[key].byChannel[ch]) prodMap[key].byChannel[ch] = { shipped:0, returned:0 };
-      if (r.status==="배송") { prodMap[key].shipped++; prodMap[key].byChannel[ch].shipped++; }
-      if (["반품","교환"].includes(r.status)) { prodMap[key].returned++; prodMap[key].byChannel[ch].returned++; }
+      if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, exchanged:0, byChannel:{} };
+      if (!prodMap[key].byChannel[ch]) prodMap[key].byChannel[ch] = { shipped:0, returned:0, exchanged:0 };
+      if (r.status==="배송")  { prodMap[key].shipped++;   prodMap[key].byChannel[ch].shipped++; }
+      if (r.status==="반품")  { prodMap[key].returned++;  prodMap[key].byChannel[ch].returned++; }
+      if (r.status==="교환")  { prodMap[key].exchanged++; prodMap[key].byChannel[ch].exchanged++; }
     });
     const prods = Object.values(prodMap)
       .filter(p => p.shipped>0||p.stock>0)
@@ -464,13 +465,15 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     const chanMap = {};
     filteredOrders.forEach(r => {
       const ch = r.channel||"미분류";
-      if (!chanMap[ch]) chanMap[ch] = { name:ch, shipped:0, returned:0 };
+      if (!chanMap[ch]) chanMap[ch] = { name:ch, shipped:0, returned:0, exchanged:0 };
       if (r.status==="배송") chanMap[ch].shipped++;
-      if (["반품","교환"].includes(r.status)) chanMap[ch].returned++;
+      if (r.status==="반품") chanMap[ch].returned++;
+      if (r.status==="교환") chanMap[ch].exchanged++;
     });
     const channels = Object.values(chanMap).sort((a,b)=>b.shipped-a.shipped);
-    const totalReturned = filteredOrders.filter(r=>["반품","교환"].includes(r.status)).length;
-    return { prods, channels, totalReturned };
+    const totalReturned  = filteredOrders.filter(r=>r.status==="반품").length;
+    const totalExchanged = filteredOrders.filter(r=>r.status==="교환").length;
+    return { prods, channels, totalReturned, totalExchanged };
   }, [stockRows, filteredOrders]);
 
   if (!data.prods.length) return (
@@ -479,55 +482,59 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     </div>
   );
 
-  const { prods, channels, totalReturned } = data;
+  const { prods, channels, totalReturned, totalExchanged } = data;
   const n = prods.length;
 
   // ── 레이아웃 상수 ──
-  const PAD_T=40, ROW_GAP=6, MIN_H=24;
+  const PAD_T=36, ROW_GAP=5, MIN_H=20;
   const SVG_W=960, NODE_W=180;
-  // 3컬럼 균등 배치: SVG_W를 3등분 후 각 섹션 중앙에 노드
   const SEC = SVG_W/3;
   const COLS_X = [Math.round(SEC*0+SEC/2-NODE_W/2), Math.round(SEC*1+SEC/2-NODE_W/2), Math.round(SEC*2+SEC/2-NODE_W/2)];
 
-  // ── 입고수 비례 상하 높이 계산 ──
   const totalStock   = prods.reduce((s,p)=>s+p.stock,0)||1;
   const totalShipped = prods.reduce((s,p)=>s+p.shipped,0)||1;
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
-  // 전체 블록 목표 높이: 상품당 최소 MIN_H, 최대 1600px
-  const TARGET_H = Math.max(n*MIN_H, Math.min(1600, n*60));
+  // 뷰포트 기준 목표 높이 (SVG viewBox 단위)
+  const TARGET_H = Math.max(n*MIN_H, Math.min(800, n*36));
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
-  // rawSum이 TARGET_H 초과 시 스케일 다운
   const scale = rawSum > TARGET_H ? TARGET_H/rawSum : 1;
   const prodH = rawH.map(h => Math.max(MIN_H, Math.round(h*scale)));
 
-  // 상품 y 위치 (누적)
   const yPos = [];
-  let cumY = PAD_T+20;
+  let cumY = PAD_T+16;
   prodH.forEach(h => { yPos.push(cumY); cumY += h+ROW_GAP; });
-  const blockTotalH = cumY - ROW_GAP - (PAD_T+20);
-  const totalSvgH   = cumY + 40;
+  const blockTotalH = cumY - ROW_GAP - (PAD_T+16);
+  const totalSvgH   = cumY + 30;
 
-  // 판매처 채널 y 위치 (shipped 비례, 전체 블록 높이 맞춤)
   const chanYOf = {};
-  let cy = PAD_T+20;
+  let cy = PAD_T+16;
   channels.forEach(ch=>{
     const h = Math.max(MIN_H, (ch.shipped/chanTotal)*blockTotalH - ROW_GAP);
     chanYOf[ch.name] = cy + h/2;
     cy += h + ROW_GAP;
   });
 
-  const headers = ["입고","판매처별 배송","반품"];
+  // 컬럼2: 반품/교환 블록 높이 분할
+  const totalRE = (totalReturned + totalExchanged) || 1;
+  const retBlockH  = totalReturned  > 0 ? Math.max(MIN_H, Math.round((totalReturned /totalRE)*blockTotalH) - ROW_GAP) : 0;
+  const exchBlockH = totalExchanged > 0 ? Math.max(MIN_H, Math.round((totalExchanged/totalRE)*blockTotalH) - ROW_GAP) : 0;
+  const retBlockY  = PAD_T+16;
+  const exchBlockY = retBlockY + retBlockH + ROW_GAP;
+  const retCenterY  = retBlockY  + retBlockH/2;
+  const exchCenterY = exchBlockY + exchBlockH/2;
+
+  const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div style={{ width:"100%" }}>
-      <svg width="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
+    <div style={{ width:"100%", height:"calc(100vh - 190px)", minHeight:400 }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
         preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
 
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
-          <text key={h} x={COLS_X[ci]+NODE_W/2} y={PAD_T-6}
+          <text key={h} x={COLS_X[ci]+NODE_W/2} y={PAD_T-4}
             textAnchor="middle" fill={D.textSub} fontSize="11" fontWeight="600">{h}</text>
         ))}
 
@@ -537,7 +544,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
           const x1=COLS_X[0]+NODE_W, y1=yPos[i]+prodH[i]/2;
           return Object.entries(p.byChannel).map(([ch,v])=>{
             if (!v.shipped) return null;
-            const x2=COLS_X[1], y2=chanYOf[ch]||PAD_T+30;
+            const x2=COLS_X[1], y2=chanYOf[ch]||PAD_T+20;
             const thick=Math.max(1,(v.shipped/totalShipped)*20);
             const mx=(x1+x2)/2;
             return <path key={`p${i}c${ch}`} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
@@ -547,30 +554,35 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
         {/* 판매처 → 반품 연결선 */}
         {channels.map((ch,ci)=>{
-          if (!ch.returned) return null;
-          const x1=COLS_X[1]+NODE_W, y1=chanYOf[ch.name]||PAD_T+30;
-          const x2=COLS_X[2], y2=PAD_T+20+blockTotalH/2;
-          const thick=Math.max(1,(ch.returned/(totalReturned||1))*22);
-          const mx=(x1+x2)/2;
-          return <path key={`r${ci}`} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
-            fill="none" stroke={D.red} strokeWidth={thick} opacity={0.2}/>;
+          const x1=COLS_X[1]+NODE_W; const y1=chanYOf[ch.name]||PAD_T+20;
+          const mx=(x1+COLS_X[2])/2;
+          return (
+            <g key={`rc${ci}`}>
+              {ch.returned>0&&<path d={`M${x1},${y1} C${mx},${y1} ${mx},${retCenterY} ${COLS_X[2]},${retCenterY}`}
+                fill="none" stroke={D.red} strokeWidth={Math.max(1,(ch.returned/(totalReturned||1))*18)} opacity={0.22}/>}
+              {ch.exchanged>0&&<path d={`M${x1},${y1} C${mx},${y1} ${mx},${exchCenterY} ${COLS_X[2]},${exchCenterY}`}
+                fill="none" stroke={D.amber} strokeWidth={Math.max(1,(ch.exchanged/(totalExchanged||1))*18)} opacity={0.22}/>}
+            </g>
+          );
         })}
 
-        {/* 컬럼0: 상품 블록 — 상하 높이(prodH[i])가 입고수 비례 */}
+        {/* 컬럼0: 상품 블록 */}
         {prods.map((p,i)=>{
           const y=yPos[i]; const h=prodH[i]; const col=D.SANKEY[i%D.SANKEY.length];
-          const mid = h/2;
+          const mid=h/2;
           return (
             <g key={p.name}>
               <rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill={col} opacity={0.09}/>
               <rect x={COLS_X[0]} y={y} width={3} height={h} rx={1} fill={col}/>
-              <text x={COLS_X[0]+9} y={y+mid-(h>36?6:0)} dominantBaseline="middle"
+              <text x={COLS_X[0]+9} y={y+mid-(h>30?5:0)} dominantBaseline="middle"
                 fill={D.black} fontSize="9" fontWeight="600">
                 {p.name.length>22?p.name.slice(0,22)+"…":p.name}
               </text>
-              {h>=32&&<text x={COLS_X[0]+9} y={y+mid+8} dominantBaseline="middle"
+              {h>=28&&<text x={COLS_X[0]+9} y={y+mid+7} dominantBaseline="middle"
                 fill={D.textMeta} fontSize="8">
-                입고 {p.stock} · 배송 {p.shipped}{p.returned>0?` · 반품 ${p.returned}`:""}
+                입고 {p.stock} · 배송 {p.shipped}
+                {p.returned>0?` · 반품 ${p.returned}`:""}
+                {p.exchanged>0?` · 교환 ${p.exchanged}`:""}
               </text>}
             </g>
           );
@@ -578,7 +590,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
         {/* 컬럼1: 판매처 블록 */}
         {(()=>{
-          let ry=PAD_T+20;
+          let ry=PAD_T+16;
           return channels.map((ch,ci)=>{
             const h=Math.max(MIN_H,(ch.shipped/chanTotal)*blockTotalH-ROW_GAP);
             const y=ry; ry+=h+ROW_GAP;
@@ -588,9 +600,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
               <g key={ch.name}>
                 <rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill={col} opacity={0.12}/>
                 <rect x={COLS_X[1]} y={y} width={4} height={h} rx={2} fill={col}/>
-                <text x={COLS_X[1]+10} y={y+h/2-(h>36?6:0)} dominantBaseline="middle"
+                <text x={COLS_X[1]+10} y={y+h/2-(h>30?5:0)} dominantBaseline="middle"
                   fill={col} fontSize="10" fontWeight="600">{ch.name}</text>
-                {h>=32&&<text x={COLS_X[1]+10} y={y+h/2+8} dominantBaseline="middle"
+                {h>=28&&<text x={COLS_X[1]+10} y={y+h/2+7} dominantBaseline="middle"
                   fill={D.textMeta} fontSize="9">{ch.shipped.toLocaleString()}건</text>}
               </g>
             );
@@ -600,13 +612,20 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         {/* 컬럼2: 반품 블록 */}
         {totalReturned>0&&(
           <g>
-            <rect x={COLS_X[2]} y={PAD_T+20} width={NODE_W} height={blockTotalH}
-              rx={4} fill={D.red} opacity={0.1}/>
-            <rect x={COLS_X[2]} y={PAD_T+20} width={4} height={blockTotalH} rx={2} fill={D.red}/>
-            <text x={COLS_X[2]+10} y={PAD_T+20+blockTotalH/2-6}
-              dominantBaseline="middle" fill={D.red} fontSize="11" fontWeight="600">
-              반품 {totalReturned.toLocaleString()}건
-            </text>
+            <rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill={D.red} opacity={0.1}/>
+            <rect x={COLS_X[2]} y={retBlockY} width={4} height={retBlockH} rx={2} fill={D.red}/>
+            <text x={COLS_X[2]+10} y={retCenterY} dominantBaseline="middle"
+              fill={D.red} fontSize="11" fontWeight="600">반품 {totalReturned}건</text>
+          </g>
+        )}
+
+        {/* 컬럼2: 교환 블록 */}
+        {totalExchanged>0&&(
+          <g>
+            <rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill={D.amber} opacity={0.12}/>
+            <rect x={COLS_X[2]} y={exchBlockY} width={4} height={exchBlockH} rx={2} fill={D.amber}/>
+            <text x={COLS_X[2]+10} y={exchCenterY} dominantBaseline="middle"
+              fill={D.amber} fontSize="11" fontWeight="600">교환 {totalExchanged}건</text>
           </g>
         )}
       </svg>
@@ -1244,10 +1263,8 @@ function LogisticsFlow({ orders, stocks, ts }) {
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <div>
-          <div style={{color:D.black,fontWeight:600,fontSize:15,marginBottom:3}}>물류 플로우</div>
-          <div style={{color:D.textMeta,fontSize:12}}>
-            입고 → 상품명 → 판매처별 배송 → 반품 · 전체 상품 표시
-            <UpdatedAt ts={ts.orders||ts.stock}/>
+          <div style={{color:D.black,fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8}}>
+            물류 플로우 <UpdatedAt ts={ts.orders||ts.stock}/>
           </div>
         </div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
