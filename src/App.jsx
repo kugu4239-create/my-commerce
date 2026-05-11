@@ -581,12 +581,12 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const totalShipped = prods.reduce((s,p)=>s+p.shipped,0)||1;
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
-  // viewBox 높이: SVG_W(1400)보다 낮게 유지 → 130vh 컨테이너에서 width 기준으로 꽉 참
-  const TARGET_H = Math.max(n*MIN_H, Math.min(900, n*42));
+  // 상품마다 충분한 높이 확보 — 압축 없이 총 높이를 늘림
+  const ROW_H = 48;
+  const TARGET_H = n * ROW_H;
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
-  const scale = rawSum > TARGET_H ? TARGET_H/rawSum : 1;
-  const prodH = rawH.map(h => Math.max(MIN_H, Math.round(h*scale)));
+  const prodH = rawH.map(h => Math.max(MIN_H, Math.round(h * TARGET_H / rawSum)));
 
   const yPos = [];
   let cumY = PAD_T+16;
@@ -614,8 +614,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n)));
   const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n)));
 
-  // SVG 실제 렌더 배율 → 폰트가 목표 px로 보이도록 SVG 좌표 단위로 역산
-  const svgScale = Math.min(ctnSize.w / SVG_W, ctnSize.h / totalSvgH) || 1;
+  // SVG는 너비 기준으로만 스케일 → 폰트가 목표 px로 보이도록 SVG 좌표 단위로 역산
+  const svgScale = (ctnSize.w / SVG_W) || 1;
   const _fs = px => px / svgScale;
   const hdrFs = _fs(15);
   const lblFs = _fs(13);
@@ -624,9 +624,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div ref={containerRef} style={{ width:"100%", height:"100vh" }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
-        preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
+    <div ref={containerRef} style={{ width:"100%" }}>
+      <svg width="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
+        style={{ display:"block" }}>
 
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
