@@ -1567,19 +1567,18 @@ function EasyAdminUploader({ onUpdate }) {
             const ch=normChannel(r[f.channel]);
             const rawDate=r[f.date];
             const dateVal=toDate(rawDate);
-            // CS 컬럼 우선, 없으면 status 컬럼
             const csRaw=f.cs?String(r[f.cs]||"").trim():"";
             const statusRaw=f.status?String(r[f.status]||"").trim():"";
             const status=csRaw?normCS(csRaw):(statusRaw?"배송":"배송");
             const qty=toNum(r[f.qty])||1;
-            const key=`${oid}|${prod}|${opt}`;
-            if(!grouped[key]){
-              grouped[key]={order_id:oid,order_date:dateVal,channel:ch,
+            // 관리번호+상품명+옵션 조합을 DB key로 사용 → 같은 관리번호 내 여러 상품 허용
+            const dbKey=`${oid}||${prod}||${opt}`;
+            if(!grouped[dbKey]){
+              grouped[dbKey]={order_id:dbKey,order_date:dateVal,channel:ch,
                 product_name:prod,option_name:opt,qty:0,status,raw_status:csRaw||statusRaw};
             }
-            grouped[key].qty+=qty;
-            // 상태는 마지막 값으로 덮어씀
-            grouped[key].status=status;
+            grouped[dbKey].qty+=qty;
+            grouped[dbKey].status=status;
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
@@ -1602,18 +1601,14 @@ function EasyAdminUploader({ onUpdate }) {
     setStep(2);
   };
 
-  // Step 2→3: 확정 업로드 (기간 내 전체 삭제 후 재삽입 — 관리번호 내 다중상품 허용)
+  // Step 2→3: 확정 업로드 (order_id=관리번호||상품||옵션 복합키 → 같은 관리번호 내 여러 상품 허용)
   const handleUpload=async()=>{
     if(!inRange.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    // 해당 기간 기존 데이터 삭제
-    const {error:delErr}=await db.from("orders").delete().gte("order_date",startDate).lte("order_date",endDate);
-    if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
-    // 새 데이터 삽입
     for(let i=0;i<inRange.length;i+=500){
-      const {error}=await db.from("orders").insert(inRange.slice(i,i+500));
-      if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
+      const {error}=await db.from("orders").upsert(inRange.slice(i,i+500),{onConflict:"order_id"});
+      if(error){setResult({type:"error",msg:"업로드 실패: "+error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
     await db.from("upload_logs").insert({
