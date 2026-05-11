@@ -1174,7 +1174,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             <BarChart data={bestRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick}/>
-              <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:9}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
+              <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:10}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
               <Tooltip content={<Tip/>}/>
               <Bar dataKey="qty" name="배송량" radius={[0,3,3,0]}>
                 {bestRows.slice(0,12).map((_,i)=>(
@@ -1220,7 +1220,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             <BarChart data={worstRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick} tickFormatter={v=>v+"%"}/>
-              <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:9}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
+              <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:10}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
               <Tooltip content={<Tip/>} formatter={(v)=>[v+"%","반품률"]}/>
               <Bar dataKey="returnRate" name="반품률" radius={[0,3,3,0]} fill={D.red}/>
             </BarChart>
