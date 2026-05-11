@@ -506,7 +506,16 @@ function DataDeleteSection({ table, dateField, label, onDone }) {
 // ─────────────────────────────────────────────
 // MULTI-COLUMN SANKEY  (상품명 → 판매처 → 반품)  입고수=블록 상하높이
 // ─────────────────────────────────────────────
+const SVG_W = 1400;
+
 function ProductSankey({ stockRows, orderRows, period="3m", customStart, customEnd, limit=20 }) {
+  const vw = useWindowWidth();
+  // SVG 좌표계 기준 폰트 크기 → 화면 너비에 맞게 보정해 실제 렌더 크기를 유지
+  const _fs = (px) => Math.round(px * SVG_W / Math.max(vw, 800));
+  const hdrFs  = _fs(15);  // 컬럼 헤더
+  const lblFs  = _fs(13);  // 블록 메인 레이블
+  const subFs  = _fs(11);  // 블록 서브 텍스트
+
   const filteredOrders = useMemo(() => {
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
@@ -556,7 +565,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
   // ── 레이아웃 상수 ──
   const PAD_T=36, PAD_H=8, ROW_GAP=6, MIN_H=24;
-  const SVG_W=1400, NODE_W=200;
+  const NODE_W=200;
   // 좌우 끝까지 사용: col0=왼쪽 끝, col1=중앙, col2=오른쪽 끝
   const COLS_X = [
     PAD_H,
@@ -611,7 +620,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
           <text key={h} x={COLS_X[ci]+NODE_W/2} y={PAD_T-4}
-            textAnchor="middle" fill={D.textSub} fontSize="13" fontWeight="600">{h}</text>
+            textAnchor="middle" fill={D.textSub} fontSize={hdrFs} fontWeight="600">{h}</text>
         ))}
 
         {/* 상품 → 판매처 연결선 */}
@@ -651,11 +660,11 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
               <rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill={col} opacity={0.09}/>
               <rect x={COLS_X[0]} y={y} width={3} height={h} rx={1} fill={col}/>
               <text x={COLS_X[0]+12} y={y+mid-(h>40?10:0)} dominantBaseline="middle"
-                fill={D.black} fontSize="11">
+                fill={D.black} fontSize={lblFs}>
                 {p.name.length>22?p.name.slice(0,22)+"…":p.name}
               </text>
-              {h>=40&&<text x={COLS_X[0]+12} y={y+mid+14} dominantBaseline="middle"
-                fill={D.textMeta} fontSize="11">
+              {h>=40&&<text x={COLS_X[0]+12} y={y+mid+lblFs+2} dominantBaseline="middle"
+                fill={D.textMeta} fontSize={subFs}>
                 입고 {p.stock} · 배송 {p.shipped}
                 {p.returned>0?` · 반품 ${p.returned}`:""}
                 {p.exchanged>0?` · 교환 ${p.exchanged}`:""}
@@ -677,9 +686,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
                 <rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill={col} opacity={0.12}/>
                 <rect x={COLS_X[1]} y={y} width={4} height={h} rx={2} fill={col}/>
                 <text x={COLS_X[1]+12} y={y+h/2-(h>40?10:0)} dominantBaseline="middle"
-                  fill={col} fontSize="11">{ch.name}</text>
-                {h>=40&&<text x={COLS_X[1]+12} y={y+h/2+14} dominantBaseline="middle"
-                  fill={D.textMeta} fontSize="11">{ch.shipped.toLocaleString()}건</text>}
+                  fill={col} fontSize={lblFs}>{ch.name}</text>
+                {h>=40&&<text x={COLS_X[1]+12} y={y+h/2+lblFs+2} dominantBaseline="middle"
+                  fill={D.textMeta} fontSize={subFs}>{ch.shipped.toLocaleString()}건</text>}
               </g>
             );
           });
@@ -691,7 +700,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
             <rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill={D.red} opacity={0.1}/>
             <rect x={COLS_X[2]} y={retBlockY} width={4} height={retBlockH} rx={2} fill={D.red}/>
             <text x={COLS_X[2]+12} y={retCenterY} dominantBaseline="middle"
-              fill={D.red} fontSize="11">반품 {totalReturned}건</text>
+              fill={D.red} fontSize={lblFs}>반품 {totalReturned}건</text>
           </g>
         )}
 
@@ -701,7 +710,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
             <rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill={D.amber} opacity={0.12}/>
             <rect x={COLS_X[2]} y={exchBlockY} width={4} height={exchBlockH} rx={2} fill={D.amber}/>
             <text x={COLS_X[2]+12} y={exchCenterY} dominantBaseline="middle"
-              fill={D.amber} fontSize="11">교환 {totalExchanged}건</text>
+              fill={D.amber} fontSize={lblFs}>교환 {totalExchanged}건</text>
           </g>
         )}
       </svg>
