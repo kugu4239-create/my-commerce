@@ -2455,7 +2455,7 @@ function StockUploader({ onUpdate }) {
     const db=await getSupabase();
     const {error:delErr}=await db.from("stock_uploads").delete().gte("upload_date",startDate).lte("upload_date",endDate);
     if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
-    const rows=preview.map(r=>({...r,upload_date:startDate}));
+    const rows=preview.map(r=>({...r,upload_date:endDate}));
     for(let i=0;i<rows.length;i+=500){
       const {error}=await db.from("stock_uploads").insert(rows.slice(i,i+500));
       if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
