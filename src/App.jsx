@@ -532,9 +532,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div style={{ width:"100%", height:"calc(130vh - 247px)", minHeight:500 }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
-        preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
+    <div style={{ width:"100%" }}>
+      <svg width="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
+        style={{ display:"block", width:"100%" }}>
 
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
