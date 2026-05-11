@@ -979,7 +979,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       <div style={{display:"flex",gap:9,marginBottom:16,flexWrap:"wrap"}}>
         <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green}/>
-        <KPI label="반품" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
+        <KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
           accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}/>
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue}/>
