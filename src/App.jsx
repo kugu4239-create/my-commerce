@@ -69,7 +69,7 @@ const normChannel = raw => {
   if (!raw) return "미분류";
   const v = String(raw).trim();
   if (v === "MERRYON") return "자사몰";
-  if (v === "예약거래") return "오프라인스토어";
+  if (v === "예약거래") return "오프라인 스토어";
   return v;
 };
 
@@ -167,7 +167,7 @@ function detectFields(columns) {
     option:       f("옵션","option","size","color","사이즈","색상"),
     qty:          f("수량","qty","quantity","개수","판매수량","입고"),
     cs:           f("cs","처리","cs처리","cs상태"),
-    date:         f("배송일","주문일","날짜","date","order_date","주문날짜","reg_date","delivery_date"),
+    date:         f("배송일","delivery_date")||f("주문일","날짜","date","order_date","주문날짜","reg_date"),
     orderId:      f("관리번호","order_id","주문번호","orderid"),
     memo:         f("메모","memo","비고","note"),
     revenue:      f("금액","revenue","sales","매출","price","가격","결제금액","주문금액"),
@@ -186,8 +186,17 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
     const cutStr = monday.toISOString().slice(0,10);
     return rows.filter(r => r[dateField] >= cutStr && r[dateField] <= today);
   }
+  if (period === "yd") {
+    const y = new Date(); y.setDate(y.getDate()-1);
+    const yStr = y.toISOString().slice(0,10);
+    return rows.filter(r => r[dateField] === yStr);
+  }
   if (period === "7d") {
     const c = new Date(); c.setDate(c.getDate()-7);
+    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+  }
+  if (period === "14d") {
+    const c = new Date(); c.setDate(c.getDate()-14);
     return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
   }
   if (period === "1m") {
@@ -227,14 +236,29 @@ function SecTitle({ children, ts }) {
     </div>
   );
 }
-function KPI({ label, value, sub, accent="#111" }) {
+function KPI({ label, value, sub, accent="#111", onClick }) {
   return (
-    <div style={{ background:D.surface, border:`1px solid ${D.border}`,
-      borderRadius:9, padding:"14px 16px", flex:1, minWidth:110 }}>
-      <div style={{ color:D.textMeta, fontSize:10, letterSpacing:"0.09em", textTransform:"uppercase", marginBottom:5 }}>{label}</div>
+    <div onClick={onClick} style={{ background:D.surface, border:`1px solid ${D.border}`,
+      borderRadius:9, padding:"14px 16px", flex:1, minWidth:110,
+      cursor:onClick?"pointer":"default", transition:"box-shadow 0.15s" }}
+      onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow=`0 0 0 2px ${accent}44`;}}
+      onMouseLeave={e=>{e.currentTarget.style.boxShadow="";}}>
+      <div style={{ color:D.textMeta, fontSize:10, letterSpacing:"0.09em", textTransform:"uppercase", marginBottom:5 }}>
+        {label}{onClick&&<span style={{marginLeft:4,fontSize:9,opacity:0.5}}>↗</span>}
+      </div>
       <div style={{ color:accent, fontSize:20, fontWeight:600 }}>{value}</div>
       {sub&&<div style={{ color:D.textMeta, fontSize:10, marginTop:3 }}>{sub}</div>}
     </div>
+  );
+}
+function InfoBtn({ onClick }) {
+  return (
+    <button onClick={onClick}
+      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:"50%",
+        width:20,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",
+        fontSize:10,cursor:"pointer",color:D.textSub,marginLeft:6,verticalAlign:"middle"}}>
+      i
+    </button>
   );
 }
 function Tip({ active, payload, label }) {
@@ -524,9 +548,15 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
 
-  const filteredStocks = useMemo(() =>
-    filterByDate(stockRows, "upload_date", period, customStart, customEnd)
-  , [stockRows, period, customStart, customEnd]);
+  const filteredStocks = useMemo(() => {
+    const all = filterByDate(stockRows, "upload_date", period, customStart, customEnd);
+    const latest = {};
+    all.forEach(r => {
+      const key = (r.product_name||"") + "__" + (r.option_name||"");
+      if (!latest[key] || r.upload_date > latest[key].upload_date) latest[key] = r;
+    });
+    return Object.values(latest);
+  }, [stockRows, period, customStart, customEnd]);
 
   const data = useMemo(() => {
     const prodMap = {};
@@ -572,7 +602,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const n = prods.length;
 
   // ── 레이아웃 상수 ──
-  const PAD_T=36, PAD_H=8, ROW_GAP=6, MIN_H=24;
+  const PAD_T=36, PAD_H=8, ROW_GAP=4, MIN_H=10;
   const NODE_W=200;
   // 좌우 끝까지 사용: col0=왼쪽 끝, col1=중앙, col2=오른쪽 끝
   const COLS_X = [
@@ -586,7 +616,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
   // 상품마다 충분한 높이 확보 — 압축 없이 총 높이를 늘림
-  const ROW_H = 48;
+  const ROW_H = 17;
   const TARGET_H = n * ROW_H;
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
@@ -598,32 +628,41 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const blockTotalH = cumY - ROW_GAP - (PAD_T+16);
   const totalSvgH   = cumY + 30;
 
+  // 컬럼1 높이: blockTotalH × (배송수 / 입고수) — 입고 대비 배송 비율
+  const totalStockQty = filteredStocks.reduce((s,r)=>s+(r.qty||0),0)||1;
+  const col1H = Math.max(MIN_H * channels.length, Math.round(blockTotalH * Math.min(1, chanTotal / totalStockQty)));
+
+  // 컬럼2 높이: col1H × (반품+교환 / 배송) — 배송 대비 반품 비율
+  const totalRE = (totalReturned + totalExchanged) || 1;
+  const col2H = chanTotal > 0
+    ? Math.max(0, Math.round(col1H * Math.min(1, (totalReturned + totalExchanged) / chanTotal)))
+    : 0;
+
   const chanYOf = {};
   let cy = PAD_T+16;
   channels.forEach(ch=>{
-    const h = Math.max(MIN_H, (ch.shipped/chanTotal)*blockTotalH - ROW_GAP);
+    const h = Math.max(MIN_H, (ch.shipped/chanTotal)*col1H - ROW_GAP);
     chanYOf[ch.name] = cy + h/2;
     cy += h + ROW_GAP;
   });
 
   // 컬럼2: 반품/교환 블록 높이 분할
-  const totalRE = (totalReturned + totalExchanged) || 1;
-  const retBlockH  = totalReturned  > 0 ? Math.max(MIN_H, Math.round((totalReturned /totalRE)*blockTotalH) - ROW_GAP) : 0;
-  const exchBlockH = totalExchanged > 0 ? Math.max(MIN_H, Math.round((totalExchanged/totalRE)*blockTotalH) - ROW_GAP) : 0;
+  const retBlockH  = totalReturned  > 0 ? Math.max(MIN_H, Math.round((totalReturned /totalRE)*col2H) - ROW_GAP) : 0;
+  const exchBlockH = totalExchanged > 0 ? Math.max(MIN_H, Math.round((totalExchanged/totalRE)*col2H) - ROW_GAP) : 0;
   const retBlockY  = PAD_T+16;
   const exchBlockY = retBlockY + retBlockH + ROW_GAP;
   const retCenterY  = retBlockY  + retBlockH/2;
   const exchCenterY = exchBlockY + exchBlockH/2;
 
-  const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n)));
-  const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n)));
+  const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n))) * 2/3;
+  const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n))) * 2/3;
 
   // SVG는 너비 기준으로만 스케일 → 폰트가 목표 px로 보이도록 SVG 좌표 단위로 역산
   const svgScale = (ctnSize.w / SVG_W) || 1;
   const _fs = px => px / svgScale;
-  const hdrFs = _fs(15);
-  const lblFs = _fs(13);
-  const subFs = _fs(11);
+  const hdrFs = _fs(13);
+  const lblFs = _fs(11);
+  const subFs = _fs(9);
 
   const headers = ["입고","판매처별 배송","반품/교환"];
 
@@ -692,7 +731,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         {(()=>{
           let ry=PAD_T+16;
           return channels.map((ch,ci)=>{
-            const h=Math.max(MIN_H,(ch.shipped/chanTotal)*blockTotalH-ROW_GAP);
+            const h=Math.max(MIN_H,(ch.shipped/chanTotal)*col1H-ROW_GAP);
             const y=ry; ry+=h+ROW_GAP;
             const col=D.SANKEY[(ci+5)%D.SANKEY.length];
             chanYOf[ch.name]=y+h/2;
@@ -763,17 +802,51 @@ function analyze(orderRows, stockRows, revenueRows) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
+  // 채널별 unique 주문번호 집계 (order_id = "oid||prod||opt" 형식)
+  const chOrderIds={};
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(r.status==="배송") byChannel[ch].shipped++;
     if(r.status==="반품") byChannel[ch].returned++;
+    if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
+    // order_id = "oid||prod||opt" → oid 부분만 추출
+    const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
+    if(oid) chOrderIds[ch].add(oid);
   });
-  const channelList=Object.values(byChannel).filter(c=>c.name!=="오프라인스토어").sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
+  // 판교점+일산점 → 오프라인 스토어 합산
+  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+  const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
+  const offlineOrderIds=new Set();
+  const offlineBreakdown={};  // 판교점/일산점 개별 보존
+  let hasOffline=false;
+  Object.keys(byChannel).forEach(ch=>{
+    if(OFFLINE_CHS.has(ch)){
+      hasOffline=true;
+      offlineAgg.revenue+=byChannel[ch].revenue;
+      offlineAgg.orderCount+=byChannel[ch].orderCount;
+      offlineAgg.refundCount+=byChannel[ch].refundCount;
+      offlineAgg.shipped+=byChannel[ch].shipped;
+      offlineAgg.returned+=byChannel[ch].returned;
+      (chOrderIds[ch]||new Set()).forEach(id=>offlineOrderIds.add(id));
+      if(ch!=="오프라인스토어"&&ch!=="오프라인"&&ch!=="오프라인 스토어")
+        offlineBreakdown[ch]={...byChannel[ch]};
+      delete byChannel[ch];
+      delete chOrderIds[ch];
+    }
+  });
+  if(hasOffline){
+    byChannel["오프라인 스토어"]=offlineAgg;
+    chOrderIds["오프라인 스토어"]=offlineOrderIds;
+  }
+  const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
     c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
+    const uq=(chOrderIds[c.name]||new Set()).size;
+    c.uniqueOrders=uq;
+    c.avgOrderValue=uq>0?Math.round(c.revenue/uq):0;
   });
 
   // 월별 배송/반품
@@ -821,7 +894,7 @@ function analyze(orderRows, stockRows, revenueRows) {
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
-    channelList,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
+    channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
   };
 }
 
@@ -857,11 +930,57 @@ async function getSupabase() {
 // DASHBOARD
 // ─────────────────────────────────────────────
 const PERIOD_TABS=[
+  {key:"yd",label:"어제"},
   {key:"7d",label:"최근 7일"},
   {key:"1m",label:"최근 한달"},
   {key:"3m",label:"최근 3개월"},
   {key:"custom",label:"기간 선택"},
 ];
+
+const CH_ORDER=["자사몰","29CM","무신사","오프라인 스토어"];
+const chRank=ch=>{const i=CH_ORDER.indexOf(ch);return i>=0?i:99;};
+
+function getPriorPeriod(period,customStart,customEnd){
+  const fmt=d=>d.toISOString().slice(0,10);
+  if(period==="yd"){
+    const e=new Date();e.setDate(e.getDate()-1);
+    const s=new Date();s.setDate(s.getDate()-2);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="7d"){
+    const e=new Date();e.setDate(e.getDate()-7);
+    const s=new Date();s.setDate(s.getDate()-14);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="14d"){
+    const e=new Date();e.setDate(e.getDate()-14);
+    const s=new Date();s.setDate(s.getDate()-28);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="1m"){
+    const e=new Date();e.setMonth(e.getMonth()-1);
+    const s=new Date();s.setMonth(s.getMonth()-2);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="3m"){
+    const e=new Date();e.setMonth(e.getMonth()-3);
+    const s=new Date();s.setMonth(s.getMonth()-6);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="6m"){
+    const e=new Date();e.setMonth(e.getMonth()-6);
+    const s=new Date();s.setMonth(s.getMonth()-12);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="custom"&&customStart&&customEnd){
+    const s0=new Date(customStart),e0=new Date(customEnd);
+    const days=Math.round((e0-s0)/(864e5));
+    const pe=new Date(s0);pe.setDate(pe.getDate()-1);
+    const ps=new Date(pe);ps.setDate(ps.getDate()-days);
+    return{start:fmt(ps),end:fmt(pe)};
+  }
+  return null;
+}
 
 function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
@@ -869,10 +988,11 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [deleteAll,setDeleteAll]=useState(false);
-  const [shippingPeriod,setShippingPeriod]=useState("7d");
-  const [returnPeriod,setReturnPeriod]=useState("7d");
-  const [rankBestPeriod,setRankBestPeriod]=useState("7d");
+  const [shippingPeriod,setShippingPeriod]=useState("yd");
+  const [returnPeriod,setReturnPeriod]=useState("yd");
+  const [rankBestPeriod,setRankBestPeriod]=useState("yd");
   const [rankBestChannel,setRankBestChannel]=useState("전체");
+  const [rankInfoOpen,setRankInfoOpen]=useState(false);
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
   const [rankWorstPeriod,setRankWorstPeriod]=useState("7d");
@@ -880,6 +1000,10 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
   const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
+  const [optionPeriod,setOptionPeriod]=useState("1m");
+  const [returnOptionPeriod,setReturnOptionPeriod]=useState("1m");
+  const [offlineExpanded,setOfflineExpanded]=useState(false);
+  const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
 
   const axTick={fill:D.textMeta,fontSize:10};
   const NoWrapTick=({x,y,payload})=>(
@@ -890,14 +1014,35 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
-  const stats=useMemo(()=>analyze(filteredOrders,stocks,filteredRevenues),[filteredOrders,stocks,filteredRevenues]);
+  const filteredStocks=useMemo(()=>{
+    const all=filterByDate(stocks,"upload_date",period,customStart,customEnd);
+    const latest={};
+    all.forEach(r=>{
+      const key=(r.product_name||"")+"__"+(r.option_name||"");
+      if(!latest[key]||r.upload_date>latest[key].upload_date) latest[key]=r;
+    });
+    return Object.values(latest);
+  },[stocks,period,customStart,customEnd]);
+  const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues),[filteredOrders,filteredStocks,filteredRevenues]);
 
   // 직전 동일 기간 채널별 순매출
+  const prevPeriod=useMemo(()=>getPriorPeriod(period,customStart,customEnd),[period,customStart,customEnd]);
+  const prevChRevenue=useMemo(()=>{
+    if(!prevPeriod) return {};
+    const map={};
+    const OFFL=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+    revenues.filter(r=>r.date>=prevPeriod.start&&r.date<=prevPeriod.end).forEach(r=>{
+      const ch=OFFL.has(r.channel||"")?"오프라인 스토어":(r.channel||"미분류");
+      map[ch]=(map[ch]||0)+(r.amount||0)-(r.refund_amount||0);
+    });
+    return map;
+  },[revenues,prevPeriod]);
 
-  // 플랫폼별 선호 옵션 (컬러/사이즈)
+  // 플랫폼별 선호 옵션 (컬러/사이즈) — 독립 기간 필터
+  const optionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",optionPeriod,"",""),[orders,optionPeriod]);
   const optionStats=useMemo(()=>{
     const map={};
-    filteredOrders.filter(r=>r.status==="배송"&&r.channel!=="오프라인스토어").forEach(r=>{
+    optionFilteredOrders.filter(r=>r.status==="배송").forEach(r=>{
       const ch=r.channel||"미분류";
       if(!map[ch]) map[ch]={colors:{},sizes:{}};
       const {color,size}=parseOption(r.product_name,r.option_name);
@@ -908,13 +1053,14 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       ch,
       colors:Object.entries(d.colors).sort((a,b)=>b[1]-a[1]).slice(0,7),
       sizes: Object.entries(d.sizes ).sort((a,b)=>b[1]-a[1]).slice(0,7),
-    }));
-  },[filteredOrders]);
+    })).sort((a,b)=>chRank(a.ch)-chRank(b.ch));
+  },[optionFilteredOrders,chRank]);
 
-  // 플랫폼별 반품률 높은 옵션
+  // 플랫폼별 반품률 높은 옵션 — 독립 기간 필터
+  const returnOptionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",returnOptionPeriod,"",""),[orders,returnOptionPeriod]);
   const returnOptionStats=useMemo(()=>{
     const map={};
-    filteredOrders.filter(r=>r.channel!=="오프라인스토어").forEach(r=>{
+    returnOptionFilteredOrders.forEach(r=>{
       const ch=r.channel||"미분류";
       if(!map[ch]) map[ch]={};
       const {color,size}=parseOption(r.product_name,r.option_name);
@@ -936,14 +1082,15 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         .map(o=>({name:o.name,rate:o.returned/(o.shipped+o.returned)*100,returned:o.returned,total:o.shipped+o.returned}))
         .sort((a,b)=>b.rate-a.rate).slice(0,5);
       return {ch,colors:toRows("c"),sizes:toRows("s")};
-    }).filter(d=>d.colors.length>0||d.sizes.length>0);
-  },[filteredOrders]);
+    }).filter(d=>d.colors.length>0||d.sizes.length>0)
+      .sort((a,b)=>chRank(a.ch)-chRank(b.ch));
+  },[returnOptionFilteredOrders,chRank]);
 
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
   const activeChannels=useMemo(()=>{
-    const fixed=["자사몰","29CM","무신사"];
+    const dynamic=["자사몰","29CM","무신사"];
     const inData=new Set(orders.map(r=>r.channel||"미분류").filter(Boolean));
-    return fixed.filter(c=>inData.has(c));
+    return [...dynamic.filter(c=>inData.has(c)),"오프라인 스토어"];
   },[orders]);
 
   // 판매 Top 랭킹
@@ -952,7 +1099,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     [rankBestPeriod,orders,rankBestCustomStart,rankBestCustomEnd]);
 
   const bestRows=useMemo(()=>{
-    const base=bestFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
+    const base=bestFilteredOrders;
     const rows=rankBestChannel==="전체"?base:base.filter(r=>r.channel===rankBestChannel);
     const byProd={};
     rows.forEach(r=>{
@@ -973,13 +1120,14 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     [rankWorstPeriod,orders,rankWorstCustomStart,rankWorstCustomEnd]);
 
   const worstRows=useMemo(()=>{
-    const base=worstFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
+    const base=worstFilteredOrders;
     const rows=rankWorstChannel==="전체"?base:base.filter(r=>r.channel===rankWorstChannel);
     const byProd={};
     rows.forEach(r=>{
       const key=r.product_name||"미분류";
-      if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
+      if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,shipped:0,returned:0};
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
+      if(r.status==="배송") byProd[key].shipped++;
       if(r.status==="반품") byProd[key].returned++;
     });
     const csData=getCSData();
@@ -993,7 +1141,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       if(!m)return"-";
       return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]?.[0]||"-";
     };
-    return Object.values(byProd).filter(p=>p.returned>0&&p.orders>=10)
+    return Object.values(byProd).filter(p=>p.returned>0&&p.shipped>=3)
       .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         topReason:topReason(p.name)}));
@@ -1002,6 +1150,16 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   // 월별 배송량 차트 데이터
   const shippingChartData=useMemo(()=>{
     const today=new Date().toISOString().slice(0,10);
+    if(shippingPeriod==="yd"){
+      const y=new Date();y.setDate(y.getDate()-1);
+      const yStr=y.toISOString().slice(0,10);
+      const byDay={};
+      orders.filter(r=>r.order_date===yStr).forEach(r=>{
+        if(!byDay[yStr]) byDay[yStr]={date:yStr.slice(5),shipped:0};
+        if(r.status==="배송") byDay[yStr].shipped++;
+      });
+      return Object.values(byDay);
+    }
     if(shippingPeriod==="7d"||shippingPeriod==="1m"){
       const c=new Date();
       if(shippingPeriod==="7d") c.setDate(c.getDate()-7);
@@ -1029,14 +1187,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   // 일별 반품 by 채널 차트
   const returnChartData=useMemo(()=>{
     let start;
-    if(returnPeriod==="7d"){
+    if(returnPeriod==="yd"){
+      const d=new Date();d.setDate(d.getDate()-1);
+      start=d.toISOString().slice(0,10);
+    } else if(returnPeriod==="7d"){
       const d=new Date(); d.setDate(d.getDate()-7);
       start=d.toISOString().slice(0,10);
     } else {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
     }
-    const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어");
+    const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인 스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
       if(r.status==="반품"){
@@ -1079,6 +1240,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     );
   }
 
+  const getPeriodLabel=p=>{
+    const fmt=d=>`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;
+    const today=new Date(); const todayStr=fmt(today);
+    if(p==="7d"){const c=new Date();c.setDate(c.getDate()-7);return`${fmt(c)} ~ ${todayStr}`;}
+    if(p==="14d"){const c=new Date();c.setDate(c.getDate()-14);return`${fmt(c)} ~ ${todayStr}`;}
+    if(p==="1m"){const c=new Date();c.setMonth(c.getMonth()-1);return`${fmt(c)} ~ ${todayStr}`;}
+    if(p==="3m"){const c=new Date();c.setMonth(c.getMonth()-3);return`${fmt(c)} ~ ${todayStr}`;}
+    if(p==="6m"){const c=new Date();c.setMonth(c.getMonth()-6);return`${fmt(c)} ~ ${todayStr}`;}
+    return null;
+  };
+
   const PeriodBtn=({k,l})=>(
     <button onClick={()=>setPeriod(k)}
       style={{background:"transparent",border:`1px solid ${period===k?D.black:D.border}`,
@@ -1101,16 +1273,21 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
       {/* 상단 기간 선택 + 새로고침 */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-          {PERIOD_TABS.map(({key,label})=><PeriodBtn key={key} k={key} l={label}/>)}
-          {period==="custom"&&(
-            <div style={{display:"flex",gap:4,alignItems:"center"}}>
-              <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
-                style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:11,color:D.text}}/>
-              <span style={{color:D.textMeta,fontSize:11}}>—</span>
-              <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
-                style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:11,color:D.text}}/>
-            </div>
+        <div style={{display:"flex",flexDirection:"column",gap:5}}>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+            {PERIOD_TABS.map(({key,label})=><PeriodBtn key={key} k={key} l={label}/>)}
+            {period==="custom"&&(
+              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
+                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:11,color:D.text}}/>
+                <span style={{color:D.textMeta,fontSize:11}}>—</span>
+                <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
+                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:11,color:D.text}}/>
+              </div>
+            )}
+          </div>
+          {getPeriodLabel(period)&&(
+            <div style={{fontSize:10,color:D.textMeta,paddingLeft:2}}>{getPeriodLabel(period)}</div>
           )}
         </div>
         <button onClick={onRefresh}
@@ -1123,12 +1300,13 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap"}}>
-        <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black}/>
-        <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green}/>
+        <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
+        <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         <KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
-          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}/>
-        <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue}/>
+          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}
+          onClick={()=>setKpiModal("returnRate")}/>
+        <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
       </div>
 
       {/* 판매처 점유율 + 판매처별 매출 */}
@@ -1159,17 +1337,32 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <Card>
           <SecTitle ts={ts.orders}>판매처별 매출</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={stats.channelList.slice(0,7)} layout="vertical" barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
-              <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
-              <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
-              <Tooltip content={<Tip/>}/>
-              <Bar dataKey="revenue" name="매출" radius={[0,3,3,0]}>
-                {stats.channelList.slice(0,7).map((c,i)=>(
-                  <Cell key={i} fill={chColor(c.name)}/>
-                ))}
-              </Bar>
-            </BarChart>
+            {(()=>{
+              // 오프라인 스토어 → 판교점/일산점 분리 스택
+              const PANKYO_COLOR="#8b5cf6"; const ILSAN_COLOR="#c084fc";
+              const chartData=stats.channelList.slice(0,7).map(c=>{
+                if(c.name==="오프라인 스토어"){
+                  const bd=stats.offlineBreakdown||{};
+                  return{name:c.name,revenue:0,
+                    판교점:(bd["판교점"]?.revenue||0),
+                    일산점:(bd["일산점"]?.revenue||0)};
+                }
+                return{name:c.name,revenue:c.revenue,판교점:0,일산점:0};
+              });
+              return(
+                <BarChart data={chartData} layout="vertical" barCategoryGap="28%">
+                  <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
+                  <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
+                  <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
+                  <Tooltip content={<Tip/>}/>
+                  <Bar dataKey="revenue" name="매출" stackId="a" radius={[0,3,3,0]}>
+                    {chartData.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
+                  </Bar>
+                  <Bar dataKey="판교점" name="판교점" stackId="a" fill={PANKYO_COLOR} radius={[0,0,0,0]}/>
+                  <Bar dataKey="일산점" name="일산점" stackId="a" fill={ILSAN_COLOR} radius={[0,3,3,0]}/>
+                </BarChart>
+              );
+            })()}
           </ResponsiveContainer>
         </Card>
       </div>
@@ -1192,57 +1385,91 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           </div>
         </div>
         {(()=>{
+          const fmtChg=(cur,prev)=>{
+            if(!prev||prev===0) return null;
+            const pct=((cur-prev)/Math.abs(prev)*100);
+            const up=pct>=0;
+            return <span style={{fontSize:10,fontWeight:700,color:up?"#22c55e":D.red,marginLeft:3}}>{up?"▲":"▼"}{Math.abs(pct).toFixed(1)}%</span>;
+          };
           const cols=[
             {key:"name",   label:"판매처", left:true,  val:c=>c.name},
             {key:"share",  label:"점유율", val:c=>parseFloat(c.share)},
             {key:"revenue",label:"매출",   val:c=>c.revenue},
+            {key:"cmp",    label:"동기간 비교", val:c=>0},
             {key:"shipped",label:"배송",   val:c=>c.shipped},
             {key:"returned",label:"반품",  val:c=>c.returned},
             {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
-            {key:"aov",    label:"객단가", val:c=>c.orderCount>0?c.revenue/c.orderCount:0},
+            {key:"aov",    label:"객단가", val:c=>c.avgOrderValue||0},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
-            if(!col) return 0;
+            if(!col||col.key==="cmp") return 0;
             const va=col.val(a), vb=col.val(b);
             return chSort.dir==="desc"?(vb>va?1:vb<va?-1:0):(va>vb?1:va<vb?-1:0);
           });
+          const bd=stats.offlineBreakdown||{};
+          const subRows=offlineExpanded?Object.entries(bd).map(([n,d])=>({...d,name:n,isSubRow:true})):[];
+          const allRows=[];
+          sorted.forEach(c=>{
+            allRows.push(c);
+            if(c.name==="오프라인 스토어") subRows.forEach(sr=>allRows.push(sr));
+          });
           return (
-            <div style={{minHeight:260}}>
+            <div style={{minHeight:260,overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {cols.map(({key,label,left})=>(
-                  <th key={key} style={{padding:"7px 9px",textAlign:left?"left":"right",
+                  <th key={key} onClick={key!=="cmp"?()=>setChSort({key,dir:"desc"}):undefined}
+                    style={{padding:"7px 9px",textAlign:left?"left":"right",
                     color:chSort.key===key?D.black:D.textMeta,
-                    fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap"}}>
-                    {label}
+                    fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap",
+                    cursor:key!=="cmp"?"pointer":"default"}}>
+                    {label}{chSort.key===key?" ↓":""}
                   </th>
                 ))}
               </tr></thead>
               <tbody>
-                {sorted.map(c=>(
-                  <tr key={c.name} style={{borderBottom:`1px solid ${D.border}`}}>
-                    <td style={{padding:"7px 9px",fontWeight:600}}>{c.name}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="share"?700:400}}>{c.share}%</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",fontWeight:chSort.key==="revenue"?700:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:chSort.key==="shipped"?700:400}}>{c.shipped.toLocaleString()}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:chSort.key==="returned"?700:400}}>{c.returned.toLocaleString()}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                      color:c.shipped>0&&(c.returned/c.shipped)>0.1?D.red:D.textSub}}>
-                      {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):0}%</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="aov"?700:400}}>{c.orderCount>0?fmtWon(Math.round(c.revenue/c.orderCount)):"—"}</td>
-                  </tr>
-                ))}
-                <tr style={{borderTop:`1px solid ${D.borderMid}`}}>
-                  <td style={{padding:"7px 9px",fontWeight:700}}>합계</td>
+                {allRows.map((c,idx)=>{
+                  const prev=prevChRevenue[c.name]||0;
+                  const isOffline=c.name==="오프라인 스토어";
+                  return(
+                    <tr key={c.name+idx} style={{borderBottom:`1px solid ${D.border}`,
+                      background:c.isSubRow?"#faf8ff":"transparent",
+                      opacity:c.isSubRow?0.85:1}}>
+                      <td style={{padding:"7px 9px",fontWeight:c.isSubRow?400:600,
+                        paddingLeft:c.isSubRow?20:9,color:c.isSubRow?D.textSub:D.black}}>
+                        {isOffline&&(
+                          <button onClick={()=>setOfflineExpanded(v=>!v)}
+                            style={{marginRight:5,background:"none",border:`1px solid ${D.border}`,
+                              borderRadius:3,padding:"0 4px",fontSize:10,cursor:"pointer",
+                              color:D.textMeta}}>{offlineExpanded?"▲":"▼"}</button>
+                        )}
+                        {c.name}
+                      </td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share||"—"}%</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px"}}>
+                        {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
+                        {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
+                      </td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{(c.returned||0).toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
+                        color:(c.shipped>0&&(c.returned/c.shipped)>0.1)?D.red:D.textSub}}>
+                        {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                  <td style={{padding:"7px 9px"}}>합계</td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",fontWeight:700}}>{fmtWon(stats.totalRevenue)}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:600}}>{stats.totalShipped.toLocaleString()}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalReturned.toLocaleString()}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                    color:stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}}>
-                    {stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:600}}>{stats.totalOrderCount>0?fmtWon(Math.round(stats.totalRevenue/stats.totalOrderCount)):"—"}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWon(stats.totalRevenue)}</td>
+                  <td/>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
+                  <td/>
                 </tr>
               </tbody>
             </table>
@@ -1257,7 +1484,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>배송량</SecTitle>
             <div style={{display:"flex",gap:4}}>
-              {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
+              {[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
                 <SmPeriodBtn key={v} val={v} cur={shippingPeriod} onChange={setShippingPeriod} label={l}/>
               ))}
             </div>
@@ -1278,7 +1505,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>판매처별 반품 추이</SecTitle>
             <div style={{display:"flex",gap:4}}>
-              {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
+              {[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
                 <SmPeriodBtn key={v} val={v} cur={returnPeriod} onChange={setReturnPeriod} label={l}/>
               ))}
             </div>
@@ -1305,6 +1532,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>판매 Top</SecTitle>
+            <InfoBtn onClick={()=>setRankInfoOpen(true)}/>
             {["전체",...activeChannels].map(ch=>(
               <button key={ch} onClick={()=>setRankBestChannel(ch)}
                 style={{background:rankBestChannel===ch?D.black:"transparent",
@@ -1314,7 +1542,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             ))}
           </div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
+            {[["yd","어제"],["7d","최근 7일"],["14d","최근 14일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankBestPeriod(k)}
                 style={{background:rankBestPeriod===k?D.black:"transparent",
                   color:rankBestPeriod===k?"#fff":D.textSub,
@@ -1350,7 +1578,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* 플랫폼별 선호 옵션 */}
       {optionStats.length>0&&(
         <Card style={{marginBottom:20}}>
-          <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
+            <div style={{display:"flex",gap:4}}>
+              {[["1m","1달"],["3m","3달"],["6m","6달"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setOptionPeriod(k)}
+                  style={{background:optionPeriod===k?D.black:"transparent",color:optionPeriod===k?"#fff":D.textSub,
+                    border:`1px solid ${optionPeriod===k?D.black:D.border}`,borderRadius:5,
+                    padding:"3px 9px",fontSize:10,cursor:"pointer",fontWeight:optionPeriod===k?600:400}}>{l}</button>
+              ))}
+            </div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${optionStats.length},1fr)`,gap:16}}>
             {optionStats.map(({ch,colors,sizes})=>(
               <div key={ch}>
@@ -1401,6 +1639,15 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </Card>
       )}
 
+      {rankInfoOpen&&(
+        <div onClick={()=>setRankInfoOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"#fff",borderRadius:12,padding:28,maxWidth:340,width:"90%"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>판매 Top 안내</div>
+            <p style={{fontSize:12,color:"#555",lineHeight:1.7,margin:"0 0 16px"}}>정확한 데이터 수집을 위해 판매 수치는 배송까지 완료된 건으로 카운트 됩니다.</p>
+            <button onClick={()=>setRankInfoOpen(false)} style={{width:"100%",padding:"8px",borderRadius:7,border:"1px solid #e0e0e0",cursor:"pointer",fontSize:12}}>닫기</button>
+          </div>
+        </div>
+      )}
       {/* 반품 탑 */}
       <Card style={{marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
@@ -1415,7 +1662,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             ))}
           </div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
+            {[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankWorstPeriod(k)}
                 style={{background:rankWorstPeriod===k?D.black:"transparent",
                   color:rankWorstPeriod===k?"#fff":D.textSub,
@@ -1449,7 +1696,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* 플랫폼별 반품률 높은 옵션 */}
       {returnOptionStats.length>0&&(
         <Card style={{marginBottom:20}}>
-          <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
+            <div style={{display:"flex",gap:4}}>
+              {[["1m","1달"],["3m","3달"],["6m","6달"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setReturnOptionPeriod(k)}
+                  style={{background:returnOptionPeriod===k?D.black:"transparent",color:returnOptionPeriod===k?"#fff":D.textSub,
+                    border:`1px solid ${returnOptionPeriod===k?D.black:D.border}`,borderRadius:5,
+                    padding:"3px 9px",fontSize:10,cursor:"pointer",fontWeight:returnOptionPeriod===k?600:400}}>{l}</button>
+              ))}
+            </div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
             {returnOptionStats.map(({ch,colors,sizes})=>(
               <div key={ch}>
@@ -1517,6 +1774,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                 db.from("stock_uploads").delete().gte("upload_date","2000-01-01"),
                 db.from("revenues").delete().gte("date","2000-01-01"),
               ]);
+              try{localStorage.removeItem("cs_data");}catch{}
               setDeleteAll(false);
               onRefresh();
             }} style={{background:D.red,color:"#fff",border:"none",borderRadius:6,
@@ -1531,7 +1789,556 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           </div>
         )}
       </div>
+
+      {/* KPI 소스 모달 */}
+      {kpiModal&&(()=>{
+        const OFFL=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+        const normCh=ch=>OFFL.has(ch||"")?"오프라인 스토어":(ch||"미분류");
+
+        /* ── 총 매출 ── */
+        let modalTitle="", modalContent=null;
+        if(kpiModal==="revenue"){
+          modalTitle="총 매출 소스";
+          // by channel
+          const byCh={};
+          filteredRevenues.forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={revenue:0,refund:0,count:0};
+            byCh[ch].revenue+=(r.amount||0);
+            byCh[ch].refund+=(r.refund_amount||0);
+            byCh[ch].count++;
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>(b[1].revenue-b[1].refund)-(a[1].revenue-a[1].refund));
+          // by date (last 30 entries or all)
+          const byDate={};
+          filteredRevenues.forEach(r=>{
+            const d=r.date||"—";
+            if(!byDate[d]) byDate[d]={revenue:0,refund:0};
+            byDate[d].revenue+=(r.amount||0);
+            byDate[d].refund+=(r.refund_amount||0);
+          });
+          const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>매출</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>순매출</th>
+                  </tr></thead>
+                  <tbody>
+                    {chRows.map(([ch,d])=>(
+                      <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(d.revenue)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{d.refund>0?fmtWon(d.refund):"—"}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700}}>{fmtWon(d.revenue-d.refund)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(chRows.reduce((s,[,d])=>s+d.revenue,0))}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{fmtWon(chRows.reduce((s,[,d])=>s+d.refund,0))}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(stats.totalRevenue)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>날짜별 (최근 30일)</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>매출</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>순매출</th>
+                  </tr></thead>
+                  <tbody>
+                    {dateRows.map(([d,v])=>(
+                      <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(v.revenue)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{v.refund>0?fmtWon(v.refund):"—"}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600}}>{fmtWon(v.revenue-v.refund)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── 배송 ── */
+        else if(kpiModal==="shipped"){
+          modalTitle="배송 소스";
+          const shipped=filteredOrders.filter(r=>r.status==="배송");
+          const byCh={};
+          shipped.forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={cnt:0,oids:new Set()};
+            byCh[ch].cnt++;
+            const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
+            if(oid) byCh[ch].oids.add(oid);
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>b[1].cnt-a[1].cnt);
+          const byDate={};
+          shipped.forEach(r=>{
+            const d=r.order_date||"—";
+            if(!byDate[d]) byDate[d]=0;
+            byDate[d]++;
+          });
+          const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문수(고유)</th>
+                  </tr></thead>
+                  <tbody>
+                    {chRows.map(([ch,d])=>(
+                      <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.cnt.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{d.oids.size.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
+                      <td/>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>날짜별 (최근 30일)</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
+                  </tr></thead>
+                  <tbody>
+                    {dateRows.map(([d,cnt])=>(
+                      <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green,fontWeight:600}}>{cnt.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── 반품률 ── */
+        else if(kpiModal==="returnRate"){
+          modalTitle="반품 소스";
+          const byCh={};
+          filteredOrders.filter(r=>r.status==="배송"||r.status==="반품").forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={shipped:0,returned:0};
+            if(r.status==="배송") byCh[ch].shipped++;
+            if(r.status==="반품") byCh[ch].returned++;
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>b[1].returned-a[1].returned);
+          // top return products
+          const byProd={};
+          filteredOrders.filter(r=>r.status==="반품").forEach(r=>{
+            const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
+            if(!byProd[k]) byProd[k]=0;
+            byProd[k]++;
+          });
+          const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별 반품률</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품률</th>
+                  </tr></thead>
+                  <tbody>
+                    {chRows.map(([ch,d])=>{
+                      const rate=d.shipped>0?(d.returned/d.shipped*100):0;
+                      return(
+                        <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
+                          <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
+                          <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.shipped.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{d.returned.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700,color:rate>10?D.red:D.textSub}}>{rate.toFixed(1)}%</td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>반품 Top 상품</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>상품/옵션</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품수</th>
+                  </tr></thead>
+                  <tbody>
+                    {prodRows.map(([k,cnt])=>(
+                      <tr key={k} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red,fontWeight:600}}>{cnt.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── 입고 수량 ── */
+        else if(kpiModal==="stock"){
+          modalTitle="입고 수량 소스";
+          const byDate={};
+          filteredStocks.forEach(r=>{
+            const d=r.upload_date||"—";
+            if(!byDate[d]) byDate[d]={qty:0,skus:0};
+            byDate[d].qty+=(r.qty||0);
+            byDate[d].skus++;
+          });
+          const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1);
+          // top stocked products
+          const byProd={};
+          filteredStocks.forEach(r=>{
+            const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
+            if(!byProd[k]) byProd[k]=0;
+            byProd[k]+=(r.qty||0);
+          });
+          const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>업로드 날짜별</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>수량</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>SKU수</th>
+                  </tr></thead>
+                  <tbody>
+                    {dateRows.map(([d,v])=>(
+                      <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600,color:D.blue}}>{v.qty.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{v.skus.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.blue}}>{stats.totalStock.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{filteredStocks.length.toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div style={{marginTop:10,padding:"8px 10px",background:D.surfaceAlt,borderRadius:6,fontSize:11,color:D.textMeta}}>
+                  ※ 동일 SKU는 최신 업로드 기준으로 1건만 반영됩니다.
+                </div>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>입고 Top 상품</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>상품/옵션</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>수량</th>
+                  </tr></thead>
+                  <tbody>
+                    {prodRows.map(([k,qty])=>(
+                      <tr key={k} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.blue,fontWeight:600}}>{qty.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return(
+          <div onClick={()=>setKpiModal(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+                width:"min(860px,95vw)",maxHeight:"85vh",overflowY:"auto",
+                boxShadow:"0 8px 40px rgba(0,0,0,0.22)",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+                <div style={{fontWeight:700,fontSize:15,color:D.black,letterSpacing:"0.04em"}}>{modalTitle}</div>
+                <button onClick={()=>setKpiModal(null)}
+                  style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                    padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+              </div>
+              {modalContent}
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// INVENTORY AGING BOARD
+// ─────────────────────────────────────────────
+const AGING_STAGES=[
+  {key:"normal",  label:"정상",   min:0,  max:30,  color:"#22c55e", bg:"#f0fdf4"},
+  {key:"caution", label:"주의",   min:31, max:90,  color:"#f59e0b", bg:"#fffbeb"},
+  {key:"slow",    label:"저회전", min:91, max:180, color:"#f97316", bg:"#fff7ed"},
+  {key:"dead",    label:"악성",   min:181,max:Infinity, color:"#ef4444", bg:"#fef2f2"},
+];
+function getAgingStage(days){
+  return AGING_STAGES.find(s=>days>=s.min&&days<=s.max)||AGING_STAGES[3];
+}
+
+function InventoryAgingUploader({ onDone }){
+  const today=new Date().toISOString().slice(0,10);
+  const [diagDate,setDiagDate]=useState(today);
+  const [fileName,setFileName]=useState("");
+  const [preview,setPreview]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [infoOpen,setInfoOpen]=useState(false);
+
+  const handleFile=useCallback(file=>{
+    if(!file) return;
+    setFileName(file.name); setResult(null);
+    Papa.parse(file,{header:true,skipEmptyLines:true,
+      complete:({data})=>{
+        try{
+          if(!data.length) throw new Error("CSV 데이터가 없습니다");
+          const cols=Object.keys(data[0]);
+          const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
+          const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
+          const prodCol=find("상품명","상품","product","품명");
+          const optCol=find("옵션","option","사이즈","색상");
+          const qtyCol=find("수량","qty","quantity","개수","재고");
+          const recCol=find("처음입고일","입고일","최초입고","first","입고");
+          const shipCol=find("마지막배송일","최종배송일","마지막출고","last","배송일","출고일");
+          if(!prodCol) throw new Error("상품명 컬럼을 찾을 수 없습니다");
+          if(!recCol)  throw new Error("처음입고일 컬럼을 찾을 수 없습니다");
+          const rows=data.map(r=>({
+            product_name:String(r[prodCol]||"").trim(),
+            option_name:optCol?String(r[optCol]||"").trim():"",
+            qty:toNum(r[qtyCol]||"0"),
+            first_received_date:toDate(r[recCol]),
+            last_shipped_date:shipCol&&r[shipCol]?toDate(r[shipCol]):null,
+            diagnosis_date:diagDate,
+          })).filter(r=>r.product_name&&r.first_received_date);
+          if(!rows.length) throw new Error("유효한 데이터가 없습니다");
+          setPreview(rows);
+        }catch(e){setResult({type:"error",msg:e.message});}
+      },error:e=>setResult({type:"error",msg:e.message})});
+  },[diagDate]);
+
+  const handleUpload=async()=>{
+    if(!preview?.length) return;
+    setLoading(true); setResult(null);
+    const db=await getSupabase();
+    const {error:delErr}=await db.from("inventory_aging").delete().gte("diagnosis_date","2000-01-01");
+    if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
+    for(let i=0;i<preview.length;i+=500){
+      const {error}=await db.from("inventory_aging").insert(preview.slice(i,i+500));
+      if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
+    }
+    try{localStorage.setItem("merryon_aging_date",diagDate);}catch{}
+    setResult({type:"success",msg:`${preview.length}건 저장 완료`});
+    setPreview(null); setFileName("");
+    onDone?.();
+    setLoading(false);
+  };
+
+  return (
+    <Card style={{marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+        <SecTitle>재고 현황 업로드</SecTitle>
+        <InfoBtn onClick={()=>setInfoOpen(true)}/>
+        <span style={{fontSize:10,color:D.textMeta,marginLeft:4}}>
+          진단 날짜: <input type="date" value={diagDate} onChange={e=>setDiagDate(e.target.value)}
+            style={{fontSize:10,border:`1px solid ${D.border}`,borderRadius:4,padding:"1px 5px",color:D.black}}/>
+        </span>
+      </div>
+      <div style={{fontSize:11,color:D.textMeta,marginBottom:12,lineHeight:1.7,padding:"8px 10px",
+        background:D.bg,borderRadius:6,border:`1px solid ${D.border}`}}>
+        ⚠ 해당 데이터는 현재고를 기반으로 진단해야하므로 누적 데이터가 유의미하지 않습니다.<br/>
+        필요 시 <strong>정상재고 1 이상</strong>으로 검색한 애널리틱스용 파일을 업로드해주세요.
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <label style={{cursor:"pointer",background:D.black,color:"#fff",borderRadius:6,
+          padding:"6px 14px",fontSize:12,fontWeight:600}}>
+          {fileName||"CSV 파일 선택"}
+          <input type="file" accept=".csv" style={{display:"none"}}
+            onChange={e=>{if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value="";}}/>
+        </label>
+        {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
+        {preview&&(
+          <button onClick={handleUpload} disabled={loading}
+            style={{background:D.blue,color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            {loading?"저장 중…":"저장"}
+          </button>
+        )}
+      </div>
+      {result&&<div style={{marginTop:8,fontSize:11,color:result.type==="error"?D.red:D.green}}>{result.msg}</div>}
+      {infoOpen&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}
+          onClick={()=>setInfoOpen(false)}>
+          <div style={{background:"#fff",borderRadius:12,padding:28,maxWidth:340,width:"90%"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>재고 에이징 기준</div>
+            {AGING_STAGES.map(s=>(
+              <div key={s.key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:12,height:12,borderRadius:"50%",background:s.color,flexShrink:0}}/>
+                <div style={{fontSize:13}}>
+                  <strong style={{color:s.color}}>{s.label}</strong>
+                  <span style={{color:D.textMeta,marginLeft:6}}>
+                    {s.max===Infinity?`${s.min}일 이상`:`${s.min}~${s.max}일`}
+                  </span>
+                </div>
+              </div>
+            ))}
+            <div style={{fontSize:11,color:D.textMeta,marginTop:12,lineHeight:1.6}}>
+              기준: <strong>마지막 배송일</strong> 기준, 없는 경우 <strong>처음 입고일</strong> 기준
+            </div>
+            <button onClick={()=>setInfoOpen(false)}
+              style={{marginTop:16,width:"100%",padding:"8px",background:D.black,color:"#fff",
+                border:"none",borderRadius:6,fontSize:13,cursor:"pointer"}}>닫기</button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function InventoryAgingBoard({ diagDate }){
+  const [rows,setRows]=useState([]);
+  const [selectedStage,setSelectedStage]=useState(null);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      const db=await getSupabase();
+      const {data}=await db.from("inventory_aging").select("*");
+      setRows(data||[]);
+      setLoading(false);
+    })();
+  },[diagDate]);
+
+  const enriched=useMemo(()=>{
+    if(!diagDate) return [];
+    const base=new Date(diagDate);
+    return rows.map(r=>{
+      const refDate=r.last_shipped_date||r.first_received_date;
+      const days=refDate?Math.max(0,Math.round((base-new Date(refDate))/(1000*60*60*24))):0;
+      return {...r,days,stage:getAgingStage(days)};
+    });
+  },[rows,diagDate]);
+
+  const stageSummary=useMemo(()=>
+    AGING_STAGES.map(s=>({
+      ...s,
+      items:enriched.filter(r=>r.stage.key===s.key),
+      totalQty:enriched.filter(r=>r.stage.key===s.key).reduce((sum,r)=>sum+(r.qty||0),0),
+    }))
+  ,[enriched]);
+
+  const shown=selectedStage
+    ? enriched.filter(r=>r.stage.key===selectedStage).sort((a,b)=>b.days-a.days)
+    : [];
+
+  if(loading) return <div style={{padding:20,color:D.textMeta,fontSize:12}}>불러오는 중…</div>;
+  if(!enriched.length) return null;
+
+  return (
+    <Card>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+        <SecTitle>재고 에이징 보드</SecTitle>
+        {diagDate&&<span style={{fontSize:11,color:D.textMeta}}>진단 기준일: {diagDate}</span>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+        {stageSummary.map(s=>(
+          <div key={s.key} onClick={()=>setSelectedStage(selectedStage===s.key?null:s.key)}
+            style={{padding:"12px 14px",borderRadius:8,background:selectedStage===s.key?s.color:s.bg,
+              border:`1.5px solid ${selectedStage===s.key?s.color:s.color+"44"}`,
+              cursor:"pointer",transition:"all 0.15s"}}>
+            <div style={{fontSize:11,fontWeight:700,color:selectedStage===s.key?"#fff":s.color,marginBottom:4}}>
+              {s.label}
+              <span style={{fontSize:10,fontWeight:400,marginLeft:4}}>
+                {s.max===Infinity?`${s.min}일+`:`${s.min}~${s.max}일`}
+              </span>
+            </div>
+            <div style={{fontSize:18,fontWeight:800,color:selectedStage===s.key?"#fff":s.color}}>{s.items.length}<span style={{fontSize:11,fontWeight:400,marginLeft:2}}>종</span></div>
+            <div style={{fontSize:11,color:selectedStage===s.key?"rgba(255,255,255,0.85)":D.textMeta,marginTop:2}}>
+              재고 {s.totalQty.toLocaleString()}개
+            </div>
+          </div>
+        ))}
+      </div>
+      {selectedStage&&shown.length>0&&(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{borderBottom:`2px solid ${D.border}`}}>
+              {["상품명","옵션","수량","처음입고일","마지막배송일","경과일","단계"].map(h=>(
+                <th key={h} style={{padding:"7px 9px",textAlign:h==="수량"||h==="경과일"?"right":"left",
+                  color:D.textMeta,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {shown.map((r,i)=>(
+                <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
+                  <td style={{padding:"7px 9px",fontWeight:500,maxWidth:200,overflow:"hidden",
+                    textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
+                  <td style={{padding:"7px 9px",color:D.textMeta,maxWidth:120,overflow:"hidden",
+                    textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.option_name||"—"}</td>
+                  <td style={{padding:"7px 9px",textAlign:"right",fontWeight:600}}>{(r.qty||0).toLocaleString()}</td>
+                  <td style={{padding:"7px 9px",color:D.textMeta,whiteSpace:"nowrap"}}>{r.first_received_date||"—"}</td>
+                  <td style={{padding:"7px 9px",color:D.textMeta,whiteSpace:"nowrap"}}>{r.last_shipped_date||"—"}</td>
+                  <td style={{padding:"7px 9px",textAlign:"right",fontWeight:700,color:r.stage.color}}>{r.days}일</td>
+                  <td style={{padding:"7px 9px"}}>
+                    <span style={{background:r.stage.bg,color:r.stage.color,border:`1px solid ${r.stage.color}55`,
+                      borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700}}>{r.stage.label}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -1550,7 +2357,23 @@ function LogisticsFlow({ orders, stocks, ts }) {
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
-  const filteredTableStocks=useMemo(()=>filterByDate(stocks,"upload_date",tablePeriod,"",""),[stocks,tablePeriod]);
+  const filteredTableStocks=useMemo(()=>{
+    // 같은 상품이 여러 배치로 업로드된 경우 최신 배치만 합산 (더블링 방지)
+    const latestDate={};
+    stocks.forEach(r=>{
+      const k=r.product_name||"미분류";
+      if(!latestDate[k]||r.upload_date>latestDate[k]) latestDate[k]=r.upload_date;
+    });
+    const prodQty={};
+    stocks.forEach(r=>{
+      const k=r.product_name||"미분류";
+      if(r.upload_date===latestDate[k]){
+        if(!prodQty[k]) prodQty[k]={product_name:k,qty:0,upload_date:latestDate[k]};
+        prodQty[k].qty+=(r.qty||0);
+      }
+    });
+    return Object.values(prodQty);
+  },[stocks]);
 
 
   const PBtn=({k,l})=>(
@@ -1728,6 +2551,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
           </div>
         </Card>
       )}
+
     </div>
   );
 }
@@ -2459,8 +3283,13 @@ function StockUploader({ onUpdate }) {
     if(!preview?.length||!dateValid) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    const {error:delErr}=await db.from("stock_uploads").delete().gte("upload_date",startDate).lte("upload_date",endDate);
-    if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
+    // 업로드 파일 내 상품들의 기존 데이터를 날짜 무관 전부 삭제 (이전 배치와 날짜 충돌 방지)
+    const productNames=[...new Set(preview.map(r=>r.product_name).filter(Boolean))];
+    for(let pi=0;pi<productNames.length;pi+=100){
+      const chunk=productNames.slice(pi,pi+100);
+      const {error:delErr}=await db.from("stock_uploads").delete().in("product_name",chunk);
+      if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
+    }
     const rows=preview.map(r=>({...r,upload_date:endDate}));
     for(let i=0;i<rows.length;i+=500){
       const {error}=await db.from("stock_uploads").insert(rows.slice(i,i+500));
@@ -2567,26 +3396,49 @@ function EasyAdminUploader({ onUpdate }) {
   const handleFile=useCallback(file=>{
     if(!file) return;
     setFileName(file.name); setResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,
+    Papa.parse(file,{header:true,skipEmptyLines:true,transformHeader:h=>h.trim(),
       complete:({data})=>{
         try{
           if(!data.length) throw new Error("CSV 데이터가 없습니다");
           const f=detectFields(Object.keys(data[0]));
-          if(!f.orderId) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
+
+          // 배송일 컬럼 명시적 우선 탐색 (Unicode 정규화 + exact match 우선)
+          const allCols=Object.keys(data[0]);
+          const nrm=s=>String(s).trim().normalize("NFC");
+          const findCol=(...names)=>{
+            // 1순위: exact match
+            for(const n of names){ const c=allCols.find(h=>nrm(h)===nrm(n)); if(c) return c; }
+            // 2순위: includes match
+            for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
+            return null;
+          };
+          const dateCol = findCol("배송일","배송일시","배송날짜","delivery_date")
+                       || findCol("주문일","주문일시","주문날짜","order_date","날짜","date")
+                       || f.date;
+          const orderIdCol = findCol("관리번호","order_id") || findCol("주문번호","orderid") || f.orderId;
+          const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
+          const productCol = findCol("상품명","product","품명") || f.product;
+          const optionCol  = findCol("옵션명","옵션","option") || f.option;
+          const csCol      = findCol("CS","cs처리","cs상태","cs") || f.cs;
+          const statusCol  = findCol("상태","status") || f.status;
+          const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
+
+          if(!orderIdCol) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
+          if(!dateCol)    throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
 
           // 관리번호+상품명+옵션 기준 중복 합산
           const grouped={};
-          data.filter(r=>r[f.orderId]).forEach(r=>{
-            const oid=String(r[f.orderId]).trim();
-            const prod=String(r[f.product]||"").trim();
-            const opt=String(r[f.option]||"").trim();
-            const ch=normChannel(r[f.channel]);
-            const rawDate=r[f.date];
+          data.filter(r=>r[orderIdCol]).forEach(r=>{
+            const oid=String(r[orderIdCol]).trim();
+            const prod=String(r[productCol]||"").trim();
+            const opt=String(r[optionCol]||"").trim();
+            const ch=normChannel(r[channelCol]);
+            const rawDate=r[dateCol];
             const dateVal=toDate(rawDate);
-            const csRaw=f.cs?String(r[f.cs]||"").trim():"";
-            const statusRaw=f.status?String(r[f.status]||"").trim():"";
-            const status=csRaw?normCS(csRaw):(statusRaw?"배송":"배송");
-            const qty=toNum(r[f.qty])||1;
+            const csRaw=csCol?String(r[csCol]||"").trim():"";
+            const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
+            const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
+            const qty=toNum(r[qtyCol])||1;
             // 관리번호+상품명+옵션 조합을 DB key로 사용 → 같은 관리번호 내 여러 상품 허용
             const dbKey=`${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
@@ -2598,7 +3450,7 @@ function EasyAdminUploader({ onUpdate }) {
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
-          setResult(null);
+          setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },
       error:e=>setResult({type:"error",msg:e.message}),
@@ -2625,7 +3477,7 @@ function EasyAdminUploader({ onUpdate }) {
     const {error:delErr}=await db.from("orders").delete().gte("order_date",startDate).lte("order_date",endDate);
     if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
     for(let i=0;i<inRange.length;i+=500){
-      const {error}=await db.from("orders").insert(inRange.slice(i,i+500));
+      const {error}=await db.from("orders").upsert(inRange.slice(i,i+500),{onConflict:"order_id"});
       if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
@@ -2661,12 +3513,7 @@ function EasyAdminUploader({ onUpdate }) {
               배송일 {startDate} ~ {endDate}
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 CSV 선택"/>
-            {parsedFile&&(
-              <div style={{color:D.green,fontSize:11,marginTop:8}}>
-                ✓ {parsedFile.length}건 파싱 완료
-              </div>
-            )}
-            {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
+            {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
                 {loading?"분석 중...":"미리보기"}
@@ -2734,21 +3581,183 @@ function EasyAdminUploader({ onUpdate }) {
 }
 
 // ─────────────────────────────────────────────
+// DATA INPUT — 매장 판매 CSV (이지체인)
+// ─────────────────────────────────────────────
+const STORE_CHANNELS = ["판교점","일산점"];
+
+function StoreUploader({ onUpdate }) {
+  const today = new Date().toISOString().slice(0,10);
+  const [startDate,setStartDate]=useState(today);
+  const [endDate,setEndDate]=useState(today);
+  const [step,setStep]=useState(0);
+  const [fileName,setFileName]=useState("");
+  const [preview,setPreview]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [infoOpen,setInfoOpen]=useState(false);
+  const dateValid=startDate&&endDate&&startDate<=endDate;
+
+  const handleFile=useCallback(file=>{
+    if(!file) return;
+    setFileName(file.name); setResult(null);
+    Papa.parse(file,{header:true,skipEmptyLines:true,
+      complete:({data})=>{
+        try{
+          if(!data.length) throw new Error("CSV 데이터가 없습니다");
+          const cols=Object.keys(data[0]);
+          const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
+          const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
+          const dateCol=find("구매일자","주문일","판매일","날짜","date");
+          const prodCol=find("상품명","상품","product","품명");
+          const optCol=find("옵션","option","사이즈","색상");
+          const amtCol=find("실제판매가","판매가","금액","실판매가","amount");
+          const storeCol=find("매장","store","지점","판매점");
+          if(!dateCol) throw new Error("구매일자 컬럼을 찾을 수 없습니다. 헤더: "+cols.join(", "));
+          if(!amtCol) throw new Error("실제판매가 컬럼을 찾을 수 없습니다. 헤더: "+cols.join(", "));
+
+          const rows=data.map(r=>({
+            date:toDate(r[dateCol]),
+            store:storeCol?String(r[storeCol]||"").trim():"오프라인",
+            product_name:prodCol?String(r[prodCol]||"").trim():"",
+            option_name:optCol?String(r[optCol]||"").trim():"",
+            amount:(()=>{const raw=String(r[amtCol]||"0").trim();const neg=raw.startsWith("(")&&raw.endsWith(")");const n=Number(raw.replace(/[^0-9.]/g,""));return neg?-n:n;})(),
+          })).filter(r=>r.date&&r.amount!==0);
+
+          if(!rows.length) throw new Error("유효한 데이터가 없습니다 (실제판매가=0 제외)");
+
+          // 날짜+매장별 집계
+          const aggMap={};
+          rows.forEach(r=>{
+            const key=`${r.date}__${r.store}`;
+            if(!aggMap[key]) aggMap[key]={date:r.date,channel:r.store,amount:0,order_count:0,refund_amount:0,refund_count:0};
+            if(r.amount>0){ aggMap[key].amount+=r.amount; aggMap[key].order_count++; }
+            else { aggMap[key].refund_amount+=Math.abs(r.amount); aggMap[key].refund_count++; }
+          });
+          setPreview({rows,agg:Object.values(aggMap)});
+          setStep(2);
+        }catch(e){setResult({type:"error",msg:e.message});}
+      },
+      error:e=>setResult({type:"error",msg:e.message}),
+    });
+  },[]);
+
+  const handleUpload=async()=>{
+    if(!preview?.agg?.length||!dateValid) return;
+    setLoading(true); setResult(null);
+    const db=await getSupabase();
+    // 기간 내 매장 채널 기존 데이터 삭제
+    for(const ch of [...STORE_CHANNELS,"오프라인"]){
+      await db.from("revenues").delete().gte("date",startDate).lte("date",endDate).eq("channel",ch);
+    }
+    for(let i=0;i<preview.agg.length;i+=200){
+      const {error}=await db.from("revenues").upsert(preview.agg.slice(i,i+200),{onConflict:"date,channel"});
+      if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
+    }
+    const ts2=nowStr();
+    setStep(3);
+    setResult({type:"success",msg:`${preview.agg.length}건 저장 완료 (거래 ${preview.rows.length}건)`,ts:ts2});
+    onUpdate(ts2); setLoading(false);
+  };
+
+  const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);};
+
+  return (
+    <div>
+      <Steps current={step} steps={["기간 선택","파일 업로드","미리보기","완료"]}/>
+      <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
+        <Card>
+          {step===0&&<>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
+              <span style={{fontWeight:600,fontSize:13}}>매장 판매 기간 선택</span>
+              <button onClick={()=>setInfoOpen(true)}
+                style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:"50%",
+                  width:20,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",
+                  fontSize:10,cursor:"pointer",color:D.textSub}}>i</button>
+            </div>
+            <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
+            <div style={{color:D.red,fontSize:10,marginBottom:20}}>⚠ 확정 시 해당 기간 매장 데이터 교체</div>
+            <Btn onClick={()=>setStep(1)} disabled={!dateValid} style={{width:"100%"}}>다음</Btn>
+          </>}
+          {step===1&&<>
+            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
+            <div style={{color:D.textMeta,fontSize:11,marginBottom:10}}>기간: {startDate} ~ {endDate}</div>
+            <DropZone onFile={handleFile} fileName={fileName} label="이지체인 매출 CSV 업로드"/>
+            {preview&&<div style={{color:D.green,fontSize:11,marginTop:8}}>✓ {preview.rows.length}건 파싱 완료</div>}
+            {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
+            <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
+              <Btn onClick={handleUpload} disabled={!preview||loading} style={{width:"100%"}}>
+                {loading?"처리 중...":"확정 업로드"}
+              </Btn>
+              <button onClick={()=>setStep(0)} style={{background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:"5px"}}>← 기간 다시 선택</button>
+            </div>
+          </>}
+          {step===2&&<>
+            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>미리보기 확인</div>
+            <StatRow items={[
+              {label:"거래 건수",value:`${preview?.rows?.length||0}건`,color:D.green},
+              {label:"매장 수",value:`${new Set(preview?.rows?.map(r=>r.store)).size}개`,color:D.blue},
+            ]}/>
+            <Btn onClick={handleUpload} disabled={loading} style={{width:"100%",marginBottom:7}}>
+              {loading?"처리 중...":"확정 업로드"}
+            </Btn>
+            <button onClick={()=>setStep(1)} style={{background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:"5px"}}>← 파일 다시 선택</button>
+            {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
+          </>}
+          {step===3&&<div style={{textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:8}}>✓</div>
+            <div style={{color:D.green,fontWeight:600,marginBottom:10}}>업로드 완료</div>
+            {result&&<Alert type={result.type} msg={result.msg} ts={result.ts}/>}
+            <Btn onClick={reset} variant="ghost" style={{width:"100%",marginTop:12}}>새 업로드</Btn>
+          </div>}
+        </Card>
+        <Card>
+          <div style={{fontWeight:500,fontSize:12,marginBottom:12}}>파일 미리보기</div>
+          {preview?.rows?.length>0?(
+            <div style={{overflowY:"auto",maxHeight:440}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
+                  {["날짜","매장","상품명","옵션","금액"].map(h=>(
+                    <th key={h} style={{padding:"5px 7px",textAlign:h==="금액"?"right":"left",color:D.textMeta,fontWeight:400}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {preview.rows.slice(0,100).map((r,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid ${D.border}`,background:r.amount<0?"#fff5f5":"transparent"}}>
+                      <td style={{padding:"4px 7px",color:D.textMeta}}>{r.date}</td>
+                      <td style={{padding:"4px 7px",fontWeight:600}}>{r.store}</td>
+                      <td style={{padding:"4px 7px",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
+                      <td style={{padding:"4px 7px",color:D.textMeta}}>{r.option_name}</td>
+                      <td style={{padding:"4px 7px",textAlign:"right",color:r.amount<0?D.red:D.green,fontWeight:600}}>
+                        {r.amount<0?"반품 ":""}₩{Math.abs(r.amount).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {preview.rows.length>100&&<tr><td colSpan={5} style={{padding:6,textAlign:"center",color:D.textMeta,fontSize:10}}>+{preview.rows.length-100}건 더</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          ):<div style={{color:D.textMeta,textAlign:"center",padding:60,fontSize:12}}>CSV 파일을 선택하면 미리보기가 표시됩니다</div>}
+        </Card>
+      </div>
+      <InfoModal show={infoOpen} onClose={()=>setInfoOpen(false)} title="매장 판매 CSV 업로드 가이드">
+        이지체인 <strong>기간별 판매관리(B900)</strong>에서 상품별 매출자료를 다운로드 후 CSV로 변환하여 업로드하세요.<br/><br/>
+        <strong>필수 컬럼:</strong> 구매일자 · 실제판매가 · 매장<br/>
+        <strong>선택 컬럼:</strong> 상품명 · 옵션<br/><br/>
+        • 실제판매가 <strong>0원 행</strong>은 자동 제외됩니다<br/>
+        • 실제판매가 <strong>음수(−)</strong>는 반품으로 처리됩니다<br/>
+        • 판교점 · 일산점은 대시보드에서 <strong>오프라인 스토어</strong>로 합산됩니다
+      </InfoModal>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // DATA INPUT (탭 컨테이너)
 // ─────────────────────────────────────────────
 function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }) {
   const [tab,setTab]=useState("revenue");
   const [stockInfoOpen,setStockInfoOpen]=useState(false);
   const [orderInfoOpen,setOrderInfoOpen]=useState(false);
-
-  const InfoBtn=({onClick})=>(
-    <button onClick={onClick}
-      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:"50%",
-        width:20,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",
-        fontSize:10,cursor:"pointer",color:D.textSub,marginLeft:6,verticalAlign:"middle"}}>
-      i
-    </button>
-  );
 
   const lastDate=(arr,field)=>{
     const d=arr.map(r=>r[field]).filter(Boolean).sort().at(-1);
@@ -2759,6 +3768,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }
     {key:"revenue",label:<span>매출 입력{lastDate(revenues,"date")}</span>},
     {key:"stock",label:<span>입고 CSV{lastDate(stocks,"upload_date")} <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
     {key:"orders",label:<span>이지어드민 CSV(배송일 기준){lastDate(orders,"order_date")} <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
+    {key:"store",label:"매장 판매 CSV"},
     {key:"cs",label:"CS 데이터"},
     {key:"delete",label:"데이터 삭제"},
   ];
@@ -2782,6 +3792,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }
       {tab==="revenue"&&<RevenueForm onUpdate={ts=>onUpdate("revenue",ts)}/>}
       {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)}/>}
       {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();}}/>}
+      {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("revenue",ts);onDataChange?.();}}/>}
       {tab==="cs"&&<CSDataInput/>}
       {tab==="delete"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
@@ -2810,6 +3821,31 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }
 }
 
 // ─────────────────────────────────────────────
+// LOADING SCREEN
+// ─────────────────────────────────────────────
+function LoadingScreen() {
+  const [dots,setDots]=useState("");
+  useEffect(()=>{
+    const t=setInterval(()=>setDots(d=>d.length>=3?"":d+"."),500);
+    return()=>clearInterval(t);
+  },[]);
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",
+      justifyContent:"center",minHeight:"100vh",background:D.bg}}>
+      <div style={{marginBottom:24}}>
+        <div style={{fontWeight:800,fontSize:22,letterSpacing:"0.12em",color:D.black,textAlign:"center"}}>MERRYON</div>
+        <div style={{fontSize:10,color:D.textMeta,letterSpacing:"0.06em",textAlign:"center",marginTop:2}}>COMMERCE ANALYTICS</div>
+      </div>
+      <div style={{width:40,height:40,border:`3px solid ${D.border}`,
+        borderTop:`3px solid ${D.black}`,borderRadius:"50%",
+        animation:"mry-spin 0.75s linear infinite",marginBottom:20}}/>
+      <div style={{color:D.textMeta,fontSize:12}}>데이터 불러오는 중{dots}</div>
+      <style>{`@keyframes mry-spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
@@ -2817,12 +3853,15 @@ export default function App() {
   const [orders,setOrders]=useState([]);
   const [stocks,setStocks]=useState([]);
   const [revenues,setRevenues]=useState([]);
+  const [appLoading,setAppLoading]=useState(true);
+  const firstLoad=useRef(true);
   const [ts,setTs]=useState(()=>{
     try{return JSON.parse(localStorage.getItem("merryon_ts")||"null")||{orders:null,stock:null,revenue:null};}
     catch{return{orders:null,stock:null,revenue:null};}
   });
 
   const loadData=useCallback(async()=>{
+    const t0=Date.now();
     const db=await getSupabase();
     // 전체 orders 페이지네이션 (Supabase 기본 1000행 제한 우회)
     let allOrders=[];
@@ -2835,13 +3874,27 @@ export default function App() {
       if(data.length<PAGE) break;
       from+=PAGE;
     }
-    const [s,r]=await Promise.all([
-      db.from("stock_uploads").select("*"),
+    let allStocks=[];
+    let sf=0;
+    while(true){
+      const {data:sd,error:se}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).range(sf,sf+PAGE-1);
+      if(se||!sd||sd.length===0) break;
+      allStocks=allStocks.concat(sd);
+      if(sd.length<PAGE) break;
+      sf+=PAGE;
+    }
+    const [r]=await Promise.all([
       db.from("revenues").select("*").order("date",{ascending:false}),
     ]);
-    setOrders(allOrders.map(r=>({...r,channel:normChannel(r.channel)})));
-    setStocks(s.data||[]);
+    setOrders(allOrders.map(o=>({...o,channel:normChannel(o.channel)})));
+    setStocks(allStocks);
     setRevenues(r.data||[]);
+    if(firstLoad.current){
+      const elapsed=Date.now()-t0;
+      if(elapsed<3000) await new Promise(res=>setTimeout(res,3000-elapsed));
+      setAppLoading(false);
+      firstLoad.current=false;
+    }
   },[]);
 
   useEffect(()=>{ loadData(); },[loadData]);
@@ -2858,6 +3911,8 @@ export default function App() {
     {key:"promo",label:"프로모션"},
     {key:"input",label:"데이터 입력"},
   ];
+
+  if(appLoading) return <LoadingScreen/>;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", minHeight:"100vh", background:D.bg,
