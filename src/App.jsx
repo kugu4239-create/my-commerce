@@ -69,7 +69,7 @@ const normChannel = raw => {
   if (!raw) return "미분류";
   const v = String(raw).trim();
   if (v === "MERRYON") return "자사몰";
-  if (v === "예약거래") return "오프라인스토어";
+  if (v === "예약거래") return "오프라인 스토어";
   return v;
 };
 
@@ -783,7 +783,7 @@ function analyze(orderRows, stockRows, revenueRows) {
     if(r.status==="반품") byChannel[ch].returned++;
   });
   // 판교점+일산점 → 오프라인 스토어 합산
-  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인"]);
+  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
@@ -930,7 +930,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const optionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",optionPeriod,"",""),[orders,optionPeriod]);
   const optionStats=useMemo(()=>{
     const map={};
-    optionFilteredOrders.filter(r=>r.status==="배송"&&r.channel!=="오프라인스토어").forEach(r=>{
+    optionFilteredOrders.filter(r=>r.status==="배송").forEach(r=>{
       const ch=r.channel||"미분류";
       if(!map[ch]) map[ch]={colors:{},sizes:{}};
       const {color,size}=parseOption(r.product_name,r.option_name);
@@ -948,7 +948,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const returnOptionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",returnOptionPeriod,"",""),[orders,returnOptionPeriod]);
   const returnOptionStats=useMemo(()=>{
     const map={};
-    returnOptionFilteredOrders.filter(r=>r.channel!=="오프라인스토어").forEach(r=>{
+    returnOptionFilteredOrders.forEach(r=>{
       const ch=r.channel||"미분류";
       if(!map[ch]) map[ch]={};
       const {color,size}=parseOption(r.product_name,r.option_name);
@@ -975,7 +975,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
   const activeChannels=useMemo(()=>{
-    const fixed=["자사몰","29CM","무신사"];
+    const fixed=["자사몰","29CM","무신사","오프라인 스토어"];
     const inData=new Set(orders.map(r=>r.channel||"미분류").filter(Boolean));
     return fixed.filter(c=>inData.has(c));
   },[orders]);
@@ -986,7 +986,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     [rankBestPeriod,orders,rankBestCustomStart,rankBestCustomEnd]);
 
   const bestRows=useMemo(()=>{
-    const base=bestFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
+    const base=bestFilteredOrders;
     const rows=rankBestChannel==="전체"?base:base.filter(r=>r.channel===rankBestChannel);
     const byProd={};
     rows.forEach(r=>{
@@ -1007,7 +1007,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     [rankWorstPeriod,orders,rankWorstCustomStart,rankWorstCustomEnd]);
 
   const worstRows=useMemo(()=>{
-    const base=worstFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
+    const base=worstFilteredOrders;
     const rows=rankWorstChannel==="전체"?base:base.filter(r=>r.channel===rankWorstChannel);
     const byProd={};
     rows.forEach(r=>{
@@ -1071,7 +1071,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
     }
-    const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어");
+    const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인 스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
       if(r.status==="반품"){
@@ -2844,7 +2844,7 @@ function StoreUploader({ onUpdate }) {
             store:storeCol?String(r[storeCol]||"").trim():"오프라인",
             product_name:prodCol?String(r[prodCol]||"").trim():"",
             option_name:optCol?String(r[optCol]||"").trim():"",
-            amount:Number(String(r[amtCol]||"0").replace(/[^0-9.-]/g,"")),
+            amount:(()=>{const raw=String(r[amtCol]||"0").trim();const neg=raw.startsWith("(")&&raw.endsWith(")");const n=Number(raw.replace(/[^0-9.]/g,""));return neg?-n:n;})(),
           })).filter(r=>r.date&&r.amount!==0);
 
           if(!rows.length) throw new Error("유효한 데이터가 없습니다 (실제판매가=0 제외)");
