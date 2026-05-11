@@ -437,7 +437,7 @@ function DataDeleteSection({ table, dateField, label, onDone }) {
 // ─────────────────────────────────────────────
 // MULTI-COLUMN SANKEY  (상품명 → 판매처 → 반품)  입고수=블록 상하높이
 // ─────────────────────────────────────────────
-function ProductSankey({ stockRows, orderRows, period="3m", customStart, customEnd }) {
+function ProductSankey({ stockRows, orderRows, period="3m", customStart, customEnd, limit=20 }) {
   const filteredOrders = useMemo(() => {
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
@@ -461,7 +461,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     const prods = Object.values(prodMap)
       .filter(p => p.shipped>0||p.stock>0)
       .sort((a,b)=>(b.stock||0)-(a.stock||0)||(b.shipped||0)-(a.shipped||0))
-      .slice(0, 30);
+      .slice(0, limit);
     const chanMap = {};
     filteredOrders.forEach(r => {
       const ch = r.channel||"미분류";
@@ -529,6 +529,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const retCenterY  = retBlockY  + retBlockH/2;
   const exchCenterY = exchBlockY + exchBlockH/2;
 
+  const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n)));
+  const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n)));
+
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
@@ -549,7 +552,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
           return Object.entries(p.byChannel).map(([ch,v])=>{
             if (!v.shipped) return null;
             const x2=COLS_X[1], y2=chanYOf[ch]||PAD_T+20;
-            const thick=Math.max(1,(v.shipped/totalShipped)*20);
+            const thick=Math.max(1,(v.shipped/totalShipped)*maxStroke);
             const mx=(x1+x2)/2;
             return <path key={`p${i}c${ch}`} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
               fill="none" stroke={D.SANKEY[i%D.SANKEY.length]} strokeWidth={thick} opacity={0.14}/>;
@@ -563,9 +566,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
           return (
             <g key={`rc${ci}`}>
               {ch.returned>0&&<path d={`M${x1},${y1} C${mx},${y1} ${mx},${retCenterY} ${COLS_X[2]},${retCenterY}`}
-                fill="none" stroke={D.red} strokeWidth={Math.max(1,(ch.returned/(totalReturned||1))*18)} opacity={0.22}/>}
+                fill="none" stroke={D.red} strokeWidth={Math.max(1,(ch.returned/(totalReturned||1))*maxRetStroke)} opacity={0.22}/>}
               {ch.exchanged>0&&<path d={`M${x1},${y1} C${mx},${y1} ${mx},${exchCenterY} ${COLS_X[2]},${exchCenterY}`}
-                fill="none" stroke={D.amber} strokeWidth={Math.max(1,(ch.exchanged/(totalExchanged||1))*18)} opacity={0.22}/>}
+                fill="none" stroke={D.amber} strokeWidth={Math.max(1,(ch.exchanged/(totalExchanged||1))*maxRetStroke)} opacity={0.22}/>}
             </g>
           );
         })}
@@ -1270,6 +1273,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [customEnd,setCustomEnd]=useState("");
   const [sankeyFull,setSankeyFull]=useState(false);
   const [flowSort,setFlowSort]=useState("stock"); // "stock"|"shipped"|"returned"
+  const [sankeyLimit,setSankeyLimit]=useState(20);
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
 
@@ -1317,7 +1321,19 @@ function LogisticsFlow({ orders, stocks, ts }) {
       </div>
 
       <Card style={{marginBottom:12,padding:"12px 16px"}}>
-        <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd}/>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8,gap:4}}>
+          {[20,30,40,50].map(n=>(
+            <button key={n} onClick={()=>setSankeyLimit(n)}
+              style={{background:sankeyLimit===n?D.black:"transparent",
+                color:sankeyLimit===n?"#fff":D.textSub,
+                border:`1px solid ${sankeyLimit===n?D.black:D.border}`,
+                borderRadius:5,padding:"3px 10px",fontSize:10,cursor:"pointer",
+                fontWeight:sankeyLimit===n?600:400}}>
+              {n}개
+            </button>
+          ))}
+        </div>
+        <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd} limit={sankeyLimit}/>
       </Card>
 
       {/* 산키 전체화면 오버레이 */}
@@ -1334,7 +1350,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
             </button>
           </div>
           <div style={{padding:"16px 24px"}}>
-            <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd}/>
+            <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd} limit={sankeyLimit}/>
           </div>
         </div>
       )}
