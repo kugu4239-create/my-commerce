@@ -1162,7 +1162,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-            {[["revenue","매출"],["share","점유율"],["shipped","배송"],["returned","반품"],["rate","반품률"]].map(([k,l])=>(
+            {[["revenue","매출"],["aov","객단가"],["share","점유율"],["shipped","배송"],["returned","반품"],["rate","반품률"]].map(([k,l])=>(
               <button key={k} onClick={()=>setChSort({key:k,dir:"desc"})}
                 style={{background:chSort.key===k?D.black:"transparent",
                   color:chSort.key===k?"#fff":D.textSub,
@@ -1179,6 +1179,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             {key:"name",   label:"판매처", left:true,  val:c=>c.name},
             {key:"share",  label:"점유율", val:c=>parseFloat(c.share)},
             {key:"revenue",label:"매출",   val:c=>c.revenue},
+            {key:"aov",    label:"객단가", val:c=>c.orderCount>0?c.revenue/c.orderCount:0},
             {key:"shipped",label:"배송",   val:c=>c.shipped},
             {key:"returned",label:"반품",  val:c=>c.returned},
             {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
@@ -1207,6 +1208,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                     <td style={{padding:"7px 9px",fontWeight:600}}>{c.name}</td>
                     <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="share"?700:400}}>{c.share}%</td>
                     <td style={{textAlign:"right",padding:"7px 9px",fontWeight:chSort.key==="revenue"?700:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="aov"?700:400}}>{c.orderCount>0?fmtWon(Math.round(c.revenue/c.orderCount)):"—"}</td>
                     <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:chSort.key==="shipped"?700:400}}>{c.shipped.toLocaleString()}</td>
                     <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:chSort.key==="returned"?700:400}}>{c.returned.toLocaleString()}</td>
                     <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
@@ -1218,6 +1220,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                   <td style={{padding:"7px 9px",fontWeight:700}}>합계</td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
                   <td style={{textAlign:"right",padding:"7px 9px",fontWeight:700}}>{fmtWon(stats.totalRevenue)}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:600}}>{stats.totalOrderCount>0?fmtWon(Math.round(stats.totalRevenue/stats.totalOrderCount)):"—"}</td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:600}}>{stats.totalShipped.toLocaleString()}</td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalReturned.toLocaleString()}</td>
                   <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
