@@ -1169,62 +1169,6 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         })()}
       </Card>
 
-      {/* 플랫폼별 선호 옵션 */}
-      {optionStats.length>0&&(
-        <Card style={{marginBottom:12}}>
-          <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${optionStats.length},1fr)`,gap:16}}>
-            {optionStats.map(({ch,colors,sizes})=>(
-              <div key={ch}>
-                <div style={{fontWeight:700,fontSize:12,color:D.textSub,marginBottom:10,letterSpacing:"0.04em"}}>{ch}</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  {/* 컬러 */}
-                  <div>
-                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>컬러</div>
-                    {colors.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
-                    {colors.map(([name,cnt],i)=>{
-                      const max=colors[0]?.[1]||1;
-                      return (
-                        <div key={name} style={{marginBottom:5}}>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2,alignItems:"center"}}>
-                            <span style={{display:"flex",alignItems:"center",color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>
-                              {colorSwatch(name)}{name}
-                            </span>
-                            <span style={{color:D.textMeta}}>{cnt}</span>
-                          </div>
-                          <div style={{height:4,borderRadius:2,background:D.border}}>
-                            <div style={{height:4,borderRadius:2,background:COLOR_HEX[name]||COLOR_HEX[name?.toUpperCase()]||(i===0?D.black:D.blue),width:`${(cnt/max*100).toFixed(0)}%`}}/>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* 사이즈 */}
-                  <div>
-                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>사이즈</div>
-                    {sizes.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
-                    {sizes.map(([name,cnt],i)=>{
-                      const max=sizes[0]?.[1]||1;
-                      return (
-                        <div key={name} style={{marginBottom:5}}>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
-                            <span style={{color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>{name}</span>
-                            <span style={{color:D.textMeta}}>{cnt}</span>
-                          </div>
-                          <div style={{height:4,borderRadius:2,background:D.border}}>
-                            <div style={{height:4,borderRadius:2,background:i===0?D.black:D.green,width:`${(cnt/max*100).toFixed(0)}%`}}/>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
       {/* 월별 배송량 (독립 기간) */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
         <Card>
@@ -1277,8 +1221,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* 판매 Top */}
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-          <SecTitle ts={ts.orders}>판매 Top</SecTitle>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <SecTitle ts={ts.orders}>판매 Top</SecTitle>
             {["전체",...activeChannels].map(ch=>(
               <button key={ch} onClick={()=>setRankBestChannel(ch)}
                 style={{background:rankBestChannel===ch?D.black:"transparent",
@@ -1286,7 +1230,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                   border:`1px solid ${rankBestChannel===ch?D.black:D.border}`,
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
-            <div style={{width:1,background:D.border,margin:"0 4px"}}/>
+          </div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
             {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankBestPeriod(k)}
                 style={{background:rankBestPeriod===k?D.black:"transparent",
@@ -1320,11 +1265,65 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </div>
       </Card>
 
+      {/* 플랫폼별 선호 옵션 */}
+      {optionStats.length>0&&(
+        <Card style={{marginBottom:12}}>
+          <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${optionStats.length},1fr)`,gap:16}}>
+            {optionStats.map(({ch,colors,sizes})=>(
+              <div key={ch}>
+                <div style={{fontWeight:700,fontSize:12,color:D.textSub,marginBottom:10,letterSpacing:"0.04em"}}>{ch}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>
+                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>컬러</div>
+                    {colors.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
+                    {colors.map(([name,cnt],i)=>{
+                      const max=colors[0]?.[1]||1;
+                      return (
+                        <div key={name} style={{marginBottom:5}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2,alignItems:"center"}}>
+                            <span style={{display:"flex",alignItems:"center",color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>
+                              {colorSwatch(name)}{name}
+                            </span>
+                            <span style={{color:D.textMeta}}>{cnt}</span>
+                          </div>
+                          <div style={{height:4,borderRadius:2,background:D.border}}>
+                            <div style={{height:4,borderRadius:2,background:COLOR_HEX[name]||COLOR_HEX[name?.toUpperCase()]||(i===0?D.black:D.blue),width:`${(cnt/max*100).toFixed(0)}%`}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>사이즈</div>
+                    {sizes.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
+                    {sizes.map(([name,cnt],i)=>{
+                      const max=sizes[0]?.[1]||1;
+                      return (
+                        <div key={name} style={{marginBottom:5}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                            <span style={{color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>{name}</span>
+                            <span style={{color:D.textMeta}}>{cnt}</span>
+                          </div>
+                          <div style={{height:4,borderRadius:2,background:D.border}}>
+                            <div style={{height:4,borderRadius:2,background:i===0?D.black:D.green,width:`${(cnt/max*100).toFixed(0)}%`}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* 반품 탑 */}
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-          <SecTitle ts={ts.orders}>반품 Top</SecTitle>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <SecTitle ts={ts.orders}>반품 Top</SecTitle>
             {["전체",...activeChannels].map(ch=>(
               <button key={ch} onClick={()=>setRankWorstChannel(ch)}
                 style={{background:rankWorstChannel===ch?D.black:"transparent",
@@ -1332,7 +1331,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                   border:`1px solid ${rankWorstChannel===ch?D.black:D.border}`,
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
-            <div style={{width:1,background:D.border,margin:"0 4px"}}/>
+          </div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
             {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankWorstPeriod(k)}
                 style={{background:rankWorstPeriod===k?D.black:"transparent",
