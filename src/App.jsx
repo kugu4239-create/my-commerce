@@ -1091,7 +1091,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </div>
 
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
-      <div style={{display:"flex",gap:9,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap"}}>
         <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green}/>
         <KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
@@ -1101,7 +1101,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </div>
 
       {/* 판매처 점유율 + 판매처별 매출 */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:20}}>
         <Card>
           <SecTitle ts={ts.orders}>매출 점유율</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
@@ -1144,18 +1144,18 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </div>
 
       {/* 판매처 상세 */}
-      <Card style={{marginBottom:12}}>
+      <Card style={{marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
             {[["revenue","매출"],["share","점유율"],["shipped","배송"],["returned","반품"],["rate","반품률"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setChSort(prev=>prev.key===k?{key:k,dir:prev.dir==="desc"?"asc":"desc"}:{key:k,dir:"desc"})}
+              <button key={k} onClick={()=>setChSort({key:k,dir:"desc"})}
                 style={{background:chSort.key===k?D.black:"transparent",
                   color:chSort.key===k?"#fff":D.textSub,
                   border:`1px solid ${chSort.key===k?D.black:D.border}`,
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
                   fontWeight:chSort.key===k?600:400}}>
-                {l}{chSort.key===k?(chSort.dir==="desc"?" ↓":" ↑"):""}
+                {l}{chSort.key===k?" ↓":""}
               </button>
             ))}
           </div>
@@ -1218,7 +1218,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </Card>
 
       {/* 월별 배송량 (독립 기간) */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:20}}>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>배송량</SecTitle>
@@ -1267,7 +1267,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </div>
 
       {/* 판매 Top */}
-      <Card>
+      <Card style={{marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>판매 Top</SecTitle>
@@ -1315,7 +1315,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
       {/* 플랫폼별 선호 옵션 */}
       {optionStats.length>0&&(
-        <Card style={{marginBottom:12}}>
+        <Card style={{marginBottom:20}}>
           <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${optionStats.length},1fr)`,gap:16}}>
             {optionStats.map(({ch,colors,sizes})=>(
@@ -1368,7 +1368,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       )}
 
       {/* 반품 탑 */}
-      <Card>
+      <Card style={{marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>반품 Top</SecTitle>
@@ -1414,7 +1414,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
       {/* 플랫폼별 반품률 높은 옵션 */}
       {returnOptionStats.length>0&&(
-        <Card style={{marginBottom:12}}>
+        <Card style={{marginBottom:20}}>
           <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
             {returnOptionStats.map(({ch,colors,sizes})=>(
@@ -1752,8 +1752,8 @@ function PromoFlow({ revenues }) {
       </div>
 
       {showForm&&(
-        <Card style={{marginBottom:12}}>
-          <div style={{fontWeight:600,fontSize:12,marginBottom:12}}>프로모션 추가</div>
+        <Card style={{marginBottom:20}}>
+          <div style={{fontWeight:600,fontSize:12,marginBottom:20}}>프로모션 추가</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:8,alignItems:"end"}}>
             <div>
               <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션명</div>
@@ -1795,7 +1795,7 @@ function PromoFlow({ revenues }) {
       )}
 
       {/* 플랫폼별 가로 캘린더 바 */}
-      <Card style={{marginBottom:12}}>
+      <Card style={{marginBottom:20}}>
         <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>플랫폼별 프로모션 일정</div>
         {/* 날짜 눈금 */}
         <div style={{position:"relative",height:16,marginBottom:4,paddingLeft:70}}>
@@ -2295,7 +2295,7 @@ function RevenueForm({ onUpdate }) {
       </Card>
 
       <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"baseline",gap:6}}>
             <span style={{fontWeight:600,fontSize:13}}>최근 입력 내역</span>
             <UpdatedAt ts={histTs}/>
@@ -2432,7 +2432,7 @@ function StockUploader({ onUpdate }) {
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>입고 기간 선택</div>
             <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
-            <div style={{color:D.red,fontSize:10,marginBottom:12}}>⚠ 확정 시 해당 기간 DB 데이터 전체 교체</div>
+            <div style={{color:D.red,fontSize:10,marginBottom:20}}>⚠ 확정 시 해당 기간 DB 데이터 전체 교체</div>
             <Btn onClick={confirmDate} disabled={!dateValid||loading} style={{width:"100%"}}>
               {loading?"조회 중...":"기간 확정"}
             </Btn>
@@ -2468,7 +2468,7 @@ function StockUploader({ onUpdate }) {
           {result?.type==="error"&&step!==2&&<Alert type="error" msg={result.msg}/>}
         </Card>
         <Card>
-          <div style={{fontWeight:500,fontSize:12,marginBottom:12}}>
+          <div style={{fontWeight:500,fontSize:12,marginBottom:20}}>
             {step<2?`기존 DB — ${startDate}~${endDate}`:`새 파일 — ${fileName}`}
           </div>
           {step===0&&<div style={{color:D.textMeta,textAlign:"center",padding:60,fontSize:12}}>기간 선택 후 기존 데이터 표시</div>}
@@ -2652,7 +2652,7 @@ function EasyAdminUploader({ onUpdate }) {
           </div>}
         </Card>
         <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
             <span style={{fontWeight:500,fontSize:12}}>파일 미리보기</span>
             {inRange.length>0&&<div style={{display:"flex",gap:7}}>
               <span style={{background:`${D.green}12`,color:D.green,fontSize:10,padding:"2px 9px",borderRadius:20}}>기간 내 {inRange.length}건</span>
