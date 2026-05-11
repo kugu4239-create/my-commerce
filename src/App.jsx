@@ -2354,6 +2354,11 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [sankeyLimit,setSankeyLimit]=useState(30);
   const [tableLimit,setTableLimit]=useState(30);
   const [tablePeriod,setTablePeriod]=useState("1m");
+  const [agingKey,setAgingKey]=useState(0);
+  const [agingDiagDate,setAgingDiagDate]=useState(()=>{
+    try{return localStorage.getItem("merryon_aging_date")||new Date().toISOString().slice(0,10);}
+    catch{return new Date().toISOString().slice(0,10);}
+  });
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
