@@ -604,12 +604,12 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
   // 컬럼1 높이: blockTotalH × (배송수 / 입고수) — 입고 대비 배송 비율
   const totalStockQty = filteredStocks.reduce((s,r)=>s+(r.qty||0),0)||1;
-  const col1H = Math.max(MIN_H * channels.length, Math.round(blockTotalH * Math.min(1, totalShipped / totalStockQty)));
+  const col1H = Math.max(MIN_H * channels.length, Math.round(blockTotalH * Math.min(1, chanTotal / totalStockQty)));
 
   // 컬럼2 높이: col1H × (반품+교환 / 배송) — 배송 대비 반품 비율
   const totalRE = (totalReturned + totalExchanged) || 1;
-  const col2H = totalShipped > 0
-    ? Math.max(0, Math.round(col1H * Math.min(1, (totalReturned + totalExchanged) / totalShipped)))
+  const col2H = chanTotal > 0
+    ? Math.max(0, Math.round(col1H * Math.min(1, (totalReturned + totalExchanged) / chanTotal)))
     : 0;
 
   const chanYOf = {};
@@ -628,8 +628,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const retCenterY  = retBlockY  + retBlockH/2;
   const exchCenterY = exchBlockY + exchBlockH/2;
 
-  const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n)));
-  const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n)));
+  const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n))) * 2/3;
+  const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n))) * 2/3;
 
   // SVG는 너비 기준으로만 스케일 → 폰트가 목표 px로 보이도록 SVG 좌표 단위로 역산
   const svgScale = (ctnSize.w / SVG_W) || 1;
@@ -3107,12 +3107,20 @@ export default function App() {
       if(data.length<PAGE) break;
       from+=PAGE;
     }
-    const [s,r]=await Promise.all([
-      db.from("stock_uploads").select("*"),
+    let allStocks=[];
+    let sf=0;
+    while(true){
+      const {data:sd,error:se}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).range(sf,sf+PAGE-1);
+      if(se||!sd||sd.length===0) break;
+      allStocks=allStocks.concat(sd);
+      if(sd.length<PAGE) break;
+      sf+=PAGE;
+    }
+    const [r]=await Promise.all([
       db.from("revenues").select("*").order("date",{ascending:false}),
     ]);
-    setOrders(allOrders.map(r=>({...r,channel:normChannel(r.channel)})));
-    setStocks(s.data||[]);
+    setOrders(allOrders.map(o=>({...o,channel:normChannel(o.channel)})));
+    setStocks(allStocks);
     setRevenues(r.data||[]);
     if(firstLoad.current){
       const elapsed=Date.now()-t0;
