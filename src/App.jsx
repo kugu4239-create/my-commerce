@@ -499,8 +499,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const totalShipped = prods.reduce((s,p)=>s+p.shipped,0)||1;
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
-  // 높이 2배 (기존 n*36 → n*72)
-  const TARGET_H = Math.max(n*MIN_H, Math.min(1600, n*72));
+  // viewBox 높이: SVG_W(1400)보다 낮게 유지 → 130vh 컨테이너에서 width 기준으로 꽉 참
+  const TARGET_H = Math.max(n*MIN_H, Math.min(900, n*42));
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
   const scale = rawSum > TARGET_H ? TARGET_H/rawSum : 1;
@@ -532,9 +532,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div style={{ width:"100%" }}>
-      <svg width="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
-        style={{ display:"block", width:"100%" }}>
+    <div style={{ width:"100%", height:"130vh" }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
+        preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
 
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
@@ -995,7 +995,11 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                     innerRadius={38} outerRadius={60} paddingAngle={2}>
                     {sorted.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
                   </Pie>
-                  <Tooltip formatter={(v,n)=>[`₩${v.toLocaleString()}`,n]} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
+                  <Tooltip formatter={(v,n,p)=>{
+                    const total=sorted.reduce((s,c)=>s+c.revenue,0)||1;
+                    const pct=(v/total*100).toFixed(1);
+                    return [`₩${v.toLocaleString()} (${pct}%)`,n];
+                  }} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
                   <Legend iconSize={8} iconType="circle" wrapperStyle={{fontSize:10,paddingTop:6}}/>
                 </PieChart>
               );
