@@ -774,11 +774,11 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [deleteAll,setDeleteAll]=useState(false);
   const [shippingPeriod,setShippingPeriod]=useState("7d");
   const [returnPeriod,setReturnPeriod]=useState("7d");
-  const [rankBestPeriod,setRankBestPeriod]=useState("1w");
+  const [rankBestPeriod,setRankBestPeriod]=useState("7d");
   const [rankBestChannel,setRankBestChannel]=useState("전체");
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
-  const [rankWorstPeriod,setRankWorstPeriod]=useState("1m");
+  const [rankWorstPeriod,setRankWorstPeriod]=useState("1m"); // 최근 한달 기본
   const [rankWorstChannel,setRankWorstChannel]=useState("전체");
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
@@ -797,10 +797,9 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   },[orders]);
 
   // 판매 Top 랭킹
-  const bestFilteredOrders=useMemo(()=>{
-    if(rankBestPeriod==="1w") return stats.weekRows;
-    return filterByDate(orders,"order_date",rankBestPeriod,rankBestCustomStart,rankBestCustomEnd);
-  },[rankBestPeriod,orders,stats.weekRows,rankBestCustomStart,rankBestCustomEnd]);
+  const bestFilteredOrders=useMemo(()=>
+    filterByDate(orders,"order_date",rankBestPeriod,rankBestCustomStart,rankBestCustomEnd),
+    [rankBestPeriod,orders,rankBestCustomStart,rankBestCustomEnd]);
 
   const bestRows=useMemo(()=>{
     const base=bestFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
@@ -1110,7 +1109,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* 판매 Top */}
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-          <SecTitle ts={ts.orders}>판매 Top{rankBestPeriod==="1w"&&stats.latestWeek?` — ${stats.latestWeek}`:""}</SecTitle>
+          <SecTitle ts={ts.orders}>판매 Top</SecTitle>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
             {["전체",...activeChannels].map(ch=>(
               <button key={ch} onClick={()=>setRankBestChannel(ch)}
@@ -1120,22 +1119,13 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
             <div style={{width:1,background:D.border,margin:"0 4px"}}/>
-            {[["1w","이번 주"],["1m","1개월"],["3m","3개월"],["all","전체"],["custom","기간 선택"]].map(([k,l])=>(
+            {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankBestPeriod(k)}
                 style={{background:rankBestPeriod===k?D.black:"transparent",
                   color:rankBestPeriod===k?"#fff":D.textSub,
                   border:`1px solid ${rankBestPeriod===k?D.black:D.border}`,
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{l}</button>
             ))}
-            {rankBestPeriod==="custom"&&(
-              <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                <input type="date" value={rankBestCustomStart} onChange={e=>setRankBestCustomStart(e.target.value)}
-                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
-                <span style={{color:D.textMeta}}>—</span>
-                <input type="date" value={rankBestCustomEnd} onChange={e=>setRankBestCustomEnd(e.target.value)}
-                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
-              </div>
-            )}
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
@@ -1173,22 +1163,13 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
             <div style={{width:1,background:D.border,margin:"0 4px"}}/>
-            {[["1m","1개월"],["3m","3개월"],["6m","6개월"],["all","전체"],["custom","기간 선택"]].map(([k,l])=>(
+            {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankWorstPeriod(k)}
                 style={{background:rankWorstPeriod===k?D.black:"transparent",
                   color:rankWorstPeriod===k?"#fff":D.textSub,
                   border:`1px solid ${rankWorstPeriod===k?D.black:D.border}`,
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{l}</button>
             ))}
-            {rankWorstPeriod==="custom"&&(
-              <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                <input type="date" value={rankWorstCustomStart} onChange={e=>setRankWorstCustomStart(e.target.value)}
-                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
-                <span style={{color:D.textMeta}}>—</span>
-                <input type="date" value={rankWorstCustomEnd} onChange={e=>setRankWorstCustomEnd(e.target.value)}
-                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
-              </div>
-            )}
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
