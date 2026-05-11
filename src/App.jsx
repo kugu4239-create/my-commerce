@@ -560,7 +560,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     const totalReturned  = filteredOrders.filter(r=>r.status==="반품").length;
     const totalExchanged = filteredOrders.filter(r=>r.status==="교환").length;
     return { prods, channels, totalReturned, totalExchanged };
-  }, [filteredStocks, filteredOrders]);
+  }, [filteredStocks, filteredOrders, limit]);
 
   if (!data.prods.length) return (
     <div style={{ textAlign:"center", padding:80, color:D.textMeta, fontSize:13 }}>
