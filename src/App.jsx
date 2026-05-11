@@ -542,7 +542,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     });
     const prods = Object.values(prodMap)
       .filter(p => p.shipped>0||p.stock>0)
-      .sort((a,b)=>(b.shipped||0)-(a.shipped||0)||(b.stock||0)-(a.stock||0))
+      .sort((a,b)=>(b.stock||0)-(a.stock||0)||(b.shipped||0)-(a.shipped||0))
       .slice(0, limit);
     const chanMap = {};
     filteredOrders.forEach(r => {
