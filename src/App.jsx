@@ -3339,26 +3339,49 @@ function EasyAdminUploader({ onUpdate }) {
   const handleFile=useCallback(file=>{
     if(!file) return;
     setFileName(file.name); setResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,
+    Papa.parse(file,{header:true,skipEmptyLines:true,transformHeader:h=>h.trim(),
       complete:({data})=>{
         try{
           if(!data.length) throw new Error("CSV 데이터가 없습니다");
           const f=detectFields(Object.keys(data[0]));
-          if(!f.orderId) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
+
+          // 배송일 컬럼 명시적 우선 탐색 (Unicode 정규화 + exact match 우선)
+          const allCols=Object.keys(data[0]);
+          const nrm=s=>String(s).trim().normalize("NFC");
+          const findCol=(...names)=>{
+            // 1순위: exact match
+            for(const n of names){ const c=allCols.find(h=>nrm(h)===nrm(n)); if(c) return c; }
+            // 2순위: includes match
+            for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
+            return null;
+          };
+          const dateCol = findCol("배송일","배송일시","배송날짜","delivery_date")
+                       || findCol("주문일","주문일시","주문날짜","order_date","날짜","date")
+                       || f.date;
+          const orderIdCol = findCol("관리번호","order_id") || findCol("주문번호","orderid") || f.orderId;
+          const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
+          const productCol = findCol("상품명","product","품명") || f.product;
+          const optionCol  = findCol("옵션명","옵션","option") || f.option;
+          const csCol      = findCol("CS","cs처리","cs상태","cs") || f.cs;
+          const statusCol  = findCol("상태","status") || f.status;
+          const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
+
+          if(!orderIdCol) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
+          if(!dateCol)    throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
 
           // 관리번호+상품명+옵션 기준 중복 합산
           const grouped={};
-          data.filter(r=>r[f.orderId]).forEach(r=>{
-            const oid=String(r[f.orderId]).trim();
-            const prod=String(r[f.product]||"").trim();
-            const opt=String(r[f.option]||"").trim();
-            const ch=normChannel(r[f.channel]);
-            const rawDate=r[f.date];
+          data.filter(r=>r[orderIdCol]).forEach(r=>{
+            const oid=String(r[orderIdCol]).trim();
+            const prod=String(r[productCol]||"").trim();
+            const opt=String(r[optionCol]||"").trim();
+            const ch=normChannel(r[channelCol]);
+            const rawDate=r[dateCol];
             const dateVal=toDate(rawDate);
-            const csRaw=f.cs?String(r[f.cs]||"").trim():"";
-            const statusRaw=f.status?String(r[f.status]||"").trim():"";
-            const status=csRaw?normCS(csRaw):(statusRaw?"배송":"배송");
-            const qty=toNum(r[f.qty])||1;
+            const csRaw=csCol?String(r[csCol]||"").trim():"";
+            const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
+            const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
+            const qty=toNum(r[qtyCol])||1;
             // 관리번호+상품명+옵션 조합을 DB key로 사용 → 같은 관리번호 내 여러 상품 허용
             const dbKey=`${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
@@ -3370,7 +3393,7 @@ function EasyAdminUploader({ onUpdate }) {
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
-          setResult(null);
+          setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },
       error:e=>setResult({type:"error",msg:e.message}),
@@ -3433,12 +3456,7 @@ function EasyAdminUploader({ onUpdate }) {
               배송일 {startDate} ~ {endDate}
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 CSV 선택"/>
-            {parsedFile&&(
-              <div style={{color:D.green,fontSize:11,marginTop:8}}>
-                ✓ {parsedFile.length}건 파싱 완료
-              </div>
-            )}
-            {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
+            {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
                 {loading?"분석 중...":"미리보기"}
