@@ -153,7 +153,7 @@ function Card({ children, style={} }) {
 function SecTitle({ children, ts }) {
   return (
     <div style={{ display:"flex", alignItems:"baseline", gap:6, marginBottom:12 }}>
-      <span style={{ color:D.textSub, fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase" }}>{children}</span>
+      <span style={{ color:D.textSub, fontSize:12, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif", fontWeight:600 }}>{children}</span>
       <UpdatedAt ts={ts}/>
     </div>
   );
