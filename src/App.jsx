@@ -845,7 +845,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]?.[0]||"-";
     };
     return Object.values(byProd).filter(p=>p.returned>0)
-      .sort((a,b)=>b.returned-a.returned).slice(0,20)
+      .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         topReason:topReason(p.name)}));
   },[worstFilteredOrders,rankWorstChannel]);
@@ -1208,18 +1208,18 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           <RankTable data={worstRows} cols={[
             {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
-            {key:"returned",label:"반품",right:true,bold:true,color:D.red,fmt:v=>v.toLocaleString()},
-            {key:"returnRate",label:"반품률",right:true,color:D.red,fmt:v=>v+"%"},
+            {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
+            {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
             {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:130},
             {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
           ]}/>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={worstRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
-              <XAxis type="number" tick={axTick}/>
+              <XAxis type="number" tick={axTick} tickFormatter={v=>v+"%"}/>
               <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:9,width:175}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
-              <Tooltip content={<Tip/>}/>
-              <Bar dataKey="returned" name="반품" radius={[0,3,3,0]} fill={D.red}/>
+              <Tooltip content={<Tip/>} formatter={(v)=>[v+"%","반품률"]}/>
+              <Bar dataKey="returnRate" name="반품률" radius={[0,3,3,0]} fill={D.red}/>
             </BarChart>
           </ResponsiveContainer>
         </div>
