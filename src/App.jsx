@@ -89,6 +89,35 @@ const fmtWon = n => {
   return "₩"+n.toLocaleString();
 };
 
+const KR_COLORS=new Set(["블랙","화이트","차콜","베이지","아이보리","크림","브라운","카키","네이비",
+  "그레이","핑크","레드","블루","그린","옐로우","퍼플","오렌지","민트","스카이블루","스트라이프",
+  "버건디","와인","코랄","올리브","라벤더","머스타드","연그레이","다크네이비","오트밀","샌드","모카"]);
+const SIZE_RE=/^(XS|S|M|L|XL|2XL|3XL|XXL|Free|F|\d{3})(-\S+)?$/i;
+
+function parseOption(productName, optionName) {
+  let color=null, size=null;
+  // 상품명 [COLOR] 추출
+  ((productName||"").match(/\[([^\]]+)\]/g)||[]).forEach(b=>{
+    const v=b.slice(1,-1).trim();
+    if(!SIZE_RE.test(v)) color=color||v;
+  });
+  // 옵션명 파싱
+  const raw=(optionName||"").replace(/^\[|\]$/g,"").trim();
+  if(!raw) return {color,size};
+  if(raw.includes("-")){
+    raw.split("-").forEach(p=>{
+      const v=p.trim();
+      if(SIZE_RE.test(v)) size=size||v.toUpperCase();
+      else if(KR_COLORS.has(v)) color=color||v;
+    });
+  } else if(SIZE_RE.test(raw)){
+    size=raw.toUpperCase();
+  } else {
+    color=color||raw;
+  }
+  return {color,size};
+}
+
 function detectFields(columns) {
   const lc = columns.map(c => c.toLowerCase().replace(/\s/g,""));
   const f = (...kws) => { const i=lc.findIndex(c=>kws.some(k=>c.includes(k))); return i>=0?columns[i]:null; };
@@ -793,6 +822,23 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const stats=useMemo(()=>analyze(filteredOrders,stocks,filteredRevenues),[filteredOrders,stocks,filteredRevenues]);
 
+  // 플랫폼별 선호 옵션 (컬러/사이즈)
+  const optionStats=useMemo(()=>{
+    const map={};
+    filteredOrders.filter(r=>r.status==="배송"&&r.channel!=="오프라인스토어").forEach(r=>{
+      const ch=r.channel||"미분류";
+      if(!map[ch]) map[ch]={colors:{},sizes:{}};
+      const {color,size}=parseOption(r.product_name,r.option_name);
+      if(color) map[ch].colors[color]=(map[ch].colors[color]||0)+1;
+      if(size)  map[ch].sizes[size] =(map[ch].sizes[size] ||0)+1;
+    });
+    return Object.entries(map).map(([ch,d])=>({
+      ch,
+      colors:Object.entries(d.colors).sort((a,b)=>b[1]-a[1]).slice(0,7),
+      sizes: Object.entries(d.sizes ).sort((a,b)=>b[1]-a[1]).slice(0,7),
+    }));
+  },[filteredOrders]);
+
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
   const activeChannels=useMemo(()=>{
     const fixed=["자사몰","29CM","무신사"];
@@ -1092,6 +1138,60 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           );
         })()}
       </Card>
+
+      {/* 플랫폼별 선호 옵션 */}
+      {optionStats.length>0&&(
+        <Card style={{marginBottom:12}}>
+          <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${optionStats.length},1fr)`,gap:16}}>
+            {optionStats.map(({ch,colors,sizes})=>(
+              <div key={ch}>
+                <div style={{fontWeight:700,fontSize:12,color:D.textSub,marginBottom:10,letterSpacing:"0.04em"}}>{ch}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {/* 컬러 */}
+                  <div>
+                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>컬러</div>
+                    {colors.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
+                    {colors.map(([name,cnt],i)=>{
+                      const max=colors[0]?.[1]||1;
+                      return (
+                        <div key={name} style={{marginBottom:5}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                            <span style={{color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>{name}</span>
+                            <span style={{color:D.textMeta}}>{cnt}</span>
+                          </div>
+                          <div style={{height:4,borderRadius:2,background:D.border}}>
+                            <div style={{height:4,borderRadius:2,background:i===0?D.black:D.blue,width:`${(cnt/max*100).toFixed(0)}%`}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* 사이즈 */}
+                  <div>
+                    <div style={{fontSize:10,color:D.textMeta,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>사이즈</div>
+                    {sizes.length===0&&<div style={{fontSize:11,color:D.textMeta}}>데이터 없음</div>}
+                    {sizes.map(([name,cnt],i)=>{
+                      const max=sizes[0]?.[1]||1;
+                      return (
+                        <div key={name} style={{marginBottom:5}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                            <span style={{color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>{name}</span>
+                            <span style={{color:D.textMeta}}>{cnt}</span>
+                          </div>
+                          <div style={{height:4,borderRadius:2,background:D.border}}>
+                            <div style={{height:4,borderRadius:2,background:i===0?D.black:D.green,width:`${(cnt/max*100).toFixed(0)}%`}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* 월별 배송량 (독립 기간) */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
