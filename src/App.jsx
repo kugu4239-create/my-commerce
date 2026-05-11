@@ -30,12 +30,14 @@ const D = {
   amber:      "#b07d00",
   blue:       "#1a4fa5",
   SANKEY: [
-    "#e05a3a","#4a7fc1","#5aab6e","#d4a017","#9b59b6",
-    "#1abc9c","#e67e22","#2980b9","#e91e63","#00bcd4",
-    "#ff5722","#607d8b","#8bc34a","#ff9800","#673ab7",
-    "#f06292","#26a69a","#ffa726","#42a5f5","#ab47bc",
+    "#7EADD4","#7EB89E","#9E92C8","#D4A574","#82C4D8",
+    "#9EC48C","#C4A8D4","#D4C07E","#82B8C4","#C49E82",
+    "#A8C4D4","#C4B09E","#9EA8D4","#B8D49E","#D4A8B8",
+    "#8CB4C4","#C4C49E","#B89EC4","#9EC4B4","#D4B88C",
   ],
 };
+const CH_COLOR={"자사몰":"#7EADD4","29CM":"#7EB89E","무신사":"#9E92C8"};
+const chColor=ch=>CH_COLOR[ch]||"#A8B8C8";
 
 // ─────────────────────────────────────────────
 // UTILS
@@ -114,6 +116,10 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
     monday.setDate(now.getDate() - dow + 1);
     const cutStr = monday.toISOString().slice(0,10);
     return rows.filter(r => r[dateField] >= cutStr && r[dateField] <= today);
+  }
+  if (period === "7d") {
+    const c = new Date(); c.setDate(c.getDate()-7);
+    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
   }
   if (period === "1m") {
     const c = new Date(); c.setMonth(c.getMonth()-1);
@@ -512,7 +518,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     cy += h + ROW_GAP;
   });
 
-  const headers = ["상품명","판매처별 배송","반품"];
+  const headers = ["입고","판매처별 배송","반품"];
 
   return (
     <div style={{ overflowX:"auto", overflowY:"auto", maxHeight:1200 }}>
@@ -606,6 +612,11 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     </div>
   );
 }
+
+const getCSData=()=>{try{return JSON.parse(localStorage.getItem("cs_data")||"[]");}catch{return[];}};
+const saveCSData=d=>localStorage.setItem("cs_data",JSON.stringify(d));
+const getPromos=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]");}catch{return[];}};
+const savePromos=d=>localStorage.setItem("promotions",JSON.stringify(d));
 
 // ─────────────────────────────────────────────
 // ANALYTICS ENGINE
@@ -726,17 +737,17 @@ async function getSupabase() {
 // DASHBOARD
 // ─────────────────────────────────────────────
 const PERIOD_TABS=[
-  {key:"week",label:"이번 주"},
-  {key:"1m",label:"1개월"},
-  {key:"3m",label:"3개월"},
-  {key:"all",label:"전체"},
+  {key:"7d",label:"최근 7일"},
+  {key:"1m",label:"최근 한달"},
+  {key:"3m",label:"최근 3개월"},
   {key:"custom",label:"기간 선택"},
 ];
 
 function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
-  const [period,setPeriod]=useState("all");
+  const [period,setPeriod]=useState("7d");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
+  const [deleteAll,setDeleteAll]=useState(false);
   const [shippingPeriod,setShippingPeriod]=useState("thisMonth");
   const [returnPeriod,setReturnPeriod]=useState("1m");
   const [rankBestPeriod,setRankBestPeriod]=useState("1w");
@@ -755,8 +766,11 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const stats=useMemo(()=>analyze(filteredOrders,stocks,filteredRevenues),[filteredOrders,stocks,filteredRevenues]);
 
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
-  const activeChannels=useMemo(()=>[...new Set(orders.map(r=>r.channel||"미분류"))]
-    .filter(ch=>ch&&ch!=="오프라인스토어").slice(0,8),[orders]);
+  const activeChannels=useMemo(()=>{
+    const fixed=["자사몰","29CM","무신사"];
+    const inData=new Set(orders.map(r=>r.channel||"미분류").filter(Boolean));
+    return fixed.filter(c=>inData.has(c));
+  },[orders]);
 
   // 판매 Top 랭킹
   const bestFilteredOrders=useMemo(()=>{
@@ -774,8 +788,10 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
       if(["반품","교환"].includes(r.status)) byProd[key].returned++;
     });
+    const totalQty=Object.values(byProd).reduce((s,p)=>s+p.qty,0)||1;
     return Object.values(byProd).sort((a,b)=>b.qty-a.qty).slice(0,20)
-      .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0"}));
+      .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
+        share:(p.qty/totalQty*100).toFixed(1)}));
   },[bestFilteredOrders,rankBestChannel]);
 
   // 반품 Top 랭킹
@@ -793,9 +809,21 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
       if(["반품","교환"].includes(r.status)) byProd[key].returned++;
     });
+    const csData=getCSData();
+    const csMap={};
+    csData.forEach(r=>{
+      if(!csMap[r.product_name])csMap[r.product_name]={};
+      csMap[r.product_name][r.return_reason]=(csMap[r.product_name][r.return_reason]||0)+1;
+    });
+    const topReason=name=>{
+      const m=csMap[name];
+      if(!m)return"-";
+      return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]?.[0]||"-";
+    };
     return Object.values(byProd).filter(p=>p.returned>0)
       .sort((a,b)=>b.returned-a.returned).slice(0,20)
-      .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0"}));
+      .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
+        topReason:topReason(p.name)}));
   },[worstFilteredOrders,rankWorstChannel]);
 
   // 월별 배송량 차트 데이터
@@ -1077,7 +1105,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           <RankTable data={bestRows} cols={[
             {key:"name",label:"상품명",maxW:190},
             {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
-            {key:"returnRate",label:"반품률",right:true,color:D.textMeta,fmt:v=>v+"%"},
+            {key:"share",label:"점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
           ]}/>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={bestRows.slice(0,12)} layout="vertical">
@@ -1095,7 +1123,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </div>
       </Card>
 
-      {/* 반품 Top */}
+      {/* 반품 탑 */}
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>반품 Top</SecTitle>
@@ -1128,9 +1156,10 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           <RankTable data={worstRows} cols={[
-            {key:"name",label:"상품명",maxW:190},
+            {key:"name",label:"상품명",maxW:160},
             {key:"returned",label:"반품",right:true,bold:true,color:D.red,fmt:v=>v.toLocaleString()},
             {key:"returnRate",label:"반품률",right:true,color:D.red,fmt:v=>v+"%"},
+            {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:130},
             {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
           ]}/>
           <ResponsiveContainer width="100%" height={320}>
@@ -1144,6 +1173,39 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
       </Card>
+
+      {/* 전체 데이터 삭제 */}
+      <div style={{marginTop:24,paddingTop:16,borderTop:`1px solid ${D.border}`,display:"flex",justifyContent:"flex-end"}}>
+        {!deleteAll?(
+          <button onClick={()=>setDeleteAll(true)}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"6px 14px",fontSize:11,cursor:"pointer",color:D.textMeta}}>
+            ⚠ 전체 데이터 초기화
+          </button>
+        ):(
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:11,color:D.red}}>모든 주문·입고·매출 데이터가 삭제됩니다. 확인하시겠습니까?</span>
+            <button onClick={async()=>{
+              const db=await getSupabase();
+              await Promise.all([
+                db.from("orders").delete().gte("order_date","2000-01-01"),
+                db.from("stock_uploads").delete().gte("upload_date","2000-01-01"),
+                db.from("revenues").delete().gte("date","2000-01-01"),
+              ]);
+              setDeleteAll(false);
+              onRefresh();
+            }} style={{background:D.red,color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 14px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+              삭제
+            </button>
+            <button onClick={()=>setDeleteAll(false)}
+              style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"6px 14px",fontSize:11,cursor:"pointer",color:D.text}}>
+              취소
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1290,6 +1352,302 @@ function LogisticsFlow({ orders, stocks, ts }) {
 }
 
 // ─────────────────────────────────────────────
+// PROMO FLOW PAGE
+// ─────────────────────────────────────────────
+const PROMO_PLATFORMS=["자사몰","29CM","무신사"];
+
+function PromoFlow({ revenues }) {
+  const [promos,setPromos]=useState(getPromos);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:""});
+  const today=new Date().toISOString().slice(0,10);
+  const twoMonthsAgo=(()=>{const d=new Date();d.setMonth(d.getMonth()-2);return d.toISOString().slice(0,10);})();
+  const [viewStart,setViewStart]=useState(twoMonthsAgo);
+  const [viewEnd,setViewEnd]=useState(today);
+
+  const updatePromos=data=>{savePromos(data);setPromos(data);};
+  const addPromo=()=>{
+    if(!form.name||!form.start_date||!form.end_date)return;
+    updatePromos([...promos,{...form,id:Date.now()}]);
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:""});
+    setShowForm(false);
+  };
+  const delPromo=id=>updatePromos(promos.filter(p=>p.id!==id));
+
+  const startMs=new Date(viewStart).getTime();
+  const endMs=new Date(viewEnd).getTime();
+  const totalMs=Math.max(1,endMs-startMs);
+  const datePct=d=>{const ms=new Date(d).getTime();return Math.min(100,Math.max(0,(ms-startMs)/totalMs*100));};
+
+  const revenueData=useMemo(()=>{
+    const filtered=revenues.filter(r=>r.date>=viewStart&&r.date<=viewEnd);
+    const byDate={};
+    filtered.forEach(r=>{
+      if(!byDate[r.date])byDate[r.date]={date:r.date.slice(5)};
+      byDate[r.date][r.channel]=(byDate[r.date][r.channel]||0)+(r.amount||0);
+    });
+    return Object.values(byDate).sort((a,b)=>a.date>b.date?1:-1);
+  },[revenues,viewStart,viewEnd]);
+
+  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+    padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
+
+  return (
+    <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div style={{fontWeight:600,fontSize:15,color:D.black}}>프로모션 플로우</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <input type="date" value={viewStart} onChange={e=>setViewStart(e.target.value)}
+            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:11,color:D.text}}/>
+          <span style={{color:D.textMeta}}>—</span>
+          <input type="date" value={viewEnd} onChange={e=>setViewEnd(e.target.value)}
+            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:11,color:D.text}}/>
+          <button onClick={()=>setShowForm(v=>!v)}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 14px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+            {showForm?"취소":"+ 프로모션 추가"}
+          </button>
+        </div>
+      </div>
+
+      {showForm&&(
+        <Card style={{marginBottom:12}}>
+          <div style={{fontWeight:600,fontSize:12,marginBottom:12}}>프로모션 추가</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:8,alignItems:"end"}}>
+            <div>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션명</div>
+              <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp} placeholder="예: 오픈 기념 할인"/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>플랫폼</div>
+              <div style={{display:"flex",gap:4}}>
+                {PROMO_PLATFORMS.map(p=>(
+                  <button key={p} onClick={()=>setForm(f=>({...f,platform:p}))}
+                    style={{flex:1,background:form.platform===p?chColor(p):"transparent",
+                      color:form.platform===p?"#fff":D.textSub,
+                      border:`1px solid ${form.platform===p?chColor(p):D.border}`,
+                      borderRadius:5,padding:"6px 4px",fontSize:11,cursor:"pointer"}}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>시작일</div>
+              <input type="date" value={form.start_date} onChange={e=>setForm(f=>({...f,start_date:e.target.value}))} style={inp}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>종료일</div>
+              <input type="date" value={form.end_date} onChange={e=>setForm(f=>({...f,end_date:e.target.value}))} style={inp}/>
+            </div>
+            <button onClick={addPromo}
+              style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+                padding:"9px 16px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
+              저장
+            </button>
+          </div>
+          <div style={{marginTop:8}}>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>메모</div>
+            <input value={form.memo} onChange={e=>setForm(f=>({...f,memo:e.target.value}))} style={inp} placeholder="설명 (선택)"/>
+          </div>
+        </Card>
+      )}
+
+      {/* 플랫폼별 가로 캘린더 바 */}
+      <Card style={{marginBottom:12}}>
+        <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>플랫폼별 프로모션 일정</div>
+        {/* 날짜 눈금 */}
+        <div style={{position:"relative",height:16,marginBottom:4,paddingLeft:70}}>
+          {[0,25,50,75,100].map(pct=>{
+            const ms=startMs+(endMs-startMs)*pct/100;
+            const d=new Date(ms);
+            const label=`${d.getMonth()+1}/${d.getDate()}`;
+            return <span key={pct} style={{position:"absolute",left:`${pct}%`,transform:"translateX(-50%)",
+              fontSize:9,color:D.textMeta}}>{label}</span>;
+          })}
+        </div>
+        {PROMO_PLATFORMS.map(plat=>{
+          const bars=promos.filter(p=>p.platform===plat&&p.end_date>=viewStart&&p.start_date<=viewEnd);
+          return (
+            <div key={plat} style={{display:"flex",alignItems:"center",marginBottom:8,gap:8}}>
+              <div style={{width:62,fontSize:11,color:D.textSub,flexShrink:0,textAlign:"right"}}>{plat}</div>
+              <div style={{flex:1,position:"relative",height:28,background:D.surfaceAlt,borderRadius:4}}>
+                {bars.map(promo=>{
+                  const l=datePct(promo.start_date);
+                  const r=datePct(promo.end_date);
+                  const w=Math.max(0.5,r-l);
+                  return (
+                    <div key={promo.id}
+                      title={`${promo.name}\n${promo.start_date} ~ ${promo.end_date}${promo.memo?"\n"+promo.memo:""}`}
+                      style={{position:"absolute",left:`${l}%`,width:`${w}%`,height:"100%",
+                        background:chColor(plat),borderRadius:4,display:"flex",alignItems:"center",
+                        padding:"0 6px",fontSize:10,color:"#fff",overflow:"hidden",
+                        boxSizing:"border-box",cursor:"pointer",minWidth:4}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{promo.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={()=>{
+                const target=bars[bars.length-1];
+                if(target)delPromo(target.id);
+              }} style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",
+                fontSize:10,padding:"2px 6px",flexShrink:0,visibility:bars.length?"visible":"hidden"}}>
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        {/* 프로모션 목록 */}
+        {promos.length>0&&(
+          <div style={{marginTop:12,borderTop:`1px solid ${D.border}`,paddingTop:10}}>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:6}}>등록된 프로모션</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {promos.map(p=>(
+                <div key={p.id} style={{display:"flex",alignItems:"center",gap:4,
+                  background:D.surfaceAlt,borderRadius:4,padding:"3px 8px",fontSize:10}}>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
+                  <span style={{color:D.textSub}}>{p.platform}</span>
+                  <span style={{fontWeight:600}}>{p.name}</span>
+                  <span style={{color:D.textMeta}}>{p.start_date}~{p.end_date}</span>
+                  <button onClick={()=>delPromo(p.id)}
+                    style={{background:"transparent",border:"none",color:D.textMeta,
+                      cursor:"pointer",padding:0,fontSize:11}}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* 기간별 플랫폼 매출 그래프 */}
+      <Card>
+        <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
+        {revenueData.length>0?(
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={revenueData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
+              <XAxis dataKey="date" tick={{fill:D.textMeta,fontSize:9}}/>
+              <YAxis tick={{fill:D.textMeta,fontSize:9}} tickFormatter={v=>v>=10000?(v/10000).toFixed(0)+"만":v}/>
+              <Tooltip formatter={(v,n)=>[`₩${v.toLocaleString()}`,n]}/>
+              <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
+              {PROMO_PLATFORMS.map(p=>(
+                <Line key={p} type="monotone" dataKey={p} name={p}
+                  stroke={chColor(p)} strokeWidth={2} dot={false}/>
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        ):(
+          <div style={{textAlign:"center",padding:40,color:D.textMeta,fontSize:12}}>
+            해당 기간에 매출 데이터가 없습니다
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// CS DATA INPUT
+// ─────────────────────────────────────────────
+function CSDataInput() {
+  const [csData,setCSData]=useState(getCSData);
+  const today=new Date().toISOString().slice(0,10);
+  const [date,setDate]=useState(today);
+  const [product,setProduct]=useState("");
+  const [reason,setReason]=useState("");
+  const [channel,setChannel]=useState("자사몰");
+  const [filterProd,setFilterProd]=useState("");
+
+  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+    padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
+
+  const save=()=>{
+    if(!product.trim()||!reason.trim())return;
+    const next=[{id:Date.now(),date,product_name:product.trim(),return_reason:reason.trim(),channel},...csData];
+    saveCSData(next);setCSData(next);
+    setProduct("");setReason("");
+  };
+
+  const del=id=>{
+    const next=csData.filter(r=>r.id!==id);
+    saveCSData(next);setCSData(next);
+  };
+
+  const filtered=csData.filter(r=>!filterProd||r.product_name.includes(filterProd));
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:14}}>
+      <Card>
+        <div style={{fontWeight:600,marginBottom:14,fontSize:13}}>CS 반품 사유 입력</div>
+        <div style={{marginBottom:10}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>날짜</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>판매처</div>
+          <div style={{display:"flex",gap:4}}>
+            {["자사몰","29CM","무신사"].map(c=>(
+              <button key={c} onClick={()=>setChannel(c)}
+                style={{flex:1,background:channel===c?D.black:"transparent",
+                  color:channel===c?"#fff":D.textSub,
+                  border:`1px solid ${channel===c?D.black:D.border}`,
+                  borderRadius:5,padding:"6px 4px",fontSize:11,cursor:"pointer"}}>
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>상품명</div>
+          <input value={product} onChange={e=>setProduct(e.target.value)} style={inp} placeholder="상품명 입력"/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>반품 사유</div>
+          <input value={reason} onChange={e=>setReason(e.target.value)} style={inp} placeholder="예: 사이즈 불일치, 불량, 단순 변심"/>
+        </div>
+        <button onClick={save}
+          style={{width:"100%",background:D.black,color:"#fff",border:"none",borderRadius:6,
+            padding:"10px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+          저장
+        </button>
+      </Card>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:600,fontSize:13}}>반품 사유 내역</div>
+          <input value={filterProd} onChange={e=>setFilterProd(e.target.value)}
+            style={{...inp,width:160,fontSize:11,padding:"5px 8px"}} placeholder="상품명 검색"/>
+        </div>
+        <div style={{overflowY:"auto",maxHeight:480}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
+              {["날짜","판매처","상품명","반품 사유",""].map(h=>(
+                <th key={h} style={{padding:"6px 8px",textAlign:"left",color:D.textMeta,fontWeight:400}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.slice(0,100).map(r=>(
+                <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`}}>
+                  <td style={{padding:"5px 8px",color:D.textMeta,whiteSpace:"nowrap"}}>{r.date}</td>
+                  <td style={{padding:"5px 8px"}}><span style={{color:chColor(r.channel),fontWeight:600}}>{r.channel}</span></td>
+                  <td style={{padding:"5px 8px",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
+                  <td style={{padding:"5px 8px",color:D.textSub}}>{r.return_reason}</td>
+                  <td style={{padding:"5px 8px"}}>
+                    <button onClick={()=>del(r.id)}
+                      style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:10}}>✕</button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length===0&&<tr><td colSpan={5} style={{padding:24,textAlign:"center",color:D.textMeta}}>데이터 없음</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // DATA INPUT — 매출 입력
 // ─────────────────────────────────────────────
 const REVENUE_CHANNELS = ["자사몰","29CM","무신사"];
@@ -1297,6 +1655,8 @@ const REVENUE_CHANNELS = ["자사몰","29CM","무신사"];
 function RevenueForm({ onUpdate }) {
   const today=new Date().toISOString().slice(0,10);
   const [date,setDate]=useState(today);
+  const [dateMode,setDateMode]=useState("single"); // "single"|"range"
+  const [dateEnd,setDateEnd]=useState(today);
   const [ch,setCh]=useState(REVENUE_CHANNELS[0]);
   const [amt,setAmt]=useState("");
   const [orderCnt,setOrderCnt]=useState("");
@@ -1321,20 +1681,29 @@ function RevenueForm({ onUpdate }) {
     if(!amt||isNaN(num)){setResult({type:"error",msg:"매출 금액을 입력해주세요."});return;}
     setLoading(true);setResult(null);
     const db=await getSupabase();
-    const {error}=await db.from("revenues").upsert({
-      date,channel:ch,
-      amount:num,
-      order_count:Number(orderCnt)||0,
-      refund_amount:Number(refundAmt.replace(/,/g,""))||0,
-      refund_count:Number(refundCnt)||0,
-    },{onConflict:"date,channel"});
-    const ts2=nowStr();
-    if(error) setResult({type:"error",msg:error.message});
-    else {
-      setResult({type:"success",msg:`저장 완료`,ts:ts2});
-      setAmt("");setOrderCnt("");setRefundAmt("");setRefundCnt("");
-      onUpdate(ts2); if(history.length) loadHistory();
+    // Build date list
+    const dates=[];
+    if(dateMode==="range"&&dateEnd>date){
+      const cur=new Date(date);
+      const end=new Date(dateEnd);
+      while(cur<=end){dates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
+    } else {
+      dates.push(date);
     }
+    for(const d of dates){
+      const {error}=await db.from("revenues").upsert({
+        date:d,channel:ch,
+        amount:Math.round(num/dates.length),
+        order_count:Math.round((Number(orderCnt)||0)/dates.length),
+        refund_amount:Math.round((Number(refundAmt.replace(/,/g,""))||0)/dates.length),
+        refund_count:Math.round((Number(refundCnt)||0)/dates.length),
+      },{onConflict:"date,channel"});
+      if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
+    }
+    const ts2=nowStr();
+    setResult({type:"success",msg:`${dates.length}일 저장 완료`,ts:ts2});
+    setAmt("");setOrderCnt("");setRefundAmt("");setRefundCnt("");
+    onUpdate(ts2);if(history.length)loadHistory();
     setLoading(false);
   };
 
@@ -1379,7 +1748,25 @@ function RevenueForm({ onUpdate }) {
 
         <div style={{marginBottom:10}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>날짜</div>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+          <div style={{display:"flex",gap:4,marginBottom:6}}>
+            {[["single","단일"],["range","기간"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setDateMode(k)}
+                style={{flex:1,background:dateMode===k?D.black:"transparent",
+                  color:dateMode===k?"#fff":D.textSub,
+                  border:`1px solid ${dateMode===k?D.black:D.border}`,
+                  borderRadius:5,padding:"5px 4px",fontSize:11,cursor:"pointer"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {dateMode==="single"
+            ? <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+            : <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,width:"50%"}}/>
+                <span style={{color:D.textMeta,flexShrink:0}}>~</span>
+                <input type="date" value={dateEnd} onChange={e=>setDateEnd(e.target.value)} style={{...inp,width:"50%"}}/>
+              </div>
+          }
         </div>
 
         <div style={{marginBottom:10}}>
@@ -1831,6 +2218,7 @@ function DataInput({ onUpdate, onDataChange }) {
     {key:"revenue",label:"매출 입력"},
     {key:"stock",label:<span>입고 CSV <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
     {key:"orders",label:<span>이지어드민 CSV(배송일 기준) <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
+    {key:"cs",label:"CS 데이터"},
     {key:"delete",label:"데이터 삭제"},
   ];
 
@@ -1853,6 +2241,7 @@ function DataInput({ onUpdate, onDataChange }) {
       {tab==="revenue"&&<RevenueForm onUpdate={ts=>onUpdate("revenue",ts)}/>}
       {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)}/>}
       {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();}}/>}
+      {tab==="cs"&&<CSDataInput/>}
       {tab==="delete"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>onDataChange?.()}/>
@@ -1906,54 +2295,49 @@ export default function App() {
   const updateTs=useCallback((key,val)=>setTs(prev=>({...prev,[key]:val})),[]);
 
   const nav=[
-    {key:"dashboard",label:"대시보드",icon:"▦"},
-    {key:"flow",label:"물류 플로우",icon:"⟶"},
-    {key:"input",label:"데이터 입력",icon:"↑"},
+    {key:"dashboard",label:"대시보드"},
+    {key:"flow",label:"물류 플로우"},
+    {key:"promo",label:"프로모션"},
+    {key:"input",label:"데이터 입력"},
   ];
 
   return (
-    <div style={{ display:"flex", minHeight:"100vh", background:D.bg,
+    <div style={{ display:"flex", flexDirection:"column", minHeight:"100vh", background:D.bg,
       fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
       color:D.text, fontSize:14 }}>
 
-      {/* sidebar */}
-      <div style={{ width:180, background:D.surface, borderRight:`1px solid ${D.border}`,
-        padding:"18px 10px", display:"flex", flexDirection:"column", flexShrink:0 }}>
-        <div style={{ color:D.black, fontWeight:800, fontSize:12, marginBottom:1, paddingLeft:4, letterSpacing:"0.05em" }}>MERRYON</div>
-        <div style={{ color:D.black, fontWeight:700, fontSize:11, marginBottom:1, paddingLeft:4 }}>COMMERCE</div>
-        <div style={{ color:D.textMeta, fontSize:9, letterSpacing:"0.1em", marginBottom:6, paddingLeft:4 }}>WORK FLOW</div>
-        <div style={{ color:D.textMeta, fontSize:9, paddingLeft:4, marginBottom:18 }}>Made by Jihoon</div>
-        <nav style={{ display:"flex", flexDirection:"column", gap:2 }}>
+      {/* top bar */}
+      <div style={{ background:D.surface, borderBottom:`1px solid ${D.border}`,
+        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0 }}>
+        <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1, marginRight:8 }}>
+          <span style={{ fontWeight:800, fontSize:11, letterSpacing:"0.08em", color:D.black }}>MERRYON</span>
+          <span style={{ fontSize:8, color:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
+        </div>
+        <nav style={{ display:"flex", gap:2, flex:1 }}>
           {nav.map(n=>(
             <button key={n.key} onClick={()=>setPage(n.key)}
               style={{ background:page===n.key?D.surfaceAlt:"transparent",
                 color:page===n.key?D.black:D.textSub,
-                border:"none", borderRadius:6, padding:"8px 10px",
-                textAlign:"left", cursor:"pointer", fontSize:12,
-                fontWeight:page===n.key?600:400, transition:"all 0.1s",
-                display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:11 }}>{n.icon}</span>{n.label}
+                border:"none", borderRadius:6, padding:"6px 14px",
+                cursor:"pointer", fontSize:12,
+                fontWeight:page===n.key?600:400 }}>
+              {n.label}
             </button>
           ))}
         </nav>
+        <div style={{ color:D.textMeta, fontSize:11, flexShrink:0 }}>
+          {new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}
+        </div>
       </div>
 
-      {/* main */}
+      {/* main content */}
       <div style={{ flex:1, overflowY:"auto" }}>
-        <div style={{ background:D.surface, borderBottom:`1px solid ${D.border}`,
-          padding:"11px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ color:D.black, fontWeight:600, fontSize:13 }}>
-            {nav.find(n=>n.key===page)?.label}
-          </div>
-          <div style={{ color:D.textMeta, fontSize:11 }}>
-            {new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}
-          </div>
-        </div>
         {page==="dashboard"&&(
           <Dashboard orders={orders} stocks={stocks} revenues={revenues} ts={ts}
             onRefresh={loadData}/>
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
+        {page==="promo"&&<PromoFlow revenues={revenues}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
