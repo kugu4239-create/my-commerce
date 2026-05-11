@@ -67,6 +67,7 @@ const normChannel = raw => {
   if (!raw) return "미분류";
   const v = String(raw).trim();
   if (v === "MERRYON") return "자사몰";
+  if (v === "예약거래") return "오프라인스토어";
   return v;
 };
 
@@ -892,7 +893,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       <div style={{display:"flex",gap:9,marginBottom:16,flexWrap:"wrap"}}>
         <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green}/>
-        <KPI label="반품·취소" value={stats.totalReturned.toLocaleString()+"건"}
+        <KPI label="반품" value={stats.totalReturned.toLocaleString()+"건"}
           sub={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}/>
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue}/>
@@ -939,7 +940,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
-            {["판매처","점유율","매출","배송","반품·취소","반품률"].map(h=>(
+            {["판매처","점유율","매출","배송","반품","반품률"].map(h=>(
               <th key={h} style={{padding:"7px 9px",textAlign:h==="판매처"?"left":"right",
                 color:D.textMeta,fontWeight:400}}>{h}</th>
             ))}
