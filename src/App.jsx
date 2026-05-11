@@ -1106,7 +1106,21 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
       {/* 판매처 상세 */}
       <Card style={{marginBottom:12}}>
-        <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+          <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {[["revenue","매출"],["share","점유율"],["shipped","배송"],["returned","반품"],["rate","반품률"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setChSort(prev=>prev.key===k?{key:k,dir:prev.dir==="desc"?"asc":"desc"}:{key:k,dir:"desc"})}
+                style={{background:chSort.key===k?D.black:"transparent",
+                  color:chSort.key===k?"#fff":D.textSub,
+                  border:`1px solid ${chSort.key===k?D.black:D.border}`,
+                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
+                  fontWeight:chSort.key===k?600:400}}>
+                {l}{chSort.key===k?(chSort.dir==="desc"?" ↓":" ↑"):""}
+              </button>
+            ))}
+          </div>
+        </div>
         {(()=>{
           const cols=[
             {key:"name",   label:"판매처", left:true,  val:c=>c.name},
@@ -1116,27 +1130,21 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             {key:"returned",label:"반품",  val:c=>c.returned},
             {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
           ];
-          const toggleSort=key=>{
-            setChSort(prev=>prev.key===key?{key,dir:prev.dir==="desc"?"asc":"desc"}:{key,dir:"desc"});
-          };
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
             if(!col) return 0;
             const va=col.val(a), vb=col.val(b);
             return chSort.dir==="desc"?(vb>va?1:vb<va?-1:0):(va>vb?1:va<vb?-1:0);
           });
-          const arrow=key=>chSort.key===key?(chSort.dir==="desc"?" ↓":" ↑"):"";
           return (
+            <div style={{minHeight:260}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {cols.map(({key,label,left})=>(
-                  <th key={key} onClick={()=>key!=="name"&&toggleSort(key)}
-                    style={{padding:"7px 9px",textAlign:left?"left":"right",
-                      color:chSort.key===key?D.black:D.textMeta,
-                      fontWeight:chSort.key===key?600:400,
-                      cursor:key!=="name"?"pointer":"default",
-                      userSelect:"none",whiteSpace:"nowrap"}}>
-                    {label}{arrow(key)}
+                  <th key={key} style={{padding:"7px 9px",textAlign:left?"left":"right",
+                    color:chSort.key===key?D.black:D.textMeta,
+                    fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap"}}>
+                    {label}
                   </th>
                 ))}
               </tr></thead>
@@ -1165,6 +1173,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                 </tr>
               </tbody>
             </table>
+            </div>
           );
         })()}
       </Card>
@@ -1537,6 +1546,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
                   return Object.values(prodMap)
                     .filter(p=>p.shipped>0||p.stock>0)
                     .sort(sortFn)
+                    .slice(0,sankeyLimit)
                     .map((p,i)=>{
                       const total=p.shipped+p.returned;
                       const rr=total>0?(p.returned/total*100).toFixed(1):"0.0";
