@@ -985,19 +985,18 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* 판매처 점유율 + 판매처별 매출 */}
       <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:10,marginBottom:12}}>
         <Card>
-          <SecTitle ts={ts.orders}>판매처 점유율</SecTitle>
+          <SecTitle ts={ts.orders}>매출 점유율</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
             {(()=>{
-              // 배송 건수 기준 내림차순 정렬 (revenue 없어도 순서 보장)
-              const sorted=[...stats.channelList.slice(0,6)].sort((a,b)=>b.shipped-a.shipped);
+              const sorted=[...stats.channelList.slice(0,6)].sort((a,b)=>b.revenue-a.revenue);
               return (
                 <PieChart>
-                  <Pie data={sorted.map(c=>({name:c.name,value:c.shipped}))}
+                  <Pie data={sorted.map(c=>({name:c.name,value:c.revenue}))}
                     dataKey="value" nameKey="name" cx="50%" cy="50%"
                     innerRadius={38} outerRadius={60} paddingAngle={2}>
                     {sorted.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
                   </Pie>
-                  <Tooltip formatter={(v,n)=>[`${v}건`,n]} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
+                  <Tooltip formatter={(v,n)=>[`₩${v.toLocaleString()}`,n]} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
                   <Legend iconSize={8} iconType="circle" wrapperStyle={{fontSize:10,paddingTop:6}}/>
                 </PieChart>
               );
