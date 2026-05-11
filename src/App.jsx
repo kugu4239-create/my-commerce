@@ -638,7 +638,7 @@ function analyze(orderRows, stockRows, revenueRows) {
     if(r.status==="배송") byChannel[ch].shipped++;
     if(["반품","교환"].includes(r.status)) byChannel[ch].returned++;
   });
-  const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
+  const channelList=Object.values(byChannel).filter(c=>c.name!=="오프라인스토어").sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
@@ -754,9 +754,9 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const stats=useMemo(()=>analyze(filteredOrders,stocks,filteredRevenues),[filteredOrders,stocks,filteredRevenues]);
 
-  // 판매처 채널 목록 (전체 orders 기준)
+  // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
   const activeChannels=useMemo(()=>[...new Set(orders.map(r=>r.channel||"미분류"))]
-    .filter(Boolean).slice(0,8),[orders]);
+    .filter(ch=>ch&&ch!=="오프라인스토어").slice(0,8),[orders]);
 
   // 판매 Top 랭킹
   const bestFilteredOrders=useMemo(()=>{
@@ -765,7 +765,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   },[rankBestPeriod,orders,stats.weekRows,rankBestCustomStart,rankBestCustomEnd]);
 
   const bestRows=useMemo(()=>{
-    const rows=rankBestChannel==="전체"?bestFilteredOrders:bestFilteredOrders.filter(r=>r.channel===rankBestChannel);
+    const base=bestFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
+    const rows=rankBestChannel==="전체"?base:base.filter(r=>r.channel===rankBestChannel);
     const byProd={};
     rows.forEach(r=>{
       const key=r.product_name||"미분류";
@@ -783,7 +784,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     [rankWorstPeriod,orders,rankWorstCustomStart,rankWorstCustomEnd]);
 
   const worstRows=useMemo(()=>{
-    const rows=rankWorstChannel==="전체"?worstFilteredOrders:worstFilteredOrders.filter(r=>r.channel===rankWorstChannel);
+    const base=worstFilteredOrders.filter(r=>r.channel!=="오프라인스토어");
+    const rows=rankWorstChannel==="전체"?base:base.filter(r=>r.channel===rankWorstChannel);
     const byProd={};
     rows.forEach(r=>{
       const key=r.product_name||"미분류";
@@ -832,9 +834,9 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
     }
-    const chs=[...new Set(orders.filter(r=>r.order_date>=start).map(r=>r.channel||"미분류"))].slice(0,5);
+    const chs=[...new Set(orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어").map(r=>r.channel||"미분류"))].slice(0,5);
     const byDate={};
-    orders.filter(r=>r.order_date>=start).forEach(r=>{
+    orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어").forEach(r=>{
       const d=r.order_date; const ch=r.channel||"미분류";
       if(!d||!chs.includes(ch)) return;
       if(!byDate[d]){byDate[d]={date:d.slice(5)};chs.forEach(c=>byDate[d][c]=0);}
@@ -1153,6 +1155,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [period,setPeriod]=useState("3m");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
+  const [sankeyFull,setSankeyFull]=useState(false);
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
 
@@ -1201,9 +1204,35 @@ function LogisticsFlow({ orders, stocks, ts }) {
           ))}
       </div>
 
-      <Card style={{overflowX:"auto",marginBottom:12}}>
+      <Card style={{marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+          <button onClick={()=>setSankeyFull(true)}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+              padding:"5px 14px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+            전체화면
+          </button>
+        </div>
         <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd}/>
       </Card>
+
+      {/* 산키 전체화면 오버레이 */}
+      {sankeyFull&&(
+        <div style={{position:"fixed",top:0,left:0,width:"100vw",height:"100vh",
+          background:"#fff",zIndex:9999,overflow:"auto",boxSizing:"border-box"}}>
+          <div style={{position:"sticky",top:0,background:"#fff",borderBottom:`1px solid ${D.border}`,
+            padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:1}}>
+            <span style={{fontWeight:600,fontSize:14,color:D.black}}>물류 플로우</span>
+            <button onClick={()=>setSankeyFull(false)}
+              style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"5px 14px",fontSize:11,cursor:"pointer",color:D.text}}>
+              닫기 ✕
+            </button>
+          </div>
+          <div style={{padding:"16px 24px"}}>
+            <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd}/>
+          </div>
+        </div>
+      )}
 
       {/* 상품별 흐름 요약 — 배송/반품으로 통일, 옵션 없이 상품명 기준 */}
       {filteredOrders.length>0&&(
