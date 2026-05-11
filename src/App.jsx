@@ -453,8 +453,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     });
     const prods = Object.values(prodMap)
       .filter(p => p.shipped>0||p.stock>0)
-      .sort((a,b)=>b.shipped-a.shipped)
-      .slice(0, 50);
+      .sort((a,b)=>(b.stock||0)-(a.stock||0)||(b.shipped||0)-(a.shipped||0))
+      .slice(0, 30);
     const chanMap = {};
     filteredOrders.forEach(r => {
       const ch = r.channel||"미분류";
@@ -1921,7 +1921,8 @@ export default function App() {
         padding:"18px 10px", display:"flex", flexDirection:"column", flexShrink:0 }}>
         <div style={{ color:D.black, fontWeight:800, fontSize:12, marginBottom:1, paddingLeft:4, letterSpacing:"0.05em" }}>MERRYON</div>
         <div style={{ color:D.black, fontWeight:700, fontSize:11, marginBottom:1, paddingLeft:4 }}>COMMERCE</div>
-        <div style={{ color:D.textMeta, fontSize:9, letterSpacing:"0.1em", marginBottom:22, paddingLeft:4 }}>WORK FLOW</div>
+        <div style={{ color:D.textMeta, fontSize:9, letterSpacing:"0.1em", marginBottom:6, paddingLeft:4 }}>WORK FLOW</div>
+        <div style={{ color:D.textMeta, fontSize:9, paddingLeft:4, marginBottom:18 }}>Made by Jihoon</div>
         <nav style={{ display:"flex", flexDirection:"column", gap:2 }}>
           {nav.map(n=>(
             <button key={n.key} onClick={()=>setPage(n.key)}
@@ -1935,9 +1936,6 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div style={{ marginTop:"auto", paddingLeft:4, color:D.textMeta, fontSize:10 }}>
-          make by jihoon
-        </div>
       </div>
 
       {/* main */}
