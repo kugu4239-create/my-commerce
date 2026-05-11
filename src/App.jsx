@@ -782,6 +782,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [rankWorstChannel,setRankWorstChannel]=useState("전체");
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
+  const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
 
   const axTick={fill:D.textMeta,fontSize:10};
 
@@ -1027,38 +1028,66 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* 판매처 상세 */}
       <Card style={{marginBottom:12}}>
         <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
-            {["판매처","점유율","매출","배송","반품","반품률"].map(h=>(
-              <th key={h} style={{padding:"7px 9px",textAlign:h==="판매처"?"left":"right",
-                color:D.textMeta,fontWeight:400}}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {stats.channelList.map((c)=>(
-              <tr key={c.name} style={{borderBottom:`1px solid ${D.border}`}}>
-                <td style={{padding:"7px 9px",fontWeight:600}}>{c.name}</td>
-                <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share}%</td>
-                <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
-                <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{c.shipped.toLocaleString()}</td>
-                <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{c.returned.toLocaleString()}</td>
-                <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                  color:c.shipped>0&&(c.returned/c.shipped)>0.1?D.red:D.textSub}}>
-                  {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):0}%</td>
-              </tr>
-            ))}
-            <tr style={{borderTop:`1px solid ${D.borderMid}`}}>
-              <td style={{padding:"7px 9px",fontWeight:700}}>합계</td>
-              <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
-              <td style={{textAlign:"right",padding:"7px 9px",fontWeight:700}}>{fmtWon(stats.totalRevenue)}</td>
-              <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:600}}>{stats.totalShipped.toLocaleString()}</td>
-              <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalReturned.toLocaleString()}</td>
-              <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                color:stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}}>
-                {stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
-            </tr>
-          </tbody>
-        </table>
+        {(()=>{
+          const cols=[
+            {key:"name",   label:"판매처", left:true,  val:c=>c.name},
+            {key:"share",  label:"점유율", val:c=>parseFloat(c.share)},
+            {key:"revenue",label:"매출",   val:c=>c.revenue},
+            {key:"shipped",label:"배송",   val:c=>c.shipped},
+            {key:"returned",label:"반품",  val:c=>c.returned},
+            {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
+          ];
+          const toggleSort=key=>{
+            setChSort(prev=>prev.key===key?{key,dir:prev.dir==="desc"?"asc":"desc"}:{key,dir:"desc"});
+          };
+          const sorted=[...stats.channelList].sort((a,b)=>{
+            const col=cols.find(c=>c.key===chSort.key);
+            if(!col) return 0;
+            const va=col.val(a), vb=col.val(b);
+            return chSort.dir==="desc"?(vb>va?1:vb<va?-1:0):(va>vb?1:va<vb?-1:0);
+          });
+          const arrow=key=>chSort.key===key?(chSort.dir==="desc"?" ↓":" ↑"):"";
+          return (
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
+                {cols.map(({key,label,left})=>(
+                  <th key={key} onClick={()=>key!=="name"&&toggleSort(key)}
+                    style={{padding:"7px 9px",textAlign:left?"left":"right",
+                      color:chSort.key===key?D.black:D.textMeta,
+                      fontWeight:chSort.key===key?600:400,
+                      cursor:key!=="name"?"pointer":"default",
+                      userSelect:"none",whiteSpace:"nowrap"}}>
+                    {label}{arrow(key)}
+                  </th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {sorted.map(c=>(
+                  <tr key={c.name} style={{borderBottom:`1px solid ${D.border}`}}>
+                    <td style={{padding:"7px 9px",fontWeight:600}}>{c.name}</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="share"?700:400}}>{c.share}%</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",fontWeight:chSort.key==="revenue"?700:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:chSort.key==="shipped"?700:400}}>{c.shipped.toLocaleString()}</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:chSort.key==="returned"?700:400}}>{c.returned.toLocaleString()}</td>
+                    <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
+                      color:c.shipped>0&&(c.returned/c.shipped)>0.1?D.red:D.textSub}}>
+                      {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):0}%</td>
+                  </tr>
+                ))}
+                <tr style={{borderTop:`1px solid ${D.borderMid}`}}>
+                  <td style={{padding:"7px 9px",fontWeight:700}}>합계</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",fontWeight:700}}>{fmtWon(stats.totalRevenue)}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:600}}>{stats.totalShipped.toLocaleString()}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalReturned.toLocaleString()}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
+                    color:stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}}>
+                    {stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
+                </tr>
+              </tbody>
+            </table>
+          );
+        })()}
       </Card>
 
       {/* 월별 배송량 (독립 기간) */}
