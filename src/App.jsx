@@ -521,8 +521,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const headers = ["입고","판매처별 배송","반품"];
 
   return (
-    <div style={{ overflowX:"auto", overflowY:"auto", maxHeight:1200 }}>
-      <svg width={SVG_W} height={totalSvgH} style={{ display:"block", minWidth:SVG_W }}>
+    <div style={{ width:"100%" }}>
+      <svg width="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
+        preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
 
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
@@ -863,9 +864,16 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
     }
-    const chs=[...new Set(orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어").map(r=>r.channel||"미분류"))].slice(0,5);
+    const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어");
+    const retByCh={};
+    filteredRet.forEach(r=>{
+      const ch=r.channel||"미분류";
+      if(!retByCh[ch]) retByCh[ch]=0;
+      if(["반품","교환"].includes(r.status)) retByCh[ch]++;
+    });
+    const chs=Object.entries(retByCh).sort((a,b)=>b[1]-a[1]).map(([ch])=>ch).slice(0,5);
     const byDate={};
-    orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어").forEach(r=>{
+    filteredRet.forEach(r=>{
       const d=r.order_date; const ch=r.channel||"미분류";
       if(!d||!chs.includes(ch)) return;
       if(!byDate[d]){byDate[d]={date:d.slice(5)};chs.forEach(c=>byDate[d][c]=0);}
@@ -1026,7 +1034,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <SecTitle ts={ts.orders}>월별 배송량</SecTitle>
+            <SecTitle ts={ts.orders}>배송량</SecTitle>
             <div style={{display:"flex",gap:4}}>
               {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
                 <SmPeriodBtn key={v} val={v} cur={shippingPeriod} onChange={setShippingPeriod} label={l}/>
@@ -1104,7 +1112,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           <RankTable data={bestRows} cols={[
-            {key:"name",label:"상품명",maxW:190},
+            {key:"name",label:"상품명",maxW:190,bold:true,color:"#2d2d2d"},
             {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
             {key:"share",label:"배송 점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
           ]}/>
@@ -1157,7 +1165,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           <RankTable data={worstRows} cols={[
-            {key:"name",label:"상품명",maxW:160},
+            {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
             {key:"returned",label:"반품",right:true,bold:true,color:D.red,fmt:v=>v.toLocaleString()},
             {key:"returnRate",label:"반품률",right:true,color:D.red,fmt:v=>v+"%"},
             {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:130},
@@ -1267,14 +1275,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
           ))}
       </div>
 
-      <Card style={{marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
-          <button onClick={()=>setSankeyFull(true)}
-            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
-              padding:"5px 14px",fontSize:11,cursor:"pointer",fontWeight:600}}>
-            전체화면
-          </button>
-        </div>
+      <Card style={{marginBottom:12,padding:"12px 16px"}}>
         <ProductSankey stockRows={stocks} orderRows={orders} period={period} customStart={customStart} customEnd={customEnd}/>
       </Card>
 
@@ -1559,6 +1560,7 @@ function CSDataInput() {
   const [reason,setReason]=useState("");
   const [channel,setChannel]=useState("자사몰");
   const [filterProd,setFilterProd]=useState("");
+  const [csvResult,setCsvResult]=useState(null);
 
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
@@ -1569,6 +1571,38 @@ function CSDataInput() {
     saveCSData(next);setCSData(next);
     setProduct("");setReason("");
   };
+
+  const handleCSVFile=useCallback(file=>{
+    if(!file)return;
+    setCsvResult(null);
+    Papa.parse(file,{header:true,skipEmptyLines:true,
+      complete:({data})=>{
+        try{
+          const cols=Object.keys(data[0]||{});
+          const lc=cols.map(c=>c.toLowerCase().replace(/[\s\[\]()]/g,""));
+          const findCol=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
+          const prodCol=findCol("상품명","상품","product","item");
+          const reasonCol=findCol("반품사유","반품","사유","reason","취소");
+          const dateCol=findCol("날짜","date","일자","접수일","처리일");
+          const chCol=findCol("판매처","채널","channel","플랫폼","mall");
+          if(!prodCol)throw new Error("[상품] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
+          if(!reasonCol)throw new Error("[반품 사유] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
+          const newEntries=data.filter(r=>r[prodCol]&&r[reasonCol]).map(r=>({
+            id:Date.now()+Math.random(),
+            date:dateCol&&toDate(r[dateCol])?toDate(r[dateCol]):today,
+            product_name:String(r[prodCol]||"").trim(),
+            return_reason:String(r[reasonCol]||"").trim(),
+            channel:chCol?normChannel(r[chCol]):"미분류",
+          }));
+          if(!newEntries.length)throw new Error("유효한 데이터 행이 없습니다");
+          const next=[...newEntries,...csData];
+          saveCSData(next);setCSData(next);
+          setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료`});
+        }catch(e){setCsvResult({type:"error",msg:e.message});}
+      },
+      error:e=>setCsvResult({type:"error",msg:e.message}),
+    });
+  },[csData,today]);
 
   const del=id=>{
     const next=csData.filter(r=>r.id!==id);
@@ -1612,6 +1646,15 @@ function CSDataInput() {
             padding:"10px",fontSize:12,cursor:"pointer",fontWeight:600}}>
           저장
         </button>
+        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 일괄 업로드</div>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:8,lineHeight:1.6}}>
+            필수 컬럼: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
+            선택: [날짜] [판매처]
+          </div>
+          <DropZone onFile={handleCSVFile} label="반품 CS CSV 업로드"/>
+          {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
+        </div>
       </Card>
       <Card>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
