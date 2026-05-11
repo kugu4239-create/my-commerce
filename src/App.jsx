@@ -149,8 +149,8 @@ function parseOption(productName, optionName) {
 }
 
 function useWindowWidth(){
-  const [w,setW]=React.useState(()=>window.innerWidth);
-  React.useEffect(()=>{
+  const [w,setW]=useState(()=>window.innerWidth);
+  useEffect(()=>{
     const h=()=>setW(window.innerWidth);
     window.addEventListener("resize",h);
     return()=>window.removeEventListener("resize",h);
