@@ -123,6 +123,10 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
     const c = new Date(); c.setMonth(c.getMonth()-3);
     return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
   }
+  if (period === "6m") {
+    const c = new Date(); c.setMonth(c.getMonth()-6);
+    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+  }
   if (period === "custom" && customStart && customEnd) {
     return rows.filter(r => r[dateField] >= customStart && r[dateField] <= customEnd);
   }
@@ -745,10 +749,16 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [period,setPeriod]=useState("all");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
-  const [weekTab,setWeekTab]=useState("best");
-  const [rankChannel,setRankChannel]=useState("전체");
   const [shippingPeriod,setShippingPeriod]=useState("thisMonth");
   const [returnPeriod,setReturnPeriod]=useState("1m");
+  const [rankBestPeriod,setRankBestPeriod]=useState("1w");
+  const [rankBestChannel,setRankBestChannel]=useState("전체");
+  const [rankBestCustomStart,setRankBestCustomStart]=useState("");
+  const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
+  const [rankWorstPeriod,setRankWorstPeriod]=useState("all");
+  const [rankWorstChannel,setRankWorstChannel]=useState("전체");
+  const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
+  const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
 
   const axTick={fill:D.textMeta,fontSize:10};
 
@@ -756,13 +766,18 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const stats=useMemo(()=>analyze(filteredOrders,stocks,filteredRevenues),[filteredOrders,stocks,filteredRevenues]);
 
-  // 판매처 채널 목록
-  const activeChannels=useMemo(()=>[...new Set(filteredOrders.map(r=>r.channel||"미분류"))]
-    .filter(Boolean).slice(0,6),[filteredOrders]);
+  // 판매처 채널 목록 (전체 orders 기준)
+  const activeChannels=useMemo(()=>[...new Set(orders.map(r=>r.channel||"미분류"))]
+    .filter(Boolean).slice(0,8),[orders]);
 
-  // 채널 필터된 랭킹 데이터
-  const rankRows=useMemo(()=>{
-    const rows=rankChannel==="전체"?stats.weekRows:stats.weekRows.filter(r=>r.channel===rankChannel);
+  // 판매 Top 랭킹
+  const bestFilteredOrders=useMemo(()=>{
+    if(rankBestPeriod==="1w") return stats.weekRows;
+    return filterByDate(orders,"order_date",rankBestPeriod,rankBestCustomStart,rankBestCustomEnd);
+  },[rankBestPeriod,orders,stats.weekRows,rankBestCustomStart,rankBestCustomEnd]);
+
+  const bestRows=useMemo(()=>{
+    const rows=rankBestChannel==="전체"?bestFilteredOrders:bestFilteredOrders.filter(r=>r.channel===rankBestChannel);
     const byProd={};
     rows.forEach(r=>{
       const key=r.product_name||"미분류";
@@ -770,13 +785,28 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
       if(["반품","교환"].includes(r.status)) byProd[key].returned++;
     });
-    const list=Object.values(byProd);
-    const best=[...list].sort((a,b)=>b.qty-a.qty).slice(0,20)
+    return Object.values(byProd).sort((a,b)=>b.qty-a.qty).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0"}));
-    const worst=[...list].filter(p=>p.returned>0).sort((a,b)=>b.returned-a.returned).slice(0,20)
+  },[bestFilteredOrders,rankBestChannel]);
+
+  // 반품 Top 랭킹
+  const worstFilteredOrders=useMemo(()=>
+    filterByDate(orders,"order_date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd),
+    [rankWorstPeriod,orders,rankWorstCustomStart,rankWorstCustomEnd]);
+
+  const worstRows=useMemo(()=>{
+    const rows=rankWorstChannel==="전체"?worstFilteredOrders:worstFilteredOrders.filter(r=>r.channel===rankWorstChannel);
+    const byProd={};
+    rows.forEach(r=>{
+      const key=r.product_name||"미분류";
+      if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
+      byProd[key].qty+=(r.qty||0); byProd[key].orders++;
+      if(["반품","교환"].includes(r.status)) byProd[key].returned++;
+    });
+    return Object.values(byProd).filter(p=>p.returned>0)
+      .sort((a,b)=>b.returned-a.returned).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0"}));
-    return {best,worst};
-  },[stats.weekRows,rankChannel]);
+  },[worstFilteredOrders,rankWorstChannel]);
 
   // 월별 배송량 차트 데이터
   const shippingChartData=useMemo(()=>{
@@ -1022,60 +1052,104 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         </Card>
       </div>
 
-      {/* 주간 상품 랭킹 */}
+      {/* 판매 Top */}
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <SecTitle ts={ts.orders}>주간 상품 랭킹{stats.latestWeek?` — ${stats.latestWeek}`:""}</SecTitle>
-          </div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {/* 채널 필터 */}
+          <SecTitle ts={ts.orders}>판매 Top{rankBestPeriod==="1w"&&stats.latestWeek?` — ${stats.latestWeek}`:""}</SecTitle>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
             {["전체",...activeChannels].map(ch=>(
-              <button key={ch} onClick={()=>setRankChannel(ch)}
-                style={{background:rankChannel===ch?D.black:"transparent",
-                  color:rankChannel===ch?"#fff":D.textSub,
-                  border:`1px solid ${rankChannel===ch?D.black:D.border}`,
-                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>
-                {ch}
-              </button>
+              <button key={ch} onClick={()=>setRankBestChannel(ch)}
+                style={{background:rankBestChannel===ch?D.black:"transparent",
+                  color:rankBestChannel===ch?"#fff":D.textSub,
+                  border:`1px solid ${rankBestChannel===ch?D.black:D.border}`,
+                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
-            <div style={{width:1,background:D.border,margin:"0 2px"}}/>
-            {[["best","판매 Top"],["worst","반품 Top"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setWeekTab(k)}
-                style={{background:"transparent",border:"none",
-                  borderBottom:weekTab===k?`2px solid ${D.black}`:"2px solid transparent",
-                  color:weekTab===k?D.black:D.textSub,padding:"3px 10px",
-                  fontWeight:weekTab===k?600:400,fontSize:11,cursor:"pointer"}}>
-                {l}
-              </button>
+            <div style={{width:1,background:D.border,margin:"0 4px"}}/>
+            {[["1w","이번 주"],["1m","1개월"],["3m","3개월"],["all","전체"],["custom","기간 선택"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setRankBestPeriod(k)}
+                style={{background:rankBestPeriod===k?D.black:"transparent",
+                  color:rankBestPeriod===k?"#fff":D.textSub,
+                  border:`1px solid ${rankBestPeriod===k?D.black:D.border}`,
+                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{l}</button>
             ))}
+            {rankBestPeriod==="custom"&&(
+              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                <input type="date" value={rankBestCustomStart} onChange={e=>setRankBestCustomStart(e.target.value)}
+                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
+                <span style={{color:D.textMeta}}>—</span>
+                <input type="date" value={rankBestCustomEnd} onChange={e=>setRankBestCustomEnd(e.target.value)}
+                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
+              </div>
+            )}
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          <RankTable
-            data={weekTab==="best"?rankRows.best:rankRows.worst}
-            cols={weekTab==="best"?[
-              {key:"name",label:"상품명",maxW:190},
-              {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
-              {key:"returnRate",label:"반품률",right:true,color:D.textMeta,fmt:v=>v+"%"},
-            ]:[
-              {key:"name",label:"상품명",maxW:190},
-              {key:"returned",label:"반품",right:true,bold:true,color:D.red,fmt:v=>v.toLocaleString()},
-              {key:"returnRate",label:"반품률",right:true,color:D.red,fmt:v=>v+"%"},
-              {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
-            ]}
-          />
+          <RankTable data={bestRows} cols={[
+            {key:"name",label:"상품명",maxW:190},
+            {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
+            {key:"returnRate",label:"반품률",right:true,color:D.textMeta,fmt:v=>v+"%"},
+          ]}/>
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={(weekTab==="best"?rankRows.best:rankRows.worst).slice(0,12)} layout="vertical">
+            <BarChart data={bestRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick}/>
               <YAxis type="category" dataKey="name" width={130} tick={{...axTick,fontSize:9}}/>
               <Tooltip content={<Tip/>}/>
-              <Bar dataKey={weekTab==="best"?"qty":"returned"} name={weekTab==="best"?"배송량":"반품"} radius={[0,3,3,0]}>
-                {(weekTab==="best"?rankRows.best:rankRows.worst).slice(0,12).map((_,i)=>(
-                  <Cell key={i} fill={weekTab==="best"?(i===0?"#111":i===1?"#444":i===2?"#777":"#aaa"):D.red}/>
+              <Bar dataKey="qty" name="배송량" radius={[0,3,3,0]}>
+                {bestRows.slice(0,12).map((_,i)=>(
+                  <Cell key={i} fill={i===0?"#111":i===1?"#444":i===2?"#777":"#aaa"}/>
                 ))}
               </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* 반품 Top */}
+      <Card>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+          <SecTitle ts={ts.orders}>반품 Top</SecTitle>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+            {["전체",...activeChannels].map(ch=>(
+              <button key={ch} onClick={()=>setRankWorstChannel(ch)}
+                style={{background:rankWorstChannel===ch?D.black:"transparent",
+                  color:rankWorstChannel===ch?"#fff":D.textSub,
+                  border:`1px solid ${rankWorstChannel===ch?D.black:D.border}`,
+                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
+            ))}
+            <div style={{width:1,background:D.border,margin:"0 4px"}}/>
+            {[["1m","1개월"],["3m","3개월"],["6m","6개월"],["all","전체"],["custom","기간 선택"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setRankWorstPeriod(k)}
+                style={{background:rankWorstPeriod===k?D.black:"transparent",
+                  color:rankWorstPeriod===k?"#fff":D.textSub,
+                  border:`1px solid ${rankWorstPeriod===k?D.black:D.border}`,
+                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{l}</button>
+            ))}
+            {rankWorstPeriod==="custom"&&(
+              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                <input type="date" value={rankWorstCustomStart} onChange={e=>setRankWorstCustomStart(e.target.value)}
+                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
+                <span style={{color:D.textMeta}}>—</span>
+                <input type="date" value={rankWorstCustomEnd} onChange={e=>setRankWorstCustomEnd(e.target.value)}
+                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:10,color:D.text}}/>
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          <RankTable data={worstRows} cols={[
+            {key:"name",label:"상품명",maxW:190},
+            {key:"returned",label:"반품",right:true,bold:true,color:D.red,fmt:v=>v.toLocaleString()},
+            {key:"returnRate",label:"반품률",right:true,color:D.red,fmt:v=>v+"%"},
+            {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
+          ]}/>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={worstRows.slice(0,12)} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
+              <XAxis type="number" tick={axTick}/>
+              <YAxis type="category" dataKey="name" width={130} tick={{...axTick,fontSize:9}}/>
+              <Tooltip content={<Tip/>}/>
+              <Bar dataKey="returned" name="반품" radius={[0,3,3,0]} fill={D.red}/>
             </BarChart>
           </ResponsiveContainer>
         </div>
