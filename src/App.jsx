@@ -736,7 +736,7 @@ function analyze(orderRows, stockRows, revenueRows) {
 
   // 이지어드민 CSV 기반 KPI
   const totalShipped  = orderRows.filter(r=>r.status==="배송").length;
-  const totalReturned = orderRows.filter(r=>["반품","교환"].includes(r.status)).length;
+  const totalReturned = orderRows.filter(r=>r.status==="반품").length;
   const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
   // 판매처별 집계
@@ -752,13 +752,13 @@ function analyze(orderRows, stockRows, revenueRows) {
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(r.status==="배송") byChannel[ch].shipped++;
-    if(["반품","교환"].includes(r.status)) byChannel[ch].returned++;
+    if(r.status==="반품") byChannel[ch].returned++;
   });
   const channelList=Object.values(byChannel).filter(c=>c.name!=="오프라인스토어").sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
-    c.returnRate=c.orderCount>0?(c.refundCount/c.orderCount*100).toFixed(1):"0.0";
+    c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
   });
 
   // 월별 배송/반품
@@ -768,7 +768,7 @@ function analyze(orderRows, stockRows, revenueRows) {
     if(!ym) return;
     if(!byMonth[ym]) byMonth[ym]={month:ym,shipped:0,returned:0};
     if(r.status==="배송") byMonth[ym].shipped++;
-    if(["반품","교환"].includes(r.status)) byMonth[ym].returned++;
+    if(r.status==="반품") byMonth[ym].returned++;
   });
   const monthlyData=Object.values(byMonth)
     .sort((a,b)=>a.month>b.month?1:-1)
@@ -795,7 +795,7 @@ function analyze(orderRows, stockRows, revenueRows) {
     if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
     byProd[key].qty+=(r.qty||0);
     byProd[key].orders++;
-    if(["반품","교환"].includes(r.status)) byProd[key].returned++;
+    if(r.status==="반품") byProd[key].returned++;
   });
   const prodList=Object.values(byProd);
   const weekBest=[...prodList].sort((a,b)=>b.qty-a.qty).slice(0,20)
@@ -904,7 +904,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       if(!map[ch]) map[ch]={};
       const {color,size}=parseOption(r.product_name,r.option_name);
       const isShipped=r.status==="배송";
-      const isReturned=["반품","교환"].includes(r.status);
+      const isReturned=r.status==="반품";
       if(!isShipped&&!isReturned) return;
       [[color,"c"],[size,"s"]].forEach(([val,type])=>{
         if(!val) return;
@@ -944,7 +944,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       const key=r.product_name||"미분류";
       if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
-      if(["반품","교환"].includes(r.status)) byProd[key].returned++;
+      if(r.status==="반품") byProd[key].returned++;
     });
     const totalQty=Object.values(byProd).reduce((s,p)=>s+p.qty,0)||1;
     return Object.values(byProd).sort((a,b)=>b.qty-a.qty).slice(0,20)
@@ -965,7 +965,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       const key=r.product_name||"미분류";
       if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
-      if(["반품","교환"].includes(r.status)) byProd[key].returned++;
+      if(r.status==="반품") byProd[key].returned++;
     });
     const csData=getCSData();
     const csMap={};
@@ -1024,7 +1024,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
-      if(["반품","교환"].includes(r.status)){
+      if(r.status==="반품"){
         const ch=r.channel||"미분류";
         retByCh[ch]=(retByCh[ch]||0)+1;
       }
@@ -1036,7 +1036,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       const d=r.order_date; const ch=r.channel||"미분류";
       if(!d||!chs.includes(ch)) return;
       if(!byDate[d]){byDate[d]={date:d.slice(5)};chs.forEach(c=>byDate[d][c]=0);}
-      if(["반품","교환"].includes(r.status)) byDate[d][ch]=(byDate[d][ch]||0)+1;
+      if(r.status==="반품") byDate[d][ch]=(byDate[d][ch]||0)+1;
     });
     return {data:Object.values(byDate).sort((a,b)=>a.date>b.date?1:-1),channels:chs};
   },[orders,returnPeriod]);
@@ -1661,7 +1661,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
                     const k=r.product_name||"미분류";
                     if(!prodMap[k]) prodMap[k]={name:k,stock:0,shipped:0,returned:0};
                     if(r.status==="배송") prodMap[k].shipped++;
-                    if(["반품","교환"].includes(r.status)) prodMap[k].returned++;
+                    if(r.status==="반품") prodMap[k].returned++;
                   });
                   const sortFn=flowSort==="stock"?(a,b)=>b.stock-a.stock
                     :flowSort==="returned"?(a,b)=>b.returned-a.returned
