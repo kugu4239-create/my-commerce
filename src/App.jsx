@@ -2341,7 +2341,10 @@ export default function App() {
   const [orders,setOrders]=useState([]);
   const [stocks,setStocks]=useState([]);
   const [revenues,setRevenues]=useState([]);
-  const [ts,setTs]=useState({orders:null,stock:null,revenue:null});
+  const [ts,setTs]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("merryon_ts")||"null")||{orders:null,stock:null,revenue:null};}
+    catch{return{orders:null,stock:null,revenue:null};}
+  });
 
   const loadData=useCallback(async()=>{
     const db=await getSupabase();
@@ -2367,7 +2370,11 @@ export default function App() {
 
   useEffect(()=>{ loadData(); },[loadData]);
 
-  const updateTs=useCallback((key,val)=>setTs(prev=>({...prev,[key]:val})),[]);
+  const updateTs=useCallback((key,val)=>setTs(prev=>{
+    const next={...prev,[key]:val};
+    try{localStorage.setItem("merryon_ts",JSON.stringify(next));}catch{}
+    return next;
+  }),[]);
 
   const nav=[
     {key:"dashboard",label:"대시보드"},
