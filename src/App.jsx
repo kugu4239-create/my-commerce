@@ -748,8 +748,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [deleteAll,setDeleteAll]=useState(false);
-  const [shippingPeriod,setShippingPeriod]=useState("thisMonth");
-  const [returnPeriod,setReturnPeriod]=useState("1m");
+  const [shippingPeriod,setShippingPeriod]=useState("7d");
+  const [returnPeriod,setReturnPeriod]=useState("7d");
   const [rankBestPeriod,setRankBestPeriod]=useState("1w");
   const [rankBestChannel,setRankBestChannel]=useState("전체");
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
@@ -829,19 +829,20 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   // 월별 배송량 차트 데이터
   const shippingChartData=useMemo(()=>{
     const today=new Date().toISOString().slice(0,10);
-    if(shippingPeriod==="thisMonth"){
-      const now=new Date();
-      const ms=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
+    if(shippingPeriod==="7d"||shippingPeriod==="1m"){
+      const c=new Date();
+      if(shippingPeriod==="7d") c.setDate(c.getDate()-7);
+      else c.setMonth(c.getMonth()-1);
+      const cut=c.toISOString().slice(0,10);
       const byDay={};
-      orders.filter(r=>r.order_date>=ms&&r.order_date<=today).forEach(r=>{
+      orders.filter(r=>r.order_date>=cut&&r.order_date<=today).forEach(r=>{
         const d=r.order_date;
         if(!byDay[d]) byDay[d]={date:d.slice(5),shipped:0};
         if(r.status==="배송") byDay[d].shipped++;
       });
       return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
     }
-    const months=shippingPeriod==="3m"?3:shippingPeriod==="6m"?6:12;
-    const c=new Date(); c.setMonth(c.getMonth()-months);
+    const c=new Date(); c.setMonth(c.getMonth()-3);
     const cut=c.toISOString().slice(0,10);
     const byMonth={};
     orders.filter(r=>r.order_date>=cut).forEach(r=>{
@@ -854,10 +855,10 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
   // 일별 반품 by 채널 차트
   const returnChartData=useMemo(()=>{
-    const c=new Date();
     let start;
-    if(returnPeriod==="thisMonth"){
-      start=`${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,"0")}-01`;
+    if(returnPeriod==="7d"){
+      const d=new Date(); d.setDate(d.getDate()-7);
+      start=d.toISOString().slice(0,10);
     } else {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
@@ -957,8 +958,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
               <Pie data={stats.channelList.slice(0,6).map(c=>({name:c.name,value:parseFloat(c.share)}))}
                 dataKey="value" nameKey="name" cx="50%" cy="50%"
                 innerRadius={38} outerRadius={60} paddingAngle={2}>
-                {stats.channelList.slice(0,6).map((_,i)=>(
-                  <Cell key={i} fill={i===0?"#111":i===1?"#444":i===2?"#777":i===3?"#999":i===4?"#bbb":"#ddd"}/>
+                {stats.channelList.slice(0,6).map((c,i)=>(
+                  <Cell key={i} fill={chColor(c.name)}/>
                 ))}
               </Pie>
               <Tooltip formatter={v=>`${v}%`} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
@@ -975,8 +976,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
               <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
               <Tooltip content={<Tip/>}/>
               <Bar dataKey="revenue" name="매출" radius={[0,3,3,0]}>
-                {stats.channelList.slice(0,7).map((_,i)=>(
-                  <Cell key={i} fill={i===0?"#111":i===1?"#444":i===2?"#777":"#aaa"}/>
+                {stats.channelList.slice(0,7).map((c,i)=>(
+                  <Cell key={i} fill={chColor(c.name)}/>
                 ))}
               </Bar>
             </BarChart>
@@ -1027,7 +1028,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>월별 배송량</SecTitle>
             <div style={{display:"flex",gap:4}}>
-              {[["thisMonth","이번달"],["3m","3개월"],["6m","6개월"]].map(([v,l])=>(
+              {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
                 <SmPeriodBtn key={v} val={v} cur={shippingPeriod} onChange={setShippingPeriod} label={l}/>
               ))}
             </div>
@@ -1038,7 +1039,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
               <XAxis dataKey="date" tick={axTick}/>
               <YAxis tick={axTick}/>
               <Tooltip content={<Tip/>}/>
-              <Bar dataKey="shipped" name="배송" fill="#111" radius={[3,3,0,0]}/>
+              <Bar dataKey="shipped" name="배송" fill="#7EADD4" radius={[3,3,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -1048,7 +1049,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>판매처별 반품 추이</SecTitle>
             <div style={{display:"flex",gap:4}}>
-              {[["thisMonth","이번달"],["1m","1개월"],["3m","3개월"]].map(([v,l])=>(
+              {[["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
                 <SmPeriodBtn key={v} val={v} cur={returnPeriod} onChange={setReturnPeriod} label={l}/>
               ))}
             </div>
@@ -1105,7 +1106,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           <RankTable data={bestRows} cols={[
             {key:"name",label:"상품명",maxW:190},
             {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
-            {key:"share",label:"점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
+            {key:"share",label:"배송 점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
           ]}/>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={bestRows.slice(0,12)} layout="vertical">
@@ -1115,7 +1116,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
               <Tooltip content={<Tip/>}/>
               <Bar dataKey="qty" name="배송량" radius={[0,3,3,0]}>
                 {bestRows.slice(0,12).map((_,i)=>(
-                  <Cell key={i} fill={i===0?"#111":i===1?"#444":i===2?"#777":"#aaa"}/>
+                  <Cell key={i} fill={D.SANKEY[i%D.SANKEY.length]}/>
                 ))}
               </Bar>
             </BarChart>
