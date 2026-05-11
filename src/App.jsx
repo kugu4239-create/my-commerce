@@ -246,6 +246,16 @@ function KPI({ label, value, sub, accent="#111", onClick }) {
     </div>
   );
 }
+function InfoBtn({ onClick }) {
+  return (
+    <button onClick={onClick}
+      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:"50%",
+        width:20,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",
+        fontSize:10,cursor:"pointer",color:D.textSub,marginLeft:6,verticalAlign:"middle"}}>
+      i
+    </button>
+  );
+}
 function Tip({ active, payload, label }) {
   if (!active||!payload?.length) return null;
   return (
@@ -3701,15 +3711,6 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }
   const [tab,setTab]=useState("revenue");
   const [stockInfoOpen,setStockInfoOpen]=useState(false);
   const [orderInfoOpen,setOrderInfoOpen]=useState(false);
-
-  const InfoBtn=({onClick})=>(
-    <button onClick={onClick}
-      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:"50%",
-        width:20,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",
-        fontSize:10,cursor:"pointer",color:D.textSub,marginLeft:6,verticalAlign:"middle"}}>
-      i
-    </button>
-  );
 
   const lastDate=(arr,field)=>{
     const d=arr.map(r=>r[field]).filter(Boolean).sort().at(-1);
