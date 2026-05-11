@@ -1801,7 +1801,7 @@ export default function App() {
       db.from("stock_uploads").select("*"),
       db.from("revenues").select("*").order("date",{ascending:false}),
     ]);
-    setOrders(o.data||[]);
+    setOrders((o.data||[]).map(r=>({...r,channel:normChannel(r.channel)})));
     setStocks(s.data||[]);
     setRevenues(r.data||[]);
   },[]);
