@@ -728,7 +728,7 @@ const savePromos=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ─────────────────────────────────────────────
 function analyze(orderRows, stockRows, revenueRows) {
   // 매출 입력 데이터 기반 KPI
-  const totalRevenue    = revenueRows.reduce((s,r)=>s+(r.amount||0),0);
+  const totalRevenue    = revenueRows.reduce((s,r)=>s+(r.amount||0)-(r.refund_amount||0),0);
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
@@ -744,7 +744,7 @@ function analyze(orderRows, stockRows, revenueRows) {
   revenueRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    byChannel[ch].revenue+=(r.amount||0);
+    byChannel[ch].revenue+=(r.amount||0)-(r.refund_amount||0);
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
