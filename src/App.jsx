@@ -2764,7 +2764,7 @@ function EasyAdminUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // DATA INPUT (탭 컨테이너)
 // ─────────────────────────────────────────────
-function DataInput({ onUpdate, onDataChange }) {
+function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }) {
   const [tab,setTab]=useState("revenue");
   const [stockInfoOpen,setStockInfoOpen]=useState(false);
   const [orderInfoOpen,setOrderInfoOpen]=useState(false);
@@ -2778,10 +2778,15 @@ function DataInput({ onUpdate, onDataChange }) {
     </button>
   );
 
+  const lastDate=(arr,field)=>{
+    const d=arr.map(r=>r[field]).filter(Boolean).sort().at(-1);
+    return d?<span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:6}}>({d})</span>:null;
+  };
+
   const tabs=[
-    {key:"revenue",label:"매출 입력"},
-    {key:"stock",label:<span>입고 CSV <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
-    {key:"orders",label:<span>이지어드민 CSV(배송일 기준) <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
+    {key:"revenue",label:<span>매출 입력{lastDate(revenues,"date")}</span>},
+    {key:"stock",label:<span>입고 CSV{lastDate(stocks,"upload_date")} <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
+    {key:"orders",label:<span>이지어드민 CSV(배송일 기준){lastDate(orders,"order_date")} <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
     {key:"cs",label:"CS 데이터"},
     {key:"delete",label:"데이터 삭제"},
   ];
@@ -2923,6 +2928,9 @@ export default function App() {
           <DataInput
             onUpdate={updateTs}
             onDataChange={loadData}
+            orders={orders}
+            stocks={stocks}
+            revenues={revenues}
           />
         )}
       </div>
