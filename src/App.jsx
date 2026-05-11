@@ -737,11 +737,12 @@ const PERIOD_TABS=[
   {key:"week",label:"이번 주"},
   {key:"1m",label:"1개월"},
   {key:"3m",label:"3개월"},
+  {key:"all",label:"전체"},
   {key:"custom",label:"기간 선택"},
 ];
 
 function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
-  const [period,setPeriod]=useState("week");
+  const [period,setPeriod]=useState("all");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [weekTab,setWeekTab]=useState("best");
