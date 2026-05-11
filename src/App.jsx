@@ -62,6 +62,14 @@ const toDate = raw => {
   return null;
 };
 
+// 판매처 이름 정규화
+const normChannel = raw => {
+  if (!raw) return "미분류";
+  const v = String(raw).trim();
+  if (v === "MERRYON") return "자사몰";
+  return v;
+};
+
 // 이지어드민 CS 컬럼 → 내부 상태 (정상=배송, 배송후 전체 교환=교환, 배송후 전체 취소=반품)
 const normCS = raw => {
   if (!raw) return "배송";
@@ -85,7 +93,7 @@ function detectFields(columns) {
     channel:      f("판매처","channel","플랫폼","채널","mall","store","platform"),
     product:      f("상품명","product","품명","item","name"),
     option:       f("옵션","option","size","color","사이즈","색상"),
-    qty:          f("수량","qty","quantity","개수","판매수량"),
+    qty:          f("수량","qty","quantity","개수","판매수량","입고"),
     cs:           f("cs","처리","cs처리","cs상태"),
     date:         f("배송일","주문일","날짜","date","order_date","주문날짜","reg_date","delivery_date"),
     orderId:      f("관리번호","order_id","주문번호","orderid"),
@@ -1556,7 +1564,7 @@ function EasyAdminUploader({ onUpdate }) {
             const oid=String(r[f.orderId]).trim();
             const prod=String(r[f.product]||"").trim();
             const opt=String(r[f.option]||"").trim();
-            const ch=String(r[f.channel]||"미분류").trim();
+            const ch=normChannel(r[f.channel]);
             const rawDate=r[f.date];
             const dateVal=toDate(rawDate);
             // CS 컬럼 우선, 없으면 status 컬럼
@@ -1582,46 +1590,40 @@ function EasyAdminUploader({ onUpdate }) {
     });
   },[]);
 
-  // Step 1→2: 파일 업로드 버튼 클릭
+  // Step 1→2: 미리보기 (파싱 결과만 확인, DB 조회 없음)
   const handlePreview=async()=>{
     if(!parsedFile?.length) {setResult({type:"error",msg:"파일을 먼저 선택해주세요"});return;}
     setLoading(true);
     const inR=parsedFile.filter(r=>r.order_date&&r.order_date>=startDate&&r.order_date<=endDate);
     const outR=parsedFile.filter(r=>!r.order_date||r.order_date<startDate||r.order_date>endDate);
     setInRange(inR); setOutRows(outR);
-    if(inR.length>0){
-      const db=await getSupabase();
-      const {data:existing}=await db.from("orders").select("order_id,status").in("order_id",inR.map(r=>r.order_id).slice(0,1000));
-      const existMap=new Map((existing||[]).map(r=>[r.order_id,r.status]));
-      setDupInfo({
-        total:inR.length,
-        newCount:inR.filter(r=>!existMap.has(r.order_id)).length,
-        updateCount:inR.filter(r=>existMap.has(r.order_id)&&existMap.get(r.order_id)!==r.status).length,
-        sameCount:inR.filter(r=>existMap.has(r.order_id)&&existMap.get(r.order_id)===r.status).length,
-      });
-    } else setDupInfo({total:0,newCount:0,updateCount:0,sameCount:0});
+    setDupInfo({total:inR.length,newCount:inR.length,updateCount:0,sameCount:0});
     setLoading(false);
     setStep(2);
   };
 
-  // Step 2→3: 확정 업로드
+  // Step 2→3: 확정 업로드 (기간 내 전체 삭제 후 재삽입 — 관리번호 내 다중상품 허용)
   const handleUpload=async()=>{
     if(!inRange.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
+    // 해당 기간 기존 데이터 삭제
+    const {error:delErr}=await db.from("orders").delete().gte("order_date",startDate).lte("order_date",endDate);
+    if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
+    // 새 데이터 삽입
     for(let i=0;i<inRange.length;i+=500){
-      const {error}=await db.from("orders").upsert(inRange.slice(i,i+500),{onConflict:"order_id"});
-      if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
+      const {error}=await db.from("orders").insert(inRange.slice(i,i+500));
+      if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
     await db.from("upload_logs").insert({
       upload_type:"orders",file_name:fileName,
       row_count:parsedFile?.length||0,
-      inserted:dupInfo?.newCount||0,updated:dupInfo?.updateCount||0,
+      inserted:inRange.length,updated:0,
       skipped:outRows.length,date_start:startDate,date_end:endDate,
     });
     setStep(3);
-    setResult({type:"success",msg:`신규 ${dupInfo?.newCount}건 추가 / ${dupInfo?.updateCount}건 업데이트 / 기간 외 ${outRows.length}건 제외`,ts:ts2});
+    setResult({type:"success",msg:`기간 내 ${inRange.length}건 등록 / 기간 외 ${outRows.length}건 제외`,ts:ts2});
     onUpdate(ts2); setLoading(false);
   };
 
@@ -1664,15 +1666,13 @@ function EasyAdminUploader({ onUpdate }) {
           {step===2&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>미리보기 확인</div>
             {dupInfo&&<StatRow items={[
-              {label:"기간 내",value:dupInfo.total},
-              {label:"신규",value:dupInfo.newCount,color:D.green},
-              {label:"업데이트",value:dupInfo.updateCount,color:D.amber},
-              {label:"변동없음",value:dupInfo.sameCount},
+              {label:"기간 내 등록",value:`${dupInfo.total}건`,color:D.green},
+              {label:"기간 외 제외",value:`${outRows.length}건`,color:D.textMeta},
             ]}/>}
             {outRows.length>0&&<Alert type="warn" msg={`기간 밖 ${outRows.length}건 제외`}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handleUpload} disabled={loading||!inRange.length} style={{width:"100%"}}>
-                {loading?"처리 중...":`확정 업로드 (${dupInfo?.newCount||0}추가/${dupInfo?.updateCount||0}업데이트)`}
+                {loading?"처리 중...":`확정 업로드 (${dupInfo?.total||0}건)`}
               </Btn>
               <button onClick={()=>setStep(1)}
                 style={{background:"transparent",border:"none",color:D.textMeta,
