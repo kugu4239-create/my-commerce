@@ -989,7 +989,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       if(!m)return"-";
       return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]?.[0]||"-";
     };
-    return Object.values(byProd).filter(p=>p.returned>0)
+    return Object.values(byProd).filter(p=>p.returned>0&&p.orders>=10)
       .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         topReason:topReason(p.name)}));
