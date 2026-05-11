@@ -891,10 +891,10 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:16,flexWrap:"wrap"}}>
         <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black}/>
-        <KPI label="총 주문" value={stats.totalOrderCount>0?stats.totalOrderCount.toLocaleString()+"건":"—"} accent={D.black}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green}/>
-        <KPI label="반품·취소" value={stats.totalRefundCount>0?stats.totalRefundCount.toLocaleString()+"건":stats.totalReturned.toLocaleString()+"건"}
-          sub={stats.returnRate+"%"} accent={parseFloat(stats.returnRate)>10?D.red:D.textSub}/>
+        <KPI label="반품·취소" value={stats.totalReturned.toLocaleString()+"건"}
+          sub={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
+          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}/>
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue}/>
       </div>
 
@@ -939,7 +939,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
-            {["판매처","점유율","주문","매출","배송","반품·취소","반품률"].map(h=>(
+            {["판매처","점유율","매출","배송","반품·취소","반품률"].map(h=>(
               <th key={h} style={{padding:"7px 9px",textAlign:h==="판매처"?"left":"right",
                 color:D.textMeta,fontWeight:400}}>{h}</th>
             ))}
@@ -949,23 +949,23 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
               <tr key={c.name} style={{borderBottom:`1px solid ${D.border}`}}>
                 <td style={{padding:"7px 9px",fontWeight:600}}>{c.name}</td>
                 <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share}%</td>
-                <td style={{textAlign:"right",padding:"7px 9px"}}>{c.orderCount>0?c.orderCount.toLocaleString():"—"}</td>
                 <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
                 <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{c.shipped.toLocaleString()}</td>
-                <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{c.refundCount>0?c.refundCount.toLocaleString():c.returned.toLocaleString()}</td>
+                <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{c.returned.toLocaleString()}</td>
                 <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                  color:parseFloat(c.returnRate)>10?D.red:D.textSub}}>{c.returnRate}%</td>
+                  color:c.shipped>0&&(c.returned/c.shipped)>0.1?D.red:D.textSub}}>
+                  {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):0}%</td>
               </tr>
             ))}
             <tr style={{borderTop:`1px solid ${D.borderMid}`}}>
               <td style={{padding:"7px 9px",fontWeight:700}}>합계</td>
               <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
-              <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>{stats.totalOrderCount>0?stats.totalOrderCount.toLocaleString():"—"}</td>
               <td style={{textAlign:"right",padding:"7px 9px",fontWeight:700}}>{fmtWon(stats.totalRevenue)}</td>
               <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:600}}>{stats.totalShipped.toLocaleString()}</td>
-              <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalRefundCount>0?stats.totalRefundCount.toLocaleString():stats.totalReturned.toLocaleString()}</td>
+              <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalReturned.toLocaleString()}</td>
               <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                color:parseFloat(stats.returnRate)>10?D.red:D.textSub}}>{stats.returnRate}%</td>
+                color:stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}}>
+                {stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
             </tr>
           </tbody>
         </table>
