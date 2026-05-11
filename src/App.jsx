@@ -890,10 +890,12 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
-      const ch=r.channel||"미분류";
-      if(!retByCh[ch]) retByCh[ch]=0;
-      if(["반품","교환"].includes(r.status)) retByCh[ch]++;
+      if(["반품","교환"].includes(r.status)){
+        const ch=r.channel||"미분류";
+        retByCh[ch]=(retByCh[ch]||0)+1;
+      }
     });
+    // 반품 건수 내림차순, 0건 채널 제외
     const chs=Object.entries(retByCh).sort((a,b)=>b[1]-a[1]).map(([ch])=>ch).slice(0,5);
     const byDate={};
     filteredRet.forEach(r=>{
@@ -985,17 +987,21 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <Card>
           <SecTitle ts={ts.orders}>판매처 점유율</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={stats.channelList.slice(0,6).map(c=>({name:c.name,value:parseFloat(c.share)}))}
-                dataKey="value" nameKey="name" cx="50%" cy="50%"
-                innerRadius={38} outerRadius={60} paddingAngle={2}>
-                {stats.channelList.slice(0,6).map((c,i)=>(
-                  <Cell key={i} fill={chColor(c.name)}/>
-                ))}
-              </Pie>
-              <Tooltip formatter={v=>`${v}%`} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
-              <Legend iconSize={8} iconType="circle" wrapperStyle={{fontSize:10,paddingTop:6}}/>
-            </PieChart>
+            {(()=>{
+              // 배송 건수 기준 내림차순 정렬 (revenue 없어도 순서 보장)
+              const sorted=[...stats.channelList.slice(0,6)].sort((a,b)=>b.shipped-a.shipped);
+              return (
+                <PieChart>
+                  <Pie data={sorted.map(c=>({name:c.name,value:c.shipped}))}
+                    dataKey="value" nameKey="name" cx="50%" cy="50%"
+                    innerRadius={38} outerRadius={60} paddingAngle={2}>
+                    {sorted.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
+                  </Pie>
+                  <Tooltip formatter={(v,n)=>[`${v}건`,n]} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
+                  <Legend iconSize={8} iconType="circle" wrapperStyle={{fontSize:10,paddingTop:6}}/>
+                </PieChart>
+              );
+            })()}
           </ResponsiveContainer>
         </Card>
         <Card>
