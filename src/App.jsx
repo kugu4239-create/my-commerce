@@ -858,6 +858,11 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
 
   const axTick={fill:D.textMeta,fontSize:10};
+  const NoWrapTick=({x,y,payload})=>(
+    <text x={x} y={y} dy={4} textAnchor="end" fill={D.textMeta} fontSize={10} style={{whiteSpace:"nowrap"}}>
+      {payload.value?.length>22?payload.value.slice(0,22)+"…":payload.value}
+    </text>
+  );
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
@@ -1301,7 +1306,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             <BarChart data={bestRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick}/>
-              <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:10}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
+              <YAxis type="category" dataKey="name" width={180} tick={<NoWrapTick/>}/>
               <Tooltip content={<Tip/>}/>
               <Bar dataKey="qty" name="배송량" radius={[0,3,3,0]}>
                 {bestRows.slice(0,12).map((_,i)=>(
@@ -1404,7 +1409,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             <BarChart data={worstRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick} tickFormatter={v=>v+"%"}/>
-              <YAxis type="category" dataKey="name" width={180} tick={{...axTick,fontSize:10}} tickFormatter={v=>v?.length>22?v.slice(0,22)+"…":v}/>
+              <YAxis type="category" dataKey="name" width={180} tick={<NoWrapTick/>}/>
               <Tooltip content={<Tip/>} formatter={(v)=>[v+"%","반품률"]}/>
               <Bar dataKey="returnRate" name="반품률" radius={[0,3,3,0]} fill={D.red}/>
             </BarChart>
@@ -1510,7 +1515,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [customEnd,setCustomEnd]=useState("");
   const [sankeyFull,setSankeyFull]=useState(false);
   const [flowSort,setFlowSort]=useState("stock"); // "stock"|"shipped"|"returned"
-  const [sankeyLimit,setSankeyLimit]=useState(20);
+  const [sankeyLimit,setSankeyLimit]=useState(30);
   const [tableLimit,setTableLimit]=useState(30);
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
@@ -1560,7 +1565,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
 
       <Card style={{marginBottom:12,padding:"12px 16px"}}>
         <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8,gap:4}}>
-          {[20,30,40,50].map(n=>(
+          {[30,50,100].map(n=>(
             <button key={n} onClick={()=>setSankeyLimit(n)}
               style={{background:sankeyLimit===n?D.black:"transparent",
                 color:sankeyLimit===n?"#fff":D.textSub,
