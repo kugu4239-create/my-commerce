@@ -528,9 +528,15 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
 
-  const filteredStocks = useMemo(() =>
-    filterByDate(stockRows, "upload_date", period, customStart, customEnd)
-  , [stockRows, period, customStart, customEnd]);
+  const filteredStocks = useMemo(() => {
+    const all = filterByDate(stockRows, "upload_date", period, customStart, customEnd);
+    const latest = {};
+    all.forEach(r => {
+      const key = (r.product_name||"") + "__" + (r.option_name||"");
+      if (!latest[key] || r.upload_date > latest[key].upload_date) latest[key] = r;
+    });
+    return Object.values(latest);
+  }, [stockRows, period, customStart, customEnd]);
 
   const data = useMemo(() => {
     const prodMap = {};
@@ -576,7 +582,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const n = prods.length;
 
   // ── 레이아웃 상수 ──
-  const PAD_T=36, PAD_H=8, ROW_GAP=6, MIN_H=24;
+  const PAD_T=36, PAD_H=8, ROW_GAP=6, MIN_H=17;
   const NODE_W=200;
   // 좌우 끝까지 사용: col0=왼쪽 끝, col1=중앙, col2=오른쪽 끝
   const COLS_X = [
@@ -590,7 +596,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
   // 상품마다 충분한 높이 확보 — 압축 없이 총 높이를 늘림
-  const ROW_H = 48;
+  const ROW_H = 34;
   const TARGET_H = n * ROW_H;
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
@@ -634,9 +640,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   // SVG는 너비 기준으로만 스케일 → 폰트가 목표 px로 보이도록 SVG 좌표 단위로 역산
   const svgScale = (ctnSize.w / SVG_W) || 1;
   const _fs = px => px / svgScale;
-  const hdrFs = _fs(15);
-  const lblFs = _fs(13);
-  const subFs = _fs(11);
+  const hdrFs = _fs(13);
+  const lblFs = _fs(11);
+  const subFs = _fs(9);
 
   const headers = ["입고","판매처별 배송","반품/교환"];
 
@@ -921,7 +927,15 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
-  const filteredStocks=useMemo(()=>filterByDate(stocks,"upload_date",period,customStart,customEnd),[stocks,period,customStart,customEnd]);
+  const filteredStocks=useMemo(()=>{
+    const all=filterByDate(stocks,"upload_date",period,customStart,customEnd);
+    const latest={};
+    all.forEach(r=>{
+      const key=(r.product_name||"")+"__"+(r.option_name||"");
+      if(!latest[key]||r.upload_date>latest[key].upload_date) latest[key]=r;
+    });
+    return Object.values(latest);
+  },[stocks,period,customStart,customEnd]);
   const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues),[filteredOrders,filteredStocks,filteredRevenues]);
 
   // 직전 동일 기간 채널별 순매출
