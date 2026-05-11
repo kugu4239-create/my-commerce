@@ -486,17 +486,21 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const n = prods.length;
 
   // ── 레이아웃 상수 ──
-  const PAD_T=36, ROW_GAP=5, MIN_H=20;
-  const SVG_W=960, NODE_W=180;
-  const SEC = SVG_W/3;
-  const COLS_X = [Math.round(SEC*0+SEC/2-NODE_W/2), Math.round(SEC*1+SEC/2-NODE_W/2), Math.round(SEC*2+SEC/2-NODE_W/2)];
+  const PAD_T=36, PAD_H=8, ROW_GAP=6, MIN_H=24;
+  const SVG_W=1400, NODE_W=200;
+  // 좌우 끝까지 사용: col0=왼쪽 끝, col1=중앙, col2=오른쪽 끝
+  const COLS_X = [
+    PAD_H,
+    Math.round((SVG_W - NODE_W) / 2),
+    SVG_W - NODE_W - PAD_H,
+  ];
 
   const totalStock   = prods.reduce((s,p)=>s+p.stock,0)||1;
   const totalShipped = prods.reduce((s,p)=>s+p.shipped,0)||1;
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
-  // 뷰포트 기준 목표 높이 (SVG viewBox 단위)
-  const TARGET_H = Math.max(n*MIN_H, Math.min(800, n*36));
+  // 높이 2배 (기존 n*36 → n*72)
+  const TARGET_H = Math.max(n*MIN_H, Math.min(1600, n*72));
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
   const scale = rawSum > TARGET_H ? TARGET_H/rawSum : 1;
@@ -528,7 +532,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div style={{ width:"100%", height:"calc(100vh - 190px)", minHeight:400 }}>
+    <div style={{ width:"100%", height:"calc(200vh - 380px)", minHeight:600 }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
         preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
 
