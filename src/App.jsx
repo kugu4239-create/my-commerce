@@ -1552,6 +1552,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
   const filteredTableStocks=useMemo(()=>filterByDate(stocks,"upload_date",tablePeriod,"",""),[stocks,tablePeriod]);
 
+
   const PBtn=({k,l})=>(
     <button onClick={()=>setPeriod(k)}
       style={{background:period===k?D.black:"transparent",
