@@ -509,12 +509,16 @@ function DataDeleteSection({ table, dateField, label, onDone }) {
 const SVG_W = 1400;
 
 function ProductSankey({ stockRows, orderRows, period="3m", customStart, customEnd, limit=20 }) {
-  const vw = useWindowWidth();
-  // SVG 좌표계 기준 폰트 크기 → 화면 너비에 맞게 보정해 실제 렌더 크기를 유지
-  const _fs = (px) => Math.round(px * SVG_W / Math.max(vw, 800));
-  const hdrFs  = _fs(15);  // 컬럼 헤더
-  const lblFs  = _fs(13);  // 블록 메인 레이블
-  const subFs  = _fs(11);  // 블록 서브 텍스트
+  const containerRef = useRef(null);
+  const [ctnSize, setCtnSize] = useState({w: window.innerWidth, h: window.innerHeight});
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(([e]) => {
+      setCtnSize({w: e.contentRect.width, h: e.contentRect.height});
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   const filteredOrders = useMemo(() => {
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
@@ -610,10 +614,17 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const maxStroke    = Math.min(20, Math.max(4, Math.round(400/n)));
   const maxRetStroke = Math.min(18, Math.max(3, Math.round(360/n)));
 
+  // SVG 실제 렌더 배율 → 폰트가 목표 px로 보이도록 SVG 좌표 단위로 역산
+  const svgScale = Math.min(ctnSize.w / SVG_W, ctnSize.h / totalSvgH) || 1;
+  const _fs = px => px / svgScale;
+  const hdrFs = _fs(15);
+  const lblFs = _fs(13);
+  const subFs = _fs(11);
+
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div style={{ width:"100%", height:"100vh" }}>
+    <div ref={containerRef} style={{ width:"100%", height:"100vh" }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
         preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
 
