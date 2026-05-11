@@ -2341,12 +2341,22 @@ export default function App() {
 
   const loadData=useCallback(async()=>{
     const db=await getSupabase();
-    const [o,s,r]=await Promise.all([
-      db.from("orders").select("*").order("order_date",{ascending:false}),
+    // 전체 orders 페이지네이션 (Supabase 기본 1000행 제한 우회)
+    let allOrders=[];
+    let from=0;
+    const PAGE=1000;
+    while(true){
+      const {data,error}=await db.from("orders").select("*").order("order_date",{ascending:true}).range(from,from+PAGE-1);
+      if(error||!data||data.length===0) break;
+      allOrders=allOrders.concat(data);
+      if(data.length<PAGE) break;
+      from+=PAGE;
+    }
+    const [s,r]=await Promise.all([
       db.from("stock_uploads").select("*"),
       db.from("revenues").select("*").order("date",{ascending:false}),
     ]);
-    setOrders((o.data||[]).map(r=>({...r,channel:normChannel(r.channel)})));
+    setOrders(allOrders.map(r=>({...r,channel:normChannel(r.channel)})));
     setStocks(s.data||[]);
     setRevenues(r.data||[]);
   },[]);
