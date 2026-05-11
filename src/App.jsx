@@ -89,9 +89,39 @@ const fmtWon = n => {
   return "₩"+n.toLocaleString();
 };
 
-const KR_COLORS=new Set(["블랙","화이트","차콜","베이지","아이보리","크림","브라운","카키","네이비",
-  "그레이","핑크","레드","블루","그린","옐로우","퍼플","오렌지","민트","스카이블루","스트라이프",
-  "버건디","와인","코랄","올리브","라벤더","머스타드","연그레이","다크네이비","오트밀","샌드","모카"]);
+const COLOR_HEX={
+  // 한글
+  "블랙":"#1C1C1C","화이트":"#F8F8F8","차콜":"#3D3D3D","베이지":"#E8DCC8","아이보리":"#F4F0E0",
+  "크림":"#FDF6E3","브라운":"#7B4F2E","카키":"#7B7142","네이비":"#1A2A4A","그레이":"#9E9E9E",
+  "핑크":"#F4A7B9","레드":"#D94F4F","블루":"#4A7EC7","그린":"#5A9E6F","옐로우":"#F5C842",
+  "퍼플":"#8B5DA8","오렌지":"#E87D3E","민트":"#7EC8B8","스카이블루":"#87CEEB","버건디":"#7C2D3E",
+  "와인":"#6B2737","코랄":"#E87060","올리브":"#6B7C3A","라벤더":"#B89FCC","머스타드":"#C8A020",
+  "연그레이":"#C8C8C8","다크네이비":"#0D1A30","오트밀":"#D8C8AE","샌드":"#C8B090","모카":"#8B6348",
+  "스트라이프":"linear-gradient(135deg,#333 25%,#fff 25%,#fff 50%,#333 50%,#333 75%,#fff 75%)",
+  // 영문
+  "BLACK":"#1C1C1C","WHITE":"#F8F8F8","CHARCOAL":"#3D3D3D","BEIGE":"#E8DCC8","IVORY":"#F4F0E0",
+  "CREAM":"#FDF6E3","BROWN":"#7B4F2E","KHAKI":"#7B7142","NAVY":"#1A2A4A","GRAY":"#9E9E9E","GREY":"#9E9E9E",
+  "PINK":"#F4A7B9","RED":"#D94F4F","BLUE":"#4A7EC7","GREEN":"#5A9E6F","YELLOW":"#F5C842",
+  "PURPLE":"#8B5DA8","ORANGE":"#E87D3E","MINT":"#7EC8B8","SKY BLUE":"#87CEEB","SKY":"#87CEEB",
+  "BURGUNDY":"#7C2D3E","WINE":"#6B2737","CORAL":"#E87060","OLIVE":"#6B7C3A","LAVENDER":"#B89FCC",
+  "MUSTARD":"#C8A020","OATMEAL":"#D8C8AE","SAND":"#C8B090","MOCHA":"#8B6348",
+  "STRIPE":"linear-gradient(135deg,#333 25%,#fff 25%,#fff 50%,#333 50%,#333 75%,#fff 75%)",
+  "DARK NAVY":"#0D1A30","LIGHT GRAY":"#C8C8C8",
+};
+function colorSwatch(name){
+  const hex=COLOR_HEX[name]||COLOR_HEX[name?.toUpperCase()];
+  if(!hex) return null;
+  const isLight=["#F8F8F8","#F4F0E0","#FDF6E3","#E8DCC8","#F4F0E0","#D8C8AE"].includes(hex);
+  const isGradient=hex.startsWith("linear");
+  return <span style={{
+    display:"inline-block",width:10,height:10,borderRadius:"50%",flexShrink:0,
+    background:hex,
+    border:`1px solid ${isLight||isGradient?"#ccc":"transparent"}`,
+    verticalAlign:"middle",marginRight:5,
+  }}/>;
+}
+
+const KR_COLORS=new Set(Object.keys(COLOR_HEX));
 const SIZE_RE=/^(XS|S|M|L|XL|2XL|3XL|XXL|Free|F|\d{3})(-\S+)?$/i;
 
 function parseOption(productName, optionName) {
@@ -1156,12 +1186,14 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                       const max=colors[0]?.[1]||1;
                       return (
                         <div key={name} style={{marginBottom:5}}>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
-                            <span style={{color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>{name}</span>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2,alignItems:"center"}}>
+                            <span style={{display:"flex",alignItems:"center",color:i===0?D.black:D.textSub,fontWeight:i===0?700:400}}>
+                              {colorSwatch(name)}{name}
+                            </span>
                             <span style={{color:D.textMeta}}>{cnt}</span>
                           </div>
                           <div style={{height:4,borderRadius:2,background:D.border}}>
-                            <div style={{height:4,borderRadius:2,background:i===0?D.black:D.blue,width:`${(cnt/max*100).toFixed(0)}%`}}/>
+                            <div style={{height:4,borderRadius:2,background:COLOR_HEX[name]||COLOR_HEX[name?.toUpperCase()]||(i===0?D.black:D.blue),width:`${(cnt/max*100).toFixed(0)}%`}}/>
                           </div>
                         </div>
                       );
