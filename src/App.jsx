@@ -148,6 +148,16 @@ function parseOption(productName, optionName) {
   return {color,size};
 }
 
+function useWindowWidth(){
+  const [w,setW]=React.useState(()=>window.innerWidth);
+  React.useEffect(()=>{
+    const h=()=>setW(window.innerWidth);
+    window.addEventListener("resize",h);
+    return()=>window.removeEventListener("resize",h);
+  },[]);
+  return w;
+}
+
 function detectFields(columns) {
   const lc = columns.map(c => c.toLowerCase().replace(/\s/g,""));
   const f = (...kws) => { const i=lc.findIndex(c=>kws.some(k=>c.includes(k))); return i>=0?columns[i]:null; };
@@ -830,6 +840,7 @@ const PERIOD_TABS=[
 ];
 
 function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
+  const isMobile=useWindowWidth()<=1080;
   const [period,setPeriod]=useState("7d");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
@@ -1090,7 +1101,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </div>
 
       {/* 판매처 점유율 + 판매처별 매출 */}
-      <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:12}}>
         <Card>
           <SecTitle ts={ts.orders}>매출 점유율</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
@@ -1207,7 +1218,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       </Card>
 
       {/* 월별 배송량 (독립 기간) */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>배송량</SecTitle>
@@ -1278,7 +1289,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             ))}
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
             <RankTable data={bestRows} cols={[
               {key:"name",label:"상품명",maxW:190,bold:true,color:"#2d2d2d"},
@@ -1306,7 +1317,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {optionStats.length>0&&(
         <Card style={{marginBottom:12}}>
           <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${optionStats.length},1fr)`,gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${optionStats.length},1fr)`,gap:16}}>
             {optionStats.map(({ch,colors,sizes})=>(
               <div key={ch}>
                 <div style={{fontWeight:700,fontSize:12,color:D.textSub,marginBottom:10,letterSpacing:"0.04em"}}>{ch}</div>
@@ -1379,7 +1390,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             ))}
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
             <RankTable data={worstRows} cols={[
               {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
@@ -1405,7 +1416,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
       {returnOptionStats.length>0&&(
         <Card style={{marginBottom:12}}>
           <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
             {returnOptionStats.map(({ch,colors,sizes})=>(
               <div key={ch}>
                 <div style={{fontWeight:700,fontSize:12,color:D.textSub,marginBottom:10,letterSpacing:"0.04em"}}>{ch}</div>
@@ -1500,6 +1511,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [sankeyFull,setSankeyFull]=useState(false);
   const [flowSort,setFlowSort]=useState("stock"); // "stock"|"shipped"|"returned"
   const [sankeyLimit,setSankeyLimit]=useState(20);
+  const [tableLimit,setTableLimit]=useState(30);
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
 
@@ -1586,7 +1598,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
         <Card>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <SecTitle ts={ts.orders}>상품별 흐름 요약</SecTitle>
-            <div style={{display:"flex",gap:5}}>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {[["stock","입고 수 높은 순"],["shipped","배송 많은 순"],["returned","반품 많은 순"]].map(([k,l])=>(
                 <button key={k} onClick={()=>setFlowSort(k)}
                   style={{background:flowSort===k?D.black:"transparent",
@@ -1595,6 +1607,17 @@ function LogisticsFlow({ orders, stocks, ts }) {
                     borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
                     fontWeight:flowSort===k?600:400}}>
                   {l}
+                </button>
+              ))}
+              <div style={{width:1,background:D.border,margin:"0 2px"}}/>
+              {[30,50,100].map(n=>(
+                <button key={n} onClick={()=>setTableLimit(n)}
+                  style={{background:tableLimit===n?D.black:"transparent",
+                    color:tableLimit===n?"#fff":D.textSub,
+                    border:`1px solid ${tableLimit===n?D.black:D.border}`,
+                    borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
+                    fontWeight:tableLimit===n?600:400}}>
+                  {n}개
                 </button>
               ))}
             </div>
@@ -1627,7 +1650,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
                   return Object.values(prodMap)
                     .filter(p=>p.shipped>0||p.stock>0)
                     .sort(sortFn)
-                    .slice(0,sankeyLimit)
+                    .slice(0,tableLimit)
                     .map((p,i)=>{
                       const total=p.shipped+p.returned;
                       const rr=total>0?(p.returned/total*100).toFixed(1):"0.0";
