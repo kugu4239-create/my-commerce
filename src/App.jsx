@@ -532,14 +532,14 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const headers = ["입고","판매처별 배송","반품/교환"];
 
   return (
-    <div style={{ width:"100%", height:"calc(200vh - 380px)", minHeight:600 }}>
+    <div style={{ width:"100%", height:"calc(130vh - 247px)", minHeight:500 }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${SVG_W} ${totalSvgH}`}
         preserveAspectRatio="xMidYMid meet" style={{ display:"block" }}>
 
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
           <text key={h} x={COLS_X[ci]+NODE_W/2} y={PAD_T-4}
-            textAnchor="middle" fill={D.textSub} fontSize="11" fontWeight="600">{h}</text>
+            textAnchor="middle" fill={D.textSub} fontSize="22" fontWeight="600">{h}</text>
         ))}
 
         {/* 상품 → 판매처 연결선 */}
@@ -578,12 +578,12 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
             <g key={p.name}>
               <rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill={col} opacity={0.09}/>
               <rect x={COLS_X[0]} y={y} width={3} height={h} rx={1} fill={col}/>
-              <text x={COLS_X[0]+9} y={y+mid-(h>30?5:0)} dominantBaseline="middle"
-                fill={D.black} fontSize="9" fontWeight="600">
+              <text x={COLS_X[0]+12} y={y+mid-(h>40?10:0)} dominantBaseline="middle"
+                fill={D.black} fontSize="18" fontWeight="600">
                 {p.name.length>22?p.name.slice(0,22)+"…":p.name}
               </text>
-              {h>=28&&<text x={COLS_X[0]+9} y={y+mid+7} dominantBaseline="middle"
-                fill={D.textMeta} fontSize="8">
+              {h>=40&&<text x={COLS_X[0]+12} y={y+mid+14} dominantBaseline="middle"
+                fill={D.textMeta} fontSize="16">
                 입고 {p.stock} · 배송 {p.shipped}
                 {p.returned>0?` · 반품 ${p.returned}`:""}
                 {p.exchanged>0?` · 교환 ${p.exchanged}`:""}
@@ -604,10 +604,10 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
               <g key={ch.name}>
                 <rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill={col} opacity={0.12}/>
                 <rect x={COLS_X[1]} y={y} width={4} height={h} rx={2} fill={col}/>
-                <text x={COLS_X[1]+10} y={y+h/2-(h>30?5:0)} dominantBaseline="middle"
-                  fill={col} fontSize="10" fontWeight="600">{ch.name}</text>
-                {h>=28&&<text x={COLS_X[1]+10} y={y+h/2+7} dominantBaseline="middle"
-                  fill={D.textMeta} fontSize="9">{ch.shipped.toLocaleString()}건</text>}
+                <text x={COLS_X[1]+12} y={y+h/2-(h>40?10:0)} dominantBaseline="middle"
+                  fill={col} fontSize="20" fontWeight="600">{ch.name}</text>
+                {h>=40&&<text x={COLS_X[1]+12} y={y+h/2+14} dominantBaseline="middle"
+                  fill={D.textMeta} fontSize="18">{ch.shipped.toLocaleString()}건</text>}
               </g>
             );
           });
@@ -618,8 +618,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
           <g>
             <rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill={D.red} opacity={0.1}/>
             <rect x={COLS_X[2]} y={retBlockY} width={4} height={retBlockH} rx={2} fill={D.red}/>
-            <text x={COLS_X[2]+10} y={retCenterY} dominantBaseline="middle"
-              fill={D.red} fontSize="11" fontWeight="600">반품 {totalReturned}건</text>
+            <text x={COLS_X[2]+12} y={retCenterY} dominantBaseline="middle"
+              fill={D.red} fontSize="22" fontWeight="600">반품 {totalReturned}건</text>
           </g>
         )}
 
@@ -628,8 +628,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
           <g>
             <rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill={D.amber} opacity={0.12}/>
             <rect x={COLS_X[2]} y={exchBlockY} width={4} height={exchBlockH} rx={2} fill={D.amber}/>
-            <text x={COLS_X[2]+10} y={exchCenterY} dominantBaseline="middle"
-              fill={D.amber} fontSize="11" fontWeight="600">교환 {totalExchanged}건</text>
+            <text x={COLS_X[2]+12} y={exchCenterY} dominantBaseline="middle"
+              fill={D.amber} fontSize="22" fontWeight="600">교환 {totalExchanged}건</text>
           </g>
         )}
       </svg>
@@ -1250,6 +1250,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [sankeyFull,setSankeyFull]=useState(false);
+  const [flowSort,setFlowSort]=useState("stock"); // "stock"|"shipped"|"returned"
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
 
@@ -1319,10 +1320,24 @@ function LogisticsFlow({ orders, stocks, ts }) {
         </div>
       )}
 
-      {/* 상품별 흐름 요약 — 배송/반품으로 통일, 옵션 없이 상품명 기준 */}
+      {/* 상품별 흐름 요약 */}
       {filteredOrders.length>0&&(
         <Card>
-          <SecTitle ts={ts.orders}>상품별 흐름 요약</SecTitle>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+            <SecTitle ts={ts.orders}>상품별 흐름 요약</SecTitle>
+            <div style={{display:"flex",gap:5}}>
+              {[["stock","입고 수 높은 순"],["shipped","배송 많은 순"],["returned","반품 많은 순"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setFlowSort(k)}
+                  style={{background:flowSort===k?D.black:"transparent",
+                    color:flowSort===k?"#fff":D.textSub,
+                    border:`1px solid ${flowSort===k?D.black:D.border}`,
+                    borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
+                    fontWeight:flowSort===k?600:400}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
@@ -1345,9 +1360,12 @@ function LogisticsFlow({ orders, stocks, ts }) {
                     if(r.status==="배송") prodMap[k].shipped++;
                     if(["반품","교환"].includes(r.status)) prodMap[k].returned++;
                   });
+                  const sortFn=flowSort==="stock"?(a,b)=>b.stock-a.stock
+                    :flowSort==="returned"?(a,b)=>b.returned-a.returned
+                    :(a,b)=>b.shipped-a.shipped;
                   return Object.values(prodMap)
                     .filter(p=>p.shipped>0||p.stock>0)
-                    .sort((a,b)=>b.shipped-a.shipped)
+                    .sort(sortFn)
                     .map((p,i)=>{
                       const total=p.shipped+p.returned;
                       const rr=total>0?(p.returned/total*100).toFixed(1):"0.0";
@@ -1356,9 +1374,15 @@ function LogisticsFlow({ orders, stocks, ts }) {
                           <td style={{padding:"6px 9px",color:D.textMeta,textAlign:"right"}}>{i+1}</td>
                           <td style={{padding:"6px 9px",fontWeight:i<3?700:400,maxWidth:220,
                             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
-                          <td style={{textAlign:"right",padding:"6px 9px",color:D.blue}}>{p.stock.toLocaleString()}</td>
-                          <td style={{textAlign:"right",padding:"6px 9px",fontWeight:600,color:D.green}}>{p.shipped.toLocaleString()}</td>
-                          <td style={{textAlign:"right",padding:"6px 9px",color:D.red}}>{p.returned.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"6px 9px",
+                            color:flowSort==="stock"?D.black:D.blue,
+                            fontWeight:flowSort==="stock"?700:400}}>{p.stock.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"6px 9px",
+                            color:flowSort==="shipped"?D.black:D.green,
+                            fontWeight:flowSort==="shipped"?700:600}}>{p.shipped.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"6px 9px",
+                            color:flowSort==="returned"?D.black:D.red,
+                            fontWeight:flowSort==="returned"?700:400}}>{p.returned.toLocaleString()}</td>
                           <td style={{textAlign:"right",padding:"6px 9px",fontWeight:600,
                             color:parseFloat(rr)>10?D.red:D.textSub}}>{rr}%</td>
                         </tr>
@@ -1727,6 +1751,9 @@ function RevenueForm({ onUpdate }) {
   const [orderCnt,setOrderCnt]=useState("");
   const [refundAmt,setRefundAmt]=useState("");
   const [refundCnt,setRefundCnt]=useState("");
+  // CSV 업로드 상태
+  const [csvPreview,setCsvPreview]=useState(null); // {rows, overlaps}
+  const [csvConflictChoice,setCsvConflictChoice]=useState(null); // null | "new" | "keep"
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
   const [history,setHistory]=useState([]);
@@ -1800,6 +1827,57 @@ function RevenueForm({ onUpdate }) {
     setDeleteConfirm(null); loadHistory();
   };
 
+  const handleCsvFile=useCallback(file=>{
+    Papa.parse(file,{header:true,skipEmptyLines:true,complete:async({data})=>{
+      const cols=Object.keys(data[0]||{});
+      const lc=cols.map(c=>c.toLowerCase().replace(/[\s\[\]()_]/g,""));
+      const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
+      const dateCol=find("날짜","date","일자");
+      const chCol=find("판매처","채널","channel","플랫폼");
+      const amtCol=find("매출","amount","금액");
+      const ordCol=find("주문수","주문건","ordercount","order");
+      const refAmtCol=find("환불금","refundamount","환불액");
+      const refCntCol=find("환불수","환불건","refundcount");
+      if(!dateCol||!amtCol){
+        setCsvPreview({error:`필수 컬럼 없음. 헤더: ${cols.join(", ")}`});return;
+      }
+      const rows=data.filter(r=>r[dateCol]&&toDate(r[dateCol])).map(r=>({
+        date:toDate(r[dateCol]),
+        channel:chCol?normChannel(r[chCol]):"자사몰",
+        amount:Number(String(r[amtCol]||"0").replace(/[^0-9.-]/g,""))||0,
+        order_count:ordCol?Number(r[ordCol]||0):0,
+        refund_amount:refAmtCol?Number(String(r[refAmtCol]||"0").replace(/[^0-9.-]/g,"")):0,
+        refund_count:refCntCol?Number(r[refCntCol]||0):0,
+      }));
+      // 기존 데이터와 겹치는 (date, channel) 쌍 확인
+      const db=await getSupabase();
+      const dates=[...new Set(rows.map(r=>r.date))];
+      const {data:existing}=await db.from("revenues").select("date,channel").in("date",dates);
+      const existSet=new Set((existing||[]).map(r=>`${r.date}__${r.channel}`));
+      const overlaps=rows.filter(r=>existSet.has(`${r.date}__${r.channel}`));
+      setCsvPreview({rows,overlaps});
+      setCsvConflictChoice(null);
+    }});
+  },[]);
+
+  const handleCsvUpload=async(choice)=>{
+    if(!csvPreview?.rows) return;
+    const db=await getSupabase();
+    let toUpload=csvPreview.rows;
+    if(choice==="keep"){
+      const overlapKeys=new Set(csvPreview.overlaps.map(r=>`${r.date}__${r.channel}`));
+      toUpload=toUpload.filter(r=>!overlapKeys.has(`${r.date}__${r.channel}`));
+    }
+    for(let i=0;i<toUpload.length;i+=200){
+      const {error}=await db.from("revenues").upsert(toUpload.slice(i,i+200),{onConflict:"date,channel"});
+      if(error){setResult({type:"error",msg:error.message});return;}
+    }
+    const ts2=nowStr();
+    setResult({type:"success",msg:`${toUpload.length}건 저장 완료`,ts:ts2});
+    setCsvPreview(null);setCsvConflictChoice(null);
+    onUpdate(ts2);loadHistory();
+  };
+
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
   const numInp=(v,fn)=>(
@@ -1808,6 +1886,38 @@ function RevenueForm({ onUpdate }) {
 
   return (
     <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
+
+      {/* CSV 충돌 다이얼로그 */}
+      {csvPreview&&!csvPreview.error&&csvPreview.overlaps?.length>0&&!csvConflictChoice&&(
+        <div style={{gridColumn:"1/-1",background:"#fff9e6",border:`1px solid ${D.amber}`,
+          borderRadius:8,padding:"14px 18px"}}>
+          <div style={{fontWeight:600,marginBottom:6,color:D.amber}}>
+            ⚠ 기존 데이터와 겹치는 항목 {csvPreview.overlaps.length}건 발견
+          </div>
+          <div style={{fontSize:11,color:D.textSub,marginBottom:10}}>
+            {csvPreview.overlaps.slice(0,5).map(r=>`${r.date} · ${r.channel}`).join(" / ")}
+            {csvPreview.overlaps.length>5&&` 외 ${csvPreview.overlaps.length-5}건`}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{setCsvConflictChoice("new");handleCsvUpload("new");}}
+              style={{background:D.red,color:"#fff",border:"none",borderRadius:6,
+                padding:"7px 16px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+              새 데이터로 덮어쓰기
+            </button>
+            <button onClick={()=>{setCsvConflictChoice("keep");handleCsvUpload("keep");}}
+              style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+                padding:"7px 16px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+              겹치는 항목 건너뛰기
+            </button>
+            <button onClick={()=>setCsvPreview(null)}
+              style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"7px 16px",fontSize:12,cursor:"pointer",color:D.textSub}}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       <Card>
         <div style={{fontWeight:600,marginBottom:14,fontSize:13}}>매출 입력</div>
 
@@ -1870,6 +1980,24 @@ function RevenueForm({ onUpdate }) {
           {loading?"저장 중...":"저장"}
         </Btn>
         {result&&<Alert type={result.type} msg={result.msg} ts={result.ts}/>}
+
+        <div style={{marginTop:14,borderTop:`1px solid ${D.border}`,paddingTop:14}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>CSV 일괄 업로드</div>
+          <DropZone onFile={handleCsvFile} label="매출 CSV 업로드 (날짜·판매처·매출금액 컬럼 필요)"/>
+          {csvPreview?.error&&<div style={{color:D.red,fontSize:10,marginTop:4}}>{csvPreview.error}</div>}
+          {csvPreview&&!csvPreview.error&&(csvPreview.overlaps?.length===0||csvConflictChoice)&&(
+            <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontSize:11,color:D.textSub}}>{csvPreview.rows.length}건 파싱됨</span>
+              {!csvConflictChoice&&(
+                <button onClick={()=>handleCsvUpload("new")}
+                  style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                    padding:"5px 12px",fontSize:11,cursor:"pointer"}}>
+                  저장
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </Card>
 
       <Card>
