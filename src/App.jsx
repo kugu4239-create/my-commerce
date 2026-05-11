@@ -542,7 +542,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
           <text key={h} x={COLS_X[ci]+NODE_W/2} y={PAD_T-4}
-            textAnchor="middle" fill={D.textSub} fontSize="11" fontWeight="600">{h}</text>
+            textAnchor="middle" fill={D.textSub} fontSize="13" fontWeight="600">{h}</text>
         ))}
 
         {/* 상품 → 판매처 연결선 */}
@@ -2564,8 +2564,8 @@ export default function App() {
       <div style={{ background:D.surface, borderBottom:`1px solid ${D.border}`,
         padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0 }}>
         <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1, marginRight:8 }}>
-          <span style={{ fontWeight:800, fontSize:11, letterSpacing:"0.08em", color:D.black }}>MERRYON</span>
-          <span style={{ fontSize:8, color:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
+          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:D.black }}>MERRYON</span>
+          <span style={{ fontSize:10, color:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
         </div>
         <nav style={{ display:"flex", gap:2, flex:1 }}>
           {nav.map(n=>(
