@@ -1264,13 +1264,15 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             ))}
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          <RankTable data={bestRows} cols={[
-            {key:"name",label:"상품명",maxW:190,bold:true,color:"#2d2d2d"},
-            {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
-            {key:"share",label:"배송 점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
-          ]}/>
-          <ResponsiveContainer width="100%" height={320}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,alignItems:"start"}}>
+          <div style={{minHeight:546,overflowY:"auto"}}>
+            <RankTable data={bestRows} cols={[
+              {key:"name",label:"상품명",maxW:190,bold:true,color:"#2d2d2d"},
+              {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
+              {key:"share",label:"배송 점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
+            ]}/>
+          </div>
+          <ResponsiveContainer width="100%" height={546}>
             <BarChart data={bestRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick}/>
@@ -1308,15 +1310,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
             ))}
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          <RankTable data={worstRows} cols={[
-            {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
-            {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
-            {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
-            {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:130},
-            {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
-          ]}/>
-          <ResponsiveContainer width="100%" height={320}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,alignItems:"start"}}>
+          <div style={{minHeight:546,overflowY:"auto"}}>
+            <RankTable data={worstRows} cols={[
+              {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
+              {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
+              {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
+              {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:130},
+              {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
+            ]}/>
+          </div>
+          <ResponsiveContainer width="100%" height={546}>
             <BarChart data={worstRows.slice(0,12)} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
               <XAxis type="number" tick={axTick} tickFormatter={v=>v+"%"}/>
