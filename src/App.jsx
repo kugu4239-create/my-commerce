@@ -1542,8 +1542,10 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [flowSort,setFlowSort]=useState("stock"); // "stock"|"shipped"|"returned"
   const [sankeyLimit,setSankeyLimit]=useState(30);
   const [tableLimit,setTableLimit]=useState(30);
+  const [tablePeriod,setTablePeriod]=useState("1m");
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
+  const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
 
   const PBtn=({k,l})=>(
     <button onClick={()=>setPeriod(k)}
@@ -1624,11 +1626,22 @@ function LogisticsFlow({ orders, stocks, ts }) {
       )}
 
       {/* 상품별 흐름 요약 */}
-      {filteredOrders.length>0&&(
+      {orders.length>0&&(
         <Card>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <SecTitle ts={ts.orders}>상품별 흐름 요약</SecTitle>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+              {[["1m","1개월"],["3m","3개월"],["6m","6개월"],["all","1년+"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setTablePeriod(k)}
+                  style={{background:tablePeriod===k?D.black:"transparent",
+                    color:tablePeriod===k?"#fff":D.textSub,
+                    border:`1px solid ${tablePeriod===k?D.black:D.border}`,
+                    borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
+                    fontWeight:tablePeriod===k?600:400}}>
+                  {l}
+                </button>
+              ))}
+              <div style={{width:1,background:D.border,margin:"0 2px"}}/>
               {[["stock","입고 수 높은 순"],["shipped","배송 많은 순"],["returned","반품 많은 순"]].map(([k,l])=>(
                 <button key={k} onClick={()=>setFlowSort(k)}
                   style={{background:flowSort===k?D.black:"transparent",
@@ -1668,7 +1681,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
                     if(!prodMap[k]) prodMap[k]={name:k,stock:0,shipped:0,returned:0};
                     prodMap[k].stock+=(r.qty||0);
                   });
-                  filteredOrders.forEach(r=>{
+                  filteredTableOrders.forEach(r=>{
                     const k=r.product_name||"미분류";
                     if(!prodMap[k]) prodMap[k]={name:k,stock:0,shipped:0,returned:0};
                     if(r.status==="배송") prodMap[k].shipped++;
