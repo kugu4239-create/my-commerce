@@ -524,9 +524,13 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
 
+  const filteredStocks = useMemo(() => {
+    return filterByDate(stockRows, "upload_date", period, customStart, customEnd);
+  }, [stockRows, period, customStart, customEnd]);
+
   const data = useMemo(() => {
     const prodMap = {};
-    stockRows.forEach(r => {
+    filteredStocks.forEach(r => {
       const key = r.product_name || "미분류";
       if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, exchanged:0, byChannel:{} };
       prodMap[key].stock += (r.qty||0);
@@ -1546,6 +1550,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
+  const filteredTableStocks=useMemo(()=>filterByDate(stocks,"upload_date",tablePeriod,"",""),[stocks,tablePeriod]);
 
   const PBtn=({k,l})=>(
     <button onClick={()=>setPeriod(k)}
@@ -1676,7 +1681,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
               <tbody>
                 {(()=>{
                   const prodMap={};
-                  stocks.forEach(r=>{
+                  filteredTableStocks.forEach(r=>{
                     const k=r.product_name||"미분류";
                     if(!prodMap[k]) prodMap[k]={name:k,stock:0,shipped:0,returned:0};
                     prodMap[k].stock+=(r.qty||0);
