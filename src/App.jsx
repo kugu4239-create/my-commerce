@@ -539,7 +539,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         {/* 컬럼 헤더 */}
         {headers.map((h,ci)=>(
           <text key={h} x={COLS_X[ci]+NODE_W/2} y={PAD_T-4}
-            textAnchor="middle" fill={D.textSub} fontSize="22" fontWeight="600">{h}</text>
+            textAnchor="middle" fill={D.textSub} fontSize="13" fontWeight="600">{h}</text>
         ))}
 
         {/* 상품 → 판매처 연결선 */}
@@ -579,11 +579,11 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
               <rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill={col} opacity={0.09}/>
               <rect x={COLS_X[0]} y={y} width={3} height={h} rx={1} fill={col}/>
               <text x={COLS_X[0]+12} y={y+mid-(h>40?10:0)} dominantBaseline="middle"
-                fill={D.black} fontSize="18" fontWeight="600">
+                fill={D.black} fontSize="13" fontWeight="600">
                 {p.name.length>22?p.name.slice(0,22)+"…":p.name}
               </text>
               {h>=40&&<text x={COLS_X[0]+12} y={y+mid+14} dominantBaseline="middle"
-                fill={D.textMeta} fontSize="16">
+                fill={D.textMeta} fontSize="13">
                 입고 {p.stock} · 배송 {p.shipped}
                 {p.returned>0?` · 반품 ${p.returned}`:""}
                 {p.exchanged>0?` · 교환 ${p.exchanged}`:""}
@@ -605,9 +605,9 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
                 <rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill={col} opacity={0.12}/>
                 <rect x={COLS_X[1]} y={y} width={4} height={h} rx={2} fill={col}/>
                 <text x={COLS_X[1]+12} y={y+h/2-(h>40?10:0)} dominantBaseline="middle"
-                  fill={col} fontSize="20" fontWeight="600">{ch.name}</text>
+                  fill={col} fontSize="13" fontWeight="600">{ch.name}</text>
                 {h>=40&&<text x={COLS_X[1]+12} y={y+h/2+14} dominantBaseline="middle"
-                  fill={D.textMeta} fontSize="18">{ch.shipped.toLocaleString()}건</text>}
+                  fill={D.textMeta} fontSize="13">{ch.shipped.toLocaleString()}건</text>}
               </g>
             );
           });
@@ -619,7 +619,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
             <rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill={D.red} opacity={0.1}/>
             <rect x={COLS_X[2]} y={retBlockY} width={4} height={retBlockH} rx={2} fill={D.red}/>
             <text x={COLS_X[2]+12} y={retCenterY} dominantBaseline="middle"
-              fill={D.red} fontSize="22" fontWeight="600">반품 {totalReturned}건</text>
+              fill={D.red} fontSize="13" fontWeight="600">반품 {totalReturned}건</text>
           </g>
         )}
 
@@ -629,7 +629,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
             <rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill={D.amber} opacity={0.12}/>
             <rect x={COLS_X[2]} y={exchBlockY} width={4} height={exchBlockH} rx={2} fill={D.amber}/>
             <text x={COLS_X[2]+12} y={exchCenterY} dominantBaseline="middle"
-              fill={D.amber} fontSize="22" fontWeight="600">교환 {totalExchanged}건</text>
+              fill={D.amber} fontSize="13" fontWeight="600">교환 {totalExchanged}건</text>
           </g>
         )}
       </svg>
