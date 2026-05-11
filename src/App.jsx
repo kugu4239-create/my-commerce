@@ -231,11 +231,16 @@ function SecTitle({ children, ts }) {
     </div>
   );
 }
-function KPI({ label, value, sub, accent="#111" }) {
+function KPI({ label, value, sub, accent="#111", onClick }) {
   return (
-    <div style={{ background:D.surface, border:`1px solid ${D.border}`,
-      borderRadius:9, padding:"14px 16px", flex:1, minWidth:110 }}>
-      <div style={{ color:D.textMeta, fontSize:10, letterSpacing:"0.09em", textTransform:"uppercase", marginBottom:5 }}>{label}</div>
+    <div onClick={onClick} style={{ background:D.surface, border:`1px solid ${D.border}`,
+      borderRadius:9, padding:"14px 16px", flex:1, minWidth:110,
+      cursor:onClick?"pointer":"default", transition:"box-shadow 0.15s" }}
+      onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow=`0 0 0 2px ${accent}44`;}}
+      onMouseLeave={e=>{e.currentTarget.style.boxShadow="";}}>
+      <div style={{ color:D.textMeta, fontSize:10, letterSpacing:"0.09em", textTransform:"uppercase", marginBottom:5 }}>
+        {label}{onClick&&<span style={{marginLeft:4,fontSize:9,opacity:0.5}}>↗</span>}
+      </div>
       <div style={{ color:accent, fontSize:20, fontWeight:600 }}>{value}</div>
       {sub&&<div style={{ color:D.textMeta, fontSize:10, marginTop:3 }}>{sub}</div>}
     </div>
@@ -798,6 +803,7 @@ function analyze(orderRows, stockRows, revenueRows) {
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
   const offlineOrderIds=new Set();
+  const offlineBreakdown={};  // 판교점/일산점 개별 보존
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
     if(OFFLINE_CHS.has(ch)){
@@ -808,6 +814,8 @@ function analyze(orderRows, stockRows, revenueRows) {
       offlineAgg.shipped+=byChannel[ch].shipped;
       offlineAgg.returned+=byChannel[ch].returned;
       (chOrderIds[ch]||new Set()).forEach(id=>offlineOrderIds.add(id));
+      if(ch!=="오프라인스토어"&&ch!=="오프라인"&&ch!=="오프라인 스토어")
+        offlineBreakdown[ch]={...byChannel[ch]};
       delete byChannel[ch];
       delete chOrderIds[ch];
     }
@@ -871,7 +879,7 @@ function analyze(orderRows, stockRows, revenueRows) {
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
-    channelList,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
+    channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
   };
 }
 
@@ -913,6 +921,46 @@ const PERIOD_TABS=[
   {key:"custom",label:"기간 선택"},
 ];
 
+const CH_ORDER=["자사몰","29CM","무신사","오프라인 스토어"];
+const chRank=ch=>{const i=CH_ORDER.indexOf(ch);return i>=0?i:99;};
+
+function getPriorPeriod(period,customStart,customEnd){
+  const fmt=d=>d.toISOString().slice(0,10);
+  if(period==="7d"){
+    const e=new Date();e.setDate(e.getDate()-7);
+    const s=new Date();s.setDate(s.getDate()-14);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="14d"){
+    const e=new Date();e.setDate(e.getDate()-14);
+    const s=new Date();s.setDate(s.getDate()-28);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="1m"){
+    const e=new Date();e.setMonth(e.getMonth()-1);
+    const s=new Date();s.setMonth(s.getMonth()-2);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="3m"){
+    const e=new Date();e.setMonth(e.getMonth()-3);
+    const s=new Date();s.setMonth(s.getMonth()-6);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="6m"){
+    const e=new Date();e.setMonth(e.getMonth()-6);
+    const s=new Date();s.setMonth(s.getMonth()-12);
+    return{start:fmt(s),end:fmt(e)};
+  }
+  if(period==="custom"&&customStart&&customEnd){
+    const s0=new Date(customStart),e0=new Date(customEnd);
+    const days=Math.round((e0-s0)/(864e5));
+    const pe=new Date(s0);pe.setDate(pe.getDate()-1);
+    const ps=new Date(pe);ps.setDate(ps.getDate()-days);
+    return{start:fmt(ps),end:fmt(pe)};
+  }
+  return null;
+}
+
 function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
   const [period,setPeriod]=useState("7d");
@@ -932,6 +980,8 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
   const [optionPeriod,setOptionPeriod]=useState("1m");
   const [returnOptionPeriod,setReturnOptionPeriod]=useState("1m");
+  const [offlineExpanded,setOfflineExpanded]=useState(false);
+  const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
 
   const axTick={fill:D.textMeta,fontSize:10};
   const NoWrapTick=({x,y,payload})=>(
@@ -954,6 +1004,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues),[filteredOrders,filteredStocks,filteredRevenues]);
 
   // 직전 동일 기간 채널별 순매출
+  const prevPeriod=useMemo(()=>getPriorPeriod(period,customStart,customEnd),[period,customStart,customEnd]);
+  const prevChRevenue=useMemo(()=>{
+    if(!prevPeriod) return {};
+    const map={};
+    const OFFL=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+    revenues.filter(r=>r.date>=prevPeriod.start&&r.date<=prevPeriod.end).forEach(r=>{
+      const ch=OFFL.has(r.channel||"")?"오프라인 스토어":(r.channel||"미분류");
+      map[ch]=(map[ch]||0)+(r.amount||0)-(r.refund_amount||0);
+    });
+    return map;
+  },[revenues,prevPeriod]);
 
   // 플랫폼별 선호 옵션 (컬러/사이즈) — 독립 기간 필터
   const optionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",optionPeriod,"",""),[orders,optionPeriod]);
@@ -1004,8 +1065,6 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
   },[returnOptionFilteredOrders,chRank]);
 
   // 판매처 채널 목록 (전체 orders 기준, 오프라인스토어 제외)
-  const CH_ORDER=["자사몰","29CM","무신사","오프라인 스토어"];
-  const chRank=ch=>{const i=CH_ORDER.indexOf(ch);return i>=0?i:99;};
   const activeChannels=useMemo(()=>{
     const dynamic=["자사몰","29CM","무신사"];
     const inData=new Set(orders.map(r=>r.channel||"미분류").filter(Boolean));
@@ -1206,12 +1265,13 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap"}}>
-        <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black}/>
-        <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green}/>
+        <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
+        <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         <KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
-          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}/>
-        <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue}/>
+          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}
+          onClick={()=>setKpiModal("returnRate")}/>
+        <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
       </div>
 
       {/* 판매처 점유율 + 판매처별 매출 */}
@@ -1242,17 +1302,32 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
         <Card>
           <SecTitle ts={ts.orders}>판매처별 매출</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={stats.channelList.slice(0,7)} layout="vertical" barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
-              <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
-              <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
-              <Tooltip content={<Tip/>}/>
-              <Bar dataKey="revenue" name="매출" radius={[0,3,3,0]}>
-                {stats.channelList.slice(0,7).map((c,i)=>(
-                  <Cell key={i} fill={chColor(c.name)}/>
-                ))}
-              </Bar>
-            </BarChart>
+            {(()=>{
+              // 오프라인 스토어 → 판교점/일산점 분리 스택
+              const PANKYO_COLOR="#8b5cf6"; const ILSAN_COLOR="#c084fc";
+              const chartData=stats.channelList.slice(0,7).map(c=>{
+                if(c.name==="오프라인 스토어"){
+                  const bd=stats.offlineBreakdown||{};
+                  return{name:c.name,revenue:0,
+                    판교점:(bd["판교점"]?.revenue||0),
+                    일산점:(bd["일산점"]?.revenue||0)};
+                }
+                return{name:c.name,revenue:c.revenue,판교점:0,일산점:0};
+              });
+              return(
+                <BarChart data={chartData} layout="vertical" barCategoryGap="28%">
+                  <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
+                  <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
+                  <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
+                  <Tooltip content={<Tip/>}/>
+                  <Bar dataKey="revenue" name="매출" stackId="a" radius={[0,3,3,0]}>
+                    {chartData.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
+                  </Bar>
+                  <Bar dataKey="판교점" name="판교점" stackId="a" fill={PANKYO_COLOR} radius={[0,0,0,0]}/>
+                  <Bar dataKey="일산점" name="일산점" stackId="a" fill={ILSAN_COLOR} radius={[0,3,3,0]}/>
+                </BarChart>
+              );
+            })()}
           </ResponsiveContainer>
         </Card>
       </div>
@@ -1275,10 +1350,17 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           </div>
         </div>
         {(()=>{
+          const fmtChg=(cur,prev)=>{
+            if(!prev||prev===0) return null;
+            const pct=((cur-prev)/Math.abs(prev)*100);
+            const up=pct>=0;
+            return <span style={{fontSize:10,fontWeight:700,color:up?"#22c55e":D.red,marginLeft:3}}>{up?"▲":"▼"}{Math.abs(pct).toFixed(1)}%</span>;
+          };
           const cols=[
             {key:"name",   label:"판매처", left:true,  val:c=>c.name},
             {key:"share",  label:"점유율", val:c=>parseFloat(c.share)},
             {key:"revenue",label:"매출",   val:c=>c.revenue},
+            {key:"cmp",    label:"동기간 비교", val:c=>0},
             {key:"shipped",label:"배송",   val:c=>c.shipped},
             {key:"returned",label:"반품",  val:c=>c.returned},
             {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
@@ -1286,46 +1368,72 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
-            if(!col) return 0;
+            if(!col||col.key==="cmp") return 0;
             const va=col.val(a), vb=col.val(b);
             return chSort.dir==="desc"?(vb>va?1:vb<va?-1:0):(va>vb?1:va<vb?-1:0);
           });
+          const bd=stats.offlineBreakdown||{};
+          const subRows=offlineExpanded?Object.entries(bd).map(([n,d])=>({...d,name:n,isSubRow:true})):[];
+          const allRows=[];
+          sorted.forEach(c=>{
+            allRows.push(c);
+            if(c.name==="오프라인 스토어") subRows.forEach(sr=>allRows.push(sr));
+          });
           return (
-            <div style={{minHeight:260}}>
+            <div style={{minHeight:260,overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {cols.map(({key,label,left})=>(
-                  <th key={key} style={{padding:"7px 9px",textAlign:left?"left":"right",
+                  <th key={key} onClick={key!=="cmp"?()=>setChSort({key,dir:"desc"}):undefined}
+                    style={{padding:"7px 9px",textAlign:left?"left":"right",
                     color:chSort.key===key?D.black:D.textMeta,
-                    fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap"}}>
-                    {label}
+                    fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap",
+                    cursor:key!=="cmp"?"pointer":"default"}}>
+                    {label}{chSort.key===key?" ↓":""}
                   </th>
                 ))}
               </tr></thead>
               <tbody>
-                {sorted.map(c=>(
-                  <tr key={c.name} style={{borderBottom:`1px solid ${D.border}`}}>
-                    <td style={{padding:"7px 9px",fontWeight:600}}>{c.name}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="share"?700:400}}>{c.share}%</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",fontWeight:chSort.key==="revenue"?700:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:chSort.key==="shipped"?700:400}}>{c.shipped.toLocaleString()}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:chSort.key==="returned"?700:400}}>{c.returned.toLocaleString()}</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                      color:c.shipped>0&&(c.returned/c.shipped)>0.1?D.red:D.textSub}}>
-                      {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):0}%</td>
-                    <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:chSort.key==="aov"?700:400}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
-                  </tr>
-                ))}
-                <tr style={{borderTop:`1px solid ${D.borderMid}`}}>
-                  <td style={{padding:"7px 9px",fontWeight:700}}>합계</td>
+                {allRows.map((c,idx)=>{
+                  const prev=prevChRevenue[c.name]||0;
+                  const isOffline=c.name==="오프라인 스토어";
+                  return(
+                    <tr key={c.name+idx} style={{borderBottom:`1px solid ${D.border}`,
+                      background:c.isSubRow?"#faf8ff":"transparent",
+                      opacity:c.isSubRow?0.85:1}}>
+                      <td style={{padding:"7px 9px",fontWeight:c.isSubRow?400:600,
+                        paddingLeft:c.isSubRow?20:9,color:c.isSubRow?D.textSub:D.black}}>
+                        {isOffline&&(
+                          <button onClick={()=>setOfflineExpanded(v=>!v)}
+                            style={{marginRight:5,background:"none",border:`1px solid ${D.border}`,
+                              borderRadius:3,padding:"0 4px",fontSize:10,cursor:"pointer",
+                              color:D.textMeta}}>{offlineExpanded?"▲":"▼"}</button>
+                        )}
+                        {c.name}
+                      </td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share||"—"}%</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px"}}>
+                        {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
+                      </td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{(c.returned||0).toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
+                        color:(c.shipped>0&&(c.returned/c.shipped)>0.1)?D.red:D.textSub}}>
+                        {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                  <td style={{padding:"7px 9px"}}>합계</td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",fontWeight:700}}>{fmtWon(stats.totalRevenue)}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green,fontWeight:600}}>{stats.totalShipped.toLocaleString()}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.red,fontWeight:600}}>{stats.totalReturned.toLocaleString()}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                    color:stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}}>
-                    {stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,fontWeight:600}}>{stats.totalOrderCount>0?fmtWon(Math.round(stats.totalRevenue/stats.totalOrderCount)):"—"}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWon(stats.totalRevenue)}</td>
+                  <td/>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
+                  <td/>
                 </tr>
               </tbody>
             </table>
@@ -1634,6 +1742,325 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
           </div>
         )}
       </div>
+
+      {/* KPI 소스 모달 */}
+      {kpiModal&&(()=>{
+        const OFFL=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+        const normCh=ch=>OFFL.has(ch||"")?"오프라인 스토어":(ch||"미분류");
+
+        /* ── 총 매출 ── */
+        let modalTitle="", modalContent=null;
+        if(kpiModal==="revenue"){
+          modalTitle="총 매출 소스";
+          // by channel
+          const byCh={};
+          filteredRevenues.forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={revenue:0,refund:0,count:0};
+            byCh[ch].revenue+=(r.amount||0);
+            byCh[ch].refund+=(r.refund_amount||0);
+            byCh[ch].count++;
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>(b[1].revenue-b[1].refund)-(a[1].revenue-a[1].refund));
+          // by date (last 30 entries or all)
+          const byDate={};
+          filteredRevenues.forEach(r=>{
+            const d=r.date||"—";
+            if(!byDate[d]) byDate[d]={revenue:0,refund:0};
+            byDate[d].revenue+=(r.amount||0);
+            byDate[d].refund+=(r.refund_amount||0);
+          });
+          const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>매출</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>순매출</th>
+                  </tr></thead>
+                  <tbody>
+                    {chRows.map(([ch,d])=>(
+                      <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(d.revenue)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{d.refund>0?fmtWon(d.refund):"—"}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700}}>{fmtWon(d.revenue-d.refund)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(chRows.reduce((s,[,d])=>s+d.revenue,0))}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{fmtWon(chRows.reduce((s,[,d])=>s+d.refund,0))}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(stats.totalRevenue)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>날짜별 (최근 30일)</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>매출</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>순매출</th>
+                  </tr></thead>
+                  <tbody>
+                    {dateRows.map(([d,v])=>(
+                      <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(v.revenue)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{v.refund>0?fmtWon(v.refund):"—"}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600}}>{fmtWon(v.revenue-v.refund)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── 배송 ── */
+        else if(kpiModal==="shipped"){
+          modalTitle="배송 소스";
+          const shipped=filteredOrders.filter(r=>r.status==="배송");
+          const byCh={};
+          shipped.forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={cnt:0,oids:new Set()};
+            byCh[ch].cnt++;
+            const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
+            if(oid) byCh[ch].oids.add(oid);
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>b[1].cnt-a[1].cnt);
+          const byDate={};
+          shipped.forEach(r=>{
+            const d=r.order_date||"—";
+            if(!byDate[d]) byDate[d]=0;
+            byDate[d]++;
+          });
+          const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문수(고유)</th>
+                  </tr></thead>
+                  <tbody>
+                    {chRows.map(([ch,d])=>(
+                      <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.cnt.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{d.oids.size.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
+                      <td/>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>날짜별 (최근 30일)</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
+                  </tr></thead>
+                  <tbody>
+                    {dateRows.map(([d,cnt])=>(
+                      <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green,fontWeight:600}}>{cnt.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── 반품률 ── */
+        else if(kpiModal==="returnRate"){
+          modalTitle="반품 소스";
+          const byCh={};
+          filteredOrders.filter(r=>r.status==="배송"||r.status==="반품").forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={shipped:0,returned:0};
+            if(r.status==="배송") byCh[ch].shipped++;
+            if(r.status==="반품") byCh[ch].returned++;
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>b[1].returned-a[1].returned);
+          // top return products
+          const byProd={};
+          filteredOrders.filter(r=>r.status==="반품").forEach(r=>{
+            const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
+            if(!byProd[k]) byProd[k]=0;
+            byProd[k]++;
+          });
+          const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별 반품률</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품률</th>
+                  </tr></thead>
+                  <tbody>
+                    {chRows.map(([ch,d])=>{
+                      const rate=d.shipped>0?(d.returned/d.shipped*100):0;
+                      return(
+                        <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
+                          <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
+                          <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.shipped.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{d.returned.toLocaleString()}</td>
+                          <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700,color:rate>10?D.red:D.textSub}}>{rate.toFixed(1)}%</td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>반품 Top 상품</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>상품/옵션</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>반품수</th>
+                  </tr></thead>
+                  <tbody>
+                    {prodRows.map(([k,cnt])=>(
+                      <tr key={k} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red,fontWeight:600}}>{cnt.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── 입고 수량 ── */
+        else if(kpiModal==="stock"){
+          modalTitle="입고 수량 소스";
+          const byDate={};
+          filteredStocks.forEach(r=>{
+            const d=r.upload_date||"—";
+            if(!byDate[d]) byDate[d]={qty:0,skus:0};
+            byDate[d].qty+=(r.qty||0);
+            byDate[d].skus++;
+          });
+          const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1);
+          // top stocked products
+          const byProd={};
+          filteredStocks.forEach(r=>{
+            const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
+            if(!byProd[k]) byProd[k]=0;
+            byProd[k]+=(r.qty||0);
+          });
+          const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          modalContent=(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>업로드 날짜별</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>수량</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>SKU수</th>
+                  </tr></thead>
+                  <tbody>
+                    {dateRows.map(([d,v])=>(
+                      <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600,color:D.blue}}>{v.qty.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{v.skus.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
+                      <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.blue}}>{stats.totalStock.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{filteredStocks.length.toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div style={{marginTop:10,padding:"8px 10px",background:D.surfaceAlt,borderRadius:6,fontSize:11,color:D.textMeta}}>
+                  ※ 동일 SKU는 최신 업로드 기준으로 1건만 반영됩니다.
+                </div>
+              </div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>입고 Top 상품</div>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>상품/옵션</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>수량</th>
+                  </tr></thead>
+                  <tbody>
+                    {prodRows.map(([k,qty])=>(
+                      <tr key={k} style={{borderBottom:`1px solid ${D.border}`}}>
+                        <td style={{padding:"5px 7px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.blue,fontWeight:600}}>{qty.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return(
+          <div onClick={()=>setKpiModal(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+                width:"min(860px,95vw)",maxHeight:"85vh",overflowY:"auto",
+                boxShadow:"0 8px 40px rgba(0,0,0,0.22)",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+                <div style={{fontWeight:700,fontSize:15,color:D.black,letterSpacing:"0.04em"}}>{modalTitle}</div>
+                <button onClick={()=>setKpiModal(null)}
+                  style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                    padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+              </div>
+              {modalContent}
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
