@@ -2861,6 +2861,24 @@ function PromoFlow({ revenues }) {
   };
   const delPromo=id=>updatePromos(promos.filter(p=>p.id!==id));
 
+  const getSubmitPromos=()=>{try{return JSON.parse(localStorage.getItem("submit_promos")||"[]");}catch{return [];}};
+  const saveSubmitPromos=data=>localStorage.setItem("submit_promos",JSON.stringify(data));
+  const [submitPromos,setSubmitPromos]=useState(getSubmitPromos);
+  const [submitForm,setSubmitForm]=useState({title:"",eod:""});
+  const [editingSubmitId,setEditingSubmitId]=useState(null);
+  const [editSubmitForm,setEditSubmitForm]=useState({title:"",eod:""});
+  const updateSubmitPromos=data=>{saveSubmitPromos(data);setSubmitPromos(data);};
+  const addSubmitPromo=()=>{
+    if(!submitForm.title)return;
+    updateSubmitPromos([...submitPromos,{id:Date.now(),...submitForm}]);
+    setSubmitForm({title:"",eod:""});
+  };
+  const saveSubmitEdit=()=>{
+    updateSubmitPromos(submitPromos.map(s=>s.id===editingSubmitId?{...s,...editSubmitForm}:s));
+    setEditingSubmitId(null);
+  };
+  const delSubmitPromo=id=>updateSubmitPromos(submitPromos.filter(s=>s.id!==id));
+
   const startMs=new Date(viewStart).getTime();
   const endMs=new Date(viewEnd).getTime();
   const totalMs=Math.max(1,endMs-startMs);
@@ -3191,6 +3209,89 @@ function PromoFlow({ revenues }) {
         )}
       </Card>
 
+      {/* 제출해야하는 프로모션 */}
+      <Card>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>제출해야하는 프로모션</div>
+        <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"flex-end"}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>제목</div>
+            <input value={submitForm.title} onChange={e=>setSubmitForm(f=>({...f,title:e.target.value}))}
+              placeholder="프로모션 제목"
+              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
+                borderRadius:5,padding:"7px 10px",fontSize:14,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+          </div>
+          <div style={{width:160}}>
+            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>EOD</div>
+            <input type="date" value={submitForm.eod} onChange={e=>setSubmitForm(f=>({...f,eod:e.target.value}))}
+              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
+                borderRadius:5,padding:"7px 10px",fontSize:14,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+          </div>
+          <button onClick={addSubmitPromo}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+              padding:"7px 18px",fontSize:13,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>저장</button>
+        </div>
+        {submitPromos.length>0&&(
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{background:D.surfaceAlt}}>
+                {["제목","EOD","",""].map((h,i)=>(
+                  <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {submitPromos.map(s=>{
+                const isE=editingSubmitId===s.id;
+                const tdS={padding:"7px 8px",borderBottom:`1px solid ${D.border}`,color:D.text};
+                if(isE) return (
+                  <tr key={s.id}>
+                    <td style={tdS}>
+                      <input value={editSubmitForm.title} onChange={e=>setEditSubmitForm(f=>({...f,title:e.target.value}))}
+                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+                          padding:"4px 8px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",
+                          fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+                    </td>
+                    <td style={tdS}>
+                      <input type="date" value={editSubmitForm.eod} onChange={e=>setEditSubmitForm(f=>({...f,eod:e.target.value}))}
+                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+                          padding:"4px 8px",fontSize:13,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+                    </td>
+                    <td style={{...tdS,whiteSpace:"nowrap"}}>
+                      <button onClick={saveSubmitEdit}
+                        style={{background:D.black,color:"#fff",border:"none",borderRadius:4,
+                          padding:"4px 12px",fontSize:12,cursor:"pointer",fontWeight:600,marginRight:4}}>저장</button>
+                      <button onClick={()=>setEditingSubmitId(null)}
+                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+                          padding:"4px 8px",fontSize:12,cursor:"pointer",color:D.textSub}}>취소</button>
+                    </td>
+                    <td style={tdS}/>
+                  </tr>
+                );
+                return (
+                  <tr key={s.id}>
+                    <td style={{...tdS,fontWeight:600}}>{s.title}</td>
+                    <td style={{...tdS,color:D.textSub}}>{s.eod||"—"}</td>
+                    <td style={{...tdS,whiteSpace:"nowrap"}}>
+                      <button onClick={()=>{setEditingSubmitId(s.id);setEditSubmitForm({title:s.title,eod:s.eod||""});}}
+                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+                          padding:"3px 10px",fontSize:12,cursor:"pointer",color:D.textSub,marginRight:4}}>수정</button>
+                      <button onClick={()=>delSubmitPromo(s.id)}
+                        style={{background:D.black,color:"#fff",border:"none",borderRadius:4,
+                          padding:"3px 10px",fontSize:12,cursor:"pointer",fontWeight:600}}>제출 완료</button>
+                    </td>
+                    <td style={tdS}/>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {submitPromos.length===0&&(
+          <div style={{textAlign:"center",padding:"16px 0",color:D.textMeta,fontSize:13}}>제출할 프로모션을 추가하세요</div>
+        )}
+      </Card>
+
       {/* 등록된 프로모션 목록 표 */}
       {promos.length>0&&(
         <Card>
@@ -3209,7 +3310,7 @@ function PromoFlow({ revenues }) {
                 const ended=isEnded(p);
                 const isEditing=editingPromoId===p.id;
                 const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
-                  color:ended?D.textMeta:D.text,textDecoration:ended?"line-through":"none"}};
+                  color:ended?"#ccc":D.text,textDecoration:"none"}};
                 const inp3={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
                   padding:"7px 10px",fontSize:15,color:D.text,width:"100%",boxSizing:"border-box",
                   fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
@@ -3274,7 +3375,7 @@ function PromoFlow({ revenues }) {
                       </div>
                     </td>
                     <td {...td} style={{...td.style,fontWeight:600}}>{p.name}</td>
-                    <td {...td} style={{...td.style,whiteSpace:"nowrap",textDecoration:ended?"line-through":"none"}}>
+                    <td {...td} style={{...td.style,whiteSpace:"nowrap",textDecoration:"none"}}>
                       {[p.start_date,p.end_date].map((dt,i)=>{
                         const [d,t]=(dt||"").split("T");
                         return (
