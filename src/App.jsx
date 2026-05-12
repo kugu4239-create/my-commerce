@@ -780,7 +780,7 @@ const savePromos=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ─────────────────────────────────────────────
 // ANALYTICS ENGINE
 // ─────────────────────────────────────────────
-function analyze(orderRows, stockRows, revenueRows) {
+function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 매출 입력 데이터 기반 KPI
   const totalRevenue    = revenueRows.reduce((s,r)=>s+(r.amount||0)-(r.refund_amount||0),0);
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
@@ -838,6 +838,23 @@ function analyze(orderRows, stockRows, revenueRows) {
   if(hasOffline){
     byChannel["오프라인 스토어"]=offlineAgg;
     chOrderIds["오프라인 스토어"]=offlineOrderIds;
+  }
+  // 매장 판매 CSV 기반 오프라인 매출 및 객단가 주문 ID
+  if(storeRows.length){
+    const storeByStore={};
+    storeRows.forEach(r=>{
+      const st=r.store_name||"오프라인 스토어";
+      if(!storeByStore[st]) storeByStore[st]={revenue:0,orderIds:new Set()};
+      if(r.status==="배송"){storeByStore[st].revenue+=(r.amount||0);if(r.order_id)storeByStore[st].orderIds.add(r.order_id);}
+      else if(r.status==="반품") storeByStore[st].revenue-=(r.amount||0);
+    });
+    let storeTotal=0; const storeAllIds=new Set();
+    Object.values(storeByStore).forEach(d=>{storeTotal+=d.revenue;d.orderIds.forEach(id=>storeAllIds.add(id));});
+    if(!byChannel["오프라인 스토어"]) byChannel["오프라인 스토어"]={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
+    byChannel["오프라인 스토어"].revenue=storeTotal;
+    const existingIds=chOrderIds["오프라인 스토어"]||new Set();
+    storeAllIds.forEach(id=>existingIds.add(id));
+    chOrderIds["오프라인 스토어"]=existingIds;
   }
   const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
@@ -982,7 +999,7 @@ function getPriorPeriod(period,customStart,customEnd){
   return null;
 }
 
-function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
+function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
   const [period,setPeriod]=useState("7d");
   const [customStart,setCustomStart]=useState("");
@@ -1014,6 +1031,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
+  const filteredStoreSales=useMemo(()=>filterByDate(storeSales,"sale_date",period,customStart,customEnd),[storeSales,period,customStart,customEnd]);
   const filteredStocks=useMemo(()=>{
     const all=filterByDate(stocks,"upload_date",period,customStart,customEnd);
     const latest={};
@@ -1023,7 +1041,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
     });
     return Object.values(latest);
   },[stocks,period,customStart,customEnd]);
-  const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues),[filteredOrders,filteredStocks,filteredRevenues]);
+  const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales),[filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales]);
 
   // 직전 동일 기간 채널별 순매출
   const prevPeriod=useMemo(()=>getPriorPeriod(period,customStart,customEnd),[period,customStart,customEnd]);
@@ -1773,6 +1791,7 @@ function Dashboard({ orders, stocks, revenues, ts, onRefresh }) {
                 db.from("orders").delete().gte("order_date","2000-01-01"),
                 db.from("stock_uploads").delete().gte("upload_date","2000-01-01"),
                 db.from("revenues").delete().gte("date","2000-01-01"),
+                db.from("store_sales").delete().gte("sale_date","2000-01-01"),
               ]);
               try{localStorage.removeItem("cs_data");}catch{}
               setDeleteAll(false);
@@ -3586,21 +3605,23 @@ function EasyAdminUploader({ onUpdate }) {
 }
 
 // ─────────────────────────────────────────────
-// DATA INPUT — 매장 판매 CSV (이지체인)
+// DATA INPUT — 매장 판매 CSV
 // ─────────────────────────────────────────────
-const STORE_CHANNELS = ["판교점","일산점"];
-
 function StoreUploader({ onUpdate }) {
-  const today = new Date().toISOString().slice(0,10);
-  const [startDate,setStartDate]=useState(today);
-  const [endDate,setEndDate]=useState(today);
   const [step,setStep]=useState(0);
   const [fileName,setFileName]=useState("");
   const [preview,setPreview]=useState(null);
+  const [dateRange,setDateRange]=useState({start:"",end:""});
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
-  const [infoOpen,setInfoOpen]=useState(false);
-  const dateValid=startDate&&endDate&&startDate<=endDate;
+
+  const parseKRW=s=>{
+    const str=String(s||"").trim().replace(/[\s,]/g,"");
+    if(!str||str==="0"||str==="NAN") return 0;
+    const neg=str.startsWith("(")&&str.endsWith(")");
+    const num=parseInt(str.replace(/[()]/g,""),10)||0;
+    return neg?-num:num;
+  };
 
   const handleFile=useCallback(file=>{
     if(!file) return;
@@ -3608,38 +3629,26 @@ function StoreUploader({ onUpdate }) {
     Papa.parse(file,{header:true,skipEmptyLines:true,
       complete:({data})=>{
         try{
-          if(!data.length) throw new Error("CSV 데이터가 없습니다");
-          const cols=Object.keys(data[0]);
-          const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
-          const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
-          const dateCol=find("구매일자","주문일","판매일","날짜","date");
-          const prodCol=find("상품명","상품","product","품명");
-          const optCol=find("옵션","option","사이즈","색상");
-          const amtCol=find("실제판매가","판매가","금액","실판매가","amount");
-          const storeCol=find("매장","store","지점","판매점");
-          if(!dateCol) throw new Error("구매일자 컬럼을 찾을 수 없습니다. 헤더: "+cols.join(", "));
-          if(!amtCol) throw new Error("실제판매가 컬럼을 찾을 수 없습니다. 헤더: "+cols.join(", "));
-
-          const rows=data.map(r=>({
-            date:toDate(r[dateCol]),
-            store:storeCol?String(r[storeCol]||"").trim():"오프라인",
-            product_name:prodCol?String(r[prodCol]||"").trim():"",
-            option_name:optCol?String(r[optCol]||"").trim():"",
-            amount:(()=>{const raw=String(r[amtCol]||"0").trim();const neg=raw.startsWith("(")&&raw.endsWith(")");const n=Number(raw.replace(/[^0-9.]/g,""));return neg?-n:n;})(),
-          })).filter(r=>r.date&&r.amount!==0);
-
-          if(!rows.length) throw new Error("유효한 데이터가 없습니다 (실제판매가=0 제외)");
-
-          // 날짜+매장별 집계
-          const aggMap={};
-          rows.forEach(r=>{
-            const key=`${r.date}__${r.store}`;
-            if(!aggMap[key]) aggMap[key]={date:r.date,channel:r.store,amount:0,order_count:0,refund_amount:0,refund_count:0};
-            if(r.amount>0){ aggMap[key].amount+=r.amount; aggMap[key].order_count++; }
-            else { aggMap[key].refund_amount+=Math.abs(r.amount); aggMap[key].refund_count++; }
-          });
-          setPreview({rows,agg:Object.values(aggMap)});
-          setStep(2);
+          const rows=data.filter(r=>{
+            const refPrice=parseKRW(r["기준판매가"]);
+            return refPrice!==0; // 사은품·0원 상품 제외
+          }).map(r=>{
+            const qty=parseKRW(r["수량"]);
+            const amount=parseKRW(r["실판매금액"]);
+            return{
+              sale_date:(r["구매일자"]||"").trim().slice(0,10),
+              store_name:(r["매장"]||"").trim(),
+              product_name:(r["상품명"]||"").trim(),
+              option_name:(r["옵션"]||"").trim(),
+              qty:Math.abs(qty),
+              amount:Math.abs(amount),
+              order_id:(r["ID"]||"").trim(),
+              status:qty<0?"반품":"배송",
+            };
+          }).filter(r=>r.sale_date&&r.product_name&&r.qty>0);
+          const dates=[...new Set(rows.map(r=>r.sale_date))].sort();
+          setDateRange({start:dates[0]||"",end:dates[dates.length-1]||""});
+          setPreview(rows); setStep(1);
         }catch(e){setResult({type:"error",msg:e.message});}
       },
       error:e=>setResult({type:"error",msg:e.message}),
@@ -3647,68 +3656,52 @@ function StoreUploader({ onUpdate }) {
   },[]);
 
   const handleUpload=async()=>{
-    if(!preview?.agg?.length||!dateValid) return;
+    if(!preview?.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    // 기간 내 매장 채널 기존 데이터 삭제
-    for(const ch of [...STORE_CHANNELS,"오프라인"]){
-      await db.from("revenues").delete().gte("date",startDate).lte("date",endDate).eq("channel",ch);
+    if(dateRange.start&&dateRange.end){
+      await db.from("store_sales").delete().gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
     }
-    for(let i=0;i<preview.agg.length;i+=200){
-      const {error}=await db.from("revenues").upsert(preview.agg.slice(i,i+200),{onConflict:"date,channel"});
+    for(let i=0;i<preview.length;i+=500){
+      const{error}=await db.from("store_sales").insert(preview.slice(i,i+500));
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    setStep(3);
-    setResult({type:"success",msg:`${preview.agg.length}건 저장 완료 (거래 ${preview.rows.length}건)`,ts:ts2});
-    onUpdate(ts2); setLoading(false);
+    setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료`,ts:ts2});
+    onUpdate(ts2);setLoading(false);
   };
 
   const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);};
 
-  return (
+  return(
     <div>
-      <Steps current={step} steps={["기간 선택","파일 업로드","미리보기","완료"]}/>
       <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
         <Card>
           {step===0&&<>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
-              <span style={{fontWeight:600,fontSize:13}}>매장 판매 기간 선택</span>
-              <button onClick={()=>setInfoOpen(true)}
-                style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:"50%",
-                  width:20,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",
-                  fontSize:10,cursor:"pointer",color:D.textSub}}>i</button>
+            <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 CSV 업로드</div>
+            <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.7}}>
+              POS 시스템 판매 데이터를 업로드합니다.<br/>
+              인식 컬럼: <b>구매일자</b>, <b>매장</b>, <b>상품명</b>, <b>옵션</b>,<br/>
+              <b>수량</b> (괄호=반품), <b>실판매금액</b>, <b>ID</b> (객단가 분모)<br/>
+              기준판매가=0인 사은품 행 자동 제외
             </div>
-            <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
-            <div style={{color:D.red,fontSize:10,marginBottom:20}}>⚠ 확정 시 해당 기간 매장 데이터 교체</div>
-            <Btn onClick={()=>setStep(1)} disabled={!dateValid} style={{width:"100%"}}>다음</Btn>
+            <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 CSV 업로드"/>
+            {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
-            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
-            <div style={{color:D.textMeta,fontSize:11,marginBottom:10}}>기간: {startDate} ~ {endDate}</div>
-            <DropZone onFile={handleFile} fileName={fileName} label="이지체인 매출 CSV 업로드"/>
-            {preview&&<div style={{color:D.green,fontSize:11,marginTop:8}}>✓ {preview.rows.length}건 파싱 완료</div>}
-            {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
-            <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
-              <Btn onClick={handleUpload} disabled={!preview||loading} style={{width:"100%"}}>
-                {loading?"처리 중...":"확정 업로드"}
-              </Btn>
-              <button onClick={()=>setStep(0)} style={{background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:"5px"}}>← 기간 다시 선택</button>
-            </div>
-          </>}
-          {step===2&&<>
-            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>미리보기 확인</div>
+            <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>업로드 확인</div>
             <StatRow items={[
-              {label:"거래 건수",value:`${preview?.rows?.length||0}건`,color:D.green},
-              {label:"매장 수",value:`${new Set(preview?.rows?.map(r=>r.store)).size}개`,color:D.blue},
+              {label:"파일",value:fileName.slice(0,20)},
+              {label:"기간",value:`${dateRange.start}~${dateRange.end}`},
+              {label:"행수",value:`${preview?.length||0}건`,color:D.green},
             ]}/>
             <Btn onClick={handleUpload} disabled={loading} style={{width:"100%",marginBottom:7}}>
-              {loading?"처리 중...":"확정 업로드"}
+              {loading?"처리 중...":"업로드"}
             </Btn>
-            <button onClick={()=>setStep(1)} style={{background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:"5px"}}>← 파일 다시 선택</button>
+            <button onClick={reset} style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:"5px"}}>← 다시 선택</button>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
-          {step===3&&<div style={{textAlign:"center"}}>
+          {step===2&&<div style={{textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:8}}>✓</div>
             <div style={{color:D.green,fontWeight:600,marginBottom:10}}>업로드 완료</div>
             {result&&<Alert type={result.type} msg={result.msg} ts={result.ts}/>}
@@ -3716,42 +3709,33 @@ function StoreUploader({ onUpdate }) {
           </div>}
         </Card>
         <Card>
-          <div style={{fontWeight:500,fontSize:12,marginBottom:12}}>파일 미리보기</div>
-          {preview?.rows?.length>0?(
-            <div style={{overflowY:"auto",maxHeight:440}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
-                  {["날짜","매장","상품명","옵션","금액"].map(h=>(
-                    <th key={h} style={{padding:"5px 7px",textAlign:h==="금액"?"right":"left",color:D.textMeta,fontWeight:400}}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {preview.rows.slice(0,100).map((r,i)=>(
-                    <tr key={i} style={{borderBottom:`1px solid ${D.border}`,background:r.amount<0?"#fff5f5":"transparent"}}>
-                      <td style={{padding:"4px 7px",color:D.textMeta}}>{r.date}</td>
-                      <td style={{padding:"4px 7px",fontWeight:600}}>{r.store}</td>
-                      <td style={{padding:"4px 7px",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
-                      <td style={{padding:"4px 7px",color:D.textMeta}}>{r.option_name}</td>
-                      <td style={{padding:"4px 7px",textAlign:"right",color:r.amount<0?D.red:D.green,fontWeight:600}}>
-                        {r.amount<0?"반품 ":""}₩{Math.abs(r.amount).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                  {preview.rows.length>100&&<tr><td colSpan={5} style={{padding:6,textAlign:"center",color:D.textMeta,fontSize:10}}>+{preview.rows.length-100}건 더</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          ):<div style={{color:D.textMeta,textAlign:"center",padding:60,fontSize:12}}>CSV 파일을 선택하면 미리보기가 표시됩니다</div>}
+          <div style={{fontWeight:500,fontSize:12,marginBottom:16}}>
+            {step===0?"파일을 업로드하면 미리보기가 표시됩니다":fileName+" 파싱 결과"}
+          </div>
+          {step===0&&<div style={{color:D.textMeta,textAlign:"center",padding:60,fontSize:12}}>업로드 대기 중</div>}
+          {step>=1&&preview&&(
+            <>
+              <div style={{display:"flex",gap:20,marginBottom:12,fontSize:11,color:D.textMeta}}>
+                <span>총 <b style={{color:D.black}}>{preview.length}</b>행</span>
+                <span>판매 <b style={{color:D.green}}>{preview.filter(r=>r.status==="배송").length}</b>건</span>
+                <span>반품 <b style={{color:D.red}}>{preview.filter(r=>r.status==="반품").length}</b>건</span>
+                <span>매출 <b style={{color:D.black}}>{fmtWon(preview.filter(r=>r.status==="배송").reduce((s,r)=>s+(r.amount||0),0))}</b></span>
+                <span>주문번호 <b style={{color:D.black}}>{new Set(preview.filter(r=>r.status==="배송").map(r=>r.order_id)).size}</b>개</span>
+              </div>
+              <PreviewTable rows={preview.slice(0,50)} cols={[
+                {key:"sale_date",label:"날짜",color:D.textMeta},
+                {key:"store_name",label:"매장",color:D.textMeta},
+                {key:"product_name",label:"상품명",maxW:180},
+                {key:"option_name",label:"옵션",color:D.textMeta},
+                {key:"qty",label:"수량",bold:true},
+                {key:"amount",label:"금액"},
+                {key:"status",label:"상태",color:D.textMeta},
+                {key:"order_id",label:"주문ID",color:D.textMeta},
+              ]}/>
+            </>
+          )}
         </Card>
       </div>
-      <InfoModal show={infoOpen} onClose={()=>setInfoOpen(false)} title="매장 판매 CSV 업로드 가이드">
-        이지체인 <strong>기간별 판매관리(B900)</strong>에서 상품별 매출자료를 다운로드 후 CSV로 변환하여 업로드하세요.<br/><br/>
-        <strong>필수 컬럼:</strong> 구매일자 · 실제판매가 · 매장<br/>
-        <strong>선택 컬럼:</strong> 상품명 · 옵션<br/><br/>
-        • 실제판매가 <strong>0원 행</strong>은 자동 제외됩니다<br/>
-        • 실제판매가 <strong>음수(−)</strong>는 반품으로 처리됩니다<br/>
-        • 판교점 · 일산점은 대시보드에서 <strong>오프라인 스토어</strong>로 합산됩니다
-      </InfoModal>
     </div>
   );
 }
@@ -3759,7 +3743,7 @@ function StoreUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // DATA INPUT (탭 컨테이너)
 // ─────────────────────────────────────────────
-function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }) {
+function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], storeSales=[] }) {
   const [tab,setTab]=useState("revenue");
   const [stockInfoOpen,setStockInfoOpen]=useState(false);
   const [orderInfoOpen,setOrderInfoOpen]=useState(false);
@@ -3773,7 +3757,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }
     {key:"revenue",label:<span>매출 입력{lastDate(revenues,"date")}</span>},
     {key:"stock",label:<span>입고 CSV{lastDate(stocks,"upload_date")} <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
     {key:"orders",label:<span>이지어드민 CSV(배송일 기준){lastDate(orders,"order_date")} <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
-    {key:"store",label:"매장 판매 CSV"},
+    {key:"store",label:<span>매장 판매 CSV{lastDate(storeSales,"sale_date")}</span>},
     {key:"cs",label:"CS 데이터"},
     {key:"delete",label:"데이터 삭제"},
   ];
@@ -3797,13 +3781,14 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[] }
       {tab==="revenue"&&<RevenueForm onUpdate={ts=>onUpdate("revenue",ts)}/>}
       {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)}/>}
       {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();}}/>}
-      {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("revenue",ts);onDataChange?.();}}/>}
+      {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("store",ts);onDataChange?.();}}/>}
       {tab==="cs"&&<CSDataInput/>}
       {tab==="delete"&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>onDataChange?.()}/>
           <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고 CSV" onDone={()=>onDataChange?.()}/>
           <DataDeleteSection table="orders" dateField="order_date" label="이지어드민 CSV" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매 CSV" onDone={()=>onDataChange?.()}/>
         </div>
       )}
 
@@ -3858,11 +3843,12 @@ export default function App() {
   const [orders,setOrders]=useState([]);
   const [stocks,setStocks]=useState([]);
   const [revenues,setRevenues]=useState([]);
+  const [storeSales,setStoreSales]=useState([]);
   const [appLoading,setAppLoading]=useState(true);
   const firstLoad=useRef(true);
   const [ts,setTs]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem("merryon_ts")||"null")||{orders:null,stock:null,revenue:null};}
-    catch{return{orders:null,stock:null,revenue:null};}
+    try{return JSON.parse(localStorage.getItem("merryon_ts")||"null")||{orders:null,stock:null,revenue:null,store:null};}
+    catch{return{orders:null,stock:null,revenue:null,store:null};}
   });
 
   const loadData=useCallback(async()=>{
@@ -3891,9 +3877,29 @@ export default function App() {
     const [r]=await Promise.all([
       db.from("revenues").select("*").order("date",{ascending:false}),
     ]);
-    setOrders(allOrders.map(o=>({...o,channel:normChannel(o.channel)})));
+    let allStoreSales=[];
+    let ssf=0;
+    while(true){
+      const {data:ssd}=await db.from("store_sales").select("*").order("sale_date",{ascending:true}).range(ssf,ssf+PAGE-1);
+      if(!ssd||ssd.length===0) break;
+      allStoreSales=allStoreSales.concat(ssd);
+      if(ssd.length<PAGE) break;
+      ssf+=PAGE;
+    }
+    // store_sales → 주문 호환 rows (채널은 "오프라인 스토어"로 정규화)
+    const storeOrderRows=allStoreSales.map(r=>({
+      order_date:r.sale_date,
+      channel:"오프라인 스토어",
+      product_name:r.product_name,
+      option_name:r.option_name,
+      qty:r.qty,
+      status:r.status,
+      order_id:r.order_id,
+    }));
+    setOrders([...allOrders.map(o=>({...o,channel:normChannel(o.channel)})),...storeOrderRows]);
     setStocks(allStocks);
     setRevenues(r.data||[]);
+    setStoreSales(allStoreSales);
     if(firstLoad.current){
       const elapsed=Date.now()-t0;
       if(elapsed<3000) await new Promise(res=>setTimeout(res,3000-elapsed));
@@ -3951,7 +3957,7 @@ export default function App() {
       {/* main content */}
       <div style={{ flex:1, overflowY:"auto" }}>
         {page==="dashboard"&&(
-          <Dashboard orders={orders} stocks={stocks} revenues={revenues} ts={ts}
+          <Dashboard orders={orders} stocks={stocks} revenues={revenues} storeSales={storeSales} ts={ts}
             onRefresh={loadData}/>
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
@@ -3963,6 +3969,7 @@ export default function App() {
             orders={orders}
             stocks={stocks}
             revenues={revenues}
+            storeSales={storeSales}
           />
         )}
       </div>
