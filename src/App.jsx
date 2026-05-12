@@ -5149,6 +5149,228 @@ function LoadingScreen() {
 }
 
 // ─────────────────────────────────────────────
+// DATA COMPARE
+// ─────────────────────────────────────────────
+const COMPARE_CH_COLOR={"자사몰":"#7EADD4","29CM":"#7EB89E","무신사":"#9E92C8","오프라인 스토어":"#D4A574"};
+const COMPARE_CHANNELS=["자사몰","29CM","무신사","오프라인 스토어"];
+
+function RevenueSankeyChart({periods,svgW}){
+  const [hoveredCh,setHoveredCh]=useState(null);
+  const [tooltip,setTooltip]=useState(null);
+  const SVG_H=500,PAD_T=32,PAD_B=48,PAD_H=24,NODE_W=42,GAP=5,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const maxTotal=Math.max(...periods.map(p=>p.total),1);
+
+  const cols=useMemo(()=>periods.map((p,pi)=>{
+    const colX=periods.length===1?(svgW-NODE_W)/2
+      :PAD_H+pi*(svgW-2*PAD_H-NODE_W)/(periods.length-1);
+    const colH=(p.total/maxTotal)*AVAIL_H;
+    const activeCount=COMPARE_CHANNELS.filter(ch=>(p.byChannel[ch]||0)>0).length;
+    const gaps=Math.max(0,activeCount-1)*GAP;
+    let y=PAD_T+(AVAIL_H-colH)/2;
+    const nodes=COMPARE_CHANNELS.map(ch=>{
+      const amt=p.byChannel[ch]||0;
+      const h=p.total>0?(amt/p.total)*(colH-gaps):0;
+      const n={ch,amt,x:colX,y:amt>0?y:0,h:Math.max(0,h),color:COMPARE_CH_COLOR[ch]};
+      if(amt>0) y+=h+GAP;
+      return n;
+    });
+    return{...p,colX,nodes};
+  }),[periods,svgW,maxTotal]);
+
+  const links=useMemo(()=>{
+    const res=[];
+    for(let pi=0;pi<cols.length-1;pi++){
+      COMPARE_CHANNELS.forEach(ch=>{
+        const ln=cols[pi].nodes.find(n=>n.ch===ch);
+        const rn=cols[pi+1].nodes.find(n=>n.ch===ch);
+        if(!ln||!rn||ln.h<1||rn.h<1) return;
+        const x1=ln.x+NODE_W,x2=rn.x,mx=(x1+x2)/2;
+        const path=[
+          `M${x1} ${ln.y}C${mx} ${ln.y},${mx} ${rn.y},${x2} ${rn.y}`,
+          `L${x2} ${rn.y+rn.h}C${mx} ${rn.y+rn.h},${mx} ${ln.y+ln.h},${x1} ${ln.y+ln.h}Z`,
+        ].join(" ");
+        res.push({ch,path,color:COMPARE_CH_COLOR[ch]});
+      });
+    }
+    return res;
+  },[cols]);
+
+  const fmtAmt=a=>{
+    if(a>=1e8) return `${(a/1e8).toFixed(1)}억`;
+    if(a>=1e4) return `${Math.round(a/1e4)}만`;
+    return a.toLocaleString();
+  };
+
+  return(
+    <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}>
+      <defs>
+        {COMPARE_CHANNELS.map(ch=>{
+          const id=`cg_${ch.replace(/[^a-z0-9]/gi,"_")}`;
+          const c=COMPARE_CH_COLOR[ch];
+          return(
+            <linearGradient key={ch} id={id} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor={c} stopOpacity={0.6}/>
+              <stop offset="50%" stopColor={c} stopOpacity={0.3}/>
+              <stop offset="100%" stopColor={c} stopOpacity={0.6}/>
+            </linearGradient>
+          );
+        })}
+      </defs>
+
+      {/* Ribbons */}
+      {links.map((l,i)=>(
+        <path key={i} d={l.path}
+          fill={`url(#cg_${l.ch.replace(/[^a-z0-9]/gi,"_")})`}
+          opacity={hoveredCh===null?0.85:hoveredCh===l.ch?1:0.06}
+          style={{transition:"opacity .15s",cursor:"default"}}
+          onMouseEnter={()=>setHoveredCh(l.ch)}
+          onMouseLeave={()=>setHoveredCh(null)}
+        />
+      ))}
+
+      {/* Nodes + labels */}
+      {cols.map((col,pi)=>(
+        <g key={pi}>
+          {col.nodes.map((n,ni)=>n.h>=1&&(
+            <g key={ni}
+              onMouseEnter={()=>{setHoveredCh(n.ch);setTooltip({x:n.x+NODE_W/2,y:n.y,ch:n.ch,amt:n.amt,label:col.label});}}
+              onMouseLeave={()=>{setHoveredCh(null);setTooltip(null);}}>
+              <rect x={n.x} y={n.y} width={NODE_W} height={n.h} fill={n.color}
+                opacity={hoveredCh===null?1:hoveredCh===n.ch?1:0.2}
+                rx={4} style={{transition:"opacity .15s",cursor:"default"}}/>
+              {n.h>=22&&(
+                <text x={n.x+NODE_W/2} y={n.y+n.h/2+4}
+                  textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff"
+                  style={{pointerEvents:"none",userSelect:"none"}}>
+                  {n.ch==="오프라인 스토어"?"오프라인":n.ch}
+                </text>
+              )}
+            </g>
+          ))}
+          <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+16}
+            textAnchor="middle" fontSize={10} fill={D.textMeta}>
+            {col.label}
+          </text>
+          {col.total>0&&(
+            <text x={col.colX+NODE_W/2} y={PAD_T-10}
+              textAnchor="middle" fontSize={9} fill={D.textMeta}>
+              {fmtAmt(col.total)}
+            </text>
+          )}
+        </g>
+      ))}
+
+      {/* Tooltip */}
+      {tooltip&&(
+        <g style={{pointerEvents:"none"}}>
+          <rect x={tooltip.x-62} y={tooltip.y-42} width={124} height={32} rx={6} fill="#111" opacity={0.9}/>
+          <text x={tooltip.x} y={tooltip.y-22} textAnchor="middle" fontSize={11} fill="#fff" fontWeight={600}>
+            {tooltip.label} · {tooltip.ch}
+          </text>
+          <text x={tooltip.x} y={tooltip.y-8} textAnchor="middle" fontSize={11} fill="#fff">
+            {fmtAmt(tooltip.amt)}
+          </text>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function DataCompare({revenues}){
+  const [unit,setUnit]=useState("week");
+  const containerRef=useRef(null);
+  const [svgW,setSvgW]=useState(760);
+
+  useEffect(()=>{
+    const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-32)));
+    if(containerRef.current) obs.observe(containerRef.current);
+    return()=>obs.disconnect();
+  },[]);
+
+  const periods=useMemo(()=>{
+    const today=new Date();
+    const res=[];
+    if(unit==="week"){
+      for(let i=12;i>=0;i--){
+        const end=new Date(today);end.setDate(end.getDate()-i*7);
+        const start=new Date(end);start.setDate(start.getDate()-6);
+        res.push({
+          label:`${start.getMonth()+1}/${start.getDate()}`,
+          start:start.toISOString().slice(0,10),
+          end:end.toISOString().slice(0,10),
+        });
+      }
+    } else {
+      for(let i=3;i>=0;i--){
+        const d=new Date(today.getFullYear(),today.getMonth()-i,1);
+        const endD=new Date(d.getFullYear(),d.getMonth()+1,0);
+        res.push({
+          label:`${d.getFullYear()}.${d.getMonth()+1}`,
+          start:d.toISOString().slice(0,10),
+          end:endD.toISOString().slice(0,10),
+        });
+      }
+    }
+    return res;
+  },[unit]);
+
+  const revenueData=useMemo(()=>periods.map(p=>{
+    const byChannel={};
+    COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
+    revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
+      if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0);
+    });
+    const total=Object.values(byChannel).reduce((a,b)=>a+b,0);
+    return{...p,byChannel,total};
+  }),[revenues,periods]);
+
+  const hasData=revenueData.some(p=>p.total>0);
+  const minSvgW=unit==="week"?Math.max(svgW,780):svgW;
+
+  return(
+    <div style={{padding:"20px 24px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{fontWeight:700,fontSize:18,color:D.black}}>데이터 컴페어</div>
+        <div style={{display:"flex",gap:4}}>
+          {[["week","주단위"],["month","월단위"]].map(([u,lbl])=>(
+            <button key={u} onClick={()=>setUnit(u)}
+              style={{background:unit===u?D.black:"transparent",
+                color:unit===u?"#fff":D.textSub,
+                border:`1px solid ${unit===u?D.black:D.border}`,
+                borderRadius:6,padding:"5px 14px",fontSize:12,
+                cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Card>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <div style={{fontWeight:600,fontSize:14,color:D.black}}>전체 매출 볼륨</div>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+            {COMPARE_CHANNELS.map(ch=>(
+              <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:D.textSub}}>
+                <span style={{width:10,height:10,borderRadius:2,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
+                {ch}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
+          {hasData
+            ?<RevenueSankeyChart periods={revenueData} svgW={minSvgW}/>
+            :<div style={{textAlign:"center",padding:"80px 0",color:D.textMeta,fontSize:13}}>
+              매출 데이터를 업로드하면 그래프가 표시됩니다
+            </div>
+          }
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
@@ -5260,6 +5482,7 @@ export default function App() {
     {key:"dashboard",label:"대시보드"},
     {key:"flow",label:"물류 플로우"},
     {key:"promo",label:"프로모션 플로우"},
+    {key:"compare",label:"데이터 컴페어"},
     {key:"input",label:"데이터 입력"},
   ];
 
@@ -5306,6 +5529,7 @@ export default function App() {
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
         {page==="promo"&&<PromoFlow revenues={revenues}/>}
+        {page==="compare"&&<DataCompare revenues={revenues}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
