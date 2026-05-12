@@ -2961,8 +2961,16 @@ function PromoFlow({ revenues }) {
                         </div>
                       </td>
                       <td {...td} style={{...td.style,fontWeight:600}}>{p.name}</td>
-                      <td {...td} style={{...td.style,whiteSpace:"nowrap",fontSize:10,color:D.textMeta,textDecoration:ended?"line-through":"none"}}>
-                        {p.start_date}<br/>{p.end_date}
+                      <td {...td} style={{...td.style,whiteSpace:"nowrap",textDecoration:ended?"line-through":"none"}}>
+                        {[p.start_date,p.end_date].map((dt,i)=>{
+                          const [d,t]=(dt||"").split("T");
+                          return (
+                            <div key={i} style={{lineHeight:1.4}}>
+                              <span style={{fontWeight:700,fontSize:12}}>{d}</span>
+                              {t&&<span style={{fontWeight:500,fontSize:11,color:D.textSub,marginLeft:4}}>{t}</span>}
+                            </div>
+                          );
+                        })}
                       </td>
                       <td {...td} style={{...td.style,maxWidth:200,color:D.textSub}}>{p.content||p.memo||"—"}</td>
                       <td {...td} style={{...td.style,minWidth:130}}>
