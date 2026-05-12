@@ -3040,6 +3040,8 @@ function CSDataInput() {
   const [csvResult,setCsvResult]=useState(null);
   const [editCell,setEditCell]=useState(null);
   const [editVal,setEditVal]=useState("");
+  const [selected,setSelected]=useState(new Set());
+  const [delConfirm,setDelConfirm]=useState(false);
 
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
@@ -3119,7 +3121,17 @@ function CSDataInput() {
 
   const del=id=>{
     const next=csData.filter(r=>r.id!==id);
-    saveCSData(next);setCSData(next);
+    saveCSData(next);setCSData(next);setSelected(s=>{const n=new Set(s);n.delete(id);return n;});
+  };
+  const toggleSel=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+  const toggleAll=()=>{
+    const ids=filtered.map(r=>r.id);
+    const allSel=ids.length>0&&ids.every(id=>selected.has(id));
+    setSelected(s=>{const n=new Set(s);ids.forEach(id=>allSel?n.delete(id):n.add(id));return n;});
+  };
+  const delSelected=()=>{
+    const next=csData.filter(r=>!selected.has(r.id));
+    saveCSData(next);setCSData(next);setSelected(new Set());setDelConfirm(false);
   };
 
   const startCsEdit=(id,field,val)=>{setEditCell({id,field});setEditVal(String(val??""));};
@@ -3177,20 +3189,39 @@ function CSDataInput() {
         </div>
       </Card>
       <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontWeight:600,fontSize:13}}>반품 사유 내역</div>
-          <input value={filterProd} onChange={e=>setFilterProd(e.target.value)}
-            style={{...inp,width:180,fontSize:11,padding:"5px 8px"}} placeholder="상품명·날짜 검색"/>
+          <input value={filterProd} onChange={e=>{setFilterProd(e.target.value);setDelConfirm(false);}}
+            style={{...inp,width:200,fontSize:11,padding:"5px 8px"}} placeholder="날짜·상품명·판매처 검색"/>
         </div>
+        {selected.size>0&&(
+          <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+            <span style={{fontSize:11,color:D.textMeta}}>{selected.size}개 선택</span>
+            {!delConfirm
+              ?<button onClick={()=>setDelConfirm(true)}
+                 style={{background:"#e55",color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>삭제</button>
+              :<>
+                <button onClick={delSelected}
+                  style={{background:"#e55",color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>확인 삭제</button>
+                <button onClick={()=>setDelConfirm(false)}
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>취소</button>
+              </>}
+          </div>
+        )}
         <div style={{overflowY:"auto",maxHeight:480}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
+              <th style={{padding:"6px 8px",width:28}}>
+                <input type="checkbox" checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))}
+                  onChange={toggleAll} style={{cursor:"pointer"}}/>
+              </th>
               {["날짜","판매처","상품명","반품 사유",""].map(h=>(
                 <th key={h} style={{padding:"6px 8px",textAlign:"left",color:D.textMeta,fontWeight:400}}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {filtered.slice(0,100).map(r=>{
+              {filtered.slice(0,200).map(r=>{
+                const isSel=selected.has(r.id);
                 const cell=(field,content,style={})=>{
                   const isEd=editCell?.id===r.id&&editCell?.field===field;
                   return(
@@ -3206,7 +3237,10 @@ function CSDataInput() {
                   );
                 };
                 return(
-                  <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`}}>
+                  <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,background:isSel?D.surfaceAlt:"transparent"}}>
+                    <td style={{padding:"5px 8px"}}>
+                      <input type="checkbox" checked={isSel} onChange={()=>toggleSel(r.id)} style={{cursor:"pointer"}}/>
+                    </td>
                     {cell("date",<span style={{color:D.textMeta,whiteSpace:"nowrap"}}>{r.date}</span>)}
                     {cell("channel",<span style={{color:chColor(r.channel),fontWeight:600}}>{r.channel}</span>)}
                     {cell("product_name",r.product_name,{maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"})}
@@ -3218,7 +3252,7 @@ function CSDataInput() {
                   </tr>
                 );
               })}
-              {filtered.length===0&&<tr><td colSpan={5} style={{padding:24,textAlign:"center",color:D.textMeta}}>데이터 없음</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={6} style={{padding:24,textAlign:"center",color:D.textMeta}}>데이터 없음</td></tr>}
             </tbody>
           </table>
         </div>
@@ -3859,7 +3893,7 @@ function StockUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
-function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged }) {
+function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색" }) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
@@ -3918,7 +3952,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
         <span style={{fontWeight:600,fontSize:13}}>업로드 내역</span>
         <div style={{display:"flex",gap:8,alignItems:"center",flex:1,justifyContent:"flex-end"}}>
-          <input placeholder="날짜·품목 검색" value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);}}
+          <input placeholder={placeholder} value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);}}
             style={{...inp2,minWidth:180,maxWidth:280}}/>
           <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
             {loading?"로딩 중…":`${filtered.length}건`}
@@ -4199,6 +4233,7 @@ function EasyAdminUploader({ onUpdate }) {
       <DataHistoryPanel
         table="orders" dateField="order_date"
         searchFields={["product_name","channel","order_id","option_name"]}
+        placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
         cols={[
           {key:"order_date",label:"배송일",color:D.textMeta},
@@ -4350,6 +4385,7 @@ function StoreUploader({ onUpdate }) {
       <DataHistoryPanel
         table="store_sales" dateField="sale_date"
         searchFields={["product_name","store_name","option_name"]}
+        placeholder="날짜·상품명·매장 검색"
         editableCols={["store_name","product_name","option_name","amount","status"]}
         cols={[
           {key:"sale_date",label:"날짜",color:D.textMeta},
