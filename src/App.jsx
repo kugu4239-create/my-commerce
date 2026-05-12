@@ -1090,8 +1090,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const ch=OFFL.has(r.channel||"")?"오프라인 스토어":(r.channel||"미분류");
       map[ch]=(map[ch]||0)+(r.amount||0)-(r.refund_amount||0);
     });
+    // store_sales 기반 오프라인 스토어 동기간 매출 합산
+    storeSales.filter(r=>r.sale_date>=prevPeriod.start&&r.sale_date<=prevPeriod.end).forEach(r=>{
+      const amt=r.amount||0;
+      map["오프라인 스토어"]=(map["오프라인 스토어"]||0)+(r.status==="배송"?amt:r.status==="반품"?-amt:0);
+    });
     return map;
-  },[revenues,prevPeriod]);
+  },[revenues,storeSales,prevPeriod]);
 
   // 플랫폼별 선호 옵션 (컬러/사이즈) — 독립 기간 필터
   const optionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",optionPeriod,"",""),[orders,optionPeriod]);
