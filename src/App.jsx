@@ -3066,8 +3066,8 @@ function PromoFlow({ revenues }) {
                       </td>
                       <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                         <button onClick={()=>startEditPromo(p)} title="수정"
-                          style={{background:"transparent",border:"none",color:D.textSub,
-                            cursor:"pointer",padding:"2px 4px",fontSize:13}}>✏️</button>
+                          style={{background:"transparent",border:"none",color:D.textMeta,
+                            cursor:"pointer",padding:"2px 4px",fontSize:13,filter:"grayscale(1)"}}>✎</button>
                       </td>
                       <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                         <button onClick={()=>delPromo(p.id)}
