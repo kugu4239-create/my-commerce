@@ -2735,6 +2735,44 @@ function LogisticsFlow({ orders, stocks, ts }) {
 // ─────────────────────────────────────────────
 const PROMO_PLATFORMS=["자사몰","29CM","무신사","오프라인 스토어"];
 
+function DateButtonPicker({value,onChange}){
+  const todayStr=new Date().toISOString().slice(0,10);
+  const datePart=(value&&value.length>=10)?value.slice(0,10):todayStr;
+  const [y,m,d]=datePart.split("-").map(Number);
+  const setDate=(ny,nm,nd)=>{
+    const maxD=new Date(ny,nm,0).getDate();
+    const cd=Math.min(nd,maxD);
+    const ds=`${ny}-${String(nm).padStart(2,"0")}-${String(cd).padStart(2,"0")}`;
+    const tp=(value&&value.includes("T"))?value.slice(10):"";
+    onChange(ds+tp);
+  };
+  const daysInMonth=new Date(y,m,0).getDate();
+  const bBase={border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",lineHeight:1.4,fontFamily:"inherit"};
+  const bSel={...bBase,background:D.black,color:"#fff",fontWeight:600};
+  const bDef={...bBase,background:"transparent",color:D.textSub};
+  return(
+    <div style={{userSelect:"none"}}>
+      <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+        <button onClick={()=>setDate(y-1,m,d)} style={{...bDef,fontSize:12,padding:"1px 7px"}}>◀</button>
+        <span style={{fontSize:13,fontWeight:700,color:D.text,minWidth:44,textAlign:"center"}}>{y}년</span>
+        <button onClick={()=>setDate(y+1,m,d)} style={{...bDef,fontSize:12,padding:"1px 7px"}}>▶</button>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:2,marginBottom:4}}>
+        {Array.from({length:12},(_,i)=>i+1).map(mo=>(
+          <button key={mo} onClick={()=>setDate(y,mo,Math.min(d,new Date(y,mo,0).getDate()))}
+            style={{...(mo===m?bSel:bDef),fontSize:12,padding:"2px 4px"}}>{mo}월</button>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+        {Array.from({length:daysInMonth},(_,i)=>i+1).map(dd=>(
+          <button key={dd} onClick={()=>setDate(y,m,dd)}
+            style={{...(dd===d?bSel:bDef),fontSize:12,padding:"2px 0",textAlign:"center"}}>{dd}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PromoFlow({ revenues }) {
   const [promos,setPromos]=useState(getPromos);
   const [showForm,setShowForm]=useState(false);
@@ -2884,12 +2922,12 @@ function PromoFlow({ revenues }) {
             {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
               <div key={field}>
                 <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>{label}</div>
-                <input type="datetime-local" value={form[field]} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} style={inp}/>
+                <DateButtonPicker value={form[field]} onChange={v=>setForm(f=>({...f,[field]:v}))}/>
                 <div style={{display:"flex",gap:3,marginTop:4}}>
-                  {[["10:00","오전 10시"],["11:00","오전 11시"],["23:59","오후 23:59"]].map(([time,tl])=>(
+                  {[["T10:00","오전 10시"],["T11:00","오전 11시"],["T23:59","오후 23:59"]].map(([time,tl])=>(
                     <button key={time} onClick={()=>{
                       const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
-                      setForm(f=>({...f,[field]:`${base}T${time}`}));
+                      setForm(f=>({...f,[field]:`${base}${time}`}));
                     }} style={{flex:1,fontSize:11,padding:"3px 2px",background:D.surfaceAlt,
                       border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub,whiteSpace:"nowrap"}}>
                       {tl}
@@ -2904,7 +2942,7 @@ function PromoFlow({ revenues }) {
               저장
             </button>
           </div>
-          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:8}}>
             <div>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
               <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={{...inp,resize:"vertical",minHeight:72,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
@@ -3081,7 +3119,7 @@ function PromoFlow({ revenues }) {
                   <div style={{background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
                     padding:"10px 14px",fontSize:13,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180}}>
                     <div style={{fontWeight:600,marginBottom:6,color:D.text}}>{fullDate||label}</div>
-                    {payload.filter(p=>p.value!=null).map((p,i)=>(
+                    {payload.filter(p=>p.value!=null).sort((a,b)=>(b.value||0)-(a.value||0)).map((p,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                         <div style={{width:10,height:3,background:p.stroke,borderRadius:2,flexShrink:0}}/>
                         <span style={{color:D.textSub,flex:1}}>{p.name}</span>
@@ -3163,12 +3201,12 @@ function PromoFlow({ revenues }) {
                         {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
                           <div key={field}>
                             <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>{label}</div>
-                            <input type="datetime-local" value={editPromoForm[field]||""} onChange={e=>setEditPromoForm(f=>({...f,[field]:e.target.value}))} style={inp3}/>
+                            <DateButtonPicker value={editPromoForm[field]||""} onChange={v=>setEditPromoForm(f=>({...f,[field]:v}))}/>
                             <div style={{display:"flex",gap:3,marginTop:3}}>
-                              {[["10:00","10시"],["11:00","11시"],["23:59","23:59"]].map(([time,tl])=>(
+                              {[["T10:00","10시"],["T11:00","11시"],["T23:59","23:59"]].map(([time,tl])=>(
                                 <button key={time} onClick={()=>{
                                   const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
-                                  setEditPromoForm(f=>({...f,[field]:`${base}T${time}`}));
+                                  setEditPromoForm(f=>({...f,[field]:`${base}${time}`}));
                                 }} style={{flex:1,fontSize:11,padding:"2px",background:D.surfaceAlt,
                                   border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub}}>{tl}</button>
                               ))}
