@@ -4052,11 +4052,6 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
 // LOADING SCREEN
 // ─────────────────────────────────────────────
 function LoadingScreen() {
-  const [dots,setDots]=useState("");
-  useEffect(()=>{
-    const t=setInterval(()=>setDots(d=>d.length>=3?"":d+"."),500);
-    return()=>clearInterval(t);
-  },[]);
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",
       justifyContent:"center",minHeight:"100vh",background:D.bg}}>
@@ -4064,10 +4059,9 @@ function LoadingScreen() {
         <div style={{fontWeight:800,fontSize:22,letterSpacing:"0.12em",color:D.black,textAlign:"center"}}>MERRYON</div>
         <div style={{fontSize:10,color:D.textMeta,letterSpacing:"0.06em",textAlign:"center",marginTop:2}}>COMMERCE ANALYTICS</div>
       </div>
-      <div style={{width:40,height:40,border:`3px solid ${D.border}`,
-        borderTop:`3px solid ${D.black}`,borderRadius:"50%",
-        animation:"mry-spin 0.75s linear infinite",marginBottom:20}}/>
-      <div style={{color:D.textMeta,fontSize:12}}>데이터 불러오는 중{dots}</div>
+      <div style={{width:36,height:36,border:`2px solid ${D.border}`,
+        borderTop:`2px solid ${D.black}`,borderRadius:"50%",
+        animation:"mry-spin 0.9s linear infinite"}}/>
       <style>{`@keyframes mry-spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
@@ -4170,12 +4164,16 @@ export default function App() {
     {key:"input",label:"데이터 입력"},
   ];
 
+  const [visible,setVisible]=useState(false);
+  useEffect(()=>{if(!appLoading){const t=setTimeout(()=>setVisible(true),30);return()=>clearTimeout(t);}},[appLoading]);
+
   if(appLoading) return <LoadingScreen/>;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", minHeight:"100vh", background:D.bg,
       fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
-      color:D.text, fontSize:14 }}>
+      color:D.text, fontSize:14,
+      opacity:visible?1:0, transition:"opacity 0.35s ease" }}>
 
       {/* top bar */}
       <div style={{ background:D.surface, borderBottom:`1px solid ${D.border}`,
