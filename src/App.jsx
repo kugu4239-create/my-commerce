@@ -1440,7 +1440,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             {key:"shipped",label:"배송",   val:c=>c.shipped},
             {key:"returned",label:"반품",  val:c=>c.returned},
             {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
-            {key:"aov",    label:"객단가", val:c=>c.avgOrderValue||0},
+            {key:"aov",    label:"객단가", val:c=>c.avgOrderValue||0, tooltip:"온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다."},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
@@ -1459,13 +1459,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div style={{minHeight:260,overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
-                {cols.map(({key,label,left})=>(
+                {cols.map(({key,label,left,tooltip})=>(
                   <th key={key} onClick={key!=="cmp"?()=>setChSort({key,dir:"desc"}):undefined}
+                    title={tooltip||undefined}
                     style={{padding:"7px 9px",textAlign:left?"left":"right",
                     color:chSort.key===key?D.black:D.textMeta,
                     fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap",
                     cursor:key!=="cmp"?"pointer":"default"}}>
                     {label}{chSort.key===key?" ↓":""}
+                    {tooltip&&<span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400}}>ⓘ</span>}
                   </th>
                 ))}
               </tr></thead>
