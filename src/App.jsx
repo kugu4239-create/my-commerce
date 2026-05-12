@@ -554,13 +554,15 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   }, [orderRows, period, customStart, customEnd]);
 
   const filteredStocks = useMemo(() => {
+    let endDate = period==="yd" ? localDate(-1) : period==="custom" ? customEnd : localDate(0);
     const latest = {};
     stockRows.forEach(r => {
+      if (endDate && r.upload_date > endDate) return;
       const key = (r.product_name||"") + "__" + (r.option_name||"");
       if (!latest[key] || r.upload_date > latest[key].upload_date) latest[key] = r;
     });
     return Object.values(latest);
-  }, [stockRows]);
+  }, [stockRows, period, customEnd]);
 
   const data = useMemo(() => {
     const prodMap = {};
@@ -1035,13 +1037,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const filteredStoreSales=useMemo(()=>filterByDate(storeSales,"sale_date",period,customStart,customEnd),[storeSales,period,customStart,customEnd]);
   const filteredStocks=useMemo(()=>{
+    let endDate=period==="yd"?localDate(-1):period==="custom"?customEnd:localDate(0);
     const latest={};
     stocks.forEach(r=>{
+      if(endDate&&r.upload_date>endDate) return;
       const key=(r.product_name||"")+"__"+(r.option_name||"");
       if(!latest[key]||r.upload_date>latest[key].upload_date) latest[key]=r;
     });
     return Object.values(latest);
-  },[stocks]);
+  },[stocks,period,customEnd]);
   const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales),[filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales]);
 
   // 직전 동일 기간 채널별 순매출
