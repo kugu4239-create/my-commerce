@@ -873,6 +873,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     const existingIds=chOrderIds["오프라인 스토어"]||new Set();
     storeAllIds.forEach(id=>existingIds.add(id));
     chOrderIds["오프라인 스토어"]=existingIds;
+    // store_sales 기반 판교점/일산점 breakdown 덮어쓰기
+    Object.entries(storeByStore).forEach(([st,d])=>{
+      if(st!=="오프라인 스토어") offlineBreakdown[st]={name:st,revenue:d.revenue};
+    });
   }
   const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
@@ -1389,9 +1393,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               const chartData=stats.channelList.slice(0,7).map(c=>{
                 if(c.name==="오프라인 스토어"){
                   const bd=stats.offlineBreakdown||{};
-                  return{name:c.name,revenue:0,
-                    판교점:(bd["판교점"]?.revenue||0),
-                    일산점:(bd["일산점"]?.revenue||0)};
+                  const pankyo=bd["판교점"]?.revenue||0;
+                  const ilsan=bd["일산점"]?.revenue||0;
+                  const hasBd=(pankyo+ilsan)>0;
+                  return{name:c.name,
+                    revenue:hasBd?0:c.revenue,
+                    판교점:pankyo,
+                    일산점:ilsan};
                 }
                 return{name:c.name,revenue:c.revenue,판교점:0,일산점:0};
               });
@@ -1454,7 +1462,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             return chSort.dir==="desc"?(vb>va?1:vb<va?-1:0):(va>vb?1:va<vb?-1:0);
           });
           const bd=stats.offlineBreakdown||{};
-          const subRows=offlineExpanded?Object.entries(bd).map(([n,d])=>({...d,name:n,isSubRow:true})):[];
+          const hasBd=Object.keys(bd).length>0;
+          const subRows=(offlineExpanded&&hasBd)?Object.entries(bd).map(([n,d])=>({...d,name:n,isSubRow:true})):[];
           const allRows=[];
           sorted.forEach(c=>{
             allRows.push(c);
@@ -1486,7 +1495,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       opacity:c.isSubRow?0.85:1}}>
                       <td style={{padding:"7px 9px",fontWeight:c.isSubRow?400:600,
                         paddingLeft:c.isSubRow?20:9,color:c.isSubRow?D.textSub:D.black}}>
-                        {isOffline&&(
+                        {isOffline&&hasBd&&(
                           <button onClick={()=>setOfflineExpanded(v=>!v)}
                             style={{marginRight:5,background:"none",border:`1px solid ${D.border}`,
                               borderRadius:3,padding:"0 4px",fontSize:10,cursor:"pointer",
@@ -2982,10 +2991,11 @@ function RevenueForm({ onUpdate }) {
   const [editId,setEditId]=useState(null);
   const [editData,setEditData]=useState({});
   const [deleteConfirm,setDeleteConfirm]=useState(null);
+  const [histChFilter,setHistChFilter]=useState("전체");
 
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
-    const {data}=await db.from("revenues").select("*").order("date",{ascending:false}).limit(50);
+    const {data}=await db.from("revenues").select("*").order("date",{ascending:false});
     setHistory(data||[]); setHistTs(nowStr());
   },[]);
 
@@ -3064,7 +3074,7 @@ function RevenueForm({ onUpdate }) {
       }
       const rows=data.filter(r=>r[dateCol]&&toDate(r[dateCol])).map(r=>({
         date:toDate(r[dateCol]),
-        channel:chCol?normChannel(r[chCol]):"자사몰",
+        channel:chCol?normChannel(r[chCol]):ch,
         amount:Number(String(r[amtCol]||"0").replace(/[^0-9.-]/g,""))||0,
         order_count:ordCol?Number(r[ordCol]||0):0,
         refund_amount:refAmtCol?Number(String(r[refAmtCol]||"0").replace(/[^0-9.-]/g,"")):0,
@@ -3208,7 +3218,7 @@ function RevenueForm({ onUpdate }) {
           {csvPreview?.error&&<div style={{color:D.red,fontSize:10,marginTop:4}}>{csvPreview.error}</div>}
           {csvPreview&&!csvPreview.error&&(csvPreview.overlaps?.length===0||csvConflictChoice)&&(
             <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontSize:11,color:D.textSub}}>{csvPreview.rows.length}건 파싱됨</span>
+              <span style={{fontSize:11,color:D.textSub}}>{csvPreview.rows.length}건 파싱됨 · {[...new Set(csvPreview.rows.map(r=>r.channel))].join(", ")}</span>
               {!csvConflictChoice&&(
                 <button onClick={()=>handleCsvUpload("new")}
                   style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
@@ -3222,15 +3232,40 @@ function RevenueForm({ onUpdate }) {
       </Card>
 
       <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-            <span style={{fontWeight:600,fontSize:13}}>최근 입력 내역</span>
+            <span style={{fontWeight:600,fontSize:13}}>입력 내역</span>
             <UpdatedAt ts={histTs}/>
           </div>
           <Btn onClick={loadHistory} variant="ghost" style={{padding:"4px 11px",fontSize:11}}>불러오기</Btn>
         </div>
-        {history.length>0?(
-          <div style={{overflowY:"auto",maxHeight:480}}>
+        {history.length>0&&(
+          <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
+            {["전체",...REVENUE_CHANNELS].map(c=>{
+              const cnt=c==="전체"?history.length:history.filter(r=>r.channel===c).length;
+              const sum=c==="전체"
+                ?history.reduce((s,r)=>s+(r.amount||0),0)
+                :history.filter(r=>r.channel===c).reduce((s,r)=>s+(r.amount||0),0);
+              return(
+                <button key={c} onClick={()=>setHistChFilter(c)}
+                  style={{background:histChFilter===c?D.black:"transparent",
+                    color:histChFilter===c?"#fff":D.textSub,
+                    border:`1px solid ${histChFilter===c?D.black:D.border}`,
+                    borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",lineHeight:1.4}}>
+                  {c} <span style={{opacity:0.7,fontSize:10}}>({cnt}건 · ₩{(sum/1e4).toFixed(0)}만)</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {history.length>0?(()=>{
+          const filtered=histChFilter==="전체"?history:history.filter(r=>r.channel===histChFilter);
+          const totalAmt=filtered.reduce((s,r)=>s+(r.amount||0),0);
+          return(
+          <div style={{overflowY:"auto",maxHeight:520}}>
+            <div style={{fontSize:11,color:D.textMeta,marginBottom:6}}>
+              {filtered.length}건 · 합계 ₩{totalAmt.toLocaleString()}
+            </div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {["날짜","판매처","매출","주문","환불금","환불수",""].map(h=>(
@@ -3238,7 +3273,7 @@ function RevenueForm({ onUpdate }) {
                 ))}
               </tr></thead>
               <tbody>
-                {history.map(r=>(
+                {filtered.map(r=>(
                   <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,
                     background:editId===r.id?D.surfaceAlt:"transparent"}}>
                     {editId===r.id?(
@@ -3287,7 +3322,8 @@ function RevenueForm({ onUpdate }) {
               </tbody>
             </table>
           </div>
-        ):<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>불러오기를 눌러주세요</div>}
+          );
+        })():<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>불러오기를 눌러주세요</div>}
       </Card>
     </div>
   );
