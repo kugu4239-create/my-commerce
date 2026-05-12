@@ -3009,23 +3009,52 @@ function PromoFlow({ revenues }) {
   };
 
   const getSubmitPromos=()=>{try{return JSON.parse(localStorage.getItem("submit_promos")||"[]");}catch{return [];}};
-  const saveSubmitPromos=data=>localStorage.setItem("submit_promos",JSON.stringify(data));
+  const saveSubmitPromosLocal=data=>localStorage.setItem("submit_promos",JSON.stringify(data));
   const [submitPromos,setSubmitPromos]=useState(getSubmitPromos);
   const [showSubmitForm,setShowSubmitForm]=useState(false);
   const [submitForm,setSubmitForm]=useState({title:"",content:"",eod:""});
   const [editingSubmitId,setEditingSubmitId]=useState(null);
   const [editSubmitForm,setEditSubmitForm]=useState({title:"",content:"",eod:""});
-  const updateSubmitPromos=data=>{saveSubmitPromos(data);setSubmitPromos(data);};
-  const addSubmitPromo=()=>{
+
+  // Load submit_promotions from Supabase on mount
+  useEffect(()=>{
+    (async()=>{
+      const local=getSubmitPromos();
+      const db=await getSupabase();
+      const{data,error}=await db.from("submit_promotions").select("*").order("id",{ascending:true});
+      if(!error&&data){
+        if(data.length>0){
+          setSubmitPromos(data);saveSubmitPromosLocal(data);
+        } else if(local.length>0){
+          const{error:e}=await db.from("submit_promotions").insert(local);
+          if(!e){setSubmitPromos(local);saveSubmitPromosLocal(local);}
+        }
+      }
+    })();
+  },[]);
+
+  const addSubmitPromo=async()=>{
     if(!submitForm.title)return;
-    updateSubmitPromos([...submitPromos,{id:Date.now(),...submitForm}]);
+    const newS={id:Date.now(),...submitForm};
+    const next=[...submitPromos,newS];
+    setSubmitPromos(next);saveSubmitPromosLocal(next);
+    const db=await getSupabase();
+    await db.from("submit_promotions").insert(newS);
     setSubmitForm({title:"",content:"",eod:""});
   };
-  const saveSubmitEdit=()=>{
-    updateSubmitPromos(submitPromos.map(s=>s.id===editingSubmitId?{...s,...editSubmitForm}:s));
+  const saveSubmitEdit=async()=>{
+    const next=submitPromos.map(s=>s.id===editingSubmitId?{...s,...editSubmitForm}:s);
+    setSubmitPromos(next);saveSubmitPromosLocal(next);
+    const db=await getSupabase();
+    await db.from("submit_promotions").update(editSubmitForm).eq("id",editingSubmitId);
     setEditingSubmitId(null);
   };
-  const delSubmitPromo=id=>updateSubmitPromos(submitPromos.filter(s=>s.id!==id));
+  const delSubmitPromo=async id=>{
+    const next=submitPromos.filter(s=>s.id!==id);
+    setSubmitPromos(next);saveSubmitPromosLocal(next);
+    const db=await getSupabase();
+    await db.from("submit_promotions").delete().eq("id",id);
+  };
 
   const startMs=new Date(viewStart).getTime();
   const endMs=new Date(viewEnd).getTime();
