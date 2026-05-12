@@ -3469,7 +3469,7 @@ function EasyAdminUploader({ onUpdate }) {
           const dateCol = findCol("배송일","배송일시","배송날짜","delivery_date")
                        || findCol("주문일","주문일시","주문날짜","order_date","날짜","date")
                        || f.date;
-          const orderIdCol = findCol("관리번호","order_id") || findCol("주문번호","orderid") || f.orderId;
+          const orderIdCol = findCol("주문번호","orderid") || findCol("관리번호","order_id") || f.orderId;
           const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
           const productCol = findCol("상품명","product","품명") || f.product;
           const optionCol  = findCol("옵션명","옵션","option") || f.option;
