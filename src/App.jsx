@@ -2748,6 +2748,13 @@ function PromoFlow({ revenues }) {
   const fileInputRef=useRef(null);
   const [isDragging,setIsDragging]=useState(false);
   const dragRef=useRef(null);
+  const formFileRef=useRef(null);
+  const [formFileDragOver,setFormFileDragOver]=useState(false);
+  const [tableFileDragOver,setTableFileDragOver]=useState(null);
+  const addFilesFromList=(fileList,currentCount,onFile)=>{
+    const remaining=3-currentCount;
+    Array.from(fileList).slice(0,remaining).forEach(file=>readFileData(file,onFile));
+  };
   useEffect(()=>{
     const onMove=e=>{
       if(!dragRef.current) return;
@@ -2817,7 +2824,7 @@ function PromoFlow({ revenues }) {
   },[revenues,viewStart,viewEnd]);
 
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-    padding:"8px 12px",fontSize:14,color:D.text,width:"100%",boxSizing:"border-box",
+    padding:"8px 12px",fontSize:16,color:D.text,width:"100%",boxSizing:"border-box",
     fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
 
   return (
@@ -2837,16 +2844,16 @@ function PromoFlow({ revenues }) {
         }
       `}</style>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div style={{fontWeight:600,fontSize:15,color:D.black}}>프로모션 플로우</div>
+        <div style={{fontWeight:600,fontSize:17,color:D.black}}>프로모션 플로우</div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <input type="date" value={viewStart} onChange={e=>setViewStart(e.target.value)}
-            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:11,color:D.text}}/>
+            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:13,color:D.text}}/>
           <span style={{color:D.textMeta}}>—</span>
           <input type="date" value={viewEnd} onChange={e=>setViewEnd(e.target.value)}
-            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:11,color:D.text}}/>
+            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:13,color:D.text}}/>
           <button onClick={()=>setShowForm(v=>!v)}
             style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
-              padding:"6px 14px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+              padding:"6px 14px",fontSize:13,cursor:"pointer",fontWeight:600}}>
             {showForm?"취소":"+ 프로모션 추가"}
           </button>
         </div>
@@ -2854,21 +2861,21 @@ function PromoFlow({ revenues }) {
 
       {showForm&&(
         <Card style={{marginBottom:20}}>
-          <div style={{fontWeight:600,fontSize:12,marginBottom:16}}>프로모션 추가</div>
+          <div style={{fontWeight:600,fontSize:14,marginBottom:16}}>프로모션 추가</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:8,alignItems:"start"}}>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션명</div>
+              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션명</div>
               <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp} placeholder="예: 오픈 기념 할인"/>
             </div>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>플랫폼</div>
+              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>플랫폼</div>
               <div style={{display:"flex",gap:4}}>
                 {PROMO_PLATFORMS.map(p=>(
                   <button key={p} onClick={()=>setForm(f=>({...f,platform:p}))}
                     style={{flex:1,background:form.platform===p?chColor(p):"transparent",
                       color:form.platform===p?"#fff":D.textSub,
                       border:`1px solid ${form.platform===p?chColor(p):D.border}`,
-                      borderRadius:5,padding:"6px 4px",fontSize:11,cursor:"pointer"}}>
+                      borderRadius:5,padding:"6px 4px",fontSize:13,cursor:"pointer"}}>
                     {p}
                   </button>
                 ))}
@@ -2876,14 +2883,14 @@ function PromoFlow({ revenues }) {
             </div>
             {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
               <div key={field}>
-                <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>{label}</div>
+                <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>{label}</div>
                 <input type="datetime-local" value={form[field]} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} style={inp}/>
                 <div style={{display:"flex",gap:3,marginTop:4}}>
                   {[["10:00","오전 10시"],["11:00","오전 11시"],["23:59","오후 23:59"]].map(([time,tl])=>(
                     <button key={time} onClick={()=>{
                       const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
                       setForm(f=>({...f,[field]:`${base}T${time}`}));
-                    }} style={{flex:1,fontSize:9,padding:"3px 2px",background:D.surfaceAlt,
+                    }} style={{flex:1,fontSize:11,padding:"3px 2px",background:D.surfaceAlt,
                       border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub,whiteSpace:"nowrap"}}>
                       {tl}
                     </button>
@@ -2893,38 +2900,47 @@ function PromoFlow({ revenues }) {
             ))}
             <button onClick={addPromo}
               style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
-                padding:"9px 16px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",marginTop:18}}>
+                padding:"9px 16px",fontSize:14,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",marginTop:18}}>
               저장
             </button>
           </div>
           <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
+              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
               <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={{...inp,resize:"vertical",minHeight:72,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
             </div>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
+              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {(form.files||[]).map((f,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:4,
-                    background:D.surfaceAlt,borderRadius:4,padding:"4px 8px",fontSize:11}}>
+                    background:D.surfaceAlt,borderRadius:4,padding:"4px 8px",fontSize:13}}>
                     <span>📎</span>
                     <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:D.textSub}}>{f.name}</span>
                     <button onClick={()=>setForm(fm=>({...fm,files:(fm.files||[]).filter((_,j)=>j!==i)}))}
-                      style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:13,lineHeight:1}}>✕</button>
+                      style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:15,lineHeight:1}}>✕</button>
                   </div>
                 ))}
                 {(form.files||[]).length<3&&(
-                  <label style={{display:"inline-flex",alignItems:"center",gap:4,cursor:"pointer",
-                    background:"transparent",border:`1px dashed ${D.border}`,borderRadius:4,
-                    padding:"5px 10px",fontSize:11,color:D.textSub,userSelect:"none"}}>
-                    + 파일 첨부
-                    <input type="file" style={{display:"none"}} onChange={e=>{
-                      const file=e.target.files?.[0];if(!file) return;
+                  <div
+                    onDragOver={e=>{e.preventDefault();setFormFileDragOver(true);}}
+                    onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setFormFileDragOver(false);}}
+                    onDrop={e=>{e.preventDefault();setFormFileDragOver(false);
+                      addFilesFromList(e.dataTransfer.files,(form.files||[]).length,
+                        f=>setForm(fm=>({...fm,files:[...(fm.files||[]),f].slice(0,3)})));
+                    }}
+                    onClick={()=>formFileRef.current?.click()}
+                    style={{border:`1px dashed ${formFileDragOver?D.blue:D.border}`,borderRadius:6,
+                      padding:"14px 12px",textAlign:"center",cursor:"pointer",
+                      color:formFileDragOver?D.blue:D.textMeta,fontSize:13,userSelect:"none",
+                      background:formFileDragOver?"#eef3ff":"transparent",transition:"all 0.15s"}}>
+                    {formFileDragOver?"여기에 놓기 ↓":"파일을 드래그하거나 클릭하여 선택"}
+                    <input ref={formFileRef} type="file" multiple style={{display:"none"}} onChange={e=>{
+                      addFilesFromList(e.target.files,(form.files||[]).length,
+                        f=>setForm(fm=>({...fm,files:[...(fm.files||[]),f].slice(0,3)})));
                       e.target.value="";
-                      readFileData(file,f=>setForm(fm=>({...fm,files:[...(fm.files||[]),f].slice(0,3)})));
                     }}/>
-                  </label>
+                  </div>
                 )}
               </div>
             </div>
@@ -2934,7 +2950,7 @@ function PromoFlow({ revenues }) {
 
       {/* 플랫폼별 가로 캘린더 바 */}
       <Card style={{marginBottom:0,borderBottomLeftRadius:0,borderBottomRightRadius:0,borderBottom:"none"}}>
-        <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>플랫폼별 프로모션 일정</div>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>플랫폼별 프로모션 일정</div>
         <div onMouseDown={onDragStart}
           style={{cursor:isDragging?"grabbing":"grab",userSelect:"none",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden",borderRadius:4}}>
@@ -2947,11 +2963,11 @@ function PromoFlow({ revenues }) {
             const d=new Date(ms);
             const label=`${d.getMonth()+1}/${d.getDate()}`;
             return <span key={pct} style={{position:"absolute",left:`${pct}%`,transform:"translateX(-50%)",
-              fontSize:9,color:D.textMeta}}>{label}</span>;
+              fontSize:11,color:D.textMeta}}>{label}</span>;
           })}
           {(()=>{const tp=datePct(today);return tp>=0&&tp<=100?(
             <span style={{position:"absolute",left:`${tp}%`,transform:"translateX(-50%)",
-              fontSize:9,color:D.primary,fontWeight:700}}>오늘</span>
+              fontSize:11,color:D.primary,fontWeight:700}}>오늘</span>
           ):null;})()}
         </div>
         {PROMO_PLATFORMS.map(plat=>{
@@ -2970,7 +2986,7 @@ function PromoFlow({ revenues }) {
           const trackH=numLanes*laneH+(numLanes-1)*laneGap;
           return (
             <div key={plat} style={{display:"flex",alignItems:"center",marginBottom:8,gap:8}}>
-              <div style={{width:62,fontSize:11,color:D.textSub,flexShrink:0,textAlign:"right",lineHeight:1.3}}>{plat}</div>
+              <div style={{width:62,fontSize:13,color:D.textSub,flexShrink:0,textAlign:"right",lineHeight:1.3}}>{plat}</div>
               <div style={{flex:1,position:"relative",height:trackH,background:D.surfaceAlt,borderRadius:4}}>
                 {laned.map(({promo,lane})=>{
                   const l=datePct(promo.start_date);
@@ -2984,7 +3000,7 @@ function PromoFlow({ revenues }) {
                       onMouseLeave={()=>setHoveredPromo(null)}
                       style={{position:"absolute",left:`${l}%`,width:`${w}%`,height:laneH,top,
                         background:ended?"#aaa":chColor(plat),borderRadius:4,display:"flex",alignItems:"center",
-                        padding:"0 6px",fontSize:10,color:"#fff",overflow:"hidden",
+                        padding:"0 6px",fontSize:12,color:"#fff",overflow:"hidden",
                         boxSizing:"border-box",cursor:"pointer",minWidth:4,opacity:ended?0.6:1}}>
                       <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                         textDecoration:ended?"line-through":"none"}}>{promo.name}</span>
@@ -3017,23 +3033,23 @@ function PromoFlow({ revenues }) {
               top:above?rect.top-8:rect.bottom+6,transform:above?"translateY(-100%)":"none",
               zIndex:1000,background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
               padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.13)",
-              minWidth:220,maxWidth:300,pointerEvents:"none",fontSize:11,lineHeight:1.6}}>
+              minWidth:220,maxWidth:300,pointerEvents:"none",fontSize:13,lineHeight:1.6}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:chColor(promo.platform),flexShrink:0}}/>
-                <span style={{fontWeight:600,fontSize:12}}>{promo.name}</span>
-                <span style={{fontSize:10,color:D.textMeta,marginLeft:"auto"}}>{promo.platform}</span>
+                <span style={{fontWeight:600,fontSize:14}}>{promo.name}</span>
+                <span style={{fontSize:12,color:D.textMeta,marginLeft:"auto"}}>{promo.platform}</span>
               </div>
-              <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>
+              <div style={{color:D.textMeta,fontSize:12,marginBottom:4}}>
                 {promo.start_date} ~ {promo.end_date}
               </div>
               {(promo.content||promo.memo)&&(
-                <div style={{color:D.text,fontSize:11,marginBottom:4,wordBreak:"break-all",whiteSpace:"pre-wrap"}}>{promo.content||promo.memo}</div>
+                <div style={{color:D.text,fontSize:13,marginBottom:4,wordBreak:"break-all",whiteSpace:"pre-wrap"}}>{promo.content||promo.memo}</div>
               )}
               {(promo.files||[]).map((f,i)=>(
-                <div key={i} style={{fontSize:10,color:D.textMeta}}>📎 {f.name}</div>
+                <div key={i} style={{fontSize:12,color:D.textMeta}}>📎 {f.name}</div>
               ))}
               {isEnded(promo)&&(
-                <div style={{marginTop:5,fontSize:10,color:"#e55",fontWeight:600}}>종료된 프로모션</div>
+                <div style={{marginTop:5,fontSize:12,color:"#e55",fontWeight:600}}>종료된 프로모션</div>
               )}
             </div>
           );
@@ -3042,7 +3058,7 @@ function PromoFlow({ revenues }) {
 
       {/* 기간별 플랫폼 매출 그래프 */}
       <Card style={{marginBottom:20,borderTopLeftRadius:0,borderTopRightRadius:0}}>
-        <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
         {revenueData.length>0&&revenues.some(r=>r.date>=viewStart&&r.date<=viewEnd)?(
           <div style={{position:"relative",overflow:"hidden"}} onMouseDown={onDragStart}>
           <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden"}}>
@@ -3052,8 +3068,8 @@ function PromoFlow({ revenues }) {
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
-              <XAxis dataKey="date" tick={{fill:D.textMeta,fontSize:9}}/>
-              <YAxis tick={{fill:D.textMeta,fontSize:9}} tickFormatter={v=>v>=10000?(v/10000).toFixed(0)+"만":v}/>
+              <XAxis dataKey="date" tick={{fill:D.textMeta,fontSize:11}}/>
+              <YAxis tick={{fill:D.textMeta,fontSize:11}} tickFormatter={v=>v>=10000?(v/10000).toFixed(0)+"만":v}/>
               <Tooltip content={({active,payload})=>{
                 if(!active||!payload?.length) return null;
                 const fullDate=payload[0]?.payload?.fullDate||"";
@@ -3063,7 +3079,7 @@ function PromoFlow({ revenues }) {
                 );
                 return (
                   <div style={{background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
-                    padding:"10px 14px",fontSize:11,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180}}>
+                    padding:"10px 14px",fontSize:13,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180}}>
                     <div style={{fontWeight:600,marginBottom:6,color:D.text}}>{fullDate||label}</div>
                     {payload.filter(p=>p.value!=null).map((p,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
@@ -3074,12 +3090,12 @@ function PromoFlow({ revenues }) {
                     ))}
                     {activePromos.length>0&&(
                       <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${D.border}`}}>
-                        <div style={{fontSize:9,color:D.textMeta,marginBottom:4,letterSpacing:"0.05em"}}>진행 중인 프로모션</div>
+                        <div style={{fontSize:11,color:D.textMeta,marginBottom:4,letterSpacing:"0.05em"}}>진행 중인 프로모션</div>
                         {activePromos.map(p=>(
                           <div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
                             <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
-                            <span style={{color:D.textSub,fontSize:10}}>{p.platform}</span>
-                            <span style={{fontWeight:600,fontSize:10,marginLeft:2}}>{p.name}</span>
+                            <span style={{color:D.textSub,fontSize:12}}>{p.platform}</span>
+                            <span style={{fontWeight:600,fontSize:12,marginLeft:2}}>{p.name}</span>
                           </div>
                         ))}
                       </div>
@@ -3087,7 +3103,7 @@ function PromoFlow({ revenues }) {
                   </div>
                 );
               }}/>
-              <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
+              <Legend iconSize={8} wrapperStyle={{fontSize:12}}/>
               {PROMO_PLATFORMS.map(p=>(
                 <Line key={p} type="monotone" dataKey={p} name={p}
                   stroke={chColor(p)} strokeWidth={2} dot={false} connectNulls={false}/>
@@ -3096,7 +3112,7 @@ function PromoFlow({ revenues }) {
           </ResponsiveContainer>
           </div>
         ):(
-          <div style={{textAlign:"center",padding:40,color:D.textMeta,fontSize:12}}>
+          <div style={{textAlign:"center",padding:40,color:D.textMeta,fontSize:14}}>
             해당 기간에 매출 데이터가 없습니다
           </div>
         )}
@@ -3105,13 +3121,13 @@ function PromoFlow({ revenues }) {
       {/* 등록된 프로모션 목록 표 */}
       {promos.length>0&&(
         <Card>
-          <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>등록된 프로모션</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>등록된 프로모션</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
                 {["채널","프로모션명","기간","상세 내용","첨부 파일","",""].map(h=>(
                   <th key={h} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
-                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:10,whiteSpace:"nowrap"}}>{h}</th>
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -3122,38 +3138,38 @@ function PromoFlow({ revenues }) {
                 const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
                   color:ended?D.textMeta:D.text,textDecoration:ended?"line-through":"none"}};
                 const inp3={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                  padding:"7px 10px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",
+                  padding:"7px 10px",fontSize:15,color:D.text,width:"100%",boxSizing:"border-box",
                   fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
                 if(isEditing) return (
                   <tr key={p.id}>
                     <td colSpan={7} style={{padding:"10px 8px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
                         <div>
-                          <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>프로모션명</div>
+                          <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션명</div>
                           <input value={editPromoForm.name} onChange={e=>setEditPromoForm(f=>({...f,name:e.target.value}))} style={inp3}/>
                         </div>
                         <div>
-                          <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>플랫폼</div>
+                          <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>플랫폼</div>
                           <div style={{display:"flex",gap:3}}>
                             {PROMO_PLATFORMS.map(pl=>(
                               <button key={pl} onClick={()=>setEditPromoForm(f=>({...f,platform:pl}))}
                                 style={{flex:1,background:editPromoForm.platform===pl?chColor(pl):"transparent",
                                   color:editPromoForm.platform===pl?"#fff":D.textSub,
                                   border:`1px solid ${editPromoForm.platform===pl?chColor(pl):D.border}`,
-                                  borderRadius:4,padding:"5px 3px",fontSize:10,cursor:"pointer"}}>{pl}</button>
+                                  borderRadius:4,padding:"5px 3px",fontSize:12,cursor:"pointer"}}>{pl}</button>
                             ))}
                           </div>
                         </div>
                         {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
                           <div key={field}>
-                            <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>{label}</div>
+                            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>{label}</div>
                             <input type="datetime-local" value={editPromoForm[field]||""} onChange={e=>setEditPromoForm(f=>({...f,[field]:e.target.value}))} style={inp3}/>
                             <div style={{display:"flex",gap:3,marginTop:3}}>
                               {[["10:00","10시"],["11:00","11시"],["23:59","23:59"]].map(([time,tl])=>(
                                 <button key={time} onClick={()=>{
                                   const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
                                   setEditPromoForm(f=>({...f,[field]:`${base}T${time}`}));
-                                }} style={{flex:1,fontSize:9,padding:"2px",background:D.surfaceAlt,
+                                }} style={{flex:1,fontSize:11,padding:"2px",background:D.surfaceAlt,
                                   border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub}}>{tl}</button>
                               ))}
                             </div>
@@ -3161,17 +3177,17 @@ function PromoFlow({ revenues }) {
                         ))}
                       </div>
                       <div style={{marginBottom:8}}>
-                        <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
+                        <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
                         <textarea value={editPromoForm.content} onChange={e=>setEditPromoForm(f=>({...f,content:e.target.value}))}
                           style={{...inp3,resize:"vertical",minHeight:60,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등"/>
                       </div>
                       <div style={{display:"flex",gap:6}}>
                         <button onClick={savePromoEdit}
                           style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
-                            padding:"6px 16px",fontSize:11,cursor:"pointer",fontWeight:600}}>저장</button>
+                            padding:"6px 16px",fontSize:13,cursor:"pointer",fontWeight:600}}>저장</button>
                         <button onClick={()=>setEditingPromoId(null)}
                           style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                            padding:"6px 12px",fontSize:11,cursor:"pointer",color:D.textSub}}>취소</button>
+                            padding:"6px 12px",fontSize:13,cursor:"pointer",color:D.textSub}}>취소</button>
                       </div>
                     </td>
                   </tr>
@@ -3190,8 +3206,8 @@ function PromoFlow({ revenues }) {
                         const [d,t]=(dt||"").split("T");
                         return (
                           <div key={i} style={{lineHeight:1.4}}>
-                            <span style={{fontWeight:700,fontSize:12}}>{d}</span>
-                            {t&&<span style={{fontWeight:500,fontSize:11,color:D.textSub,marginLeft:4}}>{t}</span>}
+                            <span style={{fontWeight:700,fontSize:14}}>{d}</span>
+                            {t&&<span style={{fontWeight:500,fontSize:13,color:D.textSub,marginLeft:4}}>{t}</span>}
                           </div>
                         );
                       })}
@@ -3202,18 +3218,18 @@ function PromoFlow({ revenues }) {
                         {(p.files||[]).map((f,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:3}}>
                             <a href={f.data} download={f.name}
-                              style={{fontSize:10,color:D.textSub,textDecoration:"none",
+                              style={{fontSize:12,color:D.textSub,textDecoration:"none",
                                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:100,flex:1}}
                               title={f.name}>📎 {f.name}</a>
                             <button onClick={()=>removeFileFromPromo(p.id,i)}
                               style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",
-                                padding:0,fontSize:12,lineHeight:1,flexShrink:0}}>✕</button>
+                                padding:0,fontSize:14,lineHeight:1,flexShrink:0}}>✕</button>
                           </div>
                         ))}
                         {(p.files||[]).length<3&&(
                           <button onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
                             style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
-                              padding:"2px 6px",fontSize:10,color:D.textMeta,cursor:"pointer",
+                              padding:"2px 6px",fontSize:12,color:D.textMeta,cursor:"pointer",
                               whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
                         )}
                         {!(p.files||[]).length&&<span style={{color:D.textMeta}}>—</span>}
@@ -3222,12 +3238,12 @@ function PromoFlow({ revenues }) {
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                       <button onClick={()=>startEditPromo(p)} title="수정"
                         style={{background:"transparent",border:"none",color:D.textMeta,
-                          cursor:"pointer",padding:"2px 4px",fontSize:13,filter:"grayscale(1)"}}>✎</button>
+                          cursor:"pointer",padding:"2px 4px",fontSize:15,filter:"grayscale(1)"}}>✎</button>
                     </td>
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                       <button onClick={()=>delPromo(p.id)}
                         style={{background:"transparent",border:"none",color:D.textMeta,
-                          cursor:"pointer",padding:0,fontSize:12}}>✕</button>
+                          cursor:"pointer",padding:0,fontSize:14}}>✕</button>
                     </td>
                   </tr>
                 );
