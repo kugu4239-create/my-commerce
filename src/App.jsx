@@ -1379,7 +1379,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       </div>
 
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
-      <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
         <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
@@ -1390,7 +1390,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       </div>
 
       {/* 판매처 점유율 + 판매처별 매출 */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:20,minHeight:220}}>
         <Card>
           <SecTitle ts={ts.orders}>매출 점유율</SecTitle>
           <ResponsiveContainer width="100%" height={160}>
@@ -1452,7 +1452,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       </div>
 
       {/* 판매처 상세 */}
-      <Card style={{marginBottom:20}}>
+      <Card style={{marginBottom:20,minHeight:380}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -1502,7 +1502,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             if(c.name==="오프라인 스토어") subRows.forEach(sr=>allRows.push(sr));
           });
           return (
-            <div style={{minHeight:260,overflowX:"auto"}}>
+            <div style={{minHeight:300,overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {cols.map(({key,label,left,tooltip})=>(
@@ -1615,7 +1615,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       </div>
 
       {/* 판매 Top */}
-      <Card style={{marginBottom:20}}>
+      <Card style={{marginBottom:20,minHeight:660}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>판매 Top</SecTitle>
@@ -1736,7 +1736,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         </div>
       )}
       {/* 반품 탑 */}
-      <Card style={{marginBottom:20}}>
+      <Card style={{marginBottom:20,minHeight:660}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>반품 Top</SecTitle>
