@@ -417,7 +417,7 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   }
 };
 
-function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="" }) {
+function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="", required="", optional="" }) {
   const [hover,setHover]=useState(false);
   const handle=useCallback(e=>{
     e.preventDefault();
@@ -428,7 +428,7 @@ function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="" 
     <label onDragOver={e=>{e.preventDefault();setHover(true);}}
       onDragLeave={()=>setHover(false)} onDrop={e=>{setHover(false);handle(e);}}
       style={{ display:"flex", flexDirection:"column", alignItems:"center",
-        justifyContent:"center", height:100,
+        justifyContent:"center", minHeight:100, padding:"10px 14px",
         border:`1.5px dashed ${hover?D.black:D.border}`, borderRadius:9,
         cursor:"pointer", background:hover?D.surfaceAlt:D.surface, transition:"all 0.13s" }}>
       <input type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={handle}/>
@@ -436,6 +436,12 @@ function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="" 
       {fileName
         ?<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>{fileName}</div>
         :<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>CSV · XLSX · XLS 드래그 또는 클릭</div>}
+      {!fileName&&(required||optional)&&(
+        <div style={{marginTop:6,fontSize:10,textAlign:"center",lineHeight:1.7}}>
+          {required&&<div><span style={{color:D.text,fontWeight:600}}>필수 </span><span style={{color:D.textMeta}}>{required}</span></div>}
+          {optional&&<div><span style={{color:D.textMeta}}>선택 </span><span style={{color:D.textMeta,opacity:.7}}>{optional}</span></div>}
+        </div>
+      )}
     </label>
   );
 }
@@ -2399,7 +2405,9 @@ function InventoryAgingUploader({ onDone }){
         ⚠ 해당 데이터는 현재고를 기반으로 진단해야하므로 누적 데이터가 유의미하지 않습니다.<br/>
         필요 시 <strong>정상재고 1 이상</strong>으로 검색한 애널리틱스용 파일을 업로드해주세요.
       </div>
-      <DropZone onFile={handleFile} fileName={fileName} label="재고 파일 업로드"/>
+      <DropZone onFile={handleFile} fileName={fileName} label="재고 파일 업로드"
+        required="상품명 · 처음입고일"
+        optional="옵션 · 수량 · 마지막배송일"/>
       {(preview||loading)&&(
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:8}}>
           {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
@@ -3476,7 +3484,9 @@ function CSDataInput() {
             필수 컬럼: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
             선택: [날짜] [판매처]
           </div>
-          <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"/>
+          <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
+            required="상품명 · 반품사유"
+            optional="날짜 · 판매처"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
         </div>
       </Card>
@@ -3827,7 +3837,9 @@ function RevenueForm({ onUpdate }) {
 
         <div style={{marginTop:14,borderTop:`1px solid ${D.border}`,paddingTop:14}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>CSV 일괄 업로드</div>
-          <DropZone onFile={handleCsvFile} label="매출 파일 업로드 (날짜·판매처·매출금액 컬럼 필요)"/>
+          <DropZone onFile={handleCsvFile} label="매출 파일 업로드"
+            required="날짜 · 매출금액"
+            optional="판매처 · 주문수 · 환불금 · 환불수"/>
           {csvPreview?.error&&<div style={{color:D.red,fontSize:10,marginTop:4}}>{csvPreview.error}</div>}
           {csvPreview&&!csvPreview.error&&(csvPreview.overlaps?.length===0||csvConflictChoice)&&(
             <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center"}}>
@@ -4054,7 +4066,9 @@ function StockUploader({ onUpdate }) {
           {step===1&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
             <StatRow items={[{label:"삭제 예정",value:`${existing?.length||0}건`,color:D.red}]}/>
-            <DropZone onFile={handleFile} fileName={fileName} label="입고 파일 업로드"/>
+            <DropZone onFile={handleFile} fileName={fileName} label="입고 파일 업로드"
+              required="상품명"
+              optional="옵션 · 수량 · 메모"/>
             <button onClick={()=>{setStep(0);setExisting(null);}}
               style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,
                 fontSize:11,cursor:"pointer",marginTop:8,padding:"5px"}}>← 기간 다시 선택</button>
@@ -4459,7 +4473,9 @@ function EasyAdminUploader({ onUpdate }) {
             <div style={{color:D.textMeta,fontSize:11,marginBottom:10,lineHeight:1.6}}>
               배송일 {startDate} ~ {endDate}
             </div>
-            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"/>
+            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
+              required="관리번호 · 배송일(또는 주문일)"
+              optional="판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
@@ -4621,7 +4637,9 @@ function StoreUploader({ onUpdate }) {
               <b>수량</b> (괄호=반품), <b>실판매금액</b>, <b>ID</b> (객단가 분모)<br/>
               기준판매가=0인 사은품 행 자동 제외
             </div>
-            <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"/>
+            <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"
+              required="기준판매가 · 구매일자 · 상품명 · 수량"
+              optional="매장 · 옵션 · 실판매금액 · ID"/>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
