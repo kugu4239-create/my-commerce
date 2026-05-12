@@ -2056,7 +2056,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div style={{color:D.red,fontSize:11,marginBottom:14,lineHeight:1.6,padding:"8px 12px",background:"#fff5f5",borderRadius:6,border:`1px solid ${D.red}`}}>
               반품률의 경우 발송일 기준으로는 0%, 배송 완료 이후 시점부터 반품 접수가 시작되므로 최근 한달 또는 최근 3개월 데이터를 보는 것이 가장 정확합니다.
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            <div style={{display:"grid",gridTemplateColumns:["yd","7d"].includes(period)?"1fr":"1fr 1fr",gap:20}}>
               <div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별 반품률</div>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -2087,7 +2087,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   </tbody>
                 </table>
               </div>
-              <div>
+              {!["yd","7d"].includes(period)&&<div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>반품 Top 상품</div>
                 <div style={{maxHeight:360,overflowY:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -2105,7 +2105,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   </tbody>
                 </table>
                 </div>
-              </div>
+              </div>}
             </div>
             </div>
           );
