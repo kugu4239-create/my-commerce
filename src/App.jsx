@@ -4689,7 +4689,15 @@ function LoadingScreen() {
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const [page,setPage]=useState("dashboard");
+  const validPages=["dashboard","flow","promo","input"];
+  const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
+  const [page,setPageState]=useState(hashPage);
+  const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
+  useEffect(()=>{
+    const onHash=()=>setPageState(hashPage());
+    window.addEventListener("hashchange",onHash);
+    return()=>window.removeEventListener("hashchange",onHash);
+  },[]);
   const [orders,setOrders]=useState([]);
   const [stocks,setStocks]=useState([]);
   const [revenues,setRevenues]=useState([]);
