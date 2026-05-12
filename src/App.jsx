@@ -2747,26 +2747,26 @@ function DateButtonPicker({value,onChange}){
     onChange(ds+tp);
   };
   const daysInMonth=new Date(y,m,0).getDate();
-  const bBase={border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",lineHeight:1.4,fontFamily:"inherit"};
-  const bSel={...bBase,background:D.black,color:"#fff",fontWeight:600};
-  const bDef={...bBase,background:"transparent",color:D.textSub};
+  const bNone={border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit"};
+  const circSel={background:D.black,color:"#fff",fontWeight:700,borderRadius:"50%"};
+  const circDef={background:"transparent",color:D.textSub};
   return(
     <div style={{userSelect:"none"}}>
       <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
-        <button onClick={()=>setDate(y-1,m,d)} style={{...bDef,fontSize:12,padding:"1px 7px"}}>◀</button>
+        <button onClick={()=>setDate(y-1,m,d)} style={{...bNone,fontSize:13,color:D.textSub,padding:"1px 6px"}}>◀</button>
         <span style={{fontSize:13,fontWeight:700,color:D.text,minWidth:44,textAlign:"center"}}>{y}년</span>
-        <button onClick={()=>setDate(y+1,m,d)} style={{...bDef,fontSize:12,padding:"1px 7px"}}>▶</button>
+        <button onClick={()=>setDate(y+1,m,d)} style={{...bNone,fontSize:13,color:D.textSub,padding:"1px 6px"}}>▶</button>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:2,marginBottom:4}}>
         {Array.from({length:12},(_,i)=>i+1).map(mo=>(
           <button key={mo} onClick={()=>setDate(y,mo,Math.min(d,new Date(y,mo,0).getDate()))}
-            style={{...(mo===m?bSel:bDef),fontSize:12,padding:"2px 4px"}}>{mo}월</button>
+            style={{...bNone,fontSize:12,padding:"3px 5px",borderRadius:"50%",...(mo===m?circSel:circDef)}}>{mo}월</button>
         ))}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
         {Array.from({length:daysInMonth},(_,i)=>i+1).map(dd=>(
           <button key={dd} onClick={()=>setDate(y,m,dd)}
-            style={{...(dd===d?bSel:bDef),fontSize:12,padding:"2px 0",textAlign:"center"}}>{dd}</button>
+            style={{...bNone,fontSize:12,padding:"3px 0",textAlign:"center",borderRadius:"50%",...(dd===d?circSel:circDef)}}>{dd}</button>
         ))}
       </div>
     </div>
