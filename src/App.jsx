@@ -175,20 +175,25 @@ function detectFields(columns) {
 }
 
 // 기간 필터 유틸
+// 로컬 타임존 기준 날짜 문자열 (UTC 기반 toISOString 대신 사용)
+function localDate(offsetDays=0){
+  const d=new Date();d.setDate(d.getDate()+offsetDays);
+  return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+}
+
 function filterByDate(rows, dateField, period, customStart, customEnd) {
   if (period === "all") return rows;
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDate(0);
   if (period === "week") {
     const now = new Date();
     const dow = now.getDay() || 7;
     const monday = new Date(now);
     monday.setDate(now.getDate() - dow + 1);
-    const cutStr = monday.toISOString().slice(0,10);
+    const cutStr = [monday.getFullYear(),String(monday.getMonth()+1).padStart(2,'0'),String(monday.getDate()).padStart(2,'0')].join('-');
     return rows.filter(r => r[dateField] >= cutStr && r[dateField] <= today);
   }
   if (period === "yd") {
-    const y = new Date(); y.setDate(y.getDate()-1);
-    const yStr = y.toISOString().slice(0,10);
+    const yStr = localDate(-1);
     return rows.filter(r => r[dateField] === yStr);
   }
   if (period === "7d") {
@@ -549,14 +554,13 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   }, [orderRows, period, customStart, customEnd]);
 
   const filteredStocks = useMemo(() => {
-    const all = filterByDate(stockRows, "upload_date", period, customStart, customEnd);
     const latest = {};
-    all.forEach(r => {
+    stockRows.forEach(r => {
       const key = (r.product_name||"") + "__" + (r.option_name||"");
       if (!latest[key] || r.upload_date > latest[key].upload_date) latest[key] = r;
     });
     return Object.values(latest);
-  }, [stockRows, period, customStart, customEnd]);
+  }, [stockRows]);
 
   const data = useMemo(() => {
     const prodMap = {};
@@ -960,9 +964,7 @@ const chRank=ch=>{const i=CH_ORDER.indexOf(ch);return i>=0?i:99;};
 function getPriorPeriod(period,customStart,customEnd){
   const fmt=d=>d.toISOString().slice(0,10);
   if(period==="yd"){
-    const e=new Date();e.setDate(e.getDate()-1);
-    const s=new Date();s.setDate(s.getDate()-2);
-    return{start:fmt(s),end:fmt(e)};
+    return{start:localDate(-2),end:localDate(-2)};
   }
   if(period==="7d"){
     const e=new Date();e.setDate(e.getDate()-7);
@@ -1033,14 +1035,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const filteredStoreSales=useMemo(()=>filterByDate(storeSales,"sale_date",period,customStart,customEnd),[storeSales,period,customStart,customEnd]);
   const filteredStocks=useMemo(()=>{
-    const all=filterByDate(stocks,"upload_date",period,customStart,customEnd);
     const latest={};
-    all.forEach(r=>{
+    stocks.forEach(r=>{
       const key=(r.product_name||"")+"__"+(r.option_name||"");
       if(!latest[key]||r.upload_date>latest[key].upload_date) latest[key]=r;
     });
     return Object.values(latest);
-  },[stocks,period,customStart,customEnd]);
+  },[stocks]);
   const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales),[filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales]);
 
   // 직전 동일 기간 채널별 순매출
@@ -1167,10 +1168,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
   // 월별 배송량 차트 데이터
   const shippingChartData=useMemo(()=>{
-    const today=new Date().toISOString().slice(0,10);
+    const today=localDate(0);
     if(shippingPeriod==="yd"){
-      const y=new Date();y.setDate(y.getDate()-1);
-      const yStr=y.toISOString().slice(0,10);
+      const yStr=localDate(-1);
       const byDay={};
       orders.filter(r=>r.order_date===yStr).forEach(r=>{
         if(!byDay[yStr]) byDay[yStr]={date:yStr.slice(5),shipped:0};
@@ -1206,8 +1206,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const returnChartData=useMemo(()=>{
     let start;
     if(returnPeriod==="yd"){
-      const d=new Date();d.setDate(d.getDate()-1);
-      start=d.toISOString().slice(0,10);
+      start=localDate(-1);
     } else if(returnPeriod==="7d"){
       const d=new Date(); d.setDate(d.getDate()-7);
       start=d.toISOString().slice(0,10);
