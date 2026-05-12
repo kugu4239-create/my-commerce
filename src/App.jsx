@@ -58,6 +58,9 @@ const toNum = v => parseFloat(String(v||"0").replace(/[^0-9.-]/g,""))||0;
 const toDate = raw => {
   if (!raw) return null;
   const s = String(raw).trim();
+  // YYYY. M. D (점+공백 포함, 예: "2025. 10. 16")
+  const m0 = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+  if (m0) return `${m0[1]}-${m0[2].padStart(2,"0")}-${m0[3].padStart(2,"0")}`;
   const m1 = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
   if (m1) return `${m1[1]}-${m1[2].padStart(2,"0")}-${m1[3].padStart(2,"0")}`;
   const m2 = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
@@ -2960,7 +2963,7 @@ function CSDataInput() {
   const handleCSVFile=useCallback(file=>{
     if(!file)return;
     setCsvResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,
+    Papa.parse(file,{header:true,skipEmptyLines:false,
       complete:({data})=>{
         try{
           const cols=Object.keys(data[0]||{});
@@ -2972,13 +2975,47 @@ function CSDataInput() {
           const chCol=findCol("판매처","채널","channel","플랫폼","mall");
           if(!prodCol)throw new Error("[상품] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
           if(!reasonCol)throw new Error("[반품 사유] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
-          const newEntries=data.filter(r=>r[prodCol]&&r[reasonCol]).map(r=>({
-            id:Date.now()+Math.random(),
-            date:dateCol&&toDate(r[dateCol])?toDate(r[dateCol]):today,
-            product_name:String(r[prodCol]||"").trim(),
-            return_reason:String(r[reasonCol]||"").trim(),
-            channel:chCol?normChannel(r[chCol]):"미분류",
-          }));
+
+          const extractReason=raw=>{
+            const s=String(raw||"").toLowerCase();
+            if(s.includes("사이즈")||s.includes("size")||s.includes("미스")) return "사이즈 미스";
+            if(s.includes("퀄리티")||s.includes("불량")||s.includes("품질")) return "퀄리티";
+            if(s.includes("배송")&&!s.includes("배송비")&&!s.includes("회수")) return "배송";
+            if(s.includes("단순변심")||s.includes("변심")) return "단순변심";
+            return "단순변심";
+          };
+
+          const splitProducts=raw=>{
+            const parts=[];let cur="";let depth=0;
+            for(const ch of String(raw||"")){
+              if(ch==="["){depth++;cur+=ch;}
+              else if(ch==="]"){depth=Math.max(0,depth-1);cur+=ch;}
+              else if(ch===","&&depth===0){const t=cur.trim().replace(/\t/g," ");if(t)parts.push(t);cur="";}
+              else{cur+=ch;}
+            }
+            const t=cur.trim().replace(/\t/g," ");if(t)parts.push(t);
+            return parts.length?parts:[String(raw||"").trim()];
+          };
+
+          let lastDate=today;
+          const newEntries=[];
+          for(const r of data){
+            const rawDate=dateCol?String(r[dateCol]||"").trim():"";
+            if(rawDate.includes("반품취소")) continue;
+            const parsedDate=toDate(rawDate);
+            if(parsedDate) lastDate=parsedDate;
+            const rawProd=prodCol?String(r[prodCol]||"").trim():"";
+            const rawReason=reasonCol?String(r[reasonCol]||"").trim():"";
+            if(!rawProd&&!rawReason) continue;
+            const reason=extractReason(rawReason);
+            const rawCh=chCol?String(r[chCol]||"").trim():"";
+            const channel=rawCh?normChannel(rawCh):"자사몰";
+            for(const prod of splitProducts(rawProd)){
+              if(!prod) continue;
+              newEntries.push({id:Date.now()+Math.random(),date:lastDate,product_name:prod,return_reason:reason,channel});
+            }
+          }
+
           if(!newEntries.length)throw new Error("유효한 데이터 행이 없습니다");
           const next=[...newEntries,...csData];
           saveCSData(next);setCSData(next);
