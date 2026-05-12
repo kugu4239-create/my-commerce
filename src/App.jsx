@@ -2053,7 +2053,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
           modalContent=(
             <div>
-            <div style={{color:D.red,fontSize:11,marginBottom:14,lineHeight:1.6,padding:"8px 12px",background:"#fff5f5",borderRadius:6,border:`1px solid ${D.red}`}}>
+            <div style={{color:D.blue,fontSize:11,marginBottom:14,lineHeight:1.6}}>
               반품률의 경우 발송일 기준으로는 0%, 배송 완료 이후 시점부터 반품 접수가 시작되므로 최근 한달 또는 최근 3개월 데이터를 보는 것이 가장 정확합니다.
             </div>
             <div style={{display:"grid",gridTemplateColumns:["yd","7d"].includes(period)?"1fr":"1fr 1fr",gap:20}}>
