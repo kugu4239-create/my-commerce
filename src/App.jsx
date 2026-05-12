@@ -3102,8 +3102,16 @@ function RevenueForm({ onUpdate }) {
       const overlapKeys=new Set(csvPreview.overlaps.map(r=>`${r.date}__${r.channel}`));
       toUpload=toUpload.filter(r=>!overlapKeys.has(`${r.date}__${r.channel}`));
     }
+    // upsert 대신 DELETE→INSERT: UNIQUE 제약 없이도 중복 방지
+    const delDates=[...new Set(toUpload.map(r=>r.date))];
+    const delChs=[...new Set(toUpload.map(r=>r.channel))];
+    for(let i=0;i<delDates.length;i+=100){
+      const batch=delDates.slice(i,i+100);
+      const {error:de}=await db.from("revenues").delete().in("date",batch).in("channel",delChs);
+      if(de){setResult({type:"error",msg:"기존 데이터 삭제 실패: "+de.message});return;}
+    }
     for(let i=0;i<toUpload.length;i+=200){
-      const {error}=await db.from("revenues").upsert(toUpload.slice(i,i+200),{onConflict:"date,channel"});
+      const {error}=await db.from("revenues").insert(toUpload.slice(i,i+200));
       if(error){setResult({type:"error",msg:error.message});return;}
     }
     const ts2=nowStr();
@@ -3954,6 +3962,10 @@ export default function App() {
       if(rd.length<PAGE) break;
       rf+=PAGE;
     }
+    // 중복 제거: 같은 date+channel은 id 가장 큰 것(최신)만 유지
+    {const revMap={};
+    allRevenues.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
+    allRevenues=Object.values(revMap);}
     let allStoreSales=[];
     let ssf=0;
     while(true){
