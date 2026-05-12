@@ -1435,7 +1435,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             if(!prev||prev===0) return null;
             const pct=((cur-prev)/Math.abs(prev)*100);
             const up=pct>=0;
-            return <span style={{fontSize:10,fontWeight:700,color:up?"#22c55e":D.red,marginLeft:3}}>{up?"▲":"▼"}{Math.abs(pct).toFixed(1)}%</span>;
+            return <span style={{fontSize:10,fontWeight:700,color:D.black,marginLeft:3}}>{up?"▲":"▼"}{Math.abs(pct).toFixed(1)}%</span>;
           };
           const cols=[
             {key:"name",   label:"판매처", left:true,  val:c=>c.name},
