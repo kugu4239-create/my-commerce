@@ -2738,7 +2738,7 @@ const PROMO_PLATFORMS=["자사몰","29CM","무신사"];
 function PromoFlow({ revenues }) {
   const [promos,setPromos]=useState(getPromos);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:""});
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",file:null});
   const today=new Date().toISOString().slice(0,10);
   const twoMonthsAgo=(()=>{const d=new Date();d.setMonth(d.getMonth()-2);return d.toISOString().slice(0,10);})();
   const [viewStart,setViewStart]=useState(twoMonthsAgo);
@@ -2748,7 +2748,7 @@ function PromoFlow({ revenues }) {
   const addPromo=()=>{
     if(!form.name||!form.start_date||!form.end_date)return;
     updatePromos([...promos,{...form,id:Date.now()}]);
-    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:""});
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",file:null});
     setShowForm(false);
   };
   const delPromo=id=>updatePromos(promos.filter(p=>p.id!==id));
@@ -2800,8 +2800,8 @@ function PromoFlow({ revenues }) {
 
       {showForm&&(
         <Card style={{marginBottom:20}}>
-          <div style={{fontWeight:600,fontSize:12,marginBottom:20}}>프로모션 추가</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:8,alignItems:"end"}}>
+          <div style={{fontWeight:600,fontSize:12,marginBottom:16}}>프로모션 추가</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:8,alignItems:"start"}}>
             <div>
               <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션명</div>
               <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp} placeholder="예: 오픈 기념 할인"/>
@@ -2820,23 +2820,45 @@ function PromoFlow({ revenues }) {
                 ))}
               </div>
             </div>
-            <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>시작일시</div>
-              <input type="datetime-local" value={form.start_date} onChange={e=>setForm(f=>({...f,start_date:e.target.value}))} style={inp}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>종료일시</div>
-              <input type="datetime-local" value={form.end_date} onChange={e=>setForm(f=>({...f,end_date:e.target.value}))} style={inp}/>
-            </div>
+            {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
+              <div key={field}>
+                <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>{label}</div>
+                <input type="datetime-local" value={form[field]} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} style={inp}/>
+                <div style={{display:"flex",gap:3,marginTop:4}}>
+                  {[["10:00","오전 10시"],["11:00","오전 11시"],["23:59","오후 23:59"]].map(([time,tl])=>(
+                    <button key={time} onClick={()=>{
+                      const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
+                      setForm(f=>({...f,[field]:`${base}T${time}`}));
+                    }} style={{flex:1,fontSize:9,padding:"3px 2px",background:D.surfaceAlt,
+                      border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub,whiteSpace:"nowrap"}}>
+                      {tl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
             <button onClick={addPromo}
               style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
-                padding:"9px 16px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
+                padding:"9px 16px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",marginTop:18}}>
               저장
             </button>
           </div>
-          <div style={{marginTop:8}}>
-            <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
-            <input value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={inp} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
+          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
+              <input value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={inp} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>첨부 파일</div>
+              <input type="file" onChange={e=>{
+                const file=e.target.files?.[0];
+                if(!file) return;
+                const reader=new FileReader();
+                reader.onload=ev=>setForm(f=>({...f,file:{name:file.name,type:file.type,data:ev.target.result}}));
+                reader.readAsDataURL(file);
+              }} style={{...inp,padding:"5px 8px",cursor:"pointer"}}/>
+              {form.file&&<div style={{fontSize:10,color:D.textMeta,marginTop:3}}>📎 {form.file.name}</div>}
+            </div>
           </div>
         </Card>
       )}
@@ -2898,6 +2920,11 @@ function PromoFlow({ revenues }) {
                   <span style={{color:D.textSub}}>{p.platform}</span>
                   <span style={{fontWeight:600}}>{p.name}</span>
                   <span style={{color:D.textMeta}}>{p.start_date}~{p.end_date}</span>
+                  {p.file&&(
+                    <a href={p.file.data} download={p.file.name}
+                      style={{color:D.textMeta,fontSize:11,textDecoration:"none",lineHeight:1}}
+                      title={p.file.name}>📎</a>
+                  )}
                   <button onClick={()=>delPromo(p.id)}
                     style={{background:"transparent",border:"none",color:D.textMeta,
                       cursor:"pointer",padding:0,fontSize:11}}>✕</button>
