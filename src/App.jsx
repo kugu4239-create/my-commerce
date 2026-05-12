@@ -2735,7 +2735,7 @@ const PROMO_PLATFORMS=["자사몰","29CM","무신사"];
 function PromoFlow({ revenues }) {
   const [promos,setPromos]=useState(getPromos);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:""});
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:""});
   const today=new Date().toISOString().slice(0,10);
   const twoMonthsAgo=(()=>{const d=new Date();d.setMonth(d.getMonth()-2);return d.toISOString().slice(0,10);})();
   const [viewStart,setViewStart]=useState(twoMonthsAgo);
@@ -2745,7 +2745,7 @@ function PromoFlow({ revenues }) {
   const addPromo=()=>{
     if(!form.name||!form.start_date||!form.end_date)return;
     updatePromos([...promos,{...form,id:Date.now()}]);
-    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:""});
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:""});
     setShowForm(false);
   };
   const delPromo=id=>updatePromos(promos.filter(p=>p.id!==id));
@@ -2818,12 +2818,12 @@ function PromoFlow({ revenues }) {
               </div>
             </div>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>시작일</div>
-              <input type="date" value={form.start_date} onChange={e=>setForm(f=>({...f,start_date:e.target.value}))} style={inp}/>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>시작일시</div>
+              <input type="datetime-local" value={form.start_date} onChange={e=>setForm(f=>({...f,start_date:e.target.value}))} style={inp}/>
             </div>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>종료일</div>
-              <input type="date" value={form.end_date} onChange={e=>setForm(f=>({...f,end_date:e.target.value}))} style={inp}/>
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>종료일시</div>
+              <input type="datetime-local" value={form.end_date} onChange={e=>setForm(f=>({...f,end_date:e.target.value}))} style={inp}/>
             </div>
             <button onClick={addPromo}
               style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
@@ -2832,8 +2832,8 @@ function PromoFlow({ revenues }) {
             </button>
           </div>
           <div style={{marginTop:8}}>
-            <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>메모</div>
-            <input value={form.memo} onChange={e=>setForm(f=>({...f,memo:e.target.value}))} style={inp} placeholder="설명 (선택)"/>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
+            <input value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={inp} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
           </div>
         </Card>
       )}
@@ -2944,6 +2944,8 @@ function CSDataInput() {
   const [channel,setChannel]=useState("자사몰");
   const [filterProd,setFilterProd]=useState("");
   const [csvResult,setCsvResult]=useState(null);
+  const [editCell,setEditCell]=useState(null);
+  const [editVal,setEditVal]=useState("");
 
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
@@ -2992,7 +2994,14 @@ function CSDataInput() {
     saveCSData(next);setCSData(next);
   };
 
-  const filtered=csData.filter(r=>!filterProd||r.product_name.includes(filterProd));
+  const startCsEdit=(id,field,val)=>{setEditCell({id,field});setEditVal(String(val??""));};
+  const saveCsEdit=()=>{
+    if(!editCell) return;
+    const next=csData.map(r=>r.id===editCell.id?{...r,[editCell.field]:editVal}:r);
+    saveCSData(next);setCSData(next);setEditCell(null);
+  };
+
+  const filtered=csData.filter(r=>!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd));
 
   return (
     <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:14}}>
@@ -3043,7 +3052,7 @@ function CSDataInput() {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontWeight:600,fontSize:13}}>반품 사유 내역</div>
           <input value={filterProd} onChange={e=>setFilterProd(e.target.value)}
-            style={{...inp,width:160,fontSize:11,padding:"5px 8px"}} placeholder="상품명 검색"/>
+            style={{...inp,width:180,fontSize:11,padding:"5px 8px"}} placeholder="상품명·날짜 검색"/>
         </div>
         <div style={{overflowY:"auto",maxHeight:480}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -3053,18 +3062,34 @@ function CSDataInput() {
               ))}
             </tr></thead>
             <tbody>
-              {filtered.slice(0,100).map(r=>(
-                <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`}}>
-                  <td style={{padding:"5px 8px",color:D.textMeta,whiteSpace:"nowrap"}}>{r.date}</td>
-                  <td style={{padding:"5px 8px"}}><span style={{color:chColor(r.channel),fontWeight:600}}>{r.channel}</span></td>
-                  <td style={{padding:"5px 8px",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
-                  <td style={{padding:"5px 8px",color:D.textSub}}>{r.return_reason}</td>
-                  <td style={{padding:"5px 8px"}}>
-                    <button onClick={()=>del(r.id)}
-                      style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:10}}>✕</button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.slice(0,100).map(r=>{
+                const cell=(field,content,style={})=>{
+                  const isEd=editCell?.id===r.id&&editCell?.field===field;
+                  return(
+                    <td style={{padding:"5px 8px",cursor:"pointer",...style}}
+                      title="더블클릭하여 수정"
+                      onDoubleClick={()=>startCsEdit(r.id,field,r[field])}>
+                      {isEd
+                        ?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)}
+                            onBlur={saveCsEdit} onKeyDown={e=>{if(e.key==="Enter")saveCsEdit();if(e.key==="Escape")setEditCell(null);}}
+                            style={{width:"100%",border:`1px solid ${D.primary}`,borderRadius:3,padding:"1px 4px",fontSize:11}}/>
+                        :content}
+                    </td>
+                  );
+                };
+                return(
+                  <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`}}>
+                    {cell("date",<span style={{color:D.textMeta,whiteSpace:"nowrap"}}>{r.date}</span>)}
+                    {cell("channel",<span style={{color:chColor(r.channel),fontWeight:600}}>{r.channel}</span>)}
+                    {cell("product_name",r.product_name,{maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"})}
+                    {cell("return_reason",<span style={{color:D.textSub}}>{r.return_reason}</span>)}
+                    <td style={{padding:"5px 8px"}}>
+                      <button onClick={()=>del(r.id)}
+                        style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:10}}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length===0&&<tr><td colSpan={5} style={{padding:24,textAlign:"center",color:D.textMeta}}>데이터 없음</td></tr>}
             </tbody>
           </table>
@@ -3703,6 +3728,146 @@ function StockUploader({ onUpdate }) {
 }
 
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// 공통 업로드 내역 패널 (Supabase 테이블 기반)
+// ─────────────────────────────────────────────
+function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged }) {
+  const [dateStart,setDateStart]=useState("");
+  const [dateEnd,setDateEnd]=useState("");
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [filter,setFilter]=useState("");
+  const [selected,setSelected]=useState(new Set());
+  const [editCell,setEditCell]=useState(null);
+  const [editVal,setEditVal]=useState("");
+  const [deleteConfirm,setDeleteConfirm]=useState(false);
+  const [result,setResult]=useState(null);
+
+  const load=async()=>{
+    if(!dateStart||!dateEnd) return;
+    setLoading(true); setResult(null);
+    const db=await getSupabase();
+    const {data,error}=await db.from(table).select("*")
+      .gte(dateField,dateStart).lte(dateField,dateEnd)
+      .order(dateField,{ascending:false}).limit(2000);
+    if(error) setResult({type:"error",msg:error.message});
+    else { setRows(data||[]); setSelected(new Set()); }
+    setLoading(false);
+  };
+
+  const filtered=filter
+    ?rows.filter(r=>searchFields.some(f=>String(r[f]||"").includes(filter)))
+    :rows;
+
+  const toggleSelect=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+  const toggleAll=()=>{
+    const ids=filtered.map(r=>r.id);
+    const allSel=ids.every(id=>selected.has(id));
+    setSelected(s=>{const n=new Set(s);ids.forEach(id=>allSel?n.delete(id):n.add(id));return n;});
+  };
+
+  const handleDelete=async()=>{
+    const db=await getSupabase();
+    const {error}=await db.from(table).delete().in("id",[...selected]);
+    if(error){setResult({type:"error",msg:error.message});return;}
+    setRows(r=>r.filter(row=>!selected.has(row.id)));
+    setSelected(new Set()); setDeleteConfirm(false);
+    setResult({type:"success",msg:`${selected.size}건 삭제 완료`});
+    onChanged?.();
+  };
+
+  const startEdit=(id,field,val)=>{setEditCell({id,field});setEditVal(String(val??""));};
+  const saveEdit=async()=>{
+    if(!editCell) return;
+    const db=await getSupabase();
+    const {error}=await db.from(table).update({[editCell.field]:editVal}).eq("id",editCell.id);
+    if(!error) setRows(rows=>rows.map(r=>r.id===editCell.id?{...r,[editCell.field]:editVal}:r));
+    setEditCell(null);
+  };
+
+  const inp2={border:`1px solid ${D.border}`,borderRadius:6,padding:"4px 8px",fontSize:11,background:"transparent",color:D.text};
+
+  return (
+    <Card style={{marginTop:14}}>
+      <div style={{fontWeight:600,fontSize:13,marginBottom:12}}>업로드 내역</div>
+      <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
+        <input type="date" value={dateStart} onChange={e=>setDateStart(e.target.value)} style={inp2}/>
+        <span style={{color:D.textMeta,fontSize:11}}>—</span>
+        <input type="date" value={dateEnd} onChange={e=>setDateEnd(e.target.value)} style={inp2}/>
+        <button onClick={load} disabled={!dateStart||!dateEnd||loading}
+          style={{background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",fontSize:11,cursor:"pointer"}}>
+          {loading?"로딩 중...":"불러오기"}
+        </button>
+        {rows.length>0&&<>
+          <input placeholder="검색" value={filter} onChange={e=>setFilter(e.target.value)}
+            style={{...inp2,flex:1,minWidth:120}}/>
+          <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>{filtered.length}건</span>
+        </>}
+      </div>
+      {selected.size>0&&(
+        <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+          <span style={{fontSize:11,color:D.textMeta}}>{selected.size}개 선택</span>
+          {!deleteConfirm
+            ?<button onClick={()=>setDeleteConfirm(true)}
+               style={{background:D.red,color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>삭제</button>
+            :<>
+              <button onClick={handleDelete}
+                style={{background:D.red,color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>확인 삭제</button>
+              <button onClick={()=>setDeleteConfirm(false)}
+                style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>취소</button>
+            </>}
+        </div>
+      )}
+      {rows.length>0?(
+        <div style={{overflowX:"auto",maxHeight:500,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead style={{position:"sticky",top:0,background:D.surface,zIndex:1}}>
+              <tr style={{borderBottom:`1px solid ${D.border}`}}>
+                <th style={{padding:"5px 7px",width:28}}>
+                  <input type="checkbox" checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))} onChange={toggleAll}/>
+                </th>
+                {cols.map(c=>(
+                  <th key={c.key} style={{padding:"5px 7px",textAlign:"left",color:D.textMeta,fontWeight:400,whiteSpace:"nowrap"}}>{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.slice(0,500).map(r=>(
+                <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,background:selected.has(r.id)?"#f5f5f5":"transparent"}}>
+                  <td style={{padding:"4px 7px"}}><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td>
+                  {cols.map(c=>{
+                    const isEditing=editCell?.id===r.id&&editCell?.field===c.key;
+                    const editable=editableCols.includes(c.key);
+                    return(
+                      <td key={c.key} style={{padding:"4px 7px",color:c.color||D.black,fontWeight:c.bold?600:400,
+                        maxWidth:c.maxW||200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                        cursor:editable?"pointer":"default",userSelect:editable?"none":"auto"}}
+                        title={editable?"더블클릭하여 수정":undefined}
+                        onDoubleClick={editable?()=>startEdit(r.id,c.key,r[c.key]):undefined}>
+                        {isEditing
+                          ?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={e=>{if(e.key==="Enter")saveEdit();if(e.key==="Escape")setEditCell(null);}}
+                              style={{width:"100%",border:`1px solid ${D.primary}`,borderRadius:3,padding:"1px 4px",fontSize:11}}/>
+                          :c.fmt?c.fmt(r[c.key]):String(r[c.key]??"")}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ):(
+        <div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>
+          날짜 범위를 선택하고 불러오기를 누르세요
+        </div>
+      )}
+      {result&&<Alert type={result.type} msg={result.msg}/>}
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────
 // DATA INPUT — 이지어드민 CSV (배송일 기준)
 // ─────────────────────────────────────────────
 function EasyAdminUploader({ onUpdate }) {
@@ -3910,6 +4075,21 @@ function EasyAdminUploader({ onUpdate }) {
           </div>}
         </Card>
       </div>
+      <DataHistoryPanel
+        table="orders" dateField="order_date"
+        searchFields={["product_name","channel","order_id","option_name"]}
+        editableCols={["channel","status","product_name","option_name"]}
+        cols={[
+          {key:"order_date",label:"배송일",color:D.textMeta},
+          {key:"channel",label:"판매처",bold:true},
+          {key:"product_name",label:"상품명",maxW:180},
+          {key:"option_name",label:"옵션",color:D.textMeta},
+          {key:"qty",label:"수량"},
+          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:D.green,fontWeight:500}}>{v}</span>},
+          {key:"order_id",label:"관리번호",color:D.textMeta,maxW:120},
+        ]}
+        onChanged={()=>onUpdate(nowStr())}
+      />
     </div>
   );
 }
@@ -4046,6 +4226,22 @@ function StoreUploader({ onUpdate }) {
           )}
         </Card>
       </div>
+      <DataHistoryPanel
+        table="store_sales" dateField="sale_date"
+        searchFields={["product_name","store_name","option_name"]}
+        editableCols={["store_name","product_name","option_name","amount","status"]}
+        cols={[
+          {key:"sale_date",label:"날짜",color:D.textMeta},
+          {key:"store_name",label:"매장",bold:true},
+          {key:"product_name",label:"상품명",maxW:180},
+          {key:"option_name",label:"옵션",color:D.textMeta},
+          {key:"qty",label:"수량"},
+          {key:"amount",label:"금액"},
+          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:D.green,fontWeight:500}}>{v}</span>},
+          {key:"order_id",label:"주문ID",color:D.textMeta,maxW:100},
+        ]}
+        onChanged={()=>onUpdate(nowStr())}
+      />
     </div>
   );
 }
@@ -4066,8 +4262,8 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const tabs=[
     {key:"revenue",label:<span>매출 입력{lastDate(revenues,"date")}</span>},
     {key:"stock",label:<span>입고 CSV{lastDate(stocks,"upload_date")} <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
-    {key:"orders",label:<span>이지어드민 CSV(배송일 기준){lastDate(orders,"order_date")} <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
-    {key:"store",label:<span>매장 판매 CSV{lastDate(storeSales,"sale_date")}</span>},
+    {key:"orders",label:<span>이지어드민 데이터(배송일 기준){lastDate(orders,"order_date")} <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
+    {key:"store",label:<span>매장 판매 데이터{lastDate(storeSales,"sale_date")}</span>},
     {key:"cs",label:"CS 데이터"},
     {key:"delete",label:"데이터 삭제"},
   ];
