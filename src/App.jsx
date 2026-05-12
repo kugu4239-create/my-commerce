@@ -3003,6 +3003,7 @@ function RevenueForm({ onUpdate }) {
   const [editData,setEditData]=useState({});
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [histChFilter,setHistChFilter]=useState("전체");
+  const [chDeleteConfirm,setChDeleteConfirm]=useState(false);
 
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
@@ -3074,6 +3075,16 @@ function RevenueForm({ onUpdate }) {
     const db=await getSupabase();
     await db.from("revenues").delete().eq("id",id);
     setDeleteConfirm(null); loadHistory();
+  };
+
+  const handleChannelDelete=async()=>{
+    if(!chDeleteConfirm){setChDeleteConfirm(true);return;}
+    const db=await getSupabase();
+    await db.from("revenues").delete().eq("channel",histChFilter);
+    setChDeleteConfirm(false);
+    const ts2=nowStr();
+    onUpdate(ts2);
+    loadHistory();
   };
 
   const handleCsvFile=useCallback(file=>{
@@ -3266,14 +3277,14 @@ function RevenueForm({ onUpdate }) {
           <Btn onClick={loadHistory} variant="ghost" style={{padding:"4px 11px",fontSize:11}}>불러오기</Btn>
         </div>
         {history.length>0&&(
-          <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
             {["전체",...REVENUE_CHANNELS].map(c=>{
               const cnt=c==="전체"?history.length:history.filter(r=>r.channel===c).length;
               const sum=c==="전체"
                 ?history.reduce((s,r)=>s+(r.amount||0),0)
                 :history.filter(r=>r.channel===c).reduce((s,r)=>s+(r.amount||0),0);
               return(
-                <button key={c} onClick={()=>setHistChFilter(c)}
+                <button key={c} onClick={()=>{setHistChFilter(c);setChDeleteConfirm(false);}}
                   style={{background:histChFilter===c?D.black:"transparent",
                     color:histChFilter===c?"#fff":D.textSub,
                     border:`1px solid ${histChFilter===c?D.black:D.border}`,
@@ -3282,6 +3293,15 @@ function RevenueForm({ onUpdate }) {
                 </button>
               );
             })}
+            {histChFilter!=="전체"&&(
+              <button onClick={handleChannelDelete}
+                style={{marginLeft:"auto",background:chDeleteConfirm?D.red:"transparent",
+                  color:chDeleteConfirm?"#fff":D.red,
+                  border:`1px solid ${D.red}`,borderRadius:6,
+                  padding:"4px 12px",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>
+                {chDeleteConfirm?`'${histChFilter}' 전체 삭제 확인`:`'${histChFilter}' 전체 삭제`}
+              </button>
+            )}
           </div>
         )}
         {history.length>0?(()=>{
