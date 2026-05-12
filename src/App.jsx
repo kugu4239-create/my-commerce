@@ -2958,31 +2958,30 @@ function PromoFlow({ revenues }) {
   const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
   const readFileData=(file,cb)=>{const r=new FileReader();r.onload=e=>cb({name:file.name,type:file.type,data:e.target.result});r.readAsDataURL(file);};
 
-  // Supabase sync helpers
-  const syncSet=rows=>{setPromos(rows);setPromosCache(rows);};
   const patchPromo=useCallback(async(id,updates)=>{
     setPromos(prev=>{const next=prev.map(p=>p.id===id?{...p,...updates}:p);setPromosCache(next);return next;});
     const db=await getSupabase();
     await db.from("promotions").update(updates).eq("id",id);
   },[]);
 
-  // Load from Supabase on mount (overwrites cache)
+  // Load from Supabase — localStorage는 Supabase에 실제 데이터 있을 때만 덮어씀
   useEffect(()=>{
     (async()=>{
+      const local=getPromosCache(); // 먼저 읽어둠 (덮어쓰기 방지)
       const db=await getSupabase();
       const{data,error}=await db.from("promotions").select("*").order("start_date",{ascending:true});
       if(!error&&data){
         const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[])}));
-        syncSet(rows);
-        // one-time migration: if Supabase empty and localStorage has data, push to Supabase
-        if(rows.length===0){
-          const local=getPromosCache();
-          if(local.length>0){
-            await db.from("promotions").insert(local);
-            syncSet(local);
-          }
+        if(rows.length>0){
+          setPromos(rows);setPromosCache(rows);
+        } else if(local.length>0){
+          // Supabase 비어있고 로컬에 데이터 있으면 마이그레이션
+          const{error:e}=await db.from("promotions").insert(local);
+          if(!e){setPromos(local);setPromosCache(local);}
+          // 실패해도 useState 초기값(local) 그대로 표시됨
         }
       }
+      // error 시 localStorage 초기값 유지 (useState에서 이미 설정됨)
     })();
   },[]);
 
