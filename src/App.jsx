@@ -2817,7 +2817,8 @@ function PromoFlow({ revenues }) {
   },[revenues,viewStart,viewEnd]);
 
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-    padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
+    padding:"8px 12px",fontSize:14,color:D.text,width:"100%",boxSizing:"border-box",
+    fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
@@ -3003,7 +3004,8 @@ function PromoFlow({ revenues }) {
                   const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
                     color:ended?D.textMeta:D.text,textDecoration:ended?"line-through":"none"}};
                   const inp3={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                    padding:"5px 8px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box"};
+                    padding:"7px 10px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",
+                    fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
                   if(isEditing) return (
                     <tr key={p.id}>
                       <td colSpan={7} style={{padding:"10px 8px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
