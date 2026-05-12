@@ -2961,7 +2961,18 @@ function PromoFlow({ revenues }) {
           <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:8}}>
             <div>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
-              <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={{...inp,resize:"vertical",minHeight:72,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
+              <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))}
+                onKeyDown={e=>{
+                  if(e.key==="Enter"){
+                    e.preventDefault();
+                    const ta=e.target;
+                    const{selectionStart:s,selectionEnd:en,value:v}=ta;
+                    const next=v.slice(0,s)+"\n○ "+v.slice(en);
+                    setForm(f=>({...f,content:next,memo:next}));
+                    requestAnimationFrame(()=>{ta.selectionStart=ta.selectionEnd=s+3;});
+                  }
+                }}
+                style={{...inp,resize:"vertical",minHeight:144,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
             </div>
             <div>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
