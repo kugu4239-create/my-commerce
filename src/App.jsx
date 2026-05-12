@@ -230,6 +230,26 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
 
 // ─────────────────────────────────────────────
 // SHARED UI
+function Tooltip({ text, children }) {
+  const [show,setShow]=useState(false);
+  return (
+    <span style={{position:"relative",display:"inline-flex",alignItems:"center"}}
+      onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}>
+      {children}
+      {show&&(
+        <span style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",
+          background:"#333",color:"#fff",fontSize:11,lineHeight:1.5,padding:"6px 10px",borderRadius:6,
+          whiteSpace:"pre-wrap",maxWidth:240,width:"max-content",zIndex:999,
+          boxShadow:"0 2px 8px rgba(0,0,0,0.18)",pointerEvents:"none"}}>
+          {text}
+          <span style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",
+            border:"5px solid transparent",borderTopColor:"#333"}}/>
+        </span>
+      )}
+    </span>
+  );
+}
+
 // ─────────────────────────────────────────────
 function Card({ children, style={} }) {
   return (
@@ -1486,13 +1506,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {cols.map(({key,label,left,tooltip})=>(
                   <th key={key} onClick={key!=="cmp"?()=>setChSort({key,dir:"desc"}):undefined}
-                    title={tooltip||undefined}
                     style={{padding:"7px 9px",textAlign:left?"left":"right",
                     color:chSort.key===key?D.black:D.textMeta,
                     fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap",
                     cursor:key!=="cmp"?"pointer":"default"}}>
                     {label}{chSort.key===key?" ↓":""}
-                    {tooltip&&<span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400}}>ⓘ</span>}
+                    {tooltip&&<Tooltip text={tooltip}><span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400,cursor:"default"}}>ⓘ</span></Tooltip>}
                   </th>
                 ))}
               </tr></thead>
