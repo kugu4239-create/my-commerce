@@ -3659,13 +3659,13 @@ function StockUploader({ onUpdate }) {
                   ?<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>입고 데이터 없음</div>
                   :(()=>{
                     const filtered=histFilter
-                      ?history.filter(r=>(r.product_name||"").includes(histFilter)||(r.option_name||"").includes(histFilter))
+                      ?history.filter(r=>(r.product_name||"").includes(histFilter)||(r.option_name||"").includes(histFilter)||(r.upload_date||"").includes(histFilter))
                       :history;
                     const allSelected=filtered.length>0&&filtered.every(r=>selected.has(r.id));
                     return(
                       <div>
                         <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
-                          <input type="text" placeholder="상품명 검색" value={histFilter}
+                          <input type="text" placeholder="상품명 · 업로드일 검색" value={histFilter}
                             onChange={e=>{setHistFilter(e.target.value);setDeleteConfirm(false);}}
                             style={{flex:1,border:`1px solid ${D.border}`,borderRadius:6,padding:"5px 8px",
                               fontSize:11,background:"transparent",color:D.text}}/>
