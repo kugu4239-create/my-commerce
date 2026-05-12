@@ -2907,21 +2907,34 @@ function PromoFlow({ revenues }) {
           })}
         </div>
         {PROMO_PLATFORMS.map(plat=>{
-          const bars=promos.filter(p=>p.platform===plat&&p.end_date>=viewStart&&p.start_date<=viewEnd);
+          const bars=promos.filter(p=>p.platform===plat&&p.end_date>=viewStart&&p.start_date<=viewEnd)
+            .sort((a,b)=>a.start_date>b.start_date?1:-1);
+          // lane 배정: 겹치지 않도록 최소 lane에 배치
+          const lanes=[];
+          const laned=bars.map(promo=>{
+            let lane=lanes.findIndex(endDate=>endDate<=promo.start_date);
+            if(lane===-1){lane=lanes.length;lanes.push("");}
+            lanes[lane]=promo.end_date;
+            return{promo,lane};
+          });
+          const numLanes=Math.max(1,lanes.length);
+          const laneH=26;const laneGap=2;
+          const trackH=numLanes*laneH+(numLanes-1)*laneGap;
           return (
             <div key={plat} style={{display:"flex",alignItems:"center",marginBottom:8,gap:8}}>
-              <div style={{width:62,fontSize:11,color:D.textSub,flexShrink:0,textAlign:"right"}}>{plat}</div>
-              <div style={{flex:1,position:"relative",height:28,background:D.surfaceAlt,borderRadius:4}}>
-                {bars.map(promo=>{
+              <div style={{width:62,fontSize:11,color:D.textSub,flexShrink:0,textAlign:"right",lineHeight:1.3}}>{plat}</div>
+              <div style={{flex:1,position:"relative",height:trackH,background:D.surfaceAlt,borderRadius:4}}>
+                {laned.map(({promo,lane})=>{
                   const l=datePct(promo.start_date);
                   const r=datePct(promo.end_date);
                   const w=Math.max(0.5,r-l);
                   const ended=isEnded(promo);
+                  const top=lane*(laneH+laneGap);
                   return (
                     <div key={promo.id}
                       onMouseEnter={e=>{const rect=e.currentTarget.getBoundingClientRect();setHoveredPromo({promo,rect});}}
                       onMouseLeave={()=>setHoveredPromo(null)}
-                      style={{position:"absolute",left:`${l}%`,width:`${w}%`,height:"100%",
+                      style={{position:"absolute",left:`${l}%`,width:`${w}%`,height:laneH,top,
                         background:ended?"#aaa":chColor(plat),borderRadius:4,display:"flex",alignItems:"center",
                         padding:"0 6px",fontSize:10,color:"#fff",overflow:"hidden",
                         boxSizing:"border-box",cursor:"pointer",minWidth:4,opacity:ended?0.6:1}}>
@@ -2931,13 +2944,7 @@ function PromoFlow({ revenues }) {
                   );
                 })}
               </div>
-              <button onClick={()=>{
-                const target=bars[bars.length-1];
-                if(target)delPromo(target.id);
-              }} style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",
-                fontSize:10,padding:"2px 6px",flexShrink:0,visibility:bars.length?"visible":"hidden"}}>
-                ✕
-              </button>
+              <div style={{width:20,flexShrink:0}}/>
             </div>
           );
         })}
@@ -2955,7 +2962,7 @@ function PromoFlow({ revenues }) {
                 </tr>
               </thead>
               <tbody>
-                {promos.map(p=>{
+                {[...promos].sort((a,b)=>a.start_date>b.start_date?1:-1).map(p=>{
                   const ended=isEnded(p);
                   const isEditing=editingPromoId===p.id;
                   const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
