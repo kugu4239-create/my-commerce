@@ -1541,9 +1541,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
-                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{(c.returned||0).toLocaleString()}</td>}
-                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
-                        color:(c.shipped>0&&(c.returned/c.shipped)>0.1)?D.red:D.textSub}}>
+                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
+                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
                         {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
                     </tr>
@@ -1555,7 +1554,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWon(stats.totalRevenue)}</td>
                   <td/>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                  {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>}
+                  {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalReturned.toLocaleString()}</td>}
                   {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>}
                   <td/>
                 </tr>
@@ -1775,7 +1774,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <XAxis type="number" tick={axTick} tickFormatter={v=>v+"%"}/>
               <YAxis type="category" dataKey="name" width={180} tick={<NoWrapTick/>}/>
               <Tooltip content={<Tip/>} formatter={(v)=>[v+"%","반품률"]}/>
-              <Bar dataKey="returnRate" name="반품률" radius={[0,3,3,0]} fill={D.red}/>
+              <Bar dataKey="returnRate" name="반품률" radius={[0,3,3,0]}>
+                {worstRows.slice(0,12).map((_,i)=>{
+                  const palette=["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f","#edc948","#b07aa1","#ff9da7","#9c755f","#bab0ac","#6b6ecf","#8ca252"];
+                  return <Cell key={i} fill={palette[i%palette.length]}/>;
+                })}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
