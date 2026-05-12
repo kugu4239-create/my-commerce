@@ -2822,6 +2822,20 @@ function PromoFlow({ revenues }) {
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
+      <style>{`
+        @keyframes promoShimmer {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(350%); }
+        }
+        .promo-shimmer {
+          position: absolute;
+          top: 0; bottom: 0;
+          width: 30%;
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
+          animation: promoShimmer 5s cubic-bezier(0.4,0,0.6,1) infinite;
+          pointer-events: none;
+        }
+      `}</style>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div style={{fontWeight:600,fontSize:15,color:D.black}}>프로모션 플로우</div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -2922,7 +2936,10 @@ function PromoFlow({ revenues }) {
       <Card style={{marginBottom:0,borderBottomLeftRadius:0,borderBottomRightRadius:0,borderBottom:"none"}}>
         <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>플랫폼별 프로모션 일정</div>
         <div onMouseDown={onDragStart}
-          style={{cursor:isDragging?"grabbing":"grab",userSelect:"none"}}>
+          style={{cursor:isDragging?"grabbing":"grab",userSelect:"none",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden",borderRadius:4}}>
+          <div className="promo-shimmer"/>
+        </div>
         {/* 날짜 눈금 */}
         <div style={{position:"relative",height:16,marginBottom:4,paddingLeft:70}}>
           {[0,25,50,75,100].map(pct=>{
@@ -3027,7 +3044,10 @@ function PromoFlow({ revenues }) {
       <Card style={{marginBottom:20,borderTopLeftRadius:0,borderTopRightRadius:0}}>
         <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
         {revenueData.length>0&&revenues.some(r=>r.date>=viewStart&&r.date<=viewEnd)?(
-          <div style={{position:"relative"}} onMouseDown={onDragStart}>
+          <div style={{position:"relative",overflow:"hidden"}} onMouseDown={onDragStart}>
+          <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden"}}>
+            <div className="promo-shimmer"/>
+          </div>
           {isDragging&&<div style={{position:"absolute",inset:0,zIndex:10,cursor:"grabbing"}}/>}
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={revenueData}>
