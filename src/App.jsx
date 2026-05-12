@@ -3004,7 +3004,11 @@ function RevenueForm({ onUpdate }) {
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
     const {data}=await db.from("revenues").select("*").order("date",{ascending:false});
-    setHistory(data||[]); setHistTs(nowStr());
+    // 대시보드와 동일하게 dedup (date+channel 기준 최신 id만)
+    const revMap={};
+    (data||[]).forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
+    setHistory(Object.values(revMap).sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:0));
+    setHistTs(nowStr());
   },[]);
 
   const handleSave=async()=>{
@@ -3021,14 +3025,17 @@ function RevenueForm({ onUpdate }) {
     } else {
       dates.push(date);
     }
+    // DELETE 후 INSERT — UNIQUE 제약 없이도 중복 방지
+    const {error:de}=await db.from("revenues").delete().in("date",dates).eq("channel",ch);
+    if(de){setResult({type:"error",msg:"기존 삭제 실패: "+de.message});setLoading(false);return;}
     for(const d of dates){
-      const {error}=await db.from("revenues").upsert({
+      const {error}=await db.from("revenues").insert({
         date:d,channel:ch,
         amount:Math.round(num/dates.length),
         order_count:Math.round((Number(orderCnt)||0)/dates.length),
         refund_amount:Math.round((Number(refundAmt.replace(/,/g,""))||0)/dates.length),
         refund_count:Math.round((Number(refundCnt)||0)/dates.length),
-      },{onConflict:"date,channel"});
+      });
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
