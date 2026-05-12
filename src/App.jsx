@@ -990,6 +990,7 @@ const PERIOD_TABS=[
   {key:"7d",label:"최근 7일"},
   {key:"1m",label:"최근 한달"},
   {key:"3m",label:"최근 3개월"},
+  {key:"all",label:"전체"},
   {key:"custom",label:"기간 선택"},
 ];
 
