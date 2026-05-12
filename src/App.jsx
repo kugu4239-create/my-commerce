@@ -206,16 +206,19 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
     return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
   }
   if (period === "1m") {
-    const c = new Date(); c.setMonth(c.getMonth()-1);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+    const d=new Date(); d.setMonth(d.getMonth()-1);
+    const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+    return rows.filter(r => r[dateField] >= cut);
   }
   if (period === "3m") {
-    const c = new Date(); c.setMonth(c.getMonth()-3);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+    const d=new Date(); d.setMonth(d.getMonth()-3);
+    const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+    return rows.filter(r => r[dateField] >= cut);
   }
   if (period === "6m") {
-    const c = new Date(); c.setMonth(c.getMonth()-6);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+    const d=new Date(); d.setMonth(d.getMonth()-6);
+    const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+    return rows.filter(r => r[dateField] >= cut);
   }
   if (period === "custom" && customStart && customEnd) {
     return rows.filter(r => r[dateField] >= customStart && r[dateField] <= customEnd);
@@ -3943,9 +3946,14 @@ export default function App() {
       if(sd.length<PAGE) break;
       sf+=PAGE;
     }
-    const [r]=await Promise.all([
-      db.from("revenues").select("*").order("date",{ascending:false}),
-    ]);
+    let allRevenues=[]; let rf=0;
+    while(true){
+      const {data:rd}=await db.from("revenues").select("*").order("date",{ascending:false}).range(rf,rf+PAGE-1);
+      if(!rd||rd.length===0) break;
+      allRevenues=allRevenues.concat(rd);
+      if(rd.length<PAGE) break;
+      rf+=PAGE;
+    }
     let allStoreSales=[];
     let ssf=0;
     while(true){
@@ -3967,7 +3975,7 @@ export default function App() {
     }));
     setOrders([...allOrders.map(o=>({...o,channel:normChannel(o.channel)})),...storeOrderRows]);
     setStocks(allStocks);
-    setRevenues(r.data||[]);
+    setRevenues(allRevenues);
     setStoreSales(allStoreSales);
     if(firstLoad.current){
       const elapsed=Date.now()-t0;
