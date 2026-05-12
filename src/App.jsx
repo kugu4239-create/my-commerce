@@ -1456,7 +1456,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-            {[["revenue","매출"],["share","점유율"],["shipped","배송"],["returned","반품"],["rate","반품률"],["aov","객단가"]].map(([k,l])=>(
+            {[["revenue","매출"],["share","점유율"],["shipped","배송"],...(!["yd","7d"].includes(period)?[["returned","반품"],["rate","반품률"]]:[]),["aov","객단가"]].map(([k,l])=>(
               <button key={k} onClick={()=>setChSort({key:k,dir:"desc"})}
                 style={{background:chSort.key===k?D.black:"transparent",
                   color:chSort.key===k?"#fff":D.textSub,
@@ -1750,7 +1750,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             ))}
           </div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
+            {[["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
               <button key={k} onClick={()=>setRankWorstPeriod(k)}
                 style={{background:rankWorstPeriod===k?D.black:"transparent",
                   color:rankWorstPeriod===k?"#fff":D.textSub,
