@@ -2854,7 +2854,7 @@ function PromoFlow({ revenues }) {
           <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div>
               <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
-              <input value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={inp} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
+              <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={{...inp,resize:"vertical",minHeight:72,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
             </div>
             <div>
               <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
@@ -2972,7 +2972,7 @@ function PromoFlow({ revenues }) {
                           );
                         })}
                       </td>
-                      <td {...td} style={{...td.style,maxWidth:200,color:D.textSub}}>{p.content||p.memo||"—"}</td>
+                      <td {...td} style={{...td.style,maxWidth:200,color:D.textSub,whiteSpace:"pre-wrap"}}>{p.content||p.memo||"—"}</td>
                       <td {...td} style={{...td.style,minWidth:130}}>
                         <div style={{display:"flex",flexDirection:"column",gap:3}}>
                           {(p.files||[]).map((f,i)=>(
@@ -3033,7 +3033,7 @@ function PromoFlow({ revenues }) {
                 {promo.start_date} ~ {promo.end_date}
               </div>
               {(promo.content||promo.memo)&&(
-                <div style={{color:D.text,fontSize:11,marginBottom:4,wordBreak:"break-all"}}>{promo.content||promo.memo}</div>
+                <div style={{color:D.text,fontSize:11,marginBottom:4,wordBreak:"break-all",whiteSpace:"pre-wrap"}}>{promo.content||promo.memo}</div>
               )}
               {(promo.files||[]).map((f,i)=>(
                 <div key={i} style={{fontSize:10,color:D.textMeta}}>📎 {f.name}</div>
