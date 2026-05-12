@@ -1439,9 +1439,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               </div>
             )}
           </div>
-          {getPeriodLabel(period)&&(
-            <div style={{fontSize:10,color:D.textMeta,paddingLeft:2}}>{getPeriodLabel(period)}</div>
-          )}
+          <div style={{fontSize:10,color:D.textMeta,paddingLeft:2,minHeight:14,lineHeight:"14px"}}>
+            {getPeriodLabel(period)||""}
+          </div>
         </div>
         <button onClick={onRefresh}
           style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:7,
@@ -1535,8 +1535,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   color:chSort.key===k?"#fff":D.textSub,
                   border:`1px solid ${chSort.key===k?D.black:D.border}`,
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",
-                  fontWeight:chSort.key===k?600:400}}>
-                {l}{chSort.key===k?" ↓":""}
+                  fontWeight:600,minWidth:36,boxSizing:"border-box"}}>
+                {l}
               </button>
             ))}
           </div>
@@ -1548,17 +1548,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             const up=pct>=0;
             return <span style={{fontSize:10,fontWeight:700,color:D.black,marginLeft:3}}>{up?"▲":"▼"}{Math.abs(pct).toFixed(1)}%</span>;
           };
+          const hasRet=!["yd","7d"].includes(period);
           const cols=[
-            {key:"name",   label:"판매처", left:true,  val:c=>c.name},
-            {key:"share",  label:"점유율", val:c=>parseFloat(c.share)},
-            {key:"revenue",label:"매출",   val:c=>c.revenue},
-            {key:"cmp",    label:"동기간 비교", val:c=>0},
-            {key:"shipped",label:"배송",   val:c=>c.shipped},
-            ...(!["yd","7d"].includes(period)?[
-              {key:"returned",label:"반품",  val:c=>c.returned},
-              {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
+            {key:"name",   label:"판매처",     left:true, val:c=>c.name,               w:hasRet?"22%":"26%"},
+            {key:"share",  label:"점유율",                val:c=>parseFloat(c.share),  w:hasRet?"8%":"9%"},
+            {key:"revenue",label:"매출",                  val:c=>c.revenue,            w:hasRet?"15%":"18%"},
+            {key:"cmp",    label:"동기간 비교",            val:c=>0,                    w:hasRet?"14%":"17%"},
+            {key:"shipped",label:"배송",                  val:c=>c.shipped,            w:hasRet?"8%":"10%"},
+            ...(hasRet?[
+              {key:"returned",label:"반품",               val:c=>c.returned,           w:"8%"},
+              {key:"rate",   label:"반품률",              val:c=>c.shipped>0?c.returned/c.shipped:0, w:"9%"},
             ]:[]),
-            {key:"aov",    label:"객단가", val:c=>c.avgOrderValue||0, tooltip:"온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다."},
+            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"16%":"20%", tooltip:"온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다."},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
@@ -1576,15 +1577,16 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           });
           return (
             <div style={{minHeight:300,overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
+              <colgroup>{cols.map(({key,w})=><col key={key} style={{width:w}}/>)}</colgroup>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
                 {cols.map(({key,label,left,tooltip})=>(
                   <th key={key} onClick={key!=="cmp"?()=>setChSort({key,dir:"desc"}):undefined}
                     style={{padding:"7px 9px",textAlign:left?"left":"right",
                     color:chSort.key===key?D.black:D.textMeta,
-                    fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap",
+                    fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                     cursor:key!=="cmp"?"pointer":"default"}}>
-                    {label}{chSort.key===key?" ↓":""}
+                    {label}
                     {tooltip&&<InfoTip text={tooltip}><span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400,cursor:"default"}}>ⓘ</span></InfoTip>}
                   </th>
                 ))}
@@ -1598,7 +1600,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       background:c.isSubRow?"#faf8ff":"transparent",
                       opacity:c.isSubRow?0.85:1}}>
                       <td style={{padding:"7px 9px",fontWeight:c.isSubRow?400:600,
-                        paddingLeft:c.isSubRow?20:9,color:c.isSubRow?D.textSub:D.black}}>
+                        paddingLeft:c.isSubRow?20:9,color:c.isSubRow?D.textSub:D.black,
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         {isOffline&&hasBd&&(
                           <button onClick={()=>setOfflineExpanded(v=>!v)}
                             style={{marginRight:5,background:"none",border:`1px solid ${D.border}`,
@@ -1608,16 +1611,16 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         {c.name}
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share||"—"}%</td>
-                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
                       <td style={{textAlign:"right",padding:"7px 9px"}}>
                         {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
-                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
-                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
+                      {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
+                      {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
                         {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
                     </tr>
                   );
                 })}
@@ -1627,8 +1630,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWon(stats.totalRevenue)}</td>
                   <td/>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                  {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalReturned.toLocaleString()}</td>}
-                  {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>}
+                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalReturned.toLocaleString()}</td>}
+                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>}
                   <td/>
                 </tr>
               </tbody>
