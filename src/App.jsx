@@ -2531,23 +2531,9 @@ function LogisticsFlow({ orders, stocks, ts }) {
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredTableOrders=useMemo(()=>filterByDate(orders,"order_date",tablePeriod,"",""),[orders,tablePeriod]);
-  const filteredTableStocks=useMemo(()=>{
-    // 같은 상품이 여러 배치로 업로드된 경우 최신 배치만 합산 (더블링 방지)
-    const latestDate={};
-    stocks.forEach(r=>{
-      const k=r.product_name||"미분류";
-      if(!latestDate[k]||r.upload_date>latestDate[k]) latestDate[k]=r.upload_date;
-    });
-    const prodQty={};
-    stocks.forEach(r=>{
-      const k=r.product_name||"미분류";
-      if(r.upload_date===latestDate[k]){
-        if(!prodQty[k]) prodQty[k]={product_name:k,qty:0,upload_date:latestDate[k]};
-        prodQty[k].qty+=(r.qty||0);
-      }
-    });
-    return Object.values(prodQty);
-  },[stocks]);
+  const filteredTableStocks=useMemo(()=>
+    filterByDate(stocks,"upload_date",tablePeriod,"","")
+  ,[stocks,tablePeriod]);
 
 
   const PBtn=({k,l})=>(
