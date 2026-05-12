@@ -1006,18 +1006,18 @@ function getPriorPeriod(period,customStart,customEnd){
 
 function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
-  const [period,setPeriod]=useState("7d");
+  const [period,setPeriod]=useState("yd");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [deleteAll,setDeleteAll]=useState(false);
-  const [shippingPeriod,setShippingPeriod]=useState("yd");
-  const [returnPeriod,setReturnPeriod]=useState("yd");
+  const [shippingPeriod,setShippingPeriod]=useState("1m");
+  const [returnPeriod,setReturnPeriod]=useState("1m");
   const [rankBestPeriod,setRankBestPeriod]=useState("yd");
   const [rankBestChannel,setRankBestChannel]=useState("전체");
   const [rankInfoOpen,setRankInfoOpen]=useState(false);
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
-  const [rankWorstPeriod,setRankWorstPeriod]=useState("7d");
+  const [rankWorstPeriod,setRankWorstPeriod]=useState("1m");
   const [rankWorstChannel,setRankWorstChannel]=useState("전체");
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
