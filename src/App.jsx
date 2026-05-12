@@ -2781,7 +2781,7 @@ function PromoFlow({ revenues }) {
     const end=new Date(viewEnd);
     while(cur<=end){
       const key=cur.toISOString().slice(0,10);
-      byDate[key]={date:key.slice(5),...Object.fromEntries(PROMO_PLATFORMS.map(p=>[p,null]))};
+      byDate[key]={date:key.slice(5),fullDate:key,...Object.fromEntries(PROMO_PLATFORMS.map(p=>[p,null]))};
       cur.setDate(cur.getDate()+1);
     }
     // 실제 매출 데이터 채우기
@@ -3129,7 +3129,39 @@ function PromoFlow({ revenues }) {
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
               <XAxis dataKey="date" tick={{fill:D.textMeta,fontSize:9}}/>
               <YAxis tick={{fill:D.textMeta,fontSize:9}} tickFormatter={v=>v>=10000?(v/10000).toFixed(0)+"만":v}/>
-              <Tooltip formatter={(v,n)=>[`₩${v.toLocaleString()}`,n]}/>
+              <Tooltip content={({active,payload})=>{
+                if(!active||!payload?.length) return null;
+                const fullDate=payload[0]?.payload?.fullDate||"";
+                const label=payload[0]?.payload?.date||"";
+                const activePromos=promos.filter(p=>
+                  p.start_date.slice(0,10)<=fullDate&&p.end_date.slice(0,10)>=fullDate
+                );
+                return (
+                  <div style={{background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
+                    padding:"10px 14px",fontSize:11,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180}}>
+                    <div style={{fontWeight:600,marginBottom:6,color:D.text}}>{fullDate||label}</div>
+                    {payload.filter(p=>p.value!=null).map((p,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                        <div style={{width:10,height:3,background:p.stroke,borderRadius:2,flexShrink:0}}/>
+                        <span style={{color:D.textSub,flex:1}}>{p.name}</span>
+                        <span style={{fontWeight:600}}>₩{(p.value||0).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    {activePromos.length>0&&(
+                      <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${D.border}`}}>
+                        <div style={{fontSize:9,color:D.textMeta,marginBottom:4,letterSpacing:"0.05em"}}>진행 중인 프로모션</div>
+                        {activePromos.map(p=>(
+                          <div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
+                            <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
+                            <span style={{color:D.textSub,fontSize:10}}>{p.platform}</span>
+                            <span style={{fontWeight:600,fontSize:10,marginLeft:2}}>{p.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }}/>
               <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
               {PROMO_PLATFORMS.map(p=>(
                 <Line key={p} type="monotone" dataKey={p} name={p}
