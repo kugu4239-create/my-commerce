@@ -580,15 +580,10 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
 
-  // 입고는 기간 필터 없이 최신 데이터만 사용 (현재 재고 현황)
+  // 입고: 기간 내 upload_date 기준으로 필터링 후 상품별 수량 합산
   const filteredStocks = useMemo(() => {
-    const latest = {};
-    stockRows.forEach(r => {
-      const key = (r.product_name||"") + "__" + (r.option_name||"");
-      if (!latest[key] || r.upload_date > latest[key].upload_date) latest[key] = r;
-    });
-    return Object.values(latest);
-  }, [stockRows]);
+    return filterByDate(stockRows, "upload_date", period, customStart, customEnd);
+  }, [stockRows, period, customStart, customEnd]);
 
   const data = useMemo(() => {
     const prodMap = {};
