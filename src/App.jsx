@@ -1599,9 +1599,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         {isOffline&&hasBd&&(
                           <button onClick={()=>setOfflineExpanded(v=>!v)}
-                            style={{marginRight:5,background:"none",border:`1px solid ${D.border}`,
-                              borderRadius:3,padding:"0 4px",fontSize:10,cursor:"pointer",
-                              color:D.textMeta}}>{offlineExpanded?"▲":"▼"}</button>
+                            style={{marginRight:5,background:"none",border:"none",
+                              padding:"0 2px",fontSize:10,cursor:"pointer",
+                              color:D.textMeta}}>{offlineExpanded?"▾":"▸"}</button>
                         )}
                         {c.name}
                       </td>
