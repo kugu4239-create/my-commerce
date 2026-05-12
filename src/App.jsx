@@ -5157,25 +5157,26 @@ const COMPARE_CHANNELS=["자사몰","29CM","무신사","오프라인 스토어"]
 function RevenueSankeyChart({periods,svgW}){
   const [hoveredCh,setHoveredCh]=useState(null);
   const [tooltip,setTooltip]=useState(null);
-  const SVG_H=500,PAD_T=32,PAD_B=48,PAD_H=24,NODE_W=42,GAP=5,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const SVG_H=500,PAD_T=32,PAD_B=48,PAD_H=24,NODE_W=42,GAP=4,AVAIL_H=SVG_H-PAD_T-PAD_B;
+
+  // 전체 기간 중 최대 총매출로 통일 스케일 계산 (세로 = 절대 매출량)
   const maxTotal=Math.max(...periods.map(p=>p.total),1);
+  const heightScale=AVAIL_H/maxTotal;
 
   const cols=useMemo(()=>periods.map((p,pi)=>{
     const colX=periods.length===1?(svgW-NODE_W)/2
       :PAD_H+pi*(svgW-2*PAD_H-NODE_W)/(periods.length-1);
-    const colH=(p.total/maxTotal)*AVAIL_H;
-    const activeCount=COMPARE_CHANNELS.filter(ch=>(p.byChannel[ch]||0)>0).length;
-    const gaps=Math.max(0,activeCount-1)*GAP;
-    let y=PAD_T+(AVAIL_H-colH)/2;
+    // 모든 컬럼 상단 정렬, 채널 위→아래 순서 고정
+    let y=PAD_T;
     const nodes=COMPARE_CHANNELS.map(ch=>{
       const amt=p.byChannel[ch]||0;
-      const h=p.total>0?(amt/p.total)*(colH-gaps):0;
-      const n={ch,amt,x:colX,y:amt>0?y:0,h:Math.max(0,h),color:COMPARE_CH_COLOR[ch]};
+      const h=Math.max(0,amt*heightScale);
+      const n={ch,amt,x:colX,y:amt>0?y:0,h,color:COMPARE_CH_COLOR[ch]};
       if(amt>0) y+=h+GAP;
       return n;
     });
     return{...p,colX,nodes};
-  }),[periods,svgW,maxTotal]);
+  }),[periods,svgW,heightScale]);
 
   const links=useMemo(()=>{
     const res=[];
