@@ -5259,7 +5259,7 @@ export default function App() {
   const nav=[
     {key:"dashboard",label:"대시보드"},
     {key:"flow",label:"물류 플로우"},
-    {key:"promo",label:"프로모션"},
+    {key:"promo",label:"프로모션 플로우"},
     {key:"input",label:"데이터 입력"},
   ];
 
