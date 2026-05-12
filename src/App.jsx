@@ -3393,7 +3393,7 @@ function PromoFlow({ revenues }) {
                           <div key={i} style={{display:"flex",alignItems:"center",gap:3}}>
                             <a href={f.data} download={f.name}
                               style={{fontSize:12,color:D.textSub,textDecoration:"none",
-                                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:100,flex:1}}
+                                wordBreak:"break-all",flex:1}}
                               title={f.name}>📎 {f.name}</a>
                             <button onClick={()=>removeFileFromPromo(p.id,i)}
                               style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",
