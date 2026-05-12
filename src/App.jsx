@@ -3096,7 +3096,7 @@ function RevenueForm({ onUpdate }) {
         amount:Number(String(r[amtCol]||"0").replace(/[^0-9.-]/g,""))||0,
         order_count:ordCol?Number(r[ordCol]||0):0,
         refund_amount:refAmtCol?Math.abs(Number(String(r[refAmtCol]||"0").replace(/[^0-9.-]/g,""))):0,
-        refund_count:refCntCol?Number(r[refCntCol]||0):0,
+        refund_count:refCntCol?Math.abs(Number(r[refCntCol]||0)):0,
       }));
       // 기존 데이터와 겹치는 (date, channel) 쌍 확인
       const db=await getSupabase();
