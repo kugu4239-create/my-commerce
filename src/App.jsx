@@ -1060,7 +1060,7 @@ function getPriorPeriod(period,customStart,customEnd){
 
 function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
-  const [period,setPeriod]=useState("yd");
+  const [period,setPeriod]=useState("1m");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [deleteAll,setDeleteAll]=useState(false);
