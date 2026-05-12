@@ -1382,10 +1382,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap"}}>
         <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
-        <KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
+        {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
           accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}
-          onClick={()=>setKpiModal("returnRate")}/>
+          onClick={()=>setKpiModal("returnRate")}/>}
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
       </div>
 
@@ -1481,8 +1481,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             {key:"revenue",label:"매출",   val:c=>c.revenue},
             {key:"cmp",    label:"동기간 비교", val:c=>0},
             {key:"shipped",label:"배송",   val:c=>c.shipped},
-            {key:"returned",label:"반품",  val:c=>c.returned},
-            {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
+            ...(!["yd","7d"].includes(period)?[
+              {key:"returned",label:"반품",  val:c=>c.returned},
+              {key:"rate",   label:"반품률", val:c=>c.shipped>0?c.returned/c.shipped:0},
+            ]:[]),
             {key:"aov",    label:"객단가", val:c=>c.avgOrderValue||0, tooltip:"온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다."},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
