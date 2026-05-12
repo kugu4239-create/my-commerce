@@ -808,17 +808,19 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
-  // 채널별 unique 주문번호 집계 (order_id = "oid||prod||opt" 형식)
+  // 채널별 unique 주문번호 집계 — 배송 완료 건만, order_id = "oid||prod||opt" 형식
   const chOrderIds={};
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(r.status==="배송") byChannel[ch].shipped++;
     if(r.status==="반품") byChannel[ch].returned++;
+    if(r.status!=="배송") return; // 객단가 분모: 배송 완료 주문만
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
-    // order_id = "oid||prod||opt" → oid 부분만 추출
-    const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
-    if(oid) chOrderIds[ch].add(oid);
+    // oid||prod||opt → oid만 추출; 없으면 전체 key를 surrogate로
+    const raw=(r.order_id||"");
+    const oid=raw.split("||")[0];
+    chOrderIds[ch].add(oid||raw); // oid 비어있으면 raw(=||prod||opt) surrogate
   });
   // 판교점+일산점 → 오프라인 스토어 합산
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
@@ -867,9 +869,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
     c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
-    const uq=(chOrderIds[c.name]||new Set()).size;
+    const uq=(chOrderIds[c.name]||new Set()).size||c.shipped;
     c.uniqueOrders=uq;
-    c.avgOrderValue=uq>0?Math.round(c.revenue/uq):0;
+    c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
   });
 
   // 월별 배송/반품
