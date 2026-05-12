@@ -889,7 +889,12 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       const orderMap=chOrderAmt[c.name]||{};
       const totalAmt=Object.values(orderMap).reduce((s,a)=>s+a,0);
       const orderCount=Object.keys(orderMap).length||uq;
-      c.avgOrderValue=orderCount>0&&totalAmt>0?Math.round(totalAmt/orderCount):0;
+      if(orderCount>0&&totalAmt>0){
+        c.avgOrderValue=Math.round(totalAmt/orderCount);
+      } else {
+        // 주문 amount 미입력 시 revenues CSV 매출 기반 폴백
+        c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
+      }
     }
   });
 
@@ -3471,7 +3476,7 @@ function EasyAdminUploader({ onUpdate }) {
           const csCol      = findCol("CS","cs처리","cs상태","cs") || f.cs;
           const statusCol  = findCol("상태","status") || f.status;
           const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
-          const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","금액","amount","price") || f.revenue;
+          const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","판매가","금액","amount","price") || f.revenue;
 
           if(!orderIdCol) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
           if(!dateCol)    throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
