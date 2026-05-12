@@ -1541,10 +1541,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{(c.returned||0).toLocaleString()}</td>
-                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
+                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{(c.returned||0).toLocaleString()}</td>}
+                      {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,
                         color:(c.shipped>0&&(c.returned/c.shipped)>0.1)?D.red:D.textSub}}>
-                        {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>
+                        {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
                     </tr>
                   );
@@ -1555,8 +1555,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWon(stats.totalRevenue)}</td>
                   <td/>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>
-                  <td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>
+                  {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>{stats.totalReturned.toLocaleString()}</td>}
+                  {!["yd","7d"].includes(period)&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>}
                   <td/>
                 </tr>
               </tbody>
