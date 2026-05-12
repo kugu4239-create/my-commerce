@@ -1973,6 +1973,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             byCh[ch].refund+=(r.refund_amount||0);
             byCh[ch].count++;
           });
+          // 오프라인 스토어: store_sales CSV 기반
+          if(filteredStoreSales.length){
+            if(!byCh["오프라인 스토어"]) byCh["오프라인 스토어"]={revenue:0,refund:0,count:0};
+            filteredStoreSales.forEach(r=>{
+              if(r.status==="배송"){ byCh["오프라인 스토어"].revenue+=(r.amount||0); byCh["오프라인 스토어"].count++; }
+              else if(r.status==="반품") byCh["오프라인 스토어"].refund+=(r.amount||0);
+            });
+          }
           const chRows=Object.entries(byCh).sort((a,b)=>(b[1].revenue-b[1].refund)-(a[1].revenue-a[1].refund));
           // by date (last 30 entries or all)
           const byDate={};
