@@ -566,6 +566,7 @@ const SVG_W = 1400;
 function ProductSankey({ stockRows, orderRows, period="3m", customStart, customEnd, limit=20 }) {
   const containerRef = useRef(null);
   const [ctnSize, setCtnSize] = useState({w: window.innerWidth, h: window.innerHeight});
+  const [sel, setSel] = useState(null); // { type:"prod"|"ch"|"ret"|"exch", key:string }
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(([e]) => {
@@ -579,15 +580,15 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     return filterByDate(orderRows, "order_date", period, customStart, customEnd);
   }, [orderRows, period, customStart, customEnd]);
 
+  // 입고는 기간 필터 없이 최신 데이터만 사용 (현재 재고 현황)
   const filteredStocks = useMemo(() => {
-    const periodRows = filterByDate(stockRows, "upload_date", period, customStart, customEnd);
     const latest = {};
-    periodRows.forEach(r => {
+    stockRows.forEach(r => {
       const key = (r.product_name||"") + "__" + (r.option_name||"");
       if (!latest[key] || r.upload_date > latest[key].upload_date) latest[key] = r;
     });
     return Object.values(latest);
-  }, [stockRows, period, customStart, customEnd]);
+  }, [stockRows]);
 
   const data = useMemo(() => {
     const prodMap = {};
@@ -596,6 +597,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
       if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, exchanged:0, byChannel:{} };
       prodMap[key].stock += (r.qty||0);
     });
+    // 주문 날짜 범위 수집 (상품별)
+    const prodDates = {};
     filteredOrders.forEach(r => {
       const key = r.product_name || "미분류";
       const ch = r.channel || "미분류";
@@ -604,6 +607,11 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
       if (r.status==="배송")  { prodMap[key].shipped++;   prodMap[key].byChannel[ch].shipped++; }
       if (r.status==="반품")  { prodMap[key].returned++;  prodMap[key].byChannel[ch].returned++; }
       if (r.status==="교환")  { prodMap[key].exchanged++; prodMap[key].byChannel[ch].exchanged++; }
+      if (!prodDates[key]) prodDates[key] = { min: r.order_date, max: r.order_date };
+      else {
+        if (r.order_date < prodDates[key].min) prodDates[key].min = r.order_date;
+        if (r.order_date > prodDates[key].max) prodDates[key].max = r.order_date;
+      }
     });
     const prods = Object.values(prodMap)
       .filter(p => p.shipped>0||p.stock>0)
@@ -612,15 +620,23 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     const chanMap = {};
     filteredOrders.forEach(r => {
       const ch = r.channel||"미분류";
-      if (!chanMap[ch]) chanMap[ch] = { name:ch, shipped:0, returned:0, exchanged:0 };
-      if (r.status==="배송") chanMap[ch].shipped++;
-      if (r.status==="반품") chanMap[ch].returned++;
-      if (r.status==="교환") chanMap[ch].exchanged++;
+      if (!chanMap[ch]) chanMap[ch] = { name:ch, shipped:0, returned:0, exchanged:0, byProd:{} };
+      if (!chanMap[ch].byProd[r.product_name||"미분류"]) chanMap[ch].byProd[r.product_name||"미분류"] = { shipped:0, returned:0, exchanged:0 };
+      if (r.status==="배송") { chanMap[ch].shipped++; chanMap[ch].byProd[r.product_name||"미분류"].shipped++; }
+      if (r.status==="반품") { chanMap[ch].returned++; chanMap[ch].byProd[r.product_name||"미분류"].returned++; }
+      if (r.status==="교환") { chanMap[ch].exchanged++; chanMap[ch].byProd[r.product_name||"미분류"].exchanged++; }
     });
     const channels = Object.values(chanMap).sort((a,b)=>b.shipped-a.shipped);
     const totalReturned  = filteredOrders.filter(r=>r.status==="반품").length;
     const totalExchanged = filteredOrders.filter(r=>r.status==="교환").length;
-    return { prods, channels, totalReturned, totalExchanged };
+    // 반품/교환 채널별 분포
+    const retByCh = {}, exchByCh = {};
+    filteredOrders.forEach(r => {
+      const ch = r.channel||"미분류";
+      if (r.status==="반품") retByCh[ch] = (retByCh[ch]||0)+1;
+      if (r.status==="교환") exchByCh[ch] = (exchByCh[ch]||0)+1;
+    });
+    return { prods, channels, totalReturned, totalExchanged, prodDates, retByCh, exchByCh };
   }, [filteredStocks, filteredOrders, limit]);
 
   if (!data.prods.length) return (
@@ -629,7 +645,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
     </div>
   );
 
-  const { prods, channels, totalReturned, totalExchanged } = data;
+  const { prods, channels, totalReturned, totalExchanged, prodDates, retByCh, exchByCh } = data;
   const n = prods.length;
 
   // ── 레이아웃 상수 ──
@@ -740,10 +756,12 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         {prods.map((p,i)=>{
           const y=yPos[i]; const h=prodH[i]; const col=D.SANKEY[i%D.SANKEY.length];
           const mid=h/2;
+          const isSelected = sel?.type==="prod"&&sel.key===p.name;
           return (
-            <g key={p.name}>
-              <rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill={col} opacity={0.09}/>
+            <g key={p.name} style={{cursor:"pointer"}} onClick={()=>setSel(isSelected?null:{type:"prod",key:p.name})}>
+              <rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill={col} opacity={isSelected?0.25:0.09}/>
               <rect x={COLS_X[0]} y={y} width={3} height={h} rx={1} fill={col}/>
+              {isSelected&&<rect x={COLS_X[0]} y={y} width={NODE_W} height={h} rx={3} fill="none" stroke={col} strokeWidth={1.5}/>}
               <text x={COLS_X[0]+12} y={y+mid-(h>40?10:0)} dominantBaseline="middle"
                 fill={D.black} fontSize={lblFs}>
                 {p.name.length>22?p.name.slice(0,22)+"…":p.name}
@@ -766,10 +784,12 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
             const y=ry; ry+=h+ROW_GAP;
             const col=D.SANKEY[(ci+5)%D.SANKEY.length];
             chanYOf[ch.name]=y+h/2;
+            const isSelected = sel?.type==="ch"&&sel.key===ch.name;
             return (
-              <g key={ch.name}>
-                <rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill={col} opacity={0.12}/>
+              <g key={ch.name} style={{cursor:"pointer"}} onClick={()=>setSel(isSelected?null:{type:"ch",key:ch.name})}>
+                <rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill={col} opacity={isSelected?0.28:0.12}/>
                 <rect x={COLS_X[1]} y={y} width={4} height={h} rx={2} fill={col}/>
+                {isSelected&&<rect x={COLS_X[1]} y={y} width={NODE_W} height={h} rx={4} fill="none" stroke={col} strokeWidth={1.5}/>}
                 <text x={COLS_X[1]+12} y={y+h/2-(h>40?10:0)} dominantBaseline="middle"
                   fill={col} fontSize={lblFs}>{ch.name}</text>
                 {h>=40&&<text x={COLS_X[1]+12} y={y+h/2+lblFs+2} dominantBaseline="middle"
@@ -780,25 +800,78 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
         })()}
 
         {/* 컬럼2: 반품 블록 */}
-        {totalReturned>0&&(
-          <g>
-            <rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill={D.red} opacity={0.1}/>
-            <rect x={COLS_X[2]} y={retBlockY} width={4} height={retBlockH} rx={2} fill={D.red}/>
-            <text x={COLS_X[2]+12} y={retCenterY} dominantBaseline="middle"
-              fill={D.red} fontSize={lblFs}>반품 {totalReturned}건</text>
-          </g>
-        )}
+        {totalReturned>0&&(()=>{
+          const isSelected = sel?.type==="ret";
+          return (
+            <g style={{cursor:"pointer"}} onClick={()=>setSel(isSelected?null:{type:"ret",key:"반품"})}>
+              <rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill={D.red} opacity={isSelected?0.22:0.1}/>
+              <rect x={COLS_X[2]} y={retBlockY} width={4} height={retBlockH} rx={2} fill={D.red}/>
+              {isSelected&&<rect x={COLS_X[2]} y={retBlockY} width={NODE_W} height={retBlockH} rx={4} fill="none" stroke={D.red} strokeWidth={1.5}/>}
+              <text x={COLS_X[2]+12} y={retCenterY} dominantBaseline="middle"
+                fill={D.red} fontSize={lblFs}>반품 {totalReturned}건</text>
+            </g>
+          );
+        })()}
 
         {/* 컬럼2: 교환 블록 */}
-        {totalExchanged>0&&(
-          <g>
-            <rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill={D.amber} opacity={0.12}/>
-            <rect x={COLS_X[2]} y={exchBlockY} width={4} height={exchBlockH} rx={2} fill={D.amber}/>
-            <text x={COLS_X[2]+12} y={exchCenterY} dominantBaseline="middle"
-              fill={D.amber} fontSize={lblFs}>교환 {totalExchanged}건</text>
-          </g>
-        )}
+        {totalExchanged>0&&(()=>{
+          const isSelected = sel?.type==="exch";
+          return (
+            <g style={{cursor:"pointer"}} onClick={()=>setSel(isSelected?null:{type:"exch",key:"교환"})}>
+              <rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill={D.amber} opacity={isSelected?0.28:0.12}/>
+              <rect x={COLS_X[2]} y={exchBlockY} width={4} height={exchBlockH} rx={2} fill={D.amber}/>
+              {isSelected&&<rect x={COLS_X[2]} y={exchBlockY} width={NODE_W} height={exchBlockH} rx={4} fill="none" stroke={D.amber} strokeWidth={1.5}/>}
+              <text x={COLS_X[2]+12} y={exchCenterY} dominantBaseline="middle"
+                fill={D.amber} fontSize={lblFs}>교환 {totalExchanged}건</text>
+            </g>
+          );
+        })()}
       </svg>
+
+      {/* 선택 노드 세부 정보 패널 */}
+      {sel&&(()=>{
+        let title="", rows=[], note=null;
+        if (sel.type==="prod") {
+          const p = prods.find(x=>x.name===sel.key);
+          if (!p) return null;
+          const dt = prodDates[sel.key];
+          title = p.name;
+          note = dt ? `주문 데이터: ${dt.min} ~ ${dt.max}` : "주문 데이터 없음";
+          rows = Object.entries(p.byChannel)
+            .sort((a,b)=>b[1].shipped-a[1].shipped)
+            .map(([ch,v])=>({ label:ch, cols:[`배송 ${v.shipped}`, v.returned?`반품 ${v.returned}`:"", v.exchanged?`교환 ${v.exchanged}`:""].filter(Boolean).join(" · ") }));
+        } else if (sel.type==="ch") {
+          const ch = channels.find(x=>x.name===sel.key);
+          if (!ch) return null;
+          title = ch.name;
+          rows = Object.entries(ch.byProd||{})
+            .sort((a,b)=>b[1].shipped-a[1].shipped)
+            .slice(0,15)
+            .map(([prod,v])=>({ label:prod, cols:[`배송 ${v.shipped}`, v.returned?`반품 ${v.returned}`:"", v.exchanged?`교환 ${v.exchanged}`:""].filter(Boolean).join(" · ") }));
+        } else if (sel.type==="ret") {
+          title = "반품 채널별 분포";
+          rows = Object.entries(retByCh).sort((a,b)=>b[1]-a[1]).map(([ch,cnt])=>({ label:ch, cols:`${cnt}건 (${(cnt/totalReturned*100).toFixed(1)}%)` }));
+        } else if (sel.type==="exch") {
+          title = "교환 채널별 분포";
+          rows = Object.entries(exchByCh).sort((a,b)=>b[1]-a[1]).map(([ch,cnt])=>({ label:ch, cols:`${cnt}건 (${(cnt/totalExchanged*100).toFixed(1)}%)` }));
+        }
+        return (
+          <div style={{margin:"12px 0 0",padding:"14px 18px",background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,fontSize:13}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:700,color:D.black,fontSize:14}}>{title}</span>
+              {note&&<span style={{color:D.primary,fontSize:12}}>{note}</span>}
+              <button onClick={()=>setSel(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:16,lineHeight:1,padding:0}}>✕</button>
+            </div>
+            {rows.length===0&&<div style={{color:D.textMeta,fontSize:12}}>데이터 없음</div>}
+            {rows.map((r,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<rows.length-1?`1px solid ${D.border}`:"none",gap:12}}>
+                <span style={{color:D.textSub,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
+                <span style={{color:D.black,whiteSpace:"nowrap"}}>{r.cols}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
