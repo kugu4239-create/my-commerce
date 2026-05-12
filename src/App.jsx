@@ -2733,7 +2733,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
 // ─────────────────────────────────────────────
 // PROMO FLOW PAGE
 // ─────────────────────────────────────────────
-const PROMO_PLATFORMS=["자사몰","29CM","무신사"];
+const PROMO_PLATFORMS=["자사몰","29CM","무신사","오프라인 스토어"];
 
 function PromoFlow({ revenues }) {
   const [promos,setPromos]=useState(getPromos);
