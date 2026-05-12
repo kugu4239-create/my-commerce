@@ -1554,7 +1554,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               {key:"returned",label:"반품",               val:c=>c.returned,           w:"8%"},
               {key:"rate",   label:"반품률",              val:c=>c.shipped>0?c.returned/c.shipped:0, w:"9%"},
             ]:[]),
-            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"16%":"20%", tooltip:"온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다."},
+            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"16%":"20%", tooltip:"개발 중인 지표입니다.\n온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다.", wip:true},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
@@ -1575,13 +1575,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
               <colgroup>{cols.map(({key,w})=><col key={key} style={{width:w}}/>)}</colgroup>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
-                {cols.map(({key,label,left,tooltip})=>(
+                {cols.map(({key,label,left,tooltip,wip})=>(
                   <th key={key} onClick={key!=="cmp"?()=>setChSort({key,dir:"desc"}):undefined}
                     style={{padding:"7px 9px",textAlign:left?"left":"right",
                     color:chSort.key===key?D.black:D.textMeta,
                     fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                     cursor:key!=="cmp"?"pointer":"default"}}>
                     {label}
+                    {wip&&<span style={{marginLeft:4,fontSize:9,fontWeight:500,color:"#fff",background:"#bbb",borderRadius:3,padding:"1px 4px",verticalAlign:"middle"}}>개발중</span>}
                     {tooltip&&<InfoTip text={tooltip}><span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400,cursor:"default"}}>ⓘ</span></InfoTip>}
                   </th>
                 ))}
