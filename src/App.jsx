@@ -3483,7 +3483,7 @@ function EasyAdminUploader({ onUpdate }) {
 
           // 관리번호+상품명+옵션 기준 중복 합산
           const grouped={};
-          data.filter(r=>r[orderIdCol]).forEach(r=>{
+          data.filter(r=>r[orderIdCol]&&String(r[channelCol]||"").trim()!=="MERRYONOVERSEA").forEach(r=>{
             const oid=String(r[orderIdCol]).trim();
             const prod=String(r[productCol]||"").trim();
             const opt=String(r[optionCol]||"").trim();
