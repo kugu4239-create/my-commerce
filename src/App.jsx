@@ -1597,13 +1597,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       <td style={{padding:"7px 9px",fontWeight:c.isSubRow?400:600,
                         paddingLeft:c.isSubRow?20:9,color:c.isSubRow?D.textSub:D.black,
                         overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {c.name}
                         {isOffline&&hasBd&&(
                           <button onClick={()=>setOfflineExpanded(v=>!v)}
-                            style={{marginRight:5,background:"none",border:"none",
+                            style={{marginLeft:5,background:"none",border:"none",
                               padding:"0 2px",fontSize:10,cursor:"pointer",
                               color:D.textMeta}}>{offlineExpanded?"▾":"▸"}</button>
                         )}
-                        {c.name}
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share||"—"}%</td>
                       <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
