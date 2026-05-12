@@ -817,11 +817,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
-  const returnRate      = totalOrderCount>0?(totalRefundCount/totalOrderCount*100).toFixed(1):"0.0";
-
   // 이지어드민 CSV 기반 KPI
   const totalShipped  = orderRows.filter(r=>r.status==="배송").length;
   const totalReturned = orderRows.filter(r=>r.status==="반품").length;
+  const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
   const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
   // 판매처별 집계
