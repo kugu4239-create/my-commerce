@@ -2744,6 +2744,9 @@ function PromoFlow({ revenues }) {
   const [viewStart,setViewStart]=useState(twoMonthsAgo);
   const [viewEnd,setViewEnd]=useState(today);
 
+  const [hoveredPromo,setHoveredPromo]=useState(null);
+  const nowStr=new Date().toISOString().slice(0,16);
+  const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
   const updatePromos=data=>{savePromos(data);setPromos(data);};
   const addPromo=()=>{
     if(!form.name||!form.start_date||!form.end_date)return;
@@ -2886,14 +2889,17 @@ function PromoFlow({ revenues }) {
                   const l=datePct(promo.start_date);
                   const r=datePct(promo.end_date);
                   const w=Math.max(0.5,r-l);
+                  const ended=isEnded(promo);
                   return (
                     <div key={promo.id}
-                      title={`${promo.name}\n${promo.start_date} ~ ${promo.end_date}${promo.memo?"\n"+promo.memo:""}`}
+                      onMouseEnter={e=>{const rect=e.currentTarget.getBoundingClientRect();setHoveredPromo({promo,rect});}}
+                      onMouseLeave={()=>setHoveredPromo(null)}
                       style={{position:"absolute",left:`${l}%`,width:`${w}%`,height:"100%",
-                        background:chColor(plat),borderRadius:4,display:"flex",alignItems:"center",
+                        background:ended?"#aaa":chColor(plat),borderRadius:4,display:"flex",alignItems:"center",
                         padding:"0 6px",fontSize:10,color:"#fff",overflow:"hidden",
-                        boxSizing:"border-box",cursor:"pointer",minWidth:4}}>
-                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{promo.name}</span>
+                        boxSizing:"border-box",cursor:"pointer",minWidth:4,opacity:ended?0.6:1}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                        textDecoration:ended?"line-through":"none"}}>{promo.name}</span>
                     </div>
                   );
                 })}
@@ -2908,31 +2914,89 @@ function PromoFlow({ revenues }) {
             </div>
           );
         })}
-        {/* 프로모션 목록 */}
+        {/* 프로모션 목록 표 */}
         {promos.length>0&&(
           <div style={{marginTop:12,borderTop:`1px solid ${D.border}`,paddingTop:10}}>
-            <div style={{fontSize:10,color:D.textMeta,marginBottom:6}}>등록된 프로모션</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-              {promos.map(p=>(
-                <div key={p.id} style={{display:"flex",alignItems:"center",gap:4,
-                  background:D.surfaceAlt,borderRadius:4,padding:"3px 8px",fontSize:10}}>
-                  <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
-                  <span style={{color:D.textSub}}>{p.platform}</span>
-                  <span style={{fontWeight:600}}>{p.name}</span>
-                  <span style={{color:D.textMeta}}>{p.start_date}~{p.end_date}</span>
-                  {p.file&&(
-                    <a href={p.file.data} download={p.file.name}
-                      style={{color:D.textMeta,fontSize:11,textDecoration:"none",lineHeight:1}}
-                      title={p.file.name}>📎</a>
-                  )}
-                  <button onClick={()=>delPromo(p.id)}
-                    style={{background:"transparent",border:"none",color:D.textMeta,
-                      cursor:"pointer",padding:0,fontSize:11}}>✕</button>
-                </div>
-              ))}
-            </div>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:8}}>등록된 프로모션</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead>
+                <tr style={{background:D.surfaceAlt}}>
+                  {["채널","프로모션명","기간","상세 내용","첨부 파일",""].map(h=>(
+                    <th key={h} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
+                      color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:10,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {promos.map(p=>{
+                  const ended=isEnded(p);
+                  const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
+                    color:ended?D.textMeta:D.text,textDecoration:ended?"line-through":"none"}};
+                  return (
+                    <tr key={p.id}>
+                      <td {...td}>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}>
+                          <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
+                          {p.platform}
+                        </div>
+                      </td>
+                      <td {...td} style={{...td.style,fontWeight:600}}>{p.name}</td>
+                      <td {...td} style={{...td.style,whiteSpace:"nowrap",fontSize:10,color:D.textMeta,textDecoration:ended?"line-through":"none"}}>
+                        {p.start_date}<br/>{p.end_date}
+                      </td>
+                      <td {...td} style={{...td.style,maxWidth:200,color:D.textSub}}>{p.content||p.memo||"—"}</td>
+                      <td {...td}>
+                        {p.file?(
+                          <a href={p.file.data} download={p.file.name}
+                            style={{color:D.black,fontSize:11,textDecoration:"none",display:"flex",
+                              alignItems:"center",gap:3,whiteSpace:"nowrap"}}
+                            title={p.file.name}>
+                            📎 <span style={{fontSize:10,color:D.textMeta,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",display:"inline-block"}}>{p.file.name}</span>
+                          </a>
+                        ):"—"}
+                      </td>
+                      <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
+                        <button onClick={()=>delPromo(p.id)}
+                          style={{background:"transparent",border:"none",color:D.textMeta,
+                            cursor:"pointer",padding:0,fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+        {/* 호버 팝업 */}
+        {hoveredPromo&&(()=>{
+          const {promo,rect}=hoveredPromo;
+          const above=rect.bottom+140>window.innerHeight;
+          return (
+            <div style={{position:"fixed",left:Math.min(rect.left,window.innerWidth-260),
+              top:above?rect.top-8:rect.bottom+6,transform:above?"translateY(-100%)":"none",
+              zIndex:1000,background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
+              padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.13)",
+              minWidth:220,maxWidth:300,pointerEvents:"none",fontSize:11,lineHeight:1.6}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:chColor(promo.platform),flexShrink:0}}/>
+                <span style={{fontWeight:600,fontSize:12}}>{promo.name}</span>
+                <span style={{fontSize:10,color:D.textMeta,marginLeft:"auto"}}>{promo.platform}</span>
+              </div>
+              <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>
+                {promo.start_date} ~ {promo.end_date}
+              </div>
+              {(promo.content||promo.memo)&&(
+                <div style={{color:D.text,fontSize:11,marginBottom:4,wordBreak:"break-all"}}>{promo.content||promo.memo}</div>
+              )}
+              {promo.file&&(
+                <div style={{fontSize:10,color:D.textMeta}}>📎 {promo.file.name}</div>
+              )}
+              {isEnded(promo)&&(
+                <div style={{marginTop:5,fontSize:10,color:"#e55",fontWeight:600}}>종료된 프로모션</div>
+              )}
+            </div>
+          );
+        })()}
       </Card>
 
       {/* 기간별 플랫폼 매출 그래프 */}
