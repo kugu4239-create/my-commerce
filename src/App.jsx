@@ -881,7 +881,9 @@ const savePromos=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ─────────────────────────────────────────────
 function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 매출 입력 데이터 기반 KPI
-  const totalRevenue    = revenueRows.reduce((s,r)=>s+(r.amount||0)-(r.refund_amount||0),0);
+  const onlineRevenue   = revenueRows.reduce((s,r)=>s+(r.amount||0)-(r.refund_amount||0),0);
+  const offlineRevenue  = storeRows.reduce((s,r)=>r.status==="배송"?s+(r.amount||0):r.status==="반품"?s-(r.amount||0):s,0);
+  const totalRevenue    = onlineRevenue + offlineRevenue;
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
