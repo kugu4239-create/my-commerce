@@ -2740,13 +2740,37 @@ function PromoFlow({ revenues }) {
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
   const today=new Date().toISOString().slice(0,10);
-  const twoMonthsAgo=(()=>{const d=new Date();d.setMonth(d.getMonth()-2);return d.toISOString().slice(0,10);})();
-  const [viewStart,setViewStart]=useState(twoMonthsAgo);
-  const [viewEnd,setViewEnd]=useState(today);
+  const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
+  const [viewEnd,setViewEnd]=useState(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().slice(0,10);});
 
   const [hoveredPromo,setHoveredPromo]=useState(null);
   const [fileAddTarget,setFileAddTarget]=useState(null);
   const fileInputRef=useRef(null);
+  const [isDragging,setIsDragging]=useState(false);
+  const dragRef=useRef(null);
+  useEffect(()=>{
+    const onMove=e=>{
+      if(!dragRef.current) return;
+      const{startX,startVS,startVE,width}=dragRef.current;
+      const totalDays=(new Date(startVE)-new Date(startVS))/86400000;
+      const delta=Math.round(-(e.clientX-startX)/width*totalDays);
+      const s=new Date(startVS);s.setDate(s.getDate()+delta);
+      const en=new Date(startVE);en.setDate(en.getDate()+delta);
+      setViewStart(s.toISOString().slice(0,10));
+      setViewEnd(en.toISOString().slice(0,10));
+    };
+    const onUp=()=>{dragRef.current=null;setIsDragging(false);};
+    window.addEventListener("mousemove",onMove);
+    window.addEventListener("mouseup",onUp);
+    return()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);};
+  },[]);
+  const onDragStart=useCallback((e,w)=>{
+    if(e.button!==0) return;
+    e.preventDefault();
+    const width=w||e.currentTarget.getBoundingClientRect().width;
+    dragRef.current={startX:e.clientX,startVS:viewStart,startVE:viewEnd,width};
+    setIsDragging(true);
+  },[viewStart,viewEnd]);
   const [editingPromoId,setEditingPromoId]=useState(null);
   const [editPromoForm,setEditPromoForm]=useState({});
   const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||""});};
@@ -2896,6 +2920,8 @@ function PromoFlow({ revenues }) {
       {/* 플랫폼별 가로 캘린더 바 */}
       <Card style={{marginBottom:20}}>
         <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>플랫폼별 프로모션 일정</div>
+        <div onMouseDown={onDragStart}
+          style={{cursor:isDragging?"grabbing":"grab",userSelect:"none"}}>
         {/* 날짜 눈금 */}
         <div style={{position:"relative",height:16,marginBottom:4,paddingLeft:70}}>
           {[0,25,50,75,100].map(pct=>{
@@ -2905,6 +2931,10 @@ function PromoFlow({ revenues }) {
             return <span key={pct} style={{position:"absolute",left:`${pct}%`,transform:"translateX(-50%)",
               fontSize:9,color:D.textMeta}}>{label}</span>;
           })}
+          {(()=>{const tp=datePct(today);return tp>=0&&tp<=100?(
+            <span style={{position:"absolute",left:`${tp}%`,transform:"translateX(-50%)",
+              fontSize:9,color:D.primary,fontWeight:700}}>오늘</span>
+          ):null;})()}
         </div>
         {PROMO_PLATFORMS.map(plat=>{
           const bars=promos.filter(p=>p.platform===plat&&p.end_date>=viewStart&&p.start_date<=viewEnd)
@@ -2943,11 +2973,16 @@ function PromoFlow({ revenues }) {
                     </div>
                   );
                 })}
+                {(()=>{const tp=datePct(today);return tp>=0&&tp<=100?(
+                  <div style={{position:"absolute",left:`${tp}%`,top:0,bottom:0,width:1.5,
+                    background:"rgba(0,0,0,0.25)",pointerEvents:"none"}}/>
+                ):null;})()}
               </div>
               <div style={{width:20,flexShrink:0}}/>
             </div>
           );
         })}
+        </div>{/* end draggable */}
         {/* 프로모션 목록 표 */}
         {promos.length>0&&(
           <div style={{marginTop:12,borderTop:`1px solid ${D.border}`,paddingTop:10}}>
@@ -3124,6 +3159,8 @@ function PromoFlow({ revenues }) {
       <Card>
         <div style={{fontWeight:600,fontSize:12,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
         {revenueData.length>0&&revenues.some(r=>r.date>=viewStart&&r.date<=viewEnd)?(
+          <div style={{position:"relative"}} onMouseDown={onDragStart}>
+          {isDragging&&<div style={{position:"absolute",inset:0,zIndex:10,cursor:"grabbing"}}/>}
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
@@ -3169,6 +3206,7 @@ function PromoFlow({ revenues }) {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          </div>
         ):(
           <div style={{textAlign:"center",padding:40,color:D.textMeta,fontSize:12}}>
             해당 기간에 매출 데이터가 없습니다
