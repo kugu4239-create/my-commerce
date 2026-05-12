@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
@@ -397,7 +398,26 @@ function DateRange({ start, end, onStart, onEnd }) {
     </div>
   );
 }
-function DropZone({ onFile, label="CSV 드래그 또는 클릭", fileName="" }) {
+const parseAnyFile=(file,opts,completeCb,errorCb)=>{
+  const ext=file.name.split(".").pop().toLowerCase();
+  if(ext==="xlsx"||ext==="xls"){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        let data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
+        if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
+        completeCb({data});
+      }catch(err){if(errorCb)errorCb(err);}
+    };
+    reader.readAsArrayBuffer(file);
+  }else{
+    Papa.parse(file,{...opts,complete:completeCb,error:errorCb});
+  }
+};
+
+function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="" }) {
   const [hover,setHover]=useState(false);
   const handle=useCallback(e=>{
     e.preventDefault();
@@ -411,11 +431,11 @@ function DropZone({ onFile, label="CSV 드래그 또는 클릭", fileName="" }) 
         justifyContent:"center", height:100,
         border:`1.5px dashed ${hover?D.black:D.border}`, borderRadius:9,
         cursor:"pointer", background:hover?D.surfaceAlt:D.surface, transition:"all 0.13s" }}>
-      <input type="file" accept=".csv" style={{display:"none"}} onChange={handle}/>
+      <input type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={handle}/>
       <div style={{ color:D.textSub, fontSize:13 }}>{label}</div>
       {fileName
         ?<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>{fileName}</div>
-        :<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>.csv 형식</div>}
+        :<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>CSV · XLSX · XLS 드래그 또는 클릭</div>}
     </label>
   );
 }
@@ -2320,10 +2340,9 @@ function InventoryAgingUploader({ onDone }){
   const handleFile=useCallback(file=>{
     if(!file) return;
     setFileName(file.name); setResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,
-      complete:({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          if(!data.length) throw new Error("CSV 데이터가 없습니다");
+          if(!data.length) throw new Error("데이터가 없습니다");
           const cols=Object.keys(data[0]);
           const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
           const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
@@ -2345,7 +2364,7 @@ function InventoryAgingUploader({ onDone }){
           if(!rows.length) throw new Error("유효한 데이터가 없습니다");
           setPreview(rows);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },error:e=>setResult({type:"error",msg:e.message})});
+      },e=>setResult({type:"error",msg:e.message}));
   },[diagDate]);
 
   const handleUpload=async()=>{
@@ -2380,22 +2399,19 @@ function InventoryAgingUploader({ onDone }){
         ⚠ 해당 데이터는 현재고를 기반으로 진단해야하므로 누적 데이터가 유의미하지 않습니다.<br/>
         필요 시 <strong>정상재고 1 이상</strong>으로 검색한 애널리틱스용 파일을 업로드해주세요.
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <label style={{cursor:"pointer",background:D.black,color:"#fff",borderRadius:6,
-          padding:"6px 14px",fontSize:12,fontWeight:600}}>
-          {fileName||"CSV 파일 선택"}
-          <input type="file" accept=".csv" style={{display:"none"}}
-            onChange={e=>{if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value="";}}/>
-        </label>
-        {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
-        {preview&&(
-          <button onClick={handleUpload} disabled={loading}
-            style={{background:D.blue,color:"#fff",border:"none",borderRadius:6,
-              padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            {loading?"저장 중…":"저장"}
-          </button>
-        )}
-      </div>
+      <DropZone onFile={handleFile} fileName={fileName} label="재고 파일 업로드"/>
+      {(preview||loading)&&(
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:8}}>
+          {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
+          {preview&&(
+            <button onClick={handleUpload} disabled={loading}
+              style={{background:D.blue,color:"#fff",border:"none",borderRadius:6,
+                padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              {loading?"저장 중…":"저장"}
+            </button>
+          )}
+        </div>
+      )}
       {result&&<div style={{marginTop:8,fontSize:11,color:result.type==="error"?D.red:D.green}}>{result.msg}</div>}
       {infoOpen&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}
@@ -3324,8 +3340,7 @@ function CSDataInput() {
   const handleCSVFile=useCallback(file=>{
     if(!file)return;
     setCsvResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:false,
-      complete:({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
           const cols=Object.keys(data[0]||{});
           const lc=cols.map(c=>c.toLowerCase().replace(/[\s\[\]()]/g,""));
@@ -3382,9 +3397,7 @@ function CSDataInput() {
           saveCSData(next);setCSData(next);
           setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료`});
         }catch(e){setCsvResult({type:"error",msg:e.message});}
-      },
-      error:e=>setCsvResult({type:"error",msg:e.message}),
-    });
+      },e=>setCsvResult({type:"error",msg:e.message}));
   },[csData,today]);
 
   const del=id=>{
@@ -3452,7 +3465,7 @@ function CSDataInput() {
             필수 컬럼: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
             선택: [날짜] [판매처]
           </div>
-          <DropZone onFile={handleCSVFile} label="반품 CS CSV 업로드"/>
+          <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
         </div>
       </Card>
@@ -3640,7 +3653,7 @@ function RevenueForm({ onUpdate }) {
   };
 
   const handleCsvFile=useCallback(file=>{
-    Papa.parse(file,{header:true,skipEmptyLines:true,complete:async({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true},async({data})=>{
       const cols=Object.keys(data[0]||{});
       const lc=cols.map(c=>c.toLowerCase().replace(/[\s\[\]()_]/g,""));
       const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
@@ -3669,7 +3682,7 @@ function RevenueForm({ onUpdate }) {
       const overlaps=rows.filter(r=>existSet.has(`${r.date}__${r.channel}`));
       setCsvPreview({rows,overlaps});
       setCsvConflictChoice(null);
-    }});
+    });
   },[]);
 
   const handleCsvUpload=async(choice)=>{
@@ -3803,7 +3816,7 @@ function RevenueForm({ onUpdate }) {
 
         <div style={{marginTop:14,borderTop:`1px solid ${D.border}`,paddingTop:14}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>CSV 일괄 업로드</div>
-          <DropZone onFile={handleCsvFile} label="매출 CSV 업로드 (날짜·판매처·매출금액 컬럼 필요)"/>
+          <DropZone onFile={handleCsvFile} label="매출 파일 업로드 (날짜·판매처·매출금액 컬럼 필요)"/>
           {csvPreview?.error&&<div style={{color:D.red,fontSize:10,marginTop:4}}>{csvPreview.error}</div>}
           {csvPreview&&!csvPreview.error&&(csvPreview.overlaps?.length===0||csvConflictChoice)&&(
             <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center"}}>
@@ -3978,8 +3991,7 @@ function StockUploader({ onUpdate }) {
   const handleFile=useCallback(file=>{
     if(!file) return;
     setFileName(file.name); setResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,
-      complete:({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
           const f=detectFields(Object.keys(data[0]||{}));
           const rows=data.filter(r=>f.product&&r[f.product]).map(r=>({
@@ -3990,9 +4002,7 @@ function StockUploader({ onUpdate }) {
           }));
           setPreview(rows); setStep(2);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },
-      error:e=>setResult({type:"error",msg:e.message}),
-    });
+      },e=>setResult({type:"error",msg:e.message}));
   },[]);
   const handleUpload=async()=>{
     if(!preview?.length||!dateValid) return;
@@ -4033,7 +4043,7 @@ function StockUploader({ onUpdate }) {
           {step===1&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
             <StatRow items={[{label:"삭제 예정",value:`${existing?.length||0}건`,color:D.red}]}/>
-            <DropZone onFile={handleFile} fileName={fileName} label="입고 CSV 업로드"/>
+            <DropZone onFile={handleFile} fileName={fileName} label="입고 파일 업로드"/>
             <button onClick={()=>{setStep(0);setExisting(null);}}
               style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,
                 fontSize:11,cursor:"pointer",marginTop:8,padding:"5px"}}>← 기간 다시 선택</button>
@@ -4315,10 +4325,9 @@ function EasyAdminUploader({ onUpdate }) {
   const handleFile=useCallback(file=>{
     if(!file) return;
     setFileName(file.name); setResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,transformHeader:h=>h.trim(),
-      complete:({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true,transformHeader:h=>h.trim()},({data})=>{
         try{
-          if(!data.length) throw new Error("CSV 데이터가 없습니다");
+          if(!data.length) throw new Error("데이터가 없습니다");
           const f=detectFields(Object.keys(data[0]));
 
           // 배송일 컬럼 명시적 우선 탐색 (Unicode 정규화 + exact match 우선)
@@ -4374,9 +4383,7 @@ function EasyAdminUploader({ onUpdate }) {
           setParsedFile(parsed);
           setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
         }catch(e){setResult({type:"error",msg:e.message});}
-      },
-      error:e=>setResult({type:"error",msg:e.message}),
-    });
+      },e=>setResult({type:"error",msg:e.message}));
   },[]);
 
   // Step 1→2: 미리보기 (파싱 결과만 확인, DB 조회 없음)
@@ -4434,7 +4441,7 @@ function EasyAdminUploader({ onUpdate }) {
             <div style={{color:D.textMeta,fontSize:11,marginBottom:10,lineHeight:1.6}}>
               배송일 {startDate} ~ {endDate}
             </div>
-            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 CSV 선택"/>
+            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
@@ -4540,8 +4547,7 @@ function StoreUploader({ onUpdate }) {
   const handleFile=useCallback(file=>{
     if(!file) return;
     setFileName(file.name); setResult(null);
-    Papa.parse(file,{header:true,skipEmptyLines:true,
-      complete:({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
           const rows=data.filter(r=>{
             const refPrice=parseKRW(r["기준판매가"]);
@@ -4564,9 +4570,7 @@ function StoreUploader({ onUpdate }) {
           setDateRange({start:dates[0]||"",end:dates[dates.length-1]||""});
           setPreview(rows); setStep(1);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },
-      error:e=>setResult({type:"error",msg:e.message}),
-    });
+      },e=>setResult({type:"error",msg:e.message}));
   },[]);
 
   const handleUpload=async()=>{
@@ -4599,7 +4603,7 @@ function StoreUploader({ onUpdate }) {
               <b>수량</b> (괄호=반품), <b>실판매금액</b>, <b>ID</b> (객단가 분모)<br/>
               기준판매가=0인 사은품 행 자동 제외
             </div>
-            <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 CSV 업로드"/>
+            <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"/>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
