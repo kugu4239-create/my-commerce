@@ -3732,10 +3732,8 @@ function StockUploader({ onUpdate }) {
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
 function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged }) {
-  const [dateStart,setDateStart]=useState("");
-  const [dateEnd,setDateEnd]=useState("");
   const [rows,setRows]=useState([]);
-  const [loading,setLoading]=useState(false);
+  const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
   const [selected,setSelected]=useState(new Set());
   const [editCell,setEditCell]=useState(null);
@@ -3743,20 +3741,19 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
   const [deleteConfirm,setDeleteConfirm]=useState(false);
   const [result,setResult]=useState(null);
 
-  const load=async()=>{
-    if(!dateStart||!dateEnd) return;
-    setLoading(true); setResult(null);
-    const db=await getSupabase();
-    const {data,error}=await db.from(table).select("*")
-      .gte(dateField,dateStart).lte(dateField,dateEnd)
-      .order(dateField,{ascending:false}).limit(2000);
-    if(error) setResult({type:"error",msg:error.message});
-    else { setRows(data||[]); setSelected(new Set()); }
-    setLoading(false);
-  };
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      const db=await getSupabase();
+      const {data,error}=await db.from(table).select("*")
+        .order(dateField,{ascending:false}).limit(5000);
+      if(!error) setRows(data||[]);
+      setLoading(false);
+    })();
+  },[table,dateField]);
 
   const filtered=filter
-    ?rows.filter(r=>searchFields.some(f=>String(r[f]||"").includes(filter)))
+    ?rows.filter(r=>[...searchFields,dateField].some(f=>String(r[f]||"").includes(filter)))
     :rows;
 
   const toggleSelect=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
@@ -3768,11 +3765,12 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
 
   const handleDelete=async()=>{
     const db=await getSupabase();
+    const cnt=selected.size;
     const {error}=await db.from(table).delete().in("id",[...selected]);
     if(error){setResult({type:"error",msg:error.message});return;}
     setRows(r=>r.filter(row=>!selected.has(row.id)));
     setSelected(new Set()); setDeleteConfirm(false);
-    setResult({type:"success",msg:`${selected.size}건 삭제 완료`});
+    setResult({type:"success",msg:`${cnt}건 삭제 완료`});
     onChanged?.();
   };
 
@@ -3785,24 +3783,19 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
     setEditCell(null);
   };
 
-  const inp2={border:`1px solid ${D.border}`,borderRadius:6,padding:"4px 8px",fontSize:11,background:"transparent",color:D.text};
+  const inp2={border:`1px solid ${D.border}`,borderRadius:6,padding:"5px 10px",fontSize:11,background:"transparent",color:D.text};
 
   return (
     <Card style={{marginTop:14}}>
-      <div style={{fontWeight:600,fontSize:13,marginBottom:12}}>업로드 내역</div>
-      <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
-        <input type="date" value={dateStart} onChange={e=>setDateStart(e.target.value)} style={inp2}/>
-        <span style={{color:D.textMeta,fontSize:11}}>—</span>
-        <input type="date" value={dateEnd} onChange={e=>setDateEnd(e.target.value)} style={inp2}/>
-        <button onClick={load} disabled={!dateStart||!dateEnd||loading}
-          style={{background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",fontSize:11,cursor:"pointer"}}>
-          {loading?"로딩 중...":"불러오기"}
-        </button>
-        {rows.length>0&&<>
-          <input placeholder="검색" value={filter} onChange={e=>setFilter(e.target.value)}
-            style={{...inp2,flex:1,minWidth:120}}/>
-          <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>{filtered.length}건</span>
-        </>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+        <span style={{fontWeight:600,fontSize:13}}>업로드 내역</span>
+        <div style={{display:"flex",gap:8,alignItems:"center",flex:1,justifyContent:"flex-end"}}>
+          <input placeholder="날짜·품목 검색" value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);}}
+            style={{...inp2,minWidth:180,maxWidth:280}}/>
+          <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
+            {loading?"로딩 중…":`${filtered.length}건`}
+          </span>
+        </div>
       </div>
       {selected.size>0&&(
         <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
@@ -3818,7 +3811,11 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
             </>}
         </div>
       )}
-      {rows.length>0?(
+      {loading?(
+        <div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>불러오는 중…</div>
+      ):rows.length===0?(
+        <div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>데이터 없음</div>
+      ):(
         <div style={{overflowX:"auto",maxHeight:500,overflowY:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead style={{position:"sticky",top:0,background:D.surface,zIndex:1}}>
@@ -3856,10 +3853,6 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
               ))}
             </tbody>
           </table>
-        </div>
-      ):(
-        <div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>
-          날짜 범위를 선택하고 불러오기를 누르세요
         </div>
       )}
       {result&&<Alert type={result.type} msg={result.msg}/>}
