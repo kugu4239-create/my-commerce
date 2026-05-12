@@ -230,7 +230,7 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
 
 // ─────────────────────────────────────────────
 // SHARED UI
-function Tooltip({ text, children }) {
+function InfoTip({ text, children }) {
   const [show,setShow]=useState(false);
   return (
     <span style={{position:"relative",display:"inline-flex",alignItems:"center"}}
@@ -1511,7 +1511,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     fontWeight:chSort.key===key?600:400,whiteSpace:"nowrap",
                     cursor:key!=="cmp"?"pointer":"default"}}>
                     {label}{chSort.key===key?" ↓":""}
-                    {tooltip&&<Tooltip text={tooltip}><span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400,cursor:"default"}}>ⓘ</span></Tooltip>}
+                    {tooltip&&<InfoTip text={tooltip}><span style={{marginLeft:3,fontSize:10,color:D.textMeta,fontWeight:400,cursor:"default"}}>ⓘ</span></InfoTip>}
                   </th>
                 ))}
               </tr></thead>
