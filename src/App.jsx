@@ -4185,9 +4185,16 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
     (async()=>{
       setLoading(true);
       const db=await getSupabase();
-      const {data,error}=await db.from(table).select("*")
-        .order(dateField,{ascending:false}).limit(5000);
-      if(!error) setRows(data||[]);
+      let all=[];let from=0;const PAGE=1000;
+      while(true){
+        const {data,error}=await db.from(table).select("*")
+          .order(dateField,{ascending:false}).range(from,from+PAGE-1);
+        if(error||!data||data.length===0) break;
+        all=all.concat(data);
+        if(data.length<PAGE) break;
+        from+=PAGE;
+      }
+      setRows(all);
       setLoading(false);
     })();
   },[table,dateField]);
