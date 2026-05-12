@@ -876,7 +876,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
 const getCSData=()=>{try{return JSON.parse(localStorage.getItem("cs_data")||"[]");}catch{return[];}};
 const saveCSData=d=>localStorage.setItem("cs_data",JSON.stringify(d));
-const getPromos=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]");}catch{return[];}};
+const getPromos=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]").map(p=>({...p,files:p.files||(p.file?[p.file]:[]),file:undefined}));}catch{return[];}};
 const savePromos=d=>localStorage.setItem("promotions",JSON.stringify(d));
 
 // ─────────────────────────────────────────────
@@ -2738,20 +2738,25 @@ const PROMO_PLATFORMS=["자사몰","29CM","무신사"];
 function PromoFlow({ revenues }) {
   const [promos,setPromos]=useState(getPromos);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",file:null});
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
   const today=new Date().toISOString().slice(0,10);
   const twoMonthsAgo=(()=>{const d=new Date();d.setMonth(d.getMonth()-2);return d.toISOString().slice(0,10);})();
   const [viewStart,setViewStart]=useState(twoMonthsAgo);
   const [viewEnd,setViewEnd]=useState(today);
 
   const [hoveredPromo,setHoveredPromo]=useState(null);
+  const [fileAddTarget,setFileAddTarget]=useState(null);
+  const fileInputRef=useRef(null);
   const nowStr=new Date().toISOString().slice(0,16);
   const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
   const updatePromos=data=>{savePromos(data);setPromos(data);};
+  const readFileData=(file,cb)=>{const r=new FileReader();r.onload=e=>cb({name:file.name,type:file.type,data:e.target.result});r.readAsDataURL(file);};
+  const addFileToPromo=(id,f)=>updatePromos(promos.map(p=>p.id===id?{...p,files:[...(p.files||[]),f].slice(0,3)}:p));
+  const removeFileFromPromo=(id,idx)=>updatePromos(promos.map(p=>p.id===id?{...p,files:(p.files||[]).filter((_,i)=>i!==idx)}:p));
   const addPromo=()=>{
     if(!form.name||!form.start_date||!form.end_date)return;
     updatePromos([...promos,{...form,id:Date.now()}]);
-    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",file:null});
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
     setShowForm(false);
   };
   const delPromo=id=>updatePromos(promos.filter(p=>p.id!==id));
@@ -2852,15 +2857,30 @@ function PromoFlow({ revenues }) {
               <input value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))} style={inp} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
             </div>
             <div>
-              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>첨부 파일</div>
-              <input type="file" onChange={e=>{
-                const file=e.target.files?.[0];
-                if(!file) return;
-                const reader=new FileReader();
-                reader.onload=ev=>setForm(f=>({...f,file:{name:file.name,type:file.type,data:ev.target.result}}));
-                reader.readAsDataURL(file);
-              }} style={{...inp,padding:"5px 8px",cursor:"pointer"}}/>
-              {form.file&&<div style={{fontSize:10,color:D.textMeta,marginTop:3}}>📎 {form.file.name}</div>}
+              <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {(form.files||[]).map((f,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:4,
+                    background:D.surfaceAlt,borderRadius:4,padding:"4px 8px",fontSize:11}}>
+                    <span>📎</span>
+                    <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:D.textSub}}>{f.name}</span>
+                    <button onClick={()=>setForm(fm=>({...fm,files:(fm.files||[]).filter((_,j)=>j!==i)}))}
+                      style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:13,lineHeight:1}}>✕</button>
+                  </div>
+                ))}
+                {(form.files||[]).length<3&&(
+                  <label style={{display:"inline-flex",alignItems:"center",gap:4,cursor:"pointer",
+                    background:"transparent",border:`1px dashed ${D.border}`,borderRadius:4,
+                    padding:"5px 10px",fontSize:11,color:D.textSub,userSelect:"none"}}>
+                    + 파일 첨부
+                    <input type="file" style={{display:"none"}} onChange={e=>{
+                      const file=e.target.files?.[0];if(!file) return;
+                      e.target.value="";
+                      readFileData(file,f=>setForm(fm=>({...fm,files:[...(fm.files||[]),f].slice(0,3)})));
+                    }}/>
+                  </label>
+                )}
+              </div>
             </div>
           </div>
         </Card>
@@ -2945,15 +2965,27 @@ function PromoFlow({ revenues }) {
                         {p.start_date}<br/>{p.end_date}
                       </td>
                       <td {...td} style={{...td.style,maxWidth:200,color:D.textSub}}>{p.content||p.memo||"—"}</td>
-                      <td {...td}>
-                        {p.file?(
-                          <a href={p.file.data} download={p.file.name}
-                            style={{color:D.black,fontSize:11,textDecoration:"none",display:"flex",
-                              alignItems:"center",gap:3,whiteSpace:"nowrap"}}
-                            title={p.file.name}>
-                            📎 <span style={{fontSize:10,color:D.textMeta,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",display:"inline-block"}}>{p.file.name}</span>
-                          </a>
-                        ):"—"}
+                      <td {...td} style={{...td.style,minWidth:130}}>
+                        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                          {(p.files||[]).map((f,i)=>(
+                            <div key={i} style={{display:"flex",alignItems:"center",gap:3}}>
+                              <a href={f.data} download={f.name}
+                                style={{fontSize:10,color:D.textSub,textDecoration:"none",
+                                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:100,flex:1}}
+                                title={f.name}>📎 {f.name}</a>
+                              <button onClick={()=>removeFileFromPromo(p.id,i)}
+                                style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",
+                                  padding:0,fontSize:12,lineHeight:1,flexShrink:0}}>✕</button>
+                            </div>
+                          ))}
+                          {(p.files||[]).length<3&&(
+                            <button onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
+                              style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
+                                padding:"2px 6px",fontSize:10,color:D.textMeta,cursor:"pointer",
+                                whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
+                          )}
+                          {!(p.files||[]).length&&<span style={{color:D.textMeta}}>—</span>}
+                        </div>
                       </td>
                       <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                         <button onClick={()=>delPromo(p.id)}
@@ -2967,6 +2999,13 @@ function PromoFlow({ revenues }) {
             </table>
           </div>
         )}
+        {/* 테이블 파일 추가용 hidden input */}
+        <input type="file" ref={fileInputRef} style={{display:"none"}} onChange={e=>{
+          const file=e.target.files?.[0];
+          if(!file||!fileAddTarget) return;
+          readFileData(file,f=>addFileToPromo(fileAddTarget,f));
+          setFileAddTarget(null);
+        }}/>
         {/* 호버 팝업 */}
         {hoveredPromo&&(()=>{
           const {promo,rect}=hoveredPromo;
@@ -2988,9 +3027,9 @@ function PromoFlow({ revenues }) {
               {(promo.content||promo.memo)&&(
                 <div style={{color:D.text,fontSize:11,marginBottom:4,wordBreak:"break-all"}}>{promo.content||promo.memo}</div>
               )}
-              {promo.file&&(
-                <div style={{fontSize:10,color:D.textMeta}}>📎 {promo.file.name}</div>
-              )}
+              {(promo.files||[]).map((f,i)=>(
+                <div key={i} style={{fontSize:10,color:D.textMeta}}>📎 {f.name}</div>
+              ))}
               {isEnded(promo)&&(
                 <div style={{marginTop:5,fontSize:10,color:"#e55",fontWeight:600}}>종료된 프로모션</div>
               )}
