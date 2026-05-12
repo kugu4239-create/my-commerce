@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-05-12 (10차)
+
+### 어제 기간 타임존·동기간·입고 수량 버그 수정
+- **타임존 통일**: `shippingChartData`, `returnChartData` "yd" 분기에서 `toISOString()` → `localDate(-1)` 교체 (UTC/한국시간 9시 이전 날짜 오류 수정)
+- **동기간 비교 수정**: `getPriorPeriod("yd")` 반환값을 2일 범위(그저께~어제) → 그제 하루(`localDate(-2)`) 단일 날짜로 수정
+- **입고 수량 수정**: Dashboard `filteredStocks` 및 ProductSankey `filteredStocks`의 기간 필터 제거 → 항상 전체 재고 중 SKU별 최신 업로드 기준으로 집계
+
+---
+
 ## 2026-05-12 (9차)
 
 ### 어제(어제) 기간 필터 신설
