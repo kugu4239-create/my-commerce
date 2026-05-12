@@ -902,8 +902,8 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
 const getCSData=()=>{try{return JSON.parse(localStorage.getItem("cs_data")||"[]");}catch{return[];}};
 const saveCSData=d=>localStorage.setItem("cs_data",JSON.stringify(d));
-const getPromos=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]").map(p=>({...p,files:p.files||(p.file?[p.file]:[]),file:undefined}));}catch{return[];}};
-const savePromos=d=>localStorage.setItem("promotions",JSON.stringify(d));
+const getPromosCache=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]").map(p=>({...p,files:p.files||(p.file?[p.file]:[]),file:undefined}));}catch{return[];}};
+const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
 
 // ─────────────────────────────────────────────
 // ANALYTICS ENGINE
@@ -1492,26 +1492,36 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:20,minHeight:220}}>
         <Card>
           <SecTitle ts={ts.orders}>매출 점유율</SecTitle>
-          <ResponsiveContainer width="100%" height={160}>
-            {(()=>{
-              const sorted=[...stats.channelList.slice(0,6)].sort((a,b)=>b.revenue-a.revenue);
-              return (
-                <PieChart>
-                  <Pie data={sorted.map(c=>({name:c.name,value:c.revenue}))}
-                    dataKey="value" nameKey="name" cx="50%" cy="50%"
-                    innerRadius={38} outerRadius={60} paddingAngle={2}>
-                    {sorted.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
-                  </Pie>
-                  <Tooltip formatter={(v,n,p)=>{
-                    const total=sorted.reduce((s,c)=>s+c.revenue,0)||1;
-                    const pct=(v/total*100).toFixed(1);
-                    return [`₩${v.toLocaleString()} (${pct}%)`,n];
-                  }} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
-                  <Legend iconSize={8} iconType="circle" wrapperStyle={{fontSize:10,paddingTop:6}}/>
-                </PieChart>
-              );
-            })()}
-          </ResponsiveContainer>
+          {(()=>{
+            const sorted=[...stats.channelList.slice(0,6)].sort((a,b)=>b.revenue-a.revenue);
+            const total=sorted.reduce((s,c)=>s+c.revenue,0)||1;
+            return (
+              <>
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie data={sorted.map(c=>({name:c.name,value:c.revenue}))}
+                      dataKey="value" nameKey="name" cx="50%" cy="50%"
+                      innerRadius={38} outerRadius={58} paddingAngle={2}>
+                      {sorted.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
+                    </Pie>
+                    <Tooltip formatter={(v,n)=>{
+                      const pct=(v/total*100).toFixed(1);
+                      return [`₩${v.toLocaleString()} (${pct}%)`,n];
+                    }} contentStyle={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,fontSize:11}}/>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"4px 10px",justifyContent:"center",paddingTop:6}}>
+                  {sorted.map((c,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:D.textSub}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:chColor(c.name),flexShrink:0,display:"inline-block"}}/>
+                      <span>{c.name}</span>
+                      <span style={{color:D.textMeta}}>({(c.revenue/total*100).toFixed(1)}%)</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </Card>
         <Card>
           <SecTitle ts={ts.orders}>판매처별 매출</SecTitle>
@@ -2759,10 +2769,11 @@ function LogisticsFlow({ orders, stocks, ts }) {
 // ─────────────────────────────────────────────
 const PROMO_PLATFORMS=["자사몰","29CM","무신사","오프라인 스토어"];
 
-function DateButtonPicker({value,onChange}){
+function SmallDateButtonPicker({value,onChange}){
   const todayStr=new Date().toISOString().slice(0,10);
   const datePart=(value&&value.length>=10)?value.slice(0,10):todayStr;
   const [y,m,d]=datePart.split("-").map(Number);
+  const [halfYear,setHalfYear]=useState(m<=6?0:1);
   const setDate=(ny,nm,nd)=>{
     const maxD=new Date(ny,nm,0).getDate();
     const cd=Math.min(nd,maxD);
@@ -2771,6 +2782,98 @@ function DateButtonPicker({value,onChange}){
     onChange(ds+tp);
   };
   const daysInMonth=new Date(y,m,0).getDate();
+  const monthSet=halfYear===0?[1,2,3,4,5,6]:[7,8,9,10,11,12];
+  const bNone={border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit"};
+  const circSel={background:D.black,color:"#fff",fontWeight:700,borderRadius:"50%"};
+  const circDef={background:"transparent",color:D.textSub};
+  const timePart=(value&&value.includes("T"))?value.slice(11,16):"";
+  return(
+    <div style={{userSelect:"none",minWidth:220}}>
+      <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+        <button onClick={()=>setDate(y-1,m,d)} style={{...bNone,fontSize:12,color:D.textSub,padding:"1px 4px"}}>◀</button>
+        <span style={{fontSize:12,fontWeight:700,color:D.text,minWidth:36,textAlign:"center"}}>{y}년</span>
+        <button onClick={()=>setDate(y+1,m,d)} style={{...bNone,fontSize:12,color:D.textSub,padding:"1px 4px"}}>▶</button>
+        <button onClick={()=>setHalfYear(v=>v===0?1:0)}
+          style={{...bNone,fontSize:11,color:D.textSub,background:D.surfaceAlt,borderRadius:4,padding:"2px 6px",marginLeft:"auto"}}>
+          {halfYear===0?"1~6월":"7~12월"}
+        </button>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:2,marginBottom:4}}>
+        {monthSet.map(mo=>(
+          <button key={mo} onClick={()=>setDate(y,mo,Math.min(d,new Date(y,mo,0).getDate()))}
+            style={{...bNone,fontSize:11,padding:"2px 5px",borderRadius:"50%",...(mo===m?circSel:circDef)}}>{mo}월</button>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
+        {Array.from({length:daysInMonth},(_,i)=>i+1).map(dd=>(
+          <button key={dd} onClick={()=>setDate(y,m,dd)}
+            style={{...bNone,fontSize:11,padding:"2px 0",textAlign:"center",borderRadius:"50%",...(dd===d?circSel:circDef)}}>{dd}</button>
+        ))}
+      </div>
+      <div style={{marginTop:6}}>
+        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>시간</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:2}}>
+          {Array.from({length:24},(_,h)=>{
+            const hStr=String(h).padStart(2,"0")+":00";
+            const sel=timePart===hStr;
+            return(
+              <button key={h} onClick={()=>onChange(datePart+"T"+hStr)}
+                style={{...bNone,fontSize:10,padding:"3px 0",textAlign:"center",borderRadius:3,
+                  background:sel?D.black:"transparent",color:sel?"#fff":D.textSub,
+                  border:`1px solid ${sel?D.black:D.border}`}}>
+                {h}시
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubmitEodPicker({value,onChange}){
+  const [open,setOpen]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{
+    if(!open)return;
+    const handler=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};
+    document.addEventListener("mousedown",handler);
+    return()=>document.removeEventListener("mousedown",handler);
+  },[open]);
+  const display=value?value.replace("T"," "):"날짜/시간 선택";
+  return(
+    <div style={{position:"relative"}} ref={ref}>
+      <button onClick={()=>setOpen(v=>!v)}
+        style={{width:"100%",textAlign:"left",background:"transparent",border:`1px solid ${D.border}`,
+          borderRadius:5,padding:"7px 10px",fontSize:13,color:value?D.text:D.textMeta,
+          cursor:"pointer",fontFamily:"'Pretendard','Noto Sans KR',sans-serif",boxSizing:"border-box"}}>
+        {display}
+      </button>
+      {open&&(
+        <div style={{position:"absolute",zIndex:200,background:D.surface,border:`1px solid ${D.border}`,
+          borderRadius:8,padding:12,top:"calc(100% + 4px)",left:0,
+          boxShadow:"0 4px 20px rgba(0,0,0,0.12)"}}>
+          <SmallDateButtonPicker value={value||""} onChange={v=>{onChange(v);}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DateButtonPicker({value,onChange}){
+  const todayStr=new Date().toISOString().slice(0,10);
+  const datePart=(value&&value.length>=10)?value.slice(0,10):todayStr;
+  const [y,m,d]=datePart.split("-").map(Number);
+  const [halfYear,setHalfYear]=useState(m<=6?0:1);
+  const setDate=(ny,nm,nd)=>{
+    const maxD=new Date(ny,nm,0).getDate();
+    const cd=Math.min(nd,maxD);
+    const ds=`${ny}-${String(nm).padStart(2,"0")}-${String(cd).padStart(2,"0")}`;
+    const tp=(value&&value.includes("T"))?value.slice(10):"";
+    onChange(ds+tp);
+  };
+  const daysInMonth=new Date(y,m,0).getDate();
+  const monthSet=halfYear===0?[1,2,3,4,5,6]:[7,8,9,10,11,12];
   const bNone={border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit"};
   const circSel={background:D.black,color:"#fff",fontWeight:700,borderRadius:"50%"};
   const circDef={background:"transparent",color:D.textSub};
@@ -2780,9 +2883,13 @@ function DateButtonPicker({value,onChange}){
         <button onClick={()=>setDate(y-1,m,d)} style={{...bNone,fontSize:13,color:D.textSub,padding:"1px 6px"}}>◀</button>
         <span style={{fontSize:13,fontWeight:700,color:D.text,minWidth:44,textAlign:"center"}}>{y}년</span>
         <button onClick={()=>setDate(y+1,m,d)} style={{...bNone,fontSize:13,color:D.textSub,padding:"1px 6px"}}>▶</button>
+        <button onClick={()=>setHalfYear(v=>v===0?1:0)}
+          style={{...bNone,fontSize:11,color:D.textSub,background:D.surfaceAlt,borderRadius:4,padding:"2px 6px",marginLeft:"auto"}}>
+          {halfYear===0?"1~6월":"7~12월"}
+        </button>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:2,marginBottom:4}}>
-        {Array.from({length:12},(_,i)=>i+1).map(mo=>(
+        {monthSet.map(mo=>(
           <button key={mo} onClick={()=>setDate(y,mo,Math.min(d,new Date(y,mo,0).getDate()))}
             style={{...bNone,fontSize:12,padding:"3px 5px",borderRadius:"50%",...(mo===m?circSel:circDef)}}>{mo}월</button>
         ))}
@@ -2798,7 +2905,7 @@ function DateButtonPicker({value,onChange}){
 }
 
 function PromoFlow({ revenues }) {
-  const [promos,setPromos]=useState(getPromos);
+  const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
   const today=new Date().toISOString().slice(0,10);
@@ -2844,34 +2951,76 @@ function PromoFlow({ revenues }) {
   const [editPromoForm,setEditPromoForm]=useState({});
   const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||""});};
   const savePromoEdit=()=>{
-    updatePromos(promos.map(p=>p.id===editingPromoId?{...p,...editPromoForm,memo:editPromoForm.content}:p));
+    patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content});
     setEditingPromoId(null);
   };
   const nowStr=new Date().toISOString().slice(0,16);
   const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
-  const updatePromos=data=>{savePromos(data);setPromos(data);};
   const readFileData=(file,cb)=>{const r=new FileReader();r.onload=e=>cb({name:file.name,type:file.type,data:e.target.result});r.readAsDataURL(file);};
-  const addFileToPromo=(id,f)=>updatePromos(promos.map(p=>p.id===id?{...p,files:[...(p.files||[]),f].slice(0,3)}:p));
-  const removeFileFromPromo=(id,idx)=>updatePromos(promos.map(p=>p.id===id?{...p,files:(p.files||[]).filter((_,i)=>i!==idx)}:p));
-  const addPromo=()=>{
+
+  // Supabase sync helpers
+  const syncSet=rows=>{setPromos(rows);setPromosCache(rows);};
+  const patchPromo=useCallback(async(id,updates)=>{
+    setPromos(prev=>{const next=prev.map(p=>p.id===id?{...p,...updates}:p);setPromosCache(next);return next;});
+    const db=await getSupabase();
+    await db.from("promotions").update(updates).eq("id",id);
+  },[]);
+
+  // Load from Supabase on mount (overwrites cache)
+  useEffect(()=>{
+    (async()=>{
+      const db=await getSupabase();
+      const{data,error}=await db.from("promotions").select("*").order("start_date",{ascending:true});
+      if(!error&&data){
+        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[])}));
+        syncSet(rows);
+        // one-time migration: if Supabase empty and localStorage has data, push to Supabase
+        if(rows.length===0){
+          const local=getPromosCache();
+          if(local.length>0){
+            await db.from("promotions").insert(local);
+            syncSet(local);
+          }
+        }
+      }
+    })();
+  },[]);
+
+  const addPromo=async()=>{
     if(!form.name||!form.start_date||!form.end_date)return;
-    updatePromos([...promos,{...form,id:Date.now()}]);
+    const newP={...form,id:Date.now()};
+    setPromos(prev=>{const next=[...prev,newP];setPromosCache(next);return next;});
+    const db=await getSupabase();
+    await db.from("promotions").insert(newP);
     setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
     setShowForm(false);
   };
-  const delPromo=id=>updatePromos(promos.filter(p=>p.id!==id));
+  const delPromo=async id=>{
+    setPromos(prev=>{const next=prev.filter(p=>p.id!==id);setPromosCache(next);return next;});
+    const db=await getSupabase();
+    await db.from("promotions").delete().eq("id",id);
+  };
+  const addFileToPromo=(id,f)=>{
+    const promo=promos.find(p=>p.id===id);
+    patchPromo(id,{files:[...(promo?.files||[]),f].slice(0,3)});
+  };
+  const removeFileFromPromo=(id,idx)=>{
+    const promo=promos.find(p=>p.id===id);
+    patchPromo(id,{files:(promo?.files||[]).filter((_,i)=>i!==idx)});
+  };
 
   const getSubmitPromos=()=>{try{return JSON.parse(localStorage.getItem("submit_promos")||"[]");}catch{return [];}};
   const saveSubmitPromos=data=>localStorage.setItem("submit_promos",JSON.stringify(data));
   const [submitPromos,setSubmitPromos]=useState(getSubmitPromos);
-  const [submitForm,setSubmitForm]=useState({title:"",eod:""});
+  const [showSubmitForm,setShowSubmitForm]=useState(false);
+  const [submitForm,setSubmitForm]=useState({title:"",content:"",eod:""});
   const [editingSubmitId,setEditingSubmitId]=useState(null);
-  const [editSubmitForm,setEditSubmitForm]=useState({title:"",eod:""});
+  const [editSubmitForm,setEditSubmitForm]=useState({title:"",content:"",eod:""});
   const updateSubmitPromos=data=>{saveSubmitPromos(data);setSubmitPromos(data);};
   const addSubmitPromo=()=>{
     if(!submitForm.title)return;
     updateSubmitPromos([...submitPromos,{id:Date.now(),...submitForm}]);
-    setSubmitForm({title:"",eod:""});
+    setSubmitForm({title:"",content:"",eod:""});
   };
   const saveSubmitEdit=()=>{
     updateSubmitPromos(submitPromos.map(s=>s.id===editingSubmitId?{...s,...editSubmitForm}:s));
@@ -2912,14 +3061,14 @@ function PromoFlow({ revenues }) {
       <style>{`
         @keyframes promoShimmer {
           0%   { transform: translateX(-100%); }
-          100% { transform: translateX(350%); }
+          100% { transform: translateX(400%); }
         }
         .promo-shimmer {
           position: absolute;
           top: 0; bottom: 0;
-          width: 30%;
-          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
-          animation: promoShimmer 5s cubic-bezier(0.4,0,0.6,1) infinite;
+          width: 50%;
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 40%, rgba(255,255,255,0.75) 50%, rgba(255,255,255,0.55) 60%, transparent 100%);
+          animation: promoShimmer 10s linear infinite;
           pointer-events: none;
         }
       `}</style>
@@ -2970,11 +3119,21 @@ function PromoFlow({ revenues }) {
                     <button key={time} onClick={()=>{
                       const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
                       setForm(f=>({...f,[field]:`${base}${time}`}));
-                    }} style={{flex:1,fontSize:11,padding:"3px 2px",background:D.surfaceAlt,
-                      border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub,whiteSpace:"nowrap"}}>
+                    }} style={{flex:1,fontSize:11,padding:"3px 2px",
+                      background:form[field]&&form[field].includes(time)?D.black:D.surfaceAlt,
+                      color:form[field]&&form[field].includes(time)?"#fff":D.textSub,
+                      border:`1px solid ${form[field]&&form[field].includes(time)?D.black:D.border}`,
+                      borderRadius:3,cursor:"pointer",whiteSpace:"nowrap"}}>
                       {tl}
                     </button>
                   ))}
+                  <button onClick={()=>{
+                    const base=form[field]?form[field].slice(0,10):"";
+                    setForm(f=>({...f,[field]:base}));
+                  }} style={{fontSize:11,padding:"3px 6px",background:"transparent",
+                    border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textMeta,whiteSpace:"nowrap"}}>
+                    시간 삭제
+                  </button>
                 </div>
               </div>
             ))}
@@ -3211,30 +3370,46 @@ function PromoFlow({ revenues }) {
 
       {/* 제출해야하는 프로모션 */}
       <Card>
-        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>제출해야하는 프로모션</div>
-        <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"flex-end"}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>제목</div>
-            <input value={submitForm.title} onChange={e=>setSubmitForm(f=>({...f,title:e.target.value}))}
-              placeholder="프로모션 제목"
-              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
-                borderRadius:5,padding:"7px 10px",fontSize:14,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
-          </div>
-          <div style={{width:160}}>
-            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>EOD</div>
-            <input type="date" value={submitForm.eod} onChange={e=>setSubmitForm(f=>({...f,eod:e.target.value}))}
-              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
-                borderRadius:5,padding:"7px 10px",fontSize:14,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
-          </div>
-          <button onClick={addSubmitPromo}
-            style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
-              padding:"7px 18px",fontSize:13,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>저장</button>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showSubmitForm?12:0}}>
+          <div style={{fontWeight:600,fontSize:14,color:D.black}}>제출해야하는 프로모션</div>
+          <button onClick={()=>setShowSubmitForm(v=>!v)}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+              padding:"5px 12px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+            {showSubmitForm?"닫기":"+ 추가"}
+          </button>
         </div>
+        {showSubmitForm&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+          <div>
+            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션명</div>
+            <input value={submitForm.title} onChange={e=>setSubmitForm(f=>({...f,title:e.target.value}))}
+              placeholder="프로모션명 입력"
+              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
+                borderRadius:5,padding:"7px 10px",fontSize:14,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>내용</div>
+            <textarea value={submitForm.content} onChange={e=>setSubmitForm(f=>({...f,content:e.target.value}))}
+              placeholder="프로모션 내용 간략히 입력"
+              rows={2}
+              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
+                borderRadius:5,padding:"7px 10px",fontSize:13,color:D.text,resize:"vertical",
+                fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>EOD</div>
+              <SubmitEodPicker value={submitForm.eod} onChange={v=>setSubmitForm(f=>({...f,eod:v}))}/>
+            </div>
+            <button onClick={addSubmitPromo}
+              style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                padding:"7px 18px",fontSize:13,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",height:36}}>저장</button>
+          </div>
+        </div>}
         {submitPromos.length>0&&(
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                {["제목","EOD","",""].map((h,i)=>(
+                {["프로모션명","내용","EOD","",""].map((h,i)=>(
                   <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
                     color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
@@ -3253,9 +3428,14 @@ function PromoFlow({ revenues }) {
                           fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
                     </td>
                     <td style={tdS}>
-                      <input type="date" value={editSubmitForm.eod} onChange={e=>setEditSubmitForm(f=>({...f,eod:e.target.value}))}
+                      <textarea value={editSubmitForm.content||""} onChange={e=>setEditSubmitForm(f=>({...f,content:e.target.value}))}
+                        rows={2}
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
-                          padding:"4px 8px",fontSize:13,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+                          padding:"4px 8px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",resize:"vertical",
+                          fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+                    </td>
+                    <td style={tdS}>
+                      <SubmitEodPicker value={editSubmitForm.eod||""} onChange={v=>setEditSubmitForm(f=>({...f,eod:v}))}/>
                     </td>
                     <td style={{...tdS,whiteSpace:"nowrap"}}>
                       <button onClick={saveSubmitEdit}
@@ -3271,9 +3451,10 @@ function PromoFlow({ revenues }) {
                 return (
                   <tr key={s.id}>
                     <td style={{...tdS,fontWeight:600}}>{s.title}</td>
-                    <td style={{...tdS,color:D.textSub}}>{s.eod||"—"}</td>
+                    <td style={{...tdS,color:D.textSub,maxWidth:200,wordBreak:"break-all"}}>{s.content||"—"}</td>
+                    <td style={{...tdS,color:D.textSub}}>{s.eod?s.eod.replace("T"," "):"—"}</td>
                     <td style={{...tdS,whiteSpace:"nowrap"}}>
-                      <button onClick={()=>{setEditingSubmitId(s.id);setEditSubmitForm({title:s.title,eod:s.eod||""});}}
+                      <button onClick={()=>{setEditingSubmitId(s.id);setEditSubmitForm({title:s.title,content:s.content||"",eod:s.eod||""});}}
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
                           padding:"3px 10px",fontSize:12,cursor:"pointer",color:D.textSub,marginRight:4}}>수정</button>
                       <button onClick={()=>delSubmitPromo(s.id)}
@@ -3387,8 +3568,18 @@ function PromoFlow({ revenues }) {
                       })}
                     </td>
                     <td {...td} style={{...td.style,maxWidth:200,color:D.textSub,whiteSpace:"pre-wrap"}}>{p.content||p.memo||"—"}</td>
-                    <td {...td} style={{...td.style,minWidth:130}}>
-                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                    <td {...td} style={{...td.style,minWidth:160}}>
+                      <div
+                        onDragOver={e=>{e.preventDefault();setTableFileDragOver(p.id);}}
+                        onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setTableFileDragOver(null);}}
+                        onDrop={e=>{e.preventDefault();setTableFileDragOver(null);
+                          addFilesFromList(e.dataTransfer.files,(p.files||[]).length,f=>addFileToPromo(p.id,f));
+                        }}
+                        style={{display:"flex",flexDirection:"column",gap:3,
+                          border:`1px dashed ${tableFileDragOver===p.id?D.blue:"transparent"}`,
+                          borderRadius:4,padding:tableFileDragOver===p.id?4:0,
+                          background:tableFileDragOver===p.id?"#eef3ff":"transparent",
+                          minHeight:24,transition:"all 0.15s"}}>
                         {(p.files||[]).map((f,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:3}}>
                             <a href={f.data} download={f.name}
@@ -3401,12 +3592,14 @@ function PromoFlow({ revenues }) {
                           </div>
                         ))}
                         {(p.files||[]).length<3&&(
-                          <button onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
-                            style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
-                              padding:"2px 6px",fontSize:12,color:D.textMeta,cursor:"pointer",
-                              whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
+                          tableFileDragOver===p.id
+                            ?<span style={{fontSize:11,color:D.blue,textAlign:"center",padding:"2px 0"}}>여기에 놓기 ↓</span>
+                            :<button onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
+                              style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
+                                padding:"2px 6px",fontSize:12,color:D.textMeta,cursor:"pointer",
+                                whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
                         )}
-                        {!(p.files||[]).length&&<span style={{color:D.textMeta}}>—</span>}
+                        {!(p.files||[]).length&&tableFileDragOver!==p.id&&<span style={{color:D.textMeta}}>—</span>}
                       </div>
                     </td>
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
