@@ -5151,31 +5151,32 @@ function LoadingScreen() {
 // ─────────────────────────────────────────────
 // DATA COMPARE
 // ─────────────────────────────────────────────
-const COMPARE_CH_COLOR={"자사몰":"#7EADD4","29CM":"#7EB89E","무신사":"#9E92C8","오프라인 스토어":"#D4A574"};
+const COMPARE_CH_COLOR={"자사몰":"#60A5FA","29CM":"#34D399","무신사":"#A78BFA","오프라인 스토어":"#FB923C"};
 const COMPARE_CHANNELS=["자사몰","29CM","무신사","오프라인 스토어"];
 
 function RevenueSankeyChart({periods,svgW}){
   const [hoveredCh,setHoveredCh]=useState(null);
   const [tooltip,setTooltip]=useState(null);
-  const SVG_H=500,PAD_T=32,PAD_B=48,PAD_H=24,NODE_W=42,GAP=5,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const SVG_H=500,PAD_T=32,PAD_B=48,PAD_H=24,NODE_W=42,GAP=4,AVAIL_H=SVG_H-PAD_T-PAD_B;
+
+  // 전체 기간 중 최대 총매출로 통일 스케일 계산 (세로 = 절대 매출량)
   const maxTotal=Math.max(...periods.map(p=>p.total),1);
+  const heightScale=AVAIL_H/maxTotal;
 
   const cols=useMemo(()=>periods.map((p,pi)=>{
     const colX=periods.length===1?(svgW-NODE_W)/2
       :PAD_H+pi*(svgW-2*PAD_H-NODE_W)/(periods.length-1);
-    const colH=(p.total/maxTotal)*AVAIL_H;
-    const activeCount=COMPARE_CHANNELS.filter(ch=>(p.byChannel[ch]||0)>0).length;
-    const gaps=Math.max(0,activeCount-1)*GAP;
-    let y=PAD_T+(AVAIL_H-colH)/2;
+    // 모든 컬럼 상단 정렬, 채널 위→아래 순서 고정
+    let y=PAD_T;
     const nodes=COMPARE_CHANNELS.map(ch=>{
       const amt=p.byChannel[ch]||0;
-      const h=p.total>0?(amt/p.total)*(colH-gaps):0;
-      const n={ch,amt,x:colX,y:amt>0?y:0,h:Math.max(0,h),color:COMPARE_CH_COLOR[ch]};
+      const h=Math.max(0,amt*heightScale);
+      const n={ch,amt,x:colX,y:amt>0?y:0,h,color:COMPARE_CH_COLOR[ch]};
       if(amt>0) y+=h+GAP;
       return n;
     });
     return{...p,colX,nodes};
-  }),[periods,svgW,maxTotal]);
+  }),[periods,svgW,heightScale]);
 
   const links=useMemo(()=>{
     const res=[];
@@ -5248,12 +5249,12 @@ function RevenueSankeyChart({periods,svgW}){
             </g>
           ))}
           <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+16}
-            textAnchor="middle" fontSize={10} fill={D.textMeta}>
+            textAnchor="middle" fontSize={10} fill="#666">
             {col.label}
           </text>
           {col.total>0&&(
             <text x={col.colX+NODE_W/2} y={PAD_T-10}
-              textAnchor="middle" fontSize={9} fill={D.textMeta}>
+              textAnchor="middle" fontSize={9} fill="#555">
               {fmtAmt(col.total)}
             </text>
           )}
@@ -5276,13 +5277,13 @@ function RevenueSankeyChart({periods,svgW}){
   );
 }
 
-function DataCompare({revenues}){
+function DataCompare({revenues,storeSales=[]}){
   const [unit,setUnit]=useState("week");
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
 
   useEffect(()=>{
-    const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-32)));
+    const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-48)));
     if(containerRef.current) obs.observe(containerRef.current);
     return()=>obs.disconnect();
   },[]);
@@ -5294,21 +5295,13 @@ function DataCompare({revenues}){
       for(let i=12;i>=0;i--){
         const end=new Date(today);end.setDate(end.getDate()-i*7);
         const start=new Date(end);start.setDate(start.getDate()-6);
-        res.push({
-          label:`${start.getMonth()+1}/${start.getDate()}`,
-          start:start.toISOString().slice(0,10),
-          end:end.toISOString().slice(0,10),
-        });
+        res.push({label:`${start.getMonth()+1}/${start.getDate()}`,start:start.toISOString().slice(0,10),end:end.toISOString().slice(0,10)});
       }
     } else {
       for(let i=3;i>=0;i--){
         const d=new Date(today.getFullYear(),today.getMonth()-i,1);
         const endD=new Date(d.getFullYear(),d.getMonth()+1,0);
-        res.push({
-          label:`${d.getFullYear()}.${d.getMonth()+1}`,
-          start:d.toISOString().slice(0,10),
-          end:endD.toISOString().slice(0,10),
-        });
+        res.push({label:`${d.getFullYear()}.${d.getMonth()+1}`,start:d.toISOString().slice(0,10),end:endD.toISOString().slice(0,10)});
       }
     }
     return res;
@@ -5317,26 +5310,35 @@ function DataCompare({revenues}){
   const revenueData=useMemo(()=>periods.map(p=>{
     const byChannel={};
     COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
+    // 온라인 채널 매출
     revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
       if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0);
     });
+    // 오프라인 스토어 매출 (store_sales)
+    storeSales.filter(r=>{const d=r.sale_date||"";return d>=p.start&&d<=p.end;}).forEach(r=>{
+      if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
+      else if(r.status==="반품") byChannel["오프라인 스토어"]-=(r.amount||0);
+    });
+    COMPARE_CHANNELS.forEach(ch=>{if(byChannel[ch]<0) byChannel[ch]=0;});
     const total=Object.values(byChannel).reduce((a,b)=>a+b,0);
     return{...p,byChannel,total};
-  }),[revenues,periods]);
+  }),[revenues,storeSales,periods]);
 
   const hasData=revenueData.some(p=>p.total>0);
   const minSvgW=unit==="week"?Math.max(svgW,780):svgW;
 
+  const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
+
   return(
-    <div style={{padding:"20px 24px"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div style={{fontWeight:700,fontSize:18,color:D.black}}>데이터 컴페어</div>
+    <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
+        <div style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px"}}>데이터 컴페어</div>
         <div style={{display:"flex",gap:4}}>
           {[["week","주단위"],["month","월단위"]].map(([u,lbl])=>(
             <button key={u} onClick={()=>setUnit(u)}
-              style={{background:unit===u?D.black:"transparent",
-                color:unit===u?"#fff":D.textSub,
-                border:`1px solid ${unit===u?D.black:D.border}`,
+              style={{background:unit===u?"#fff":"transparent",
+                color:unit===u?"#000":DC.sub,
+                border:`1px solid ${unit===u?"#fff":DC.border}`,
                 borderRadius:6,padding:"5px 14px",fontSize:12,
                 cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
               {lbl}
@@ -5345,13 +5347,13 @@ function DataCompare({revenues}){
         </div>
       </div>
 
-      <Card>
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-          <div style={{fontWeight:600,fontSize:14,color:D.black}}>전체 매출 볼륨</div>
-          <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+          <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
             {COMPARE_CHANNELS.map(ch=>(
-              <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:D.textSub}}>
-                <span style={{width:10,height:10,borderRadius:2,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
+              <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
+                <span style={{width:8,height:8,borderRadius:2,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0,boxShadow:`0 0 6px ${COMPARE_CH_COLOR[ch]}88`}}/>
                 {ch}
               </span>
             ))}
@@ -5360,12 +5362,12 @@ function DataCompare({revenues}){
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
           {hasData
             ?<RevenueSankeyChart periods={revenueData} svgW={minSvgW}/>
-            :<div style={{textAlign:"center",padding:"80px 0",color:D.textMeta,fontSize:13}}>
+            :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>
               매출 데이터를 업로드하면 그래프가 표시됩니다
             </div>
           }
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -5529,7 +5531,7 @@ export default function App() {
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
         {page==="promo"&&<PromoFlow revenues={revenues}/>}
-        {page==="compare"&&<DataCompare revenues={revenues}/>}
+        {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
