@@ -3413,7 +3413,34 @@ function StockUploader({ onUpdate }) {
   const [existing,setExisting]=useState(null);
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
+  const [history,setHistory]=useState(null);
+  const [histTs,setHistTs]=useState(null);
+  const [selected,setSelected]=useState(new Set());
+  const [deleteConfirm,setDeleteConfirm]=useState(false);
+  const [histFilter,setHistFilter]=useState("");
   const dateValid=startDate&&endDate&&startDate<=endDate;
+
+  const loadHistory=useCallback(async()=>{
+    const db=await getSupabase();
+    const {data}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).order("product_name");
+    setHistory(data||[]); setHistTs(nowStr()); setSelected(new Set()); setDeleteConfirm(false);
+  },[]);
+
+  const toggleSelect=id=>setSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
+  const toggleAll=rows=>{
+    const ids=rows.map(r=>r.id);
+    setSelected(prev=>ids.every(id=>prev.has(id))?new Set():new Set(ids));
+  };
+
+  const handleDeleteSelected=async()=>{
+    if(!deleteConfirm){setDeleteConfirm(true);return;}
+    const db=await getSupabase();
+    const ids=[...selected];
+    for(let i=0;i<ids.length;i+=100){
+      await db.from("stock_uploads").delete().in("id",ids.slice(i,i+100));
+    }
+    const ts2=nowStr(); onUpdate(ts2); loadHistory(); setDeleteConfirm(false);
+  };
 
   const confirmDate=async()=>{
     setLoading(true);
@@ -3507,25 +3534,96 @@ function StockUploader({ onUpdate }) {
           {result?.type==="error"&&step!==2&&<Alert type="error" msg={result.msg}/>}
         </Card>
         <Card>
-          <div style={{fontWeight:500,fontSize:12,marginBottom:20}}>
-            {step<2?`기존 DB — ${startDate}~${endDate}`:`새 파일 — ${fileName}`}
-          </div>
-          {step===0&&<div style={{color:D.textMeta,textAlign:"center",padding:60,fontSize:12}}>기간 선택 후 기존 데이터 표시</div>}
-          {step>=1&&step<2&&(existing?.length?
-            <PreviewTable rows={existing} cols={[
-              {key:"upload_date",label:"업로드일",color:D.textMeta},
-              {key:"product_name",label:"상품명",maxW:150},
-              {key:"option_name",label:"옵션",color:D.textMeta},
-              {key:"qty",label:"수량",bold:true},
-              {key:"memo",label:"메모",color:D.textMeta},
-            ]}/>:
-            <div style={{color:D.green,textAlign:"center",padding:60,fontSize:12}}>해당 기간 기존 데이터 없음</div>)}
-          {step>=2&&preview&&<PreviewTable rows={preview} cols={[
-            {key:"product_name",label:"상품명",maxW:180},
-            {key:"option_name",label:"옵션",color:D.textMeta},
-            {key:"qty",label:"수량",bold:true},
-            {key:"memo",label:"메모",color:D.textMeta},
-          ]}/>}
+          {(step===1||step===2)?(
+            <>
+              <div style={{fontWeight:500,fontSize:12,marginBottom:20}}>
+                {step<2?`기존 DB — ${startDate}~${endDate}`:`새 파일 — ${fileName}`}
+              </div>
+              {step===1&&(existing?.length?
+                <PreviewTable rows={existing} cols={[
+                  {key:"upload_date",label:"업로드일",color:D.textMeta},
+                  {key:"product_name",label:"상품명",maxW:150},
+                  {key:"option_name",label:"옵션",color:D.textMeta},
+                  {key:"qty",label:"수량",bold:true},
+                  {key:"memo",label:"메모",color:D.textMeta},
+                ]}/>:
+                <div style={{color:D.green,textAlign:"center",padding:60,fontSize:12}}>해당 기간 기존 데이터 없음</div>)}
+              {step===2&&preview&&<PreviewTable rows={preview} cols={[
+                {key:"product_name",label:"상품명",maxW:180},
+                {key:"option_name",label:"옵션",color:D.textMeta},
+                {key:"qty",label:"수량",bold:true},
+                {key:"memo",label:"메모",color:D.textMeta},
+              ]}/>}
+            </>
+          ):(
+            <>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontWeight:600,fontSize:13}}>입고 내역</span>
+                  <UpdatedAt ts={histTs}/>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  {selected.size>0&&(
+                    <button onClick={handleDeleteSelected}
+                      style={{background:deleteConfirm?D.red:"transparent",color:deleteConfirm?"#fff":D.red,
+                        border:`1px solid ${D.red}`,borderRadius:6,padding:"4px 12px",fontSize:11,cursor:"pointer"}}>
+                      {deleteConfirm?`${selected.size}건 삭제 확인`:`${selected.size}건 삭제`}
+                    </button>
+                  )}
+                  <Btn onClick={loadHistory} variant="ghost" style={{padding:"4px 11px",fontSize:11}}>불러오기</Btn>
+                </div>
+              </div>
+              {history===null
+                ?<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>불러오기를 눌러주세요</div>
+                :history.length===0
+                  ?<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>입고 데이터 없음</div>
+                  :(()=>{
+                    const filtered=histFilter
+                      ?history.filter(r=>(r.product_name||"").includes(histFilter)||(r.option_name||"").includes(histFilter))
+                      :history;
+                    const allSelected=filtered.length>0&&filtered.every(r=>selected.has(r.id));
+                    return(
+                      <div>
+                        <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+                          <input type="text" placeholder="상품명 검색" value={histFilter}
+                            onChange={e=>{setHistFilter(e.target.value);setDeleteConfirm(false);}}
+                            style={{flex:1,border:`1px solid ${D.border}`,borderRadius:6,padding:"5px 8px",
+                              fontSize:11,background:"transparent",color:D.text}}/>
+                          <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>{filtered.length}건</span>
+                        </div>
+                        <div style={{overflowY:"auto",maxHeight:520}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                            <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
+                              <th style={{padding:"5px 7px",textAlign:"center",width:28}}>
+                                <input type="checkbox" checked={allSelected} onChange={()=>toggleAll(filtered)}/>
+                              </th>
+                              {["업로드일","상품명","옵션","수량","메모"].map(h=>(
+                                <th key={h} style={{padding:"5px 7px",textAlign:"left",color:D.textMeta,fontWeight:400}}>{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>
+                              {filtered.map(r=>(
+                                <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,
+                                  background:selected.has(r.id)?"#f5f5f5":"transparent"}}>
+                                  <td style={{padding:"4px 7px",textAlign:"center"}}>
+                                    <input type="checkbox" checked={selected.has(r.id)} onChange={()=>{toggleSelect(r.id);setDeleteConfirm(false);}}/>
+                                  </td>
+                                  <td style={{padding:"5px 7px",color:D.textMeta}}>{r.upload_date}</td>
+                                  <td style={{padding:"5px 7px",fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
+                                  <td style={{padding:"5px 7px",color:D.textSub}}>{r.option_name||"—"}</td>
+                                  <td style={{padding:"5px 7px",fontWeight:600}}>{(r.qty||0).toLocaleString()}</td>
+                                  <td style={{padding:"5px 7px",color:D.textMeta}}>{r.memo||""}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()
+              }
+            </>
+          )}
         </Card>
       </div>
     </div>
