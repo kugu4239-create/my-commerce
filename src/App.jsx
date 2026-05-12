@@ -6,10 +6,11 @@ import {
 } from "recharts";
 
 // ─────────────────────────────────────────────
-// NOTE: Supabase revenues 테이블에 아래 컬럼 추가 필요:
+// NOTE: Supabase 테이블 컬럼 추가 필요:
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS order_count integer DEFAULT 0;
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_amount integer DEFAULT 0;
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_count integer DEFAULT 0;
+//   ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount integer DEFAULT 0;
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
@@ -807,19 +808,29 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
-  // 채널별 unique 주문번호 집계 — 배송 완료 건만, order_id = "oid||prod||opt" 형식
-  const chOrderIds={};
+  // 채널별 배송 주문 집계: shipped/returned 카운트 + 객단가용 주문금액 맵
+  // chOrderAmt[ch][oid] = 주문금액 (자사몰/무신사: 상품별 합산, 29CM: 최초값만)
+  const chOrderAmt={};  // 객단가 계산용
+  const chOrderIds={};  // uniqueOrders 카운트용 (offline 합산에도 사용)
+  // 29CM은 주문번호당 총금액이 각 행에 중복 표시 → 첫 번째 값만
+  const CH_SUM_ALL=new Set(["자사몰","무신사"]);
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(r.status==="배송") byChannel[ch].shipped++;
     if(r.status==="반품") byChannel[ch].returned++;
-    if(r.status!=="배송") return; // 객단가 분모: 배송 완료 주문만
-    if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
-    // oid||prod||opt → oid만 추출; 없으면 전체 key를 surrogate로
+    if(r.status!=="배송") return;
     const raw=(r.order_id||"");
-    const oid=raw.split("||")[0];
-    chOrderIds[ch].add(oid||raw); // oid 비어있으면 raw(=||prod||opt) surrogate
+    const oid=raw.split("||")[0]||raw;
+    if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
+    chOrderIds[ch].add(oid);
+    if(!chOrderAmt[ch]) chOrderAmt[ch]={};
+    const amt=r.amount||0;
+    if(CH_SUM_ALL.has(ch)){
+      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+amt; // 개별 금액 합산
+    } else {
+      if(chOrderAmt[ch][oid]===undefined) chOrderAmt[ch][oid]=amt; // 29CM: 최초값만
+    }
   });
   // 판교점+일산점 → 오프라인 스토어 합산
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
@@ -870,7 +881,16 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
     const uq=(chOrderIds[c.name]||new Set()).size||c.shipped;
     c.uniqueOrders=uq;
-    c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
+    if(c.name==="오프라인 스토어"){
+      // 오프라인: 기존 방식 (store_sales CSV 매출 / unique 주문ID)
+      c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
+    } else {
+      // 온라인: 이지어드민 CSV 주문금액 합 / unique 주문번호 수
+      const orderMap=chOrderAmt[c.name]||{};
+      const totalAmt=Object.values(orderMap).reduce((s,a)=>s+a,0);
+      const orderCount=Object.keys(orderMap).length||uq;
+      c.avgOrderValue=orderCount>0&&totalAmt>0?Math.round(totalAmt/orderCount):0;
+    }
   });
 
   // 월별 배송/반품
@@ -3449,6 +3469,7 @@ function EasyAdminUploader({ onUpdate }) {
           const csCol      = findCol("CS","cs처리","cs상태","cs") || f.cs;
           const statusCol  = findCol("상태","status") || f.status;
           const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
+          const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","금액","amount","price") || f.revenue;
 
           if(!orderIdCol) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
           if(!dateCol)    throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
@@ -3466,13 +3487,15 @@ function EasyAdminUploader({ onUpdate }) {
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
             const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
             const qty=toNum(r[qtyCol])||1;
+            const amt=amtCol?toNum(r[amtCol]):0;
             // 관리번호+상품명+옵션 조합을 DB key로 사용 → 같은 관리번호 내 여러 상품 허용
             const dbKey=`${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
               grouped[dbKey]={order_id:dbKey,order_date:dateVal,channel:ch,
-                product_name:prod,option_name:opt,qty:0,status,raw_status:csRaw||statusRaw};
+                product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
             }
             grouped[dbKey].qty+=qty;
+            grouped[dbKey].amount+=amt;
             grouped[dbKey].status=status;
           });
           const parsed=Object.values(grouped);
