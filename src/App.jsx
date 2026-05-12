@@ -1979,6 +1979,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 db.from("stock_uploads").delete().gte("upload_date","2000-01-01"),
                 db.from("revenues").delete().gte("date","2000-01-01"),
                 db.from("store_sales").delete().gte("sale_date","2000-01-01"),
+                db.from("cs_data").delete().gte("id",1),
               ]);
               try{localStorage.removeItem("cs_data");}catch{}
               setDeleteAll(false);
@@ -3668,20 +3669,35 @@ function CSDataInput() {
   const [selected,setSelected]=useState(new Set());
   const [delConfirm,setDelConfirm]=useState(false);
 
+  useEffect(()=>{
+    (async()=>{
+      const local=getCSData();
+      const db=await getSupabase();
+      const{data,error}=await db.from("cs_data").select("*").order("id",{ascending:false});
+      if(!error&&data){
+        if(data.length>0){saveCSData(data);setCSData(data);}
+        else if(local.length>0){await db.from("cs_data").insert(local);}
+      }
+    })();
+  },[]);
+
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
 
-  const save=()=>{
+  const save=async()=>{
     if(!product.trim()||!reason.trim())return;
-    const next=[{id:Date.now(),date,product_name:product.trim(),return_reason:reason.trim(),channel},...csData];
+    const newR={id:Date.now(),date,product_name:product.trim(),return_reason:reason.trim(),channel};
+    const next=[newR,...csData];
     saveCSData(next);setCSData(next);
     setProduct("");setReason("");
+    const db=await getSupabase();
+    await db.from("cs_data").insert(newR);
   };
 
   const handleCSVFile=useCallback(file=>{
     if(!file)return;
     setCsvResult(null);
-    parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
+    parseAnyFile(file,{header:true,skipEmptyLines:true},async({data})=>{
         try{
           const cols=Object.keys(data[0]||{});
           const lc=cols.map(c=>c.toLowerCase().replace(/[\s\[\]()]/g,""));
@@ -3737,13 +3753,17 @@ function CSDataInput() {
           const next=[...newEntries,...csData];
           saveCSData(next);setCSData(next);
           setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료`});
+          const db=await getSupabase();
+          await db.from("cs_data").insert(newEntries);
         }catch(e){setCsvResult({type:"error",msg:e.message});}
       },e=>setCsvResult({type:"error",msg:e.message}));
   },[csData,today]);
 
-  const del=id=>{
+  const del=async id=>{
     const next=csData.filter(r=>r.id!==id);
     saveCSData(next);setCSData(next);setSelected(s=>{const n=new Set(s);n.delete(id);return n;});
+    const db=await getSupabase();
+    await db.from("cs_data").delete().eq("id",id);
   };
   const toggleSel=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const toggleAll=()=>{
@@ -3751,16 +3771,22 @@ function CSDataInput() {
     const allSel=ids.length>0&&ids.every(id=>selected.has(id));
     setSelected(s=>{const n=new Set(s);ids.forEach(id=>allSel?n.delete(id):n.add(id));return n;});
   };
-  const delSelected=()=>{
+  const delSelected=async()=>{
+    const ids=[...selected];
     const next=csData.filter(r=>!selected.has(r.id));
     saveCSData(next);setCSData(next);setSelected(new Set());setDelConfirm(false);
+    const db=await getSupabase();
+    await Promise.all(ids.map(id=>db.from("cs_data").delete().eq("id",id)));
   };
 
   const startCsEdit=(id,field,val)=>{setEditCell({id,field});setEditVal(String(val??""));};
-  const saveCsEdit=()=>{
+  const saveCsEdit=async()=>{
     if(!editCell) return;
     const next=csData.map(r=>r.id===editCell.id?{...r,[editCell.field]:editVal}:r);
-    saveCSData(next);setCSData(next);setEditCell(null);
+    saveCSData(next);setCSData(next);
+    const db=await getSupabase();
+    await db.from("cs_data").update({[editCell.field]:editVal}).eq("id",editCell.id);
+    setEditCell(null);
   };
 
   const filtered=csData.filter(r=>!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd));
@@ -5204,6 +5230,12 @@ export default function App() {
     setStocks(allStocks);
     setRevenues(allRevenues);
     setStoreSales(allStoreSales);
+    const{data:tsData}=await db.from("upload_ts").select("*").order("id",{ascending:true}).limit(1);
+    if(tsData&&tsData.length>0){
+      const t=tsData[0];
+      const next={orders:t.orders||null,stock:t.stock||null,revenue:t.revenue||null,store:t.store||null};
+      setTs(next);try{localStorage.setItem("merryon_ts",JSON.stringify(next));}catch{}
+    }
     if(firstLoad.current){
       const elapsed=Date.now()-t0;
       if(elapsed<3000) await new Promise(res=>setTimeout(res,3000-elapsed));
@@ -5214,11 +5246,15 @@ export default function App() {
 
   useEffect(()=>{ loadData(); },[loadData]);
 
-  const updateTs=useCallback((key,val)=>setTs(prev=>{
-    const next={...prev,[key]:val};
-    try{localStorage.setItem("merryon_ts",JSON.stringify(next));}catch{}
-    return next;
-  }),[]);
+  const updateTs=useCallback(async(key,val)=>{
+    setTs(prev=>{
+      const next={...prev,[key]:val};
+      try{localStorage.setItem("merryon_ts",JSON.stringify(next));}catch{}
+      return next;
+    });
+    const db=await getSupabase();
+    await db.from("upload_ts").upsert({id:1,[key]:val},{onConflict:"id"});
+  },[]);
 
   const nav=[
     {key:"dashboard",label:"대시보드"},
