@@ -62,6 +62,8 @@ const toDate = raw => {
   if (m1) return `${m1[1]}-${m1[2].padStart(2,"0")}-${m1[3].padStart(2,"0")}`;
   const m2 = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
   if (m2) return `${m2[3]}-${m2[2].padStart(2,"0")}-${m2[1].padStart(2,"0")}`;
+  const m3 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m3) return `${m3[1]}-${m3[2]}-${m3[3]}`;
   return null;
 };
 
@@ -3093,7 +3095,7 @@ function RevenueForm({ onUpdate }) {
         channel:chCol?normChannel(r[chCol]):ch,
         amount:Number(String(r[amtCol]||"0").replace(/[^0-9.-]/g,""))||0,
         order_count:ordCol?Number(r[ordCol]||0):0,
-        refund_amount:refAmtCol?Number(String(r[refAmtCol]||"0").replace(/[^0-9.-]/g,"")):0,
+        refund_amount:refAmtCol?Math.abs(Number(String(r[refAmtCol]||"0").replace(/[^0-9.-]/g,""))):0,
         refund_count:refCntCol?Number(r[refCntCol]||0):0,
       }));
       // 기존 데이터와 겹치는 (date, channel) 쌍 확인
