@@ -5360,11 +5360,11 @@ function RevenueSankeyChart({periods,svgW}){
                     {selIdx(pi,n.ch)+1}
                   </text>
                 )}
-                {/* 첫 번째 컬럼에만 채널명 (노드 왼쪽) */}
-                {pi===0&&n.h>=10&&(
-                  <text x={n.x-6} y={n.y+n.h/2}
-                    textAnchor="end" dominantBaseline="middle"
-                    fontSize={10} fontWeight={600} fill="#fff"
+                {/* 첫 번째 컬럼 노드 안에 채널명 삽입 */}
+                {pi===0&&n.h>=14&&(
+                  <text x={n.x+NODE_W/2} y={n.y+n.h/2}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize={9} fontWeight={700} fill="#000"
                     style={{pointerEvents:"none",userSelect:"none"}}>
                     {n.ch==="오프라인 스토어"?"오프라인":n.ch}
                   </text>
@@ -5388,7 +5388,7 @@ function RevenueSankeyChart({periods,svgW}){
                 <text x={rx} y={midY}
                   transform={`rotate(90 ${rx} ${midY})`}
                   textAnchor="middle" dominantBaseline="middle"
-                  fontSize={9} fill="#fff" style={{pointerEvents:"none",userSelect:"none"}}>
+                  fontSize={15} fill="#fff" style={{pointerEvents:"none",userSelect:"none"}}>
                   {fmtAmt(col.total)}
                 </text>
               );
