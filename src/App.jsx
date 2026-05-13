@@ -5234,7 +5234,7 @@ function RevenueSankeyChart({periods,svgW}){
   const [selNodes,setSelNodes]=useState([]);   // max 2 [{key,pi,ch,amt,label}]
   const [modal,setModal]=useState(null);       // {x,y,a,b}
 
-  const SVG_H=480,PAD_T=42,PAD_B=52,PAD_H=28,NODE_W=40,GAP=3,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const SVG_H=480,PAD_T=70,PAD_B=52,PAD_H=28,NODE_W=40,GAP=3,AVAIL_H=SVG_H-PAD_T-PAD_B;
   const CH_LABEL_W=52; // first-col label area
 
   const maxTotal=Math.max(...periods.map(p=>p.total),1);
@@ -5406,27 +5406,25 @@ function RevenueSankeyChart({periods,svgW}){
           </g>
         ))}
 
-        {/* 컬럼 간 전체 매출 증감률 — 하단 세로 점선 */}
+        {/* 컬럼 간 전체 매출 증감률 — 다음 컬럼 시작점 세로 점선 */}
         {cols.slice(0,-1).map((col,pi)=>{
           const next=cols[pi+1];
           if(!col.total||!next.total) return null;
           const pct=((next.total-col.total)/col.total*100);
           const up=pct>=0;
           const clr=up?"#4ade80":"#f87171";
-          const botY=(c)=>{const vis=c.nodes.filter(n=>n.h>0);return vis.length?Math.max(...vis.map(n=>n.y+n.h)):PAD_T+AVAIL_H;};
-          const lineTop=Math.max(botY(col),botY(next))+6;
-          const lineBot=SVG_H-PAD_B-4;
-          const mx=(col.colX+NODE_W+next.colX)/2;
+          const mx=next.colX+NODE_W/2;
+          const lineTop=4;
+          const lineBot=PAD_T-6;
           const midY=(lineTop+lineBot)/2;
-          if(lineTop>=lineBot) return null;
           return(
             <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
               <line x1={mx} y1={lineTop} x2={mx} y2={lineBot}
-                stroke={clr} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6}/>
+                stroke={clr} strokeWidth={1} strokeDasharray="4 3" opacity={0.6}/>
               <text x={mx} y={midY}
                 transform={`rotate(90 ${mx} ${midY})`}
                 textAnchor="middle" dominantBaseline="middle"
-                fontSize={9} fontWeight={700} fill={clr} style={{userSelect:"none"}}>
+                fontSize={10} fontWeight={700} fill={clr} style={{userSelect:"none"}}>
                 {up?"+":""}{pct.toFixed(1)}%
               </text>
             </g>
