@@ -5406,28 +5406,29 @@ function RevenueSankeyChart({periods,svgW}){
           </g>
         ))}
 
-        {/* 컬럼 간 전체 매출 증감률 — 노드 하단~날짜 라벨 사이 세로 점선 */}
+        {/* 볼륨 증가 시 단차 지점 점선 */}
         {cols.slice(0,-1).map((col,pi)=>{
           const next=cols[pi+1];
           if(!col.total||!next.total) return null;
           const pct=((next.total-col.total)/col.total*100);
-          const up=pct>=0;
-          const clr=up?"#4ade80":"#f87171";
+          if(pct<=0) return null;          // 증가일 때만
+          const clr="#4ade80";
+          const botCur=col.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.max(m,n.y+n.h),PAD_T);
+          const botNext=next.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.max(m,n.y+n.h),PAD_T);
+          const lineTop=botCur;   // 이전 컬럼 하단 (단차 시작)
+          const lineBot=botNext;  // 다음 컬럼 하단 (단차 끝)
+          if(lineBot<=lineTop+4) return null;
           const mx=next.colX+NODE_W/2;
-          const botOfCol=next.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.max(m,n.y+n.h),PAD_T);
-          const lineTop=botOfCol+6;
-          const lineBot=SVG_H-PAD_B-4;
           const midY=(lineTop+lineBot)/2;
-          if(lineTop>=lineBot-4) return null;
           return(
             <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
               <line x1={mx} y1={lineTop} x2={mx} y2={lineBot}
-                stroke={clr} strokeWidth={1} strokeDasharray="4 3" opacity={0.6}/>
+                stroke={clr} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.7}/>
               <text x={mx} y={midY}
                 transform={`rotate(90 ${mx} ${midY})`}
                 textAnchor="middle" dominantBaseline="middle"
                 fontSize={10} fontWeight={700} fill={clr} style={{userSelect:"none"}}>
-                {up?"+":""}{pct.toFixed(1)}%
+                +{pct.toFixed(1)}%
               </text>
             </g>
           );
