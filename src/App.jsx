@@ -5322,7 +5322,9 @@ function RevenueSankeyChart({periods,svgW}){
   return(
     <div ref={wrapRef} style={{position:"relative"}}
       onClick={()=>{setSelNodes([]);setModal(null);}}>
-      <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}>
+      <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}
+        onClick={()=>{setSelNodes([]);setModal(null);}}>
+        <rect x={0} y={0} width={svgW} height={SVG_H} fill="transparent"/>
         <defs>
           {COMPARE_CHANNELS.map(ch=>{
             const id=`cg2_${ch.replace(/[^a-z0-9]/gi,"_")}`;
