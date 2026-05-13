@@ -417,13 +417,14 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   }
 };
 
-function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="", required="", optional="" }) {
+function DropZone({ onFile, label="파일을 드래그 앤 드롭 또는 클릭하여 선택", fileName="", required="", optional="" }) {
   const [hover,setHover]=useState(false);
   const handle=useCallback(e=>{
     e.preventDefault();
     const file=e.dataTransfer?.files?.[0]||e.target.files?.[0];
     if(file) onFile(file);
   },[onFile]);
+  const cols=[...required.split("·").map(s=>s.trim()).filter(Boolean),...optional.split("·").map(s=>s.trim()).filter(Boolean)].filter(Boolean);
   return (
     <label onDragOver={e=>{e.preventDefault();setHover(true);}}
       onDragLeave={()=>setHover(false)} onDrop={e=>{setHover(false);handle(e);}}
@@ -435,11 +436,11 @@ function DropZone({ onFile, label="파일 드래그 또는 클릭", fileName="",
       <div style={{ color:D.textSub, fontSize:13 }}>{label}</div>
       {fileName
         ?<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>{fileName}</div>
-        :<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>CSV · XLSX · XLS 드래그 또는 클릭</div>}
-      {!fileName&&(required||optional)&&(
-        <div style={{marginTop:6,fontSize:10,textAlign:"center",lineHeight:1.7}}>
-          {required&&<div><span style={{color:D.text,fontWeight:600}}>필수 </span><span style={{color:D.textMeta}}>{required}</span></div>}
-          {optional&&<div><span style={{color:D.textMeta}}>선택 </span><span style={{color:D.textMeta,opacity:.7}}>{optional}</span></div>}
+        :<div style={{color:D.textMeta,fontSize:11,marginTop:3}}>드래그 앤 드롭 또는 클릭하여 파일 선택</div>}
+      {!fileName&&cols.length>0&&(
+        <div style={{marginTop:6,fontSize:10,textAlign:"center",lineHeight:1.8}}>
+          <span style={{color:D.textMeta,fontWeight:600}}>필요 컬럼 </span>
+          <span style={{color:D.textMeta}}>{cols.join(" · ")}</span>
         </div>
       )}
     </label>
@@ -5084,40 +5085,101 @@ function StoreUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // DATA INPUT (탭 컨테이너)
 // ─────────────────────────────────────────────
+// 가이드 영상 URL (YouTube embed: "https://www.youtube.com/embed/VIDEO_ID?autoplay=1")
+const GUIDE_VIDEOS={revenue:"",stock:"",orders:"",store:"",cs:""};
+
+function GuideVideoModal({show,onClose,videoUrl}){
+  if(!show) return null;
+  return(
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"#000a",zIndex:1000,
+      display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:"#111",borderRadius:12,padding:20,maxWidth:760,width:"90%",
+          boxShadow:"0 8px 40px #000c",position:"relative"}}>
+        <button onClick={onClose}
+          style={{position:"absolute",top:10,right:14,background:"none",border:"none",
+            color:"#aaa",fontSize:22,cursor:"pointer",lineHeight:1}}>✕</button>
+        {videoUrl
+          ?<iframe src={videoUrl} width="100%" height="400" frameBorder="0"
+              allow="autoplay; fullscreen" allowFullScreen
+              style={{borderRadius:8,display:"block"}}/>
+          :<div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
+              color:"#555",fontSize:13}}>영상 준비 중입니다</div>
+        }
+      </div>
+    </div>
+  );
+}
+
+function GuideSection({tabKey,desc,isDark}){
+  const [open,setOpen]=useState(false);
+  const bdrColor=isDark?"#fff":"#111";
+  return(
+    <div style={{marginBottom:20,padding:"14px 18px",
+      border:`1.5px solid ${bdrColor}`,borderRadius:8,
+      background:isDark?"#0e0e0e":"#fafafa"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+        <div style={{fontSize:12,color:isDark?"#ccc":D.textSub,lineHeight:1.8,flex:1,whiteSpace:"pre-line"}}>
+          {desc}
+        </div>
+        <button onClick={()=>setOpen(true)}
+          style={{flexShrink:0,background:isDark?"#fff":"#111",color:isDark?"#111":"#fff",
+            border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,
+            cursor:"pointer",fontWeight:700,letterSpacing:"0.04em"}}>
+          Guide
+        </button>
+      </div>
+      <GuideVideoModal show={open} onClose={()=>setOpen(false)} videoUrl={GUIDE_VIDEOS[tabKey]}/>
+    </div>
+  );
+}
+
 function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], storeSales=[] }) {
   const [tab,setTab]=useState("revenue");
-  const [stockInfoOpen,setStockInfoOpen]=useState(false);
-  const [orderInfoOpen,setOrderInfoOpen]=useState(false);
 
   const lastDate=(arr,field)=>{
     const d=arr.map(r=>r[field]).filter(Boolean).sort().at(-1);
-    return d?<span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:6}}>({d})</span>:null;
+    return d?<span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>({d})</span>:null;
   };
 
   const tabs=[
-    {key:"revenue",label:<span>매출 입력{lastDate(revenues,"date")}</span>},
-    {key:"stock",label:<span>입고 CSV{lastDate(stocks,"upload_date")} <InfoBtn onClick={()=>setStockInfoOpen(true)}/></span>},
-    {key:"orders",label:<span>이지어드민 데이터(배송일 기준){lastDate(orders,"order_date")} <InfoBtn onClick={()=>setOrderInfoOpen(true)}/></span>},
-    {key:"store",label:<span>매장 판매 데이터{lastDate(storeSales,"sale_date")}</span>},
-    {key:"cs",label:"CS 데이터"},
-    {key:"delete",label:"데이터 삭제"},
+    {key:"revenue",name:"매출 입력",extra:lastDate(revenues,"date")},
+    {key:"stock",name:"입고",extra:lastDate(stocks,"upload_date")},
+    {key:"orders",name:"배송",extra:lastDate(orders,"order_date")},
+    {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
+    {key:"cs",name:"CS"},
+    {key:"delete",name:"데이터 삭제"},
   ];
+
+  const GUIDES={
+    revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
+    stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
+    cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
+  };
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
-      <div style={{display:"flex",borderBottom:`1px solid ${D.border}`,marginBottom:18}}>
+      {/* 탭 바 — 섹션명에 테두리 박스 */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20}}>
         {tabs.map(t=>(
           <button key={t.key} onClick={()=>setTab(t.key)}
-            style={{background:"transparent",border:"none",
-              borderBottom:tab===t.key?`2px solid ${D.black}`:"2px solid transparent",
-              color:tab===t.key?D.black:D.textSub,
-              padding:"9px 16px",fontWeight:tab===t.key?600:400,
-              fontSize:13,cursor:"pointer",marginBottom:-1,transition:"all 0.12s",
-              display:"flex",alignItems:"center"}}>
-            {t.label}
+            style={{background:tab===t.key?D.black:"transparent",
+              color:tab===t.key?"#fff":D.textSub,
+              border:`1.5px solid ${tab===t.key?D.black:D.borderMid}`,
+              borderRadius:6,padding:"6px 14px",fontWeight:tab===t.key?700:400,
+              fontSize:12,cursor:"pointer",transition:"all 0.12s",
+              display:"flex",alignItems:"center",gap:4}}>
+            {t.name}{t.extra}
           </button>
         ))}
       </div>
+
+      {/* 가이드 섹션 (삭제 탭 제외) */}
+      {tab!=="delete"&&GUIDES[tab]&&(
+        <GuideSection tabKey={tab} desc={GUIDES[tab]} isDark={false}/>
+      )}
 
       {tab==="revenue"&&<RevenueForm onUpdate={ts=>onUpdate("revenue",ts)}/>}
       {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)}/>}
@@ -5127,26 +5189,11 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
       {tab==="delete"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고 CSV" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="orders" dateField="order_date" label="이지어드민 CSV" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매 CSV" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="orders" dateField="order_date" label="배송" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매" onDone={()=>onDataChange?.()}/>
         </div>
       )}
-
-      {/* 입고 CSV 가이드 */}
-      <InfoModal show={stockInfoOpen} onClose={()=>setStockInfoOpen(false)} title="입고 CSV 업로드 가이드">
-        이지어드민 재고 관리에서 기간 선택 후 작업 <strong>[배송]</strong> 선택 후 수량에 <strong>1</strong> 입력 후 <strong>애널리틱스용 양식</strong>으로 다운로드 → CSV로 변환 후 업로드
-      </InfoModal>
-
-      {/* 이지어드민 CSV 가이드 */}
-      <InfoModal show={orderInfoOpen} onClose={()=>setOrderInfoOpen(false)} title="이지어드민 CSV 업로드 가이드">
-        이지어드민 주문 관리 <strong>확장주문검색2</strong>에서 기간을 <strong>배송일</strong>로 설정 후 원하는 기간 선택 → 검색 후 다운로드 → CSV로 변환 후 업로드
-        <br/><br/>
-        <strong>CS 컬럼 상태 매핑:</strong><br/>
-        • 정상 → 배송<br/>
-        • 배송후 전체 교환 → 교환<br/>
-        • 배송후 전체 취소 → 반품
-      </InfoModal>
     </div>
   );
 }
@@ -5390,6 +5437,8 @@ function RevenueSankeyChart({periods,svgW}){
 function DataCompare({revenues,storeSales=[]}){
   // 전체 매출 볼륨 전용 필터 (초기값: 월단위)
   const [volUnit,setVolUnit]=useState("month");
+  const [customStart,setCustomStart]=useState("");
+  const [customEnd,setCustomEnd]=useState("");
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
 
@@ -5402,11 +5451,57 @@ function DataCompare({revenues,storeSales=[]}){
   const volPeriods=useMemo(()=>{
     const today=new Date();
     const res=[];
+    // 직접 날짜 선택 모드: 선택 범위를 현재 단위로 분할
+    const rangeStart=customStart?new Date(customStart):null;
+    const rangeEnd=customEnd?new Date(customEnd):null;
+    if(rangeStart&&rangeEnd&&rangeStart<=rangeEnd){
+      if(volUnit==="week"){
+        let cur=new Date(rangeStart);
+        while(cur<=rangeEnd){
+          const s=cur.toISOString().slice(0,10);
+          const e=new Date(cur);e.setDate(e.getDate()+6);
+          const eClamp=e>rangeEnd?rangeEnd:e;
+          res.push({label:`${cur.getMonth()+1}/${cur.getDate()}`,start:s,end:eClamp.toISOString().slice(0,10)});
+          cur.setDate(cur.getDate()+7);
+        }
+      } else if(volUnit==="quarter"){
+        let y=rangeStart.getFullYear(),q=Math.floor(rangeStart.getMonth()/3);
+        while(true){
+          const sm=q*3; const s=new Date(y,sm,1); const e=new Date(y,sm+3,0);
+          if(s>rangeEnd) break;
+          const eClamp=e>rangeEnd?rangeEnd:e;
+          res.push({label:`${y}Q${q+1}`,start:s.toISOString().slice(0,10),end:eClamp.toISOString().slice(0,10)});
+          q++; if(q>3){q=0;y++;}
+          if(res.length>20) break;
+        }
+      } else {
+        let cur=new Date(rangeStart.getFullYear(),rangeStart.getMonth(),1);
+        while(cur<=rangeEnd){
+          const endM=new Date(cur.getFullYear(),cur.getMonth()+1,0);
+          const eClamp=endM>rangeEnd?rangeEnd:endM;
+          res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:cur.toISOString().slice(0,10),end:eClamp.toISOString().slice(0,10)});
+          cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+          if(res.length>24) break;
+        }
+      }
+      return res;
+    }
+    // 기본 모드
     if(volUnit==="week"){
       for(let i=12;i>=0;i--){
         const end=new Date(today);end.setDate(end.getDate()-i*7);
         const start=new Date(end);start.setDate(start.getDate()-6);
         res.push({label:`${start.getMonth()+1}/${start.getDate()}`,start:start.toISOString().slice(0,10),end:end.toISOString().slice(0,10)});
+      }
+    } else if(volUnit==="quarter"){
+      const curQ=Math.floor(today.getMonth()/3);
+      const curY=today.getFullYear();
+      for(let i=3;i>=0;i--){
+        let q=curQ-i,y=curY;
+        while(q<0){q+=4;y--;}
+        const sm=q*3;
+        const s=new Date(y,sm,1);const e=new Date(y,sm+3,0);
+        res.push({label:`${y}Q${q+1}`,start:s.toISOString().slice(0,10),end:e.toISOString().slice(0,10)});
       }
     } else {
       for(let i=3;i>=0;i--){
@@ -5416,7 +5511,7 @@ function DataCompare({revenues,storeSales=[]}){
       }
     }
     return res;
-  },[volUnit]);
+  },[volUnit,customStart,customEnd]);
 
   const revenueData=useMemo(()=>volPeriods.map(p=>{
     const byChannel={};
@@ -5446,17 +5541,29 @@ function DataCompare({revenues,storeSales=[]}){
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
-          <div style={{display:"flex",gap:4}}>
-            {[["week","주단위"],["month","월단위"]].map(([u,lbl])=>(
+          <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
+            {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
               <button key={u} onClick={()=>setVolUnit(u)}
                 style={{background:volUnit===u?"#fff":"transparent",
                   color:volUnit===u?"#000":DC.sub,
                   border:`1px solid ${volUnit===u?"#fff":DC.border}`,
-                  borderRadius:6,padding:"4px 12px",fontSize:11,
+                  borderRadius:6,padding:"4px 10px",fontSize:11,
                   cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
                 {lbl}
               </button>
             ))}
+            <span style={{color:DC.border,fontSize:14,margin:"0 4px"}}>|</span>
+            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
+              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"3px 7px",fontSize:11,color:DC.text,colorScheme:"dark"}}/>
+            <span style={{color:DC.sub,fontSize:11}}>~</span>
+            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
+              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"3px 7px",fontSize:11,color:DC.text,colorScheme:"dark"}}/>
+            {(customStart||customEnd)&&(
+              <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
+                style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:14,padding:"0 2px"}}>✕</button>
+            )}
           </div>
         </div>
         {/* 채널 범례 */}
