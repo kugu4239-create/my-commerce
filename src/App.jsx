@@ -5509,7 +5509,7 @@ function parseInvFile(file,onResult,onError){
         const get=(f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
         // Remove commas then parse as float→round, so "1,234.5" → 1235, not "12345"
         const getNum=(f)=>Math.round(parseFloat(String(r[colMap[f]]||"0").replace(/,/g,""))||0);
-        const getDate=(f)=>{const v=get(f);if(!v||v==="-") return null;return toDate(v)||v;};
+        const getDate=(f)=>{const v=get(f);if(!v||v==="-") return null;return toDate(v)||null;};
         return{
           snapshot_date:getDate("snapshot_date"),
           product_name:get("product_name"),
@@ -5601,9 +5601,15 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       // Strip reorder-specific fields before inserting to inventory_snapshot
       const invRows=parsedRows.map(({_r_avail,_r_incoming,_r_weekly,_r_monthly,...rest})=>rest);
       const CHUNK=500;
+      let insertedAny=false;
       for(let i=0;i<invRows.length;i+=CHUNK){
         const{error}=await db.from("inventory_snapshot").insert(invRows.slice(i,i+CHUNK));
-        if(error) throw new Error(error.message);
+        if(error){
+          // Clean up any rows already inserted for this snapDate to avoid partial data
+          if(insertedAny) await db.from("inventory_snapshot").delete().eq("snapshot_date",snapDate);
+          throw new Error(error.message);
+        }
+        insertedAny=true;
       }
       setUploadStatus("done");setStatusMsg(`${parsedRows.length.toLocaleString()}개 행 저장 완료`);
       setFile(null);setParsedRows([]);setSnapDate(null);setConflictInfo(null);setShowModal(false);
