@@ -5932,7 +5932,8 @@ function InvBubblePlot({DC,snapshotDates}){
 
         {/* Filters */}
         <div style={{flex:1,minWidth:200}}>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+            <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>Aging 필터</span>
             {INV_AGING_KEYS.map(k=>{
               const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
               return(
@@ -5945,6 +5946,7 @@ function InvBubblePlot({DC,snapshotDates}){
             })}
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+            <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
             <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
@@ -6193,6 +6195,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
 
       {/* Controls */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+        <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
         {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
           <button key={v} onClick={()=>setDateRange(v)}
             style={{background:dateRange===v?"#fff":"transparent",color:dateRange===v?"#000":DC.sub,
@@ -6201,6 +6204,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
           </button>
         ))}
         <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
+        <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
         {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
           <button key={v} onClick={()=>setAggUnit(v)}
             style={{background:aggUnit===v?"rgba(255,255,255,0.08)":"transparent",color:aggUnit===v?DC.text:DC.sub,
@@ -6209,6 +6213,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
           </button>
         ))}
         <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
+        <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
         {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
           <button key={v} onClick={()=>setYMode(v)}
             style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
@@ -6623,7 +6628,6 @@ function ReorderCalculator({DC,refreshKey}){
 function InventoryTrend({DC,onReorderRefresh}){
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [refreshKey,setRefreshKey]=useState(0);
-  const [tab,setTab]=useState("bubble");
 
   const loadDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -6642,21 +6646,17 @@ function InventoryTrend({DC,onReorderRefresh}){
 
       <InventoryUploader DC={DC} onUploaded={onUploaded} onReorderDone={onReorderDone}/>
 
-      {/* Tabs */}
-      <div style={{display:"flex",gap:0,marginTop:28,marginBottom:20,borderBottom:`1px solid ${DC.border}`}}>
-        {[["bubble","SKU Risk Bubble"],["trend","Aging Trend"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setTab(v)}
-            style={{background:"transparent",color:tab===v?DC.text:DC.sub,border:"none",
-              borderBottom:`2px solid ${tab===v?"#7EC8A4":"transparent"}`,
-              padding:"8px 16px",fontSize:12,cursor:"pointer",fontWeight:tab===v?600:400,
-              marginBottom:-1,transition:"color .12s"}}>
-            {l}
-          </button>
-        ))}
+      {/* SKU Risk Bubble */}
+      <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
+        <div style={{fontWeight:600,fontSize:13,color:DC.text,marginBottom:16,letterSpacing:"-0.1px"}}>SKU Risk Bubble</div>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
       </div>
 
-      {tab==="bubble"&&<InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>}
-      {tab==="trend"&&<InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey}/>}
+      {/* Aging Trend */}
+      <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
+        <div style={{fontWeight:600,fontSize:13,color:DC.text,marginBottom:16,letterSpacing:"-0.1px"}}>Aging Trend</div>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey}/>
+      </div>
     </div>
   );
 }
