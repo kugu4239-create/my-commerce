@@ -6305,7 +6305,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
                   <span style={{width:9,height:9,borderRadius:2,background:def.color,display:"inline-block",flexShrink:0}}/>
                   <span style={{fontSize:12,fontWeight:600,color:def.color}}>{def.label}</span>
                 </div>
-                <div style={{fontSize:11,color:DC.dim,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
+                <div style={{fontSize:11,color:"#fff",paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
               </div>
             );
           })}
