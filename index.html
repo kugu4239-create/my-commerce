@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=1080, user-scalable=no, maximum-scale=1.0" />
+    <meta name="viewport" content="width=1080, initial-scale=1.0, user-scalable=no" />
     <title>my-commerce</title>
     <style>
       /* 모바일에서 텍스트 입력 시 iOS 자동 줌인 방지 */
@@ -12,6 +12,25 @@
         touch-action: manipulation;
       }
     </style>
+    <script>
+      /* 1080px 기준 디자인을 모바일 화면 너비에 비례 축소 */
+      (function () {
+        var DESIGN = 1080;
+        var vw = window.innerWidth || screen.width;
+        if (vw < DESIGN) {
+          var s = vw / DESIGN;
+          var meta = document.querySelector('meta[name="viewport"]');
+          if (meta) {
+            meta.setAttribute('content',
+              'width=' + DESIGN +
+              ',initial-scale=' + s.toFixed(6) +
+              ',maximum-scale=' + s.toFixed(6) +
+              ',user-scalable=no'
+            );
+          }
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
