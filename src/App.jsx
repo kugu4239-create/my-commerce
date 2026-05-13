@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from "react";
+import dayjs from "dayjs";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
+  ScatterChart, Scatter, ZAxis, AreaChart, Area,
 } from "recharts";
 
 // ─────────────────────────────────────────────
@@ -446,17 +448,25 @@ function DropZone({ onFile, label="파일을 드래그 앤 드롭 또는 클릭�
     </label>
   );
 }
-function PreviewTable({ rows, cols, outIdx=new Set(), maxRows=80 }) {
+function PreviewTable({ rows, cols, outIdx=new Set(), maxRows=80, theme }) {
+  const previewTheme={
+    surface:theme?.surface||D.surface,
+    border:theme?.border||D.border,
+    textMeta:theme?.textMeta||D.textMeta,
+    text:theme?.text||D.text,
+    red:theme?.red||D.red,
+    outBg:theme?.outBg||"#fef2f2",
+  };
   return (
     <div style={{ overflowY:"auto", maxHeight:340 }}>
       <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
-        <thead style={{ position:"sticky", top:0, background:D.surface }}>
+        <thead style={{ position:"sticky", top:0, background:previewTheme.surface }}>
           <tr>
-            <th style={{ padding:"5px 7px", color:D.textMeta, fontWeight:400,
-              borderBottom:`1px solid ${D.border}`, width:22, textAlign:"center" }}>#</th>
+            <th style={{ padding:"5px 7px", color:previewTheme.textMeta, fontWeight:400,
+              borderBottom:`1px solid ${previewTheme.border}`, width:22, textAlign:"center" }}>#</th>
             {cols.map(c=>(
               <th key={c.key} style={{ padding:"5px 7px", textAlign:"left",
-                color:D.textMeta, fontWeight:400, borderBottom:`1px solid ${D.border}` }}>{c.label}</th>
+                color:previewTheme.textMeta, fontWeight:400, borderBottom:`1px solid ${previewTheme.border}` }}>{c.label}</th>
             ))}
           </tr>
         </thead>
@@ -464,13 +474,13 @@ function PreviewTable({ rows, cols, outIdx=new Set(), maxRows=80 }) {
           {rows.slice(0,maxRows).map((r,i)=>{
             const isOut=outIdx.has(i);
             return (
-              <tr key={i} style={{ borderBottom:`1px solid ${D.border}`,
-                background:isOut?"#fef2f2":"transparent" }}>
-                <td style={{ padding:"5px 7px", color:isOut?D.red:D.textMeta, textAlign:"center" }}>
+              <tr key={i} style={{ borderBottom:`1px solid ${previewTheme.border}`,
+                background:isOut?previewTheme.outBg:"transparent" }}>
+                <td style={{ padding:"5px 7px", color:isOut?previewTheme.red:previewTheme.textMeta, textAlign:"center" }}>
                   {isOut?"⚠":i+1}</td>
                 {cols.map(c=>(
                   <td key={c.key} style={{ padding:"5px 7px",
-                    color:isOut?D.red:c.color||D.text, fontWeight:c.bold?600:400,
+                    color:isOut?previewTheme.red:c.color||previewTheme.text, fontWeight:c.bold?600:400,
                     maxWidth:c.maxW, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                     {c.fmt?c.fmt(r[c.key],r):r[c.key]||"—"}
                   </td>
@@ -479,7 +489,7 @@ function PreviewTable({ rows, cols, outIdx=new Set(), maxRows=80 }) {
             );
           })}
           {rows.length>maxRows&&(
-            <tr><td colSpan={cols.length+1} style={{padding:7,color:D.textMeta,textAlign:"center",fontSize:10}}>
+            <tr><td colSpan={cols.length+1} style={{padding:7,color:previewTheme.textMeta,textAlign:"center",fontSize:10}}>
               + {rows.length-maxRows}건 더</td></tr>
           )}
         </tbody>
@@ -5502,24 +5512,680 @@ function RevenueSankeyChart({periods,svgW}){
   );
 }
 
+const COMPARE_PAGE_THEME={
+  page:"#efebe4",
+  title:"#20252e",
+  text:"#262b34",
+  sub:"#6d7178",
+  muted:"#90949c",
+  softCard:"#faf7f2",
+  softAlt:"#f1ece4",
+  softTint:"#f5f0e8",
+  border:"#d9d0c4",
+  shadow:"0 16px 38px rgba(33,37,45,0.08)",
+  darkCard:"#20262f",
+  darkAlt:"#262f3a",
+  darkBorder:"#353c46",
+  darkText:"#f5f1e9",
+  darkSub:"#adb3bc",
+  darkMuted:"#7e8896",
+  darkSoft:"#1a2129",
+  darkTint:"#171d24",
+  darkLine:"#303945",
+  grid:"#e7e0d5",
+};
+
+const INVENTORY_STATUS_CONFIG=[
+  {key:"healthy",label:"Healthy",daysLabel:"0~30일",description:"마지막 판매 30일 이내",color:"#95bda8",fill:"#dfece4"},
+  {key:"slowMoving",label:"Slow-moving",daysLabel:"31~90일",description:"31~90일",color:"#9aaac6",fill:"#e6ebf4"},
+  {key:"aging",label:"Aging",daysLabel:"91~179일",description:"91~179일",color:"#d2ae79",fill:"#f5ecdd"},
+  {key:"deadStock",label:"Dead Stock",daysLabel:"180일+",description:"180일 이상",color:"#c6928d",fill:"#f5e4e3"},
+];
+const INVENTORY_STATUS_KEYS=INVENTORY_STATUS_CONFIG.map(item=>item.key);
+const INVENTORY_HISTORY_SELECT="snapshot_date, created_at";
+const INVENTORY_SNAPSHOT_SELECT=[
+  "id",
+  "snapshot_date",
+  "product_name",
+  "option_name",
+  "selling_price",
+  "current_stock_qty",
+  "first_inbound_date",
+  "first_inbound_qty",
+  "cumulative_inbound_qty",
+  "latest_inbound_date",
+  "latest_inbound_qty",
+  "last_delivery_date",
+  "cumulative_delivery_qty",
+  "created_at",
+].join(", ");
+const INVENTORY_HEADER_ALIASES={
+  product_name:["상품명","productname"],
+  option_name:["옵션","optionname","option"],
+  selling_price:["판매가","sellingprice","price"],
+  current_stock_qty:["현재고","currentstockqty","currentstock","stockqty"],
+  first_inbound_date:["처음입고일","firstinbounddate"],
+  first_inbound_qty:["처음입고수량","firstinboundqty"],
+  cumulative_inbound_qty:["누적입고","cumulativeinboundqty"],
+  latest_inbound_date:["마지막입고일","latestinbounddate","lastinbounddate"],
+  latest_inbound_qty:["마지막입고수량","latestinboundqty","lastinboundqty"],
+  last_delivery_date:["마지막배송일","lastdeliverydate"],
+  cumulative_delivery_qty:["누적배송수량","cumulativedeliveryqty"],
+  snapshot_date:["데이터날짜","snapshotdate","datadate"],
+};
+
+function getInventoryStatus(days){
+  if(days<=30) return INVENTORY_STATUS_CONFIG[0];
+  if(days<=90) return INVENTORY_STATUS_CONFIG[1];
+  if(days<=179) return INVENTORY_STATUS_CONFIG[2];
+  return INVENTORY_STATUS_CONFIG[3];
+}
+
+function normalizeInventoryHeaderLabel(label){
+  return String(label||"").replace(/\s/g,"").toLowerCase();
+}
+
+function detectInventorySnapshotFields(columns){
+  const normalizedEntries=columns.map(column=>({
+    raw:column,
+    key:normalizeInventoryHeaderLabel(column),
+  }));
+  const resolveField=(fieldKey,required=true)=>{
+    const aliases=INVENTORY_HEADER_ALIASES[fieldKey]||[];
+    const match=normalizedEntries.find(entry=>aliases.includes(entry.key));
+    if(!match&&required) throw new Error(`${fieldKey} 컬럼을 찾을 수 없습니다.`);
+    return match?.raw||null;
+  };
+  return {
+    product_name:resolveField("product_name"),
+    option_name:resolveField("option_name",false),
+    selling_price:resolveField("selling_price"),
+    current_stock_qty:resolveField("current_stock_qty"),
+    first_inbound_date:resolveField("first_inbound_date"),
+    first_inbound_qty:resolveField("first_inbound_qty"),
+    cumulative_inbound_qty:resolveField("cumulative_inbound_qty"),
+    latest_inbound_date:resolveField("latest_inbound_date"),
+    latest_inbound_qty:resolveField("latest_inbound_qty"),
+    last_delivery_date:resolveField("last_delivery_date",false),
+    cumulative_delivery_qty:resolveField("cumulative_delivery_qty"),
+    snapshot_date:resolveField("snapshot_date"),
+  };
+}
+
+function buildInventorySnapshotRow(source, fields, rowNumber){
+  const productName=String(source[fields.product_name]||"").trim();
+  if(!productName) return null;
+  const snapshotDate=toDate(source[fields.snapshot_date]);
+  const firstInboundDate=toDate(source[fields.first_inbound_date]);
+  const latestInboundRaw=source[fields.latest_inbound_date];
+  const latestInboundDate=latestInboundRaw?toDate(latestInboundRaw):firstInboundDate;
+  const lastDeliveryRaw=fields.last_delivery_date?source[fields.last_delivery_date]:"";
+  const lastDeliveryDate=lastDeliveryRaw?toDate(lastDeliveryRaw):null;
+  if(!snapshotDate) throw new Error(`${rowNumber}행 데이터날짜 형식이 올바르지 않습니다.`);
+  if(!firstInboundDate) throw new Error(`${rowNumber}행 처음입고일 형식이 올바르지 않습니다.`);
+  if(latestInboundRaw&&!latestInboundDate) throw new Error(`${rowNumber}행 마지막입고일 형식이 올바르지 않습니다.`);
+  if(lastDeliveryRaw&&!lastDeliveryDate) throw new Error(`${rowNumber}행 마지막배송일 형식이 올바르지 않습니다.`);
+  const currentStockQty=Math.max(0,Math.round(toNum(source[fields.current_stock_qty]||0)));
+  if(currentStockQty<1) return null;
+  return {
+    snapshot_date:snapshotDate,
+    product_name:productName,
+    option_name:fields.option_name?String(source[fields.option_name]||"").trim():"",
+    selling_price:Math.max(0,Math.round(toNum(source[fields.selling_price]||0))),
+    current_stock_qty:currentStockQty,
+    first_inbound_date:firstInboundDate,
+    first_inbound_qty:Math.max(0,Math.round(toNum(source[fields.first_inbound_qty]||0))),
+    cumulative_inbound_qty:Math.max(0,Math.round(toNum(source[fields.cumulative_inbound_qty]||0))),
+    latest_inbound_date:latestInboundDate||firstInboundDate,
+    latest_inbound_qty:Math.max(0,Math.round(toNum(source[fields.latest_inbound_qty]||0))),
+    last_delivery_date:lastDeliveryDate,
+    cumulative_delivery_qty:Math.max(0,Math.round(toNum(source[fields.cumulative_delivery_qty]||0))),
+  };
+}
+
+function parseInventorySnapshotWorkbookRows(rawRows){
+  if(!rawRows?.length) throw new Error("업로드할 데이터가 없습니다.");
+  const fields=detectInventorySnapshotFields(Object.keys(rawRows[0]||{}));
+  const rows=rawRows
+    .map((source,index)=>buildInventorySnapshotRow(source,fields,index+2))
+    .filter(Boolean);
+  if(!rows.length) throw new Error("유효한 snapshot row가 없습니다.");
+  const snapshotDates=[...new Set(rows.map(row=>row.snapshot_date))];
+  if(snapshotDates.length!==1){
+    throw new Error("한 파일에는 하나의 데이터날짜만 포함되어야 합니다.");
+  }
+  return {
+    rows,
+    rowCount:rows.length,
+    snapshotDate:snapshotDates[0],
+    preview:rows.slice(0,5),
+  };
+}
+
+function enrichInventorySnapshotRow(row){
+  const snapshotDate=dayjs(row.snapshot_date);
+  const firstInboundDate=row.first_inbound_date?dayjs(row.first_inbound_date):snapshotDate;
+  const latestInboundDate=row.latest_inbound_date?dayjs(row.latest_inbound_date):firstInboundDate;
+  const referenceLastDeliveryDate=row.last_delivery_date?dayjs(row.last_delivery_date):firstInboundDate;
+  const noSalesDays=Math.max(snapshotDate.diff(referenceLastDeliveryDate,"day"),0);
+  const skuAge=Math.max(snapshotDate.diff(firstInboundDate,"day"),0);
+  const postRestockDays=Math.max(snapshotDate.diff(latestInboundDate,"day"),0);
+  const currentInventoryValue=(row.current_stock_qty||0)*(row.selling_price||0);
+  const sellThroughProxy=(row.cumulative_delivery_qty||0)/((row.current_stock_qty||0)+1);
+  const agingStatus=getInventoryStatus(noSalesDays);
+  return {
+    ...row,
+    noSalesDays,
+    skuAge,
+    postRestockDays,
+    currentInventoryValue,
+    sellThroughProxy,
+    agingStatus,
+    skuKey:`${row.product_name}__${row.option_name||""}`,
+    hasDeliveryHistory:Boolean(row.last_delivery_date),
+  };
+}
+
+function groupInventoryHistoryRows(rows){
+  const grouped=new Map();
+  rows.forEach(row=>{
+    if(!row.snapshot_date) return;
+    const current=grouped.get(row.snapshot_date)||{
+      snapshot_date:row.snapshot_date,
+      uploaded_at:row.created_at||null,
+      row_count:0,
+    };
+    current.row_count+=1;
+    if(row.created_at&&(!current.uploaded_at||dayjs(row.created_at).isAfter(dayjs(current.uploaded_at)))){
+      current.uploaded_at=row.created_at;
+    }
+    grouped.set(row.snapshot_date,current);
+  });
+  return [...grouped.values()].sort((a,b)=>a.snapshot_date<b.snapshot_date?1:-1);
+}
+
+function formatInventoryDateTime(value){
+  return value?dayjs(value).format("YYYY-MM-DD HH:mm"):"—";
+}
+
+function getInventoryWeekStart(dateStr){
+  const base=dayjs(dateStr);
+  const dayOfWeek=base.day();
+  const diff=dayOfWeek===0?-6:1-dayOfWeek;
+  return base.add(diff,"day").startOf("day");
+}
+
+function getInventoryPeriodMeta(dateStr,unit){
+  const base=dayjs(dateStr);
+  if(unit==="week"){
+    const start=getInventoryWeekStart(dateStr);
+    return {
+      key:start.format("YYYY-MM-DD"),
+      label:start.format("MM/DD"),
+      sortValue:start.valueOf(),
+    };
+  }
+  if(unit==="quarter"){
+    const quarter=Math.floor(base.month()/3)+1;
+    const start=dayjs(`${base.year()}-${String((quarter-1)*3+1).padStart(2,"0")}-01`);
+    return {
+      key:`${base.year()}-Q${quarter}`,
+      label:`${base.year()} Q${quarter}`,
+      sortValue:start.valueOf(),
+    };
+  }
+  return {
+    key:base.format("YYYY-MM"),
+    label:base.format("YYYY.MM"),
+    sortValue:base.startOf("month").valueOf(),
+  };
+}
+
+function buildInventoryTrendSeries(rows,unit,metric){
+  const bySnapshotDate=new Map();
+  rows.forEach(row=>{
+    const snapshotDate=row.snapshot_date;
+    if(!bySnapshotDate.has(snapshotDate)){
+      bySnapshotDate.set(snapshotDate,{
+        snapshotDate,
+        healthy:0,
+        slowMoving:0,
+        aging:0,
+        deadStock:0,
+      });
+    }
+    const target=bySnapshotDate.get(snapshotDate);
+    const value=metric==="stockQty"?(row.current_stock_qty||0):1;
+    target[row.agingStatus.key]+=value;
+  });
+  const byPeriod=new Map();
+  [...bySnapshotDate.values()].forEach(snapshot=>{
+    const meta=getInventoryPeriodMeta(snapshot.snapshotDate,unit);
+    if(!byPeriod.has(meta.key)){
+      byPeriod.set(meta.key,{
+        ...snapshot,
+        label:meta.label,
+        sortValue:meta.sortValue,
+        snapshotCount:1,
+      });
+      return;
+    }
+    const existing=byPeriod.get(meta.key);
+    existing.snapshotCount+=1;
+    if(snapshot.snapshotDate>existing.snapshotDate){
+      existing.snapshotDate=snapshot.snapshotDate;
+      existing.healthy=snapshot.healthy;
+      existing.slowMoving=snapshot.slowMoving;
+      existing.aging=snapshot.aging;
+      existing.deadStock=snapshot.deadStock;
+    }
+  });
+  return [...byPeriod.values()]
+    .sort((a,b)=>a.sortValue-b.sortValue)
+    .map(item=>({
+      label:item.label,
+      snapshotDate:item.snapshotDate,
+      snapshotCount:item.snapshotCount,
+      healthy:item.healthy,
+      slowMoving:item.slowMoving,
+      aging:item.aging,
+      deadStock:item.deadStock,
+    }));
+}
+
+function getInventoryDateRange(latestDate,rangeKey,customStart,customEnd){
+  if(!latestDate) return {start:"",end:""};
+  const latest=dayjs(latestDate);
+  if(rangeKey==="custom"){
+    if(!customStart||!customEnd||customStart>customEnd) return {start:"",end:""};
+    return {start:customStart,end:customEnd};
+  }
+  const offsets={
+    "30d":29,
+    "90d":89,
+    "1y":364,
+  };
+  const days=offsets[rangeKey]??89;
+  return {
+    start:latest.subtract(days,"day").format("YYYY-MM-DD"),
+    end:latest.format("YYYY-MM-DD"),
+  };
+}
+
+async function fetchPagedRows(queryFactory,pageSize=1000){
+  const rows=[];
+  let from=0;
+  while(true){
+    const {data,error}=await queryFactory(from,from+pageSize-1);
+    if(error) throw error;
+    if(!data?.length) break;
+    rows.push(...data);
+    if(data.length<pageSize) break;
+    from+=pageSize;
+  }
+  return rows;
+}
+
+function InventoryScatterTooltip({active,payload}){
+  if(!active||!payload?.length) return null;
+  const row=payload[0]?.payload;
+  if(!row) return null;
+  return (
+    <div style={{background:COMPARE_PAGE_THEME.darkCard,border:`1px solid ${COMPARE_PAGE_THEME.darkBorder}`,borderRadius:12,padding:"12px 14px",
+      boxShadow:"0 18px 36px rgba(12,15,20,0.28)",minWidth:240,color:COMPARE_PAGE_THEME.darkText,
+      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>
+      <div style={{fontWeight:700,fontSize:12,color:COMPARE_PAGE_THEME.darkText,marginBottom:8}}>
+        {row.product_name}
+      </div>
+      <div style={{fontSize:11,color:COMPARE_PAGE_THEME.darkSub,marginBottom:8}}>
+        {row.option_name||"옵션 미기입"}
+      </div>
+      {[
+        ["판매가",fmtWon(row.selling_price)],
+        ["현재고",`${(row.current_stock_qty||0).toLocaleString()}개`],
+        ["현재 재고 금액",fmtWon(row.currentInventoryValue)],
+        ["NoSalesDays",`${row.noSalesDays}일`],
+        ["SKUAge",`${row.skuAge}일`],
+        ["PostRestockDays",`${row.postRestockDays}일`],
+        ["누적배송수량",`${(row.cumulative_delivery_qty||0).toLocaleString()}개`],
+        ["SellThroughProxy",row.sellThroughProxy.toFixed(2)],
+        ["Aging Status",row.agingStatus.label],
+      ].map(([label,value])=>(
+        <div key={label} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:11,marginBottom:4}}>
+          <span style={{color:COMPARE_PAGE_THEME.darkMuted}}>{label}</span>
+          <span style={{color:COMPARE_PAGE_THEME.darkText,fontWeight:600,whiteSpace:"nowrap"}}>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InventoryTrendTooltip({active,payload,label,metricLabel}){
+  if(!active||!payload?.length) return null;
+  const row=payload[0]?.payload;
+  if(!row) return null;
+  return (
+    <div style={{background:COMPARE_PAGE_THEME.darkCard,border:`1px solid ${COMPARE_PAGE_THEME.darkBorder}`,borderRadius:12,padding:"12px 14px",
+      boxShadow:"0 18px 36px rgba(12,15,20,0.28)",minWidth:220,color:COMPARE_PAGE_THEME.darkText,
+      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>
+      <div style={{fontWeight:700,fontSize:12,color:COMPARE_PAGE_THEME.darkText,marginBottom:8}}>
+        {label}
+      </div>
+      <div style={{fontSize:11,color:COMPARE_PAGE_THEME.darkSub,marginBottom:8}}>
+        Period-end snapshot: {row.snapshotDate}
+      </div>
+      {INVENTORY_STATUS_CONFIG.map(status=>(
+        <div key={status.key} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:11,marginBottom:4}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:6,color:COMPARE_PAGE_THEME.darkSub}}>
+            <span style={{width:8,height:8,borderRadius:"50%",background:status.color,display:"inline-block"}}/>
+            {status.label}
+          </span>
+          <span style={{color:COMPARE_PAGE_THEME.darkText,fontWeight:600}}>
+            {(row[status.key]||0).toLocaleString()}
+          </span>
+        </div>
+      ))}
+      <div style={{borderTop:`1px solid ${COMPARE_PAGE_THEME.darkLine}`,paddingTop:8,marginTop:8,
+        fontSize:11,color:COMPARE_PAGE_THEME.darkMuted}}>
+        Metric: {metricLabel} · snapshots in period {row.snapshotCount}
+      </div>
+    </div>
+  );
+}
+
 function DataCompare({revenues,storeSales=[]}){
-  // 전체 매출 볼륨 전용 필터 (초기값: 월단위)
+  const viewportWidth=useWindowWidth();
+  const isTablet=viewportWidth<=1120;
+  const isMobile=viewportWidth<=840;
+
+  // 기존 매출 컴페어
   const [volUnit,setVolUnit]=useState("month");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
 
+  // inventory snapshot tool
+  const [inventoryHistory,setInventoryHistory]=useState([]);
+  const [historyLoading,setHistoryLoading]=useState(false);
+  const [historyFilterDate,setHistoryFilterDate]=useState("");
+  const [selectedHistoryDates,setSelectedHistoryDates]=useState(new Set());
+  const [inventoryNotice,setInventoryNotice]=useState(null);
+  const [uploadStage,setUploadStage]=useState("idle");
+  const [uploadFileName,setUploadFileName]=useState("");
+  const [uploadDraft,setUploadDraft]=useState(null);
+  const [replacePrompt,setReplacePrompt]=useState(null);
+  const [selectedSnapshotDate,setSelectedSnapshotDate]=useState("");
+  const [snapshotRows,setSnapshotRows]=useState([]);
+  const [snapshotLoading,setSnapshotLoading]=useState(false);
+  const [selectedSku,setSelectedSku]=useState(null);
+  const [scatterQuery,setScatterQuery]=useState("");
+  const deferredScatterQuery=useDeferredValue(scatterQuery.trim().toLowerCase());
+  const [selectedStatuses,setSelectedStatuses]=useState(()=>new Set(INVENTORY_STATUS_KEYS));
+  const [trendRows,setTrendRows]=useState([]);
+  const [trendLoading,setTrendLoading]=useState(false);
+  const [trendRange,setTrendRange]=useState("90d");
+  const [trendCustomStart,setTrendCustomStart]=useState("");
+  const [trendCustomEnd,setTrendCustomEnd]=useState("");
+  const [trendUnit,setTrendUnit]=useState("month");
+  const [trendMetric,setTrendMetric]=useState("skuCount");
+  const snapshotCacheRef=useRef(new Map());
+  const trendCacheRef=useRef(new Map());
+
+  const revenueTheme={
+    page:COMPARE_PAGE_THEME.page,
+    card:COMPARE_PAGE_THEME.darkCard,
+    border:COMPARE_PAGE_THEME.darkBorder,
+    text:COMPARE_PAGE_THEME.darkText,
+    sub:COMPARE_PAGE_THEME.darkSub,
+    dim:"#57606b",
+  };
+  const inventoryTheme={
+    panel:COMPARE_PAGE_THEME.darkCard,
+    panelAlt:COMPARE_PAGE_THEME.darkAlt,
+    panelSoft:COMPARE_PAGE_THEME.darkSoft,
+    panelTint:COMPARE_PAGE_THEME.darkTint,
+    border:COMPARE_PAGE_THEME.darkBorder,
+    line:COMPARE_PAGE_THEME.darkLine,
+    title:COMPARE_PAGE_THEME.darkText,
+    text:COMPARE_PAGE_THEME.darkText,
+    sub:COMPARE_PAGE_THEME.darkSub,
+    muted:COMPARE_PAGE_THEME.darkMuted,
+    shadow:"0 18px 38px rgba(18,22,28,0.24)",
+  };
+
   useEffect(()=>{
-    const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-48)));
+    const obs=new ResizeObserver(entries=>setSvgW(Math.max(380,entries[0].contentRect.width-48)));
     if(containerRef.current) obs.observe(containerRef.current);
     return()=>obs.disconnect();
+  },[]);
+
+  const loadInventoryHistory=useCallback(async()=>{
+    setHistoryLoading(true);
+    try{
+      const db=await getSupabase();
+      const rows=await fetchPagedRows(
+        (from,to)=>db.from("inventory_snapshot").select(INVENTORY_HISTORY_SELECT).order("snapshot_date",{ascending:false}).range(from,to),
+        2000
+      );
+      const grouped=groupInventoryHistoryRows(rows);
+      setInventoryHistory(grouped);
+      setSelectedHistoryDates(new Set());
+    }catch(error){
+      setInventoryNotice({type:"error",msg:`Inventory snapshot 이력 조회 실패: ${error.message}`});
+    }finally{
+      setHistoryLoading(false);
+    }
+  },[]);
+
+  const loadSnapshotRows=useCallback(async(snapshotDate)=>{
+    if(!snapshotDate){
+      setSnapshotRows([]);
+      return;
+    }
+    if(snapshotCacheRef.current.has(snapshotDate)){
+      setSnapshotRows(snapshotCacheRef.current.get(snapshotDate));
+      return;
+    }
+    setSnapshotLoading(true);
+    try{
+      const db=await getSupabase();
+      const rows=await fetchPagedRows(
+        (from,to)=>db.from("inventory_snapshot").select(INVENTORY_SNAPSHOT_SELECT).eq("snapshot_date",snapshotDate).order("current_stock_qty",{ascending:false}).range(from,to),
+        1200
+      );
+      snapshotCacheRef.current.set(snapshotDate,rows);
+      setSnapshotRows(rows);
+    }catch(error){
+      setInventoryNotice({type:"error",msg:`${snapshotDate} snapshot 조회 실패: ${error.message}`});
+      setSnapshotRows([]);
+    }finally{
+      setSnapshotLoading(false);
+    }
+  },[]);
+
+  const loadTrendRows=useCallback(async(start,end)=>{
+    if(!start||!end){
+      setTrendRows([]);
+      return;
+    }
+    const cacheKey=`${start}:${end}`;
+    if(trendCacheRef.current.has(cacheKey)){
+      setTrendRows(trendCacheRef.current.get(cacheKey));
+      return;
+    }
+    setTrendLoading(true);
+    try{
+      const db=await getSupabase();
+      const rows=await fetchPagedRows(
+        (from,to)=>db.from("inventory_snapshot").select(INVENTORY_SNAPSHOT_SELECT).gte("snapshot_date",start).lte("snapshot_date",end).order("snapshot_date",{ascending:true}).range(from,to),
+        1500
+      );
+      trendCacheRef.current.set(cacheKey,rows);
+      setTrendRows(rows);
+    }catch(error){
+      setInventoryNotice({type:"error",msg:`Trend 데이터 조회 실패: ${error.message}`});
+      setTrendRows([]);
+    }finally{
+      setTrendLoading(false);
+    }
+  },[]);
+
+  useEffect(()=>{
+    loadInventoryHistory();
+  },[loadInventoryHistory]);
+
+  useEffect(()=>{
+    if(!inventoryHistory.length){
+      setSelectedSnapshotDate("");
+      return;
+    }
+    const hasSelected=inventoryHistory.some(item=>item.snapshot_date===selectedSnapshotDate);
+    if(!selectedSnapshotDate||!hasSelected){
+      setSelectedSnapshotDate(inventoryHistory[0].snapshot_date);
+    }
+  },[inventoryHistory,selectedSnapshotDate]);
+
+  useEffect(()=>{
+    loadSnapshotRows(selectedSnapshotDate);
+  },[selectedSnapshotDate,loadSnapshotRows]);
+
+  const activeTrendRange=useMemo(
+    ()=>getInventoryDateRange(inventoryHistory[0]?.snapshot_date||"",trendRange,trendCustomStart,trendCustomEnd),
+    [inventoryHistory,trendRange,trendCustomStart,trendCustomEnd]
+  );
+
+  useEffect(()=>{
+    loadTrendRows(activeTrendRange.start,activeTrendRange.end);
+  },[activeTrendRange,loadTrendRows]);
+
+  const runInventoryUpload=useCallback(async(draft,replaceExisting=false)=>{
+    if(!draft?.rows?.length) return;
+    setUploadStage("uploading");
+    setInventoryNotice(null);
+    try{
+      const db=await getSupabase();
+      if(replaceExisting){
+        const {error:deleteError}=await db.from("inventory_snapshot").delete().eq("snapshot_date",draft.snapshotDate);
+        if(deleteError) throw deleteError;
+      }
+      for(let i=0;i<draft.rows.length;i+=300){
+        const {error}=await db.from("inventory_snapshot").insert(draft.rows.slice(i,i+300));
+        if(error) throw error;
+      }
+      snapshotCacheRef.current.delete(draft.snapshotDate);
+      trendCacheRef.current.clear();
+      setUploadStage("completed");
+      setUploadDraft(null);
+      setReplacePrompt(null);
+      setUploadFileName("");
+      setInventoryNotice({type:"success",msg:`${draft.snapshotDate} snapshot ${draft.rowCount}건 저장 완료`});
+      await loadInventoryHistory();
+      setSelectedSnapshotDate(draft.snapshotDate);
+    }catch(error){
+      setUploadStage("idle");
+      setInventoryNotice({type:"error",msg:`Inventory snapshot 업로드 실패: ${error.message}`});
+    }
+  },[loadInventoryHistory]);
+
+  const handleInventoryFile=useCallback(file=>{
+    if(!file) return;
+    setUploadStage("parsing");
+    setUploadFileName(file.name);
+    setUploadDraft(null);
+    setReplacePrompt(null);
+    setInventoryNotice(null);
+    parseAnyFile(file,{header:true,skipEmptyLines:true},async({data})=>{
+      try{
+        setUploadStage("validating");
+        const draft=parseInventorySnapshotWorkbookRows(data);
+        const db=await getSupabase();
+        const {count,error}=await db.from("inventory_snapshot").select("id",{count:"exact",head:true}).eq("snapshot_date",draft.snapshotDate);
+        if(error) throw error;
+        const nextDraft={...draft,fileName:file.name,existingCount:count||0};
+        setUploadDraft(nextDraft);
+        if((count||0)>0){
+          setReplacePrompt(nextDraft);
+          setInventoryNotice({
+            type:"warn",
+            msg:`${draft.snapshotDate} snapshot이 이미 ${count}건 존재합니다. 기존 ${count}건과 신규 ${draft.rowCount}건을 비교한 뒤 replace 여부를 확인해주세요.`,
+          });
+        }else{
+          setInventoryNotice({
+            type:"info",
+            msg:`${draft.snapshotDate} snapshot ${draft.rowCount}건이 업로드 준비 상태입니다.`,
+          });
+        }
+        setUploadStage("ready");
+      }catch(error){
+        setUploadStage("idle");
+        setInventoryNotice({type:"error",msg:error.message});
+      }
+    },error=>{
+      setUploadStage("idle");
+      setInventoryNotice({type:"error",msg:error.message});
+    });
+  },[]);
+
+  const handleDeleteSnapshots=useCallback(async()=>{
+    const dates=[...selectedHistoryDates];
+    if(!dates.length) return;
+    if(!window.confirm(`${dates.length}개 snapshot_date를 삭제할까요?`)) return;
+    setHistoryLoading(true);
+    try{
+      const db=await getSupabase();
+      for(let index=0;index<dates.length;index+=5){
+        const chunk=dates.slice(index,index+5);
+        for(const snapshotDate of chunk){
+          const {error}=await db.from("inventory_snapshot").delete().eq("snapshot_date",snapshotDate);
+          if(error) throw error;
+          snapshotCacheRef.current.delete(snapshotDate);
+        }
+      }
+      trendCacheRef.current.clear();
+      setInventoryNotice({type:"success",msg:`${dates.length}개 snapshot 삭제 완료`});
+      await loadInventoryHistory();
+    }catch(error){
+      setInventoryNotice({type:"error",msg:`Snapshot 삭제 실패: ${error.message}`});
+    }finally{
+      setHistoryLoading(false);
+    }
+  },[loadInventoryHistory,selectedHistoryDates]);
+
+  const toggleHistorySelection=useCallback(snapshotDate=>{
+    setSelectedHistoryDates(prev=>{
+      const next=new Set(prev);
+      if(next.has(snapshotDate)) next.delete(snapshotDate);
+      else next.add(snapshotDate);
+      return next;
+    });
+  },[]);
+
+  const toggleAllHistorySelection=useCallback(historyRows=>{
+    setSelectedHistoryDates(prev=>{
+      const next=new Set(prev);
+      const allSelected=historyRows.length>0&&historyRows.every(row=>next.has(row.snapshot_date));
+      if(allSelected){
+        historyRows.forEach(row=>next.delete(row.snapshot_date));
+      }else{
+        historyRows.forEach(row=>next.add(row.snapshot_date));
+      }
+      return next;
+    });
+  },[]);
+
+  const toggleStatus=useCallback(statusKey=>{
+    setSelectedStatuses(prev=>{
+      const next=new Set(prev);
+      if(next.has(statusKey)) next.delete(statusKey);
+      else next.add(statusKey);
+      return next;
+    });
   },[]);
 
   const volPeriods=useMemo(()=>{
     const today=new Date();
     const res=[];
-    // 직접 날짜 선택 모드: 선택 범위를 현재 단위로 분할
     const rangeStart=customStart?new Date(customStart):null;
     const rangeEnd=customEnd?new Date(customEnd):null;
     if(rangeStart&&rangeEnd&&rangeStart<=rangeEnd){
@@ -5554,7 +6220,6 @@ function DataCompare({revenues,storeSales=[]}){
       }
       return res;
     }
-    // 기본 모드
     if(volUnit==="week"){
       for(let i=12;i>=0;i--){
         const end=new Date(today);end.setDate(end.getDate()-i*7);
@@ -5581,79 +6246,681 @@ function DataCompare({revenues,storeSales=[]}){
     return res;
   },[volUnit,customStart,customEnd]);
 
-  const revenueData=useMemo(()=>volPeriods.map(p=>{
+  const revenueData=useMemo(()=>volPeriods.map(period=>{
     const byChannel={};
-    COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
-    revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
-      if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0)-(r.refund_amount||0);
+    COMPARE_CHANNELS.forEach(channel=>{byChannel[channel]=0;});
+    revenues.filter(row=>row.date>=period.start&&row.date<=period.end).forEach(row=>{
+      if(COMPARE_CHANNELS.includes(row.channel)) byChannel[row.channel]+=(row.amount||0)-(row.refund_amount||0);
     });
-    storeSales.filter(r=>{const d=r.sale_date||"";return d>=p.start&&d<=p.end;}).forEach(r=>{
-      if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
-      else if(r.status==="반품") byChannel["오프라인 스토어"]-=(r.amount||0);
+    storeSales.filter(row=>{
+      const date=row.sale_date||"";
+      return date>=period.start&&date<=period.end;
+    }).forEach(row=>{
+      if(row.status==="배송") byChannel["오프라인 스토어"]+=(row.amount||0);
+      else if(row.status==="반품") byChannel["오프라인 스토어"]-=(row.amount||0);
     });
-    COMPARE_CHANNELS.forEach(ch=>{if(byChannel[ch]<0) byChannel[ch]=0;});
-    const total=Object.values(byChannel).reduce((a,b)=>a+b,0);
-    return{...p,byChannel,total};
+    COMPARE_CHANNELS.forEach(channel=>{if(byChannel[channel]<0) byChannel[channel]=0;});
+    const total=Object.values(byChannel).reduce((sum,value)=>sum+value,0);
+    return {...period,byChannel,total};
   }),[revenues,storeSales,volPeriods]);
 
-  const hasData=revenueData.some(p=>p.total>0);
+  const hasRevenueData=revenueData.some(period=>period.total>0);
   const minSvgW=volUnit==="week"?Math.max(svgW,820):svgW;
+  const uploadStepIndex={idle:-1,parsing:0,validating:1,ready:1,uploading:2,completed:3}[uploadStage]??-1;
+  const filteredHistory=useMemo(
+    ()=>historyFilterDate?inventoryHistory.filter(item=>item.snapshot_date===historyFilterDate):inventoryHistory,
+    [inventoryHistory,historyFilterDate]
+  );
+  const allHistorySelected=filteredHistory.length>0&&filteredHistory.every(item=>selectedHistoryDates.has(item.snapshot_date));
+  const enrichedSnapshotRows=useMemo(()=>snapshotRows.map(enrichInventorySnapshotRow),[snapshotRows]);
+  const scatterStatusSummary=useMemo(
+    ()=>INVENTORY_STATUS_CONFIG.map(status=>({
+      ...status,
+      count:enrichedSnapshotRows.filter(row=>row.agingStatus.key===status.key).length,
+    })),
+    [enrichedSnapshotRows]
+  );
+  const filteredScatterRows=useMemo(()=>
+    enrichedSnapshotRows
+      .filter(row=>{
+        if(!selectedStatuses.has(row.agingStatus.key)) return false;
+        if(!deferredScatterQuery) return true;
+        const haystack=`${row.product_name} ${row.option_name||""}`.toLowerCase();
+        return haystack.includes(deferredScatterQuery);
+      })
+      .sort((a,b)=>b.currentInventoryValue-a.currentInventoryValue),
+    [deferredScatterQuery,enrichedSnapshotRows,selectedStatuses]
+  );
+  const scatterGroups=useMemo(
+    ()=>INVENTORY_STATUS_CONFIG.map(status=>({
+      ...status,
+      data:filteredScatterRows.filter(row=>row.agingStatus.key===status.key),
+    })),
+    [filteredScatterRows]
+  );
+  const selectedSnapshotSummary=useMemo(()=>{
+    const totalSku=enrichedSnapshotRows.length;
+    const totalStockQty=enrichedSnapshotRows.reduce((sum,row)=>sum+(row.current_stock_qty||0),0);
+    const totalValue=enrichedSnapshotRows.reduce((sum,row)=>sum+row.currentInventoryValue,0);
+    return {totalSku,totalStockQty,totalValue};
+  },[enrichedSnapshotRows]);
 
-  const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
+  const trendEnrichedRows=useMemo(()=>trendRows.map(enrichInventorySnapshotRow),[trendRows]);
+  const trendSeries=useMemo(
+    ()=>buildInventoryTrendSeries(trendEnrichedRows,trendUnit,trendMetric),
+    [trendEnrichedRows,trendUnit,trendMetric]
+  );
+  const latestTrendSnapshotDate=useMemo(
+    ()=>trendEnrichedRows.reduce((latest,row)=>!latest||row.snapshot_date>latest?row.snapshot_date:latest,""),
+    [trendEnrichedRows]
+  );
+  const latestTrendSnapshotRows=useMemo(
+    ()=>latestTrendSnapshotDate?trendEnrichedRows.filter(row=>row.snapshot_date===latestTrendSnapshotDate):[],
+    [latestTrendSnapshotDate,trendEnrichedRows]
+  );
+  const trendKpis=useMemo(()=>{
+    const totalSku=latestTrendSnapshotRows.length;
+    if(!totalSku) return {deadRatio:0,healthyRatio:0,totalStockQty:0,totalValue:0};
+    const deadCount=latestTrendSnapshotRows.filter(row=>row.agingStatus.key==="deadStock").length;
+    const healthyCount=latestTrendSnapshotRows.filter(row=>row.agingStatus.key==="healthy").length;
+    const totalStockQty=latestTrendSnapshotRows.reduce((sum,row)=>sum+(row.current_stock_qty||0),0);
+    const totalValue=latestTrendSnapshotRows.reduce((sum,row)=>sum+row.currentInventoryValue,0);
+    return {
+      deadRatio:deadCount/totalSku,
+      healthyRatio:healthyCount/totalSku,
+      totalStockQty,
+      totalValue,
+    };
+  },[latestTrendSnapshotRows]);
+  const selectedSkuDetails=selectedSku&&enrichedSnapshotRows.find(row=>row.skuKey===selectedSku.skuKey);
+
+  useEffect(()=>{
+    if(selectedSku&&!selectedSkuDetails) setSelectedSku(null);
+  },[selectedSku,selectedSkuDetails]);
+
+  const chipButton=(active)=>({
+    background:active?"#fff":"transparent",
+    color:active?inventoryTheme.panel:inventoryTheme.sub,
+    border:`1px solid ${active?"#fff":inventoryTheme.border}`,
+    borderRadius:999,
+    padding:"6px 12px",
+    fontSize:11,
+    cursor:"pointer",
+    fontWeight:600,
+    fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+  });
+  const softInputStyle={
+    width:"100%",
+    background:inventoryTheme.panelSoft,
+    border:`1px solid ${inventoryTheme.border}`,
+    borderRadius:10,
+    padding:"8px 11px",
+    fontSize:11,
+    color:inventoryTheme.text,
+    boxSizing:"border-box",
+    fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+    colorScheme:"dark",
+  };
 
   return(
-    <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
-      <div style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
+    <div style={{background:COMPARE_PAGE_THEME.page,minHeight:"100%",padding:"28px 28px 40px",
+      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:16,flexWrap:"wrap",marginBottom:18}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:22,color:COMPARE_PAGE_THEME.title,letterSpacing:"-0.03em"}}>데이터 컴페어</div>
+          <div style={{marginTop:6,fontSize:12,color:COMPARE_PAGE_THEME.sub,lineHeight:1.7}}>
+            Inventory snapshot 전용 데이터베이스를 기준으로 SKU risk와 재고 노화 흐름을 함께 봅니다.
+          </div>
+        </div>
+        <div style={{fontSize:11,color:COMPARE_PAGE_THEME.muted}}>
+          Bubble: 특정 snapshot risk · Trend: 기간별 period-end snapshot
+        </div>
+      </div>
 
-      {/* 전체 매출 볼륨 카드 — 개별 필터 */}
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-          <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
+      <div style={{background:revenueTheme.card,border:`1px solid ${revenueTheme.border}`,borderRadius:16,padding:"20px 20px 16px",boxShadow:"0 18px 38px rgba(25,28,34,0.14)",marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+          <div style={{fontWeight:600,fontSize:14,color:revenueTheme.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
-            {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
-              <button key={u} onClick={()=>setVolUnit(u)}
-                style={{background:volUnit===u?"#fff":"transparent",
-                  color:volUnit===u?"#000":DC.sub,
-                  border:`1px solid ${volUnit===u?"#fff":DC.border}`,
+            {[["week","주"],["month","월"],["quarter","분기"]].map(([unit,label])=>(
+              <button key={unit} onClick={()=>setVolUnit(unit)}
+                style={{background:volUnit===unit?"#fff":"transparent",
+                  color:volUnit===unit?"#000":revenueTheme.sub,
+                  border:`1px solid ${volUnit===unit?"#fff":revenueTheme.border}`,
                   borderRadius:6,padding:"4px 10px",fontSize:11,
                   cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
-                {lbl}
+                {label}
               </button>
             ))}
-            <span style={{color:DC.border,fontSize:14,margin:"0 4px"}}>|</span>
-            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+            <span style={{color:revenueTheme.border,fontSize:14,margin:"0 4px"}}>|</span>
+            <input type="date" value={customStart} onChange={event=>setCustomStart(event.target.value)}
+              style={{background:"transparent",border:`1px solid ${revenueTheme.border}`,borderRadius:5,
+                padding:"4px 10px",fontSize:11,color:revenueTheme.text,colorScheme:"dark",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
-            <span style={{color:DC.sub,fontSize:11}}>~</span>
-            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+            <span style={{color:revenueTheme.sub,fontSize:11}}>~</span>
+            <input type="date" value={customEnd} onChange={event=>setCustomEnd(event.target.value)}
+              style={{background:"transparent",border:`1px solid ${revenueTheme.border}`,borderRadius:5,
+                padding:"4px 10px",fontSize:11,color:revenueTheme.text,colorScheme:"dark",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             {(customStart||customEnd)&&(
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
-                style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:14,padding:"0 2px"}}>✕</button>
+                style={{background:"none",border:"none",color:revenueTheme.sub,cursor:"pointer",fontSize:14,padding:"0 2px"}}>✕</button>
             )}
           </div>
         </div>
-        {/* 채널 범례 */}
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
-          {COMPARE_CHANNELS.map(ch=>(
-            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
-              <span style={{width:8,height:8,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
-              {ch}
+          {COMPARE_CHANNELS.map(channel=>(
+            <span key={channel} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:revenueTheme.sub}}>
+              <span style={{width:8,height:8,background:COMPARE_CH_COLOR[channel],display:"inline-block",flexShrink:0}}/>
+              {channel}
             </span>
           ))}
         </div>
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
-          {hasData
+          {hasRevenueData
             ?<RevenueSankeyChart periods={revenueData} svgW={minSvgW}/>
-            :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>
+            :<div style={{textAlign:"center",padding:"80px 0",color:revenueTheme.dim,fontSize:13}}>
               매출 데이터를 업로드하면 그래프가 표시됩니다
             </div>
           }
         </div>
       </div>
+
+      <div style={{position:"sticky",top:0,zIndex:8,marginBottom:18}}>
+        <div style={{background:"rgba(32,38,47,0.94)",backdropFilter:"blur(14px)",border:`1px solid ${inventoryTheme.border}`,
+          borderRadius:18,padding:"18px 18px 16px",boxShadow:inventoryTheme.shadow}}>
+          <div style={{display:"grid",gridTemplateColumns:isTablet?"1fr":"1.08fr 0.92fr",gap:18}}>
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:inventoryTheme.title}}>Inventory Snapshot Uploader</div>
+                  <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4,lineHeight:1.6}}>
+                    진단용 Excel만 업로드합니다. 같은 snapshot_date가 있으면 행 수 비교 후 replace 확인을 거칩니다.
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {["parsing","validating","uploading","completed"].map((step,stepIndex)=>(
+                    <span key={step} style={{
+                      display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,
+                      background:stepIndex<=uploadStepIndex?"#fff":inventoryTheme.panelSoft,
+                      color:stepIndex<=uploadStepIndex?inventoryTheme.panel:inventoryTheme.sub,
+                      border:`1px solid ${stepIndex<=uploadStepIndex?"#fff":inventoryTheme.border}`,
+                      fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",
+                    }}>
+                      {step}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(0,1fr) 220px",gap:12,alignItems:"start"}}>
+                <div style={{background:inventoryTheme.panelSoft,border:`1px dashed ${inventoryTheme.border}`,borderRadius:14,padding:"14px 15px"}}>
+                  <label style={{display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}}>
+                    <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={event=>handleInventoryFile(event.target.files?.[0])}/>
+                    <span style={{fontWeight:600,fontSize:12,color:inventoryTheme.title}}>
+                      진단용 snapshot 파일 선택
+                    </span>
+                    <span style={{fontSize:11,color:inventoryTheme.sub,lineHeight:1.7}}>
+                      필수 컬럼: 상품명, 옵션, 판매가, 현재고, 처음입고일, 처음입고수량, 누적입고,
+                      마지막입고일, 마지막입고수량, 마지막배송일, 누적배송수량, 데이터날짜
+                    </span>
+                    <span style={{fontSize:11,color:inventoryTheme.muted}}>
+                      {uploadFileName||"xlsx / csv 지원"}
+                    </span>
+                  </label>
+                </div>
+
+                <div style={{background:inventoryTheme.panelAlt,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"13px 14px"}}>
+                  <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+                    Upload Draft
+                  </div>
+                  {uploadDraft?(
+                    <>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:11}}>
+                        <div>
+                          <div style={{color:inventoryTheme.muted,marginBottom:3}}>Snapshot</div>
+                          <div style={{fontWeight:700,color:inventoryTheme.title}}>{uploadDraft.snapshotDate}</div>
+                        </div>
+                        <div>
+                          <div style={{color:inventoryTheme.muted,marginBottom:3}}>Rows</div>
+                          <div style={{fontWeight:700,color:inventoryTheme.title}}>{uploadDraft.rowCount.toLocaleString()}</div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:8,marginTop:12}}>
+                        {uploadDraft.existingCount>0?(
+                          <button onClick={()=>setReplacePrompt(uploadDraft)} style={{...chipButton(true),flex:1,textAlign:"center"}}>
+                            Replace 확인
+                          </button>
+                        ):(
+                          <button onClick={()=>runInventoryUpload(uploadDraft,false)} style={{...chipButton(true),flex:1,textAlign:"center"}}>
+                            Snapshot 저장
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ):(
+                    <div style={{fontSize:11,color:inventoryTheme.sub,lineHeight:1.7}}>
+                      파일을 올리면 snapshot_date, 행 수, 충돌 여부를 먼저 검증합니다.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {uploadDraft?.preview?.length>0&&(
+                <div style={{marginTop:12}}>
+                  <PreviewTable
+                    rows={uploadDraft.preview}
+                    maxRows={5}
+                    theme={{
+                      surface:inventoryTheme.panelSoft,
+                      border:inventoryTheme.line,
+                      textMeta:inventoryTheme.muted,
+                      text:inventoryTheme.text,
+                      red:"#ff8f87",
+                      outBg:"rgba(198,146,141,0.18)",
+                    }}
+                    cols={[
+                      {key:"snapshot_date",label:"Snapshot",color:inventoryTheme.muted},
+                      {key:"product_name",label:"상품명",color:inventoryTheme.title,maxW:180},
+                      {key:"option_name",label:"옵션",color:inventoryTheme.sub,maxW:120},
+                      {key:"current_stock_qty",label:"현재고",bold:true},
+                      {key:"last_delivery_date",label:"마지막배송일",color:inventoryTheme.muted},
+                    ]}
+                  />
+                </div>
+              )}
+
+              {inventoryNotice&&<Alert type={inventoryNotice.type} msg={inventoryNotice.msg}/>}
+            </div>
+
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:inventoryTheme.title}}>Upload History</div>
+                  <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4,lineHeight:1.6}}>
+                    snapshot_date 기준 append 이력
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {selectedHistoryDates.size>0&&(
+                    <button onClick={handleDeleteSnapshots} style={{...chipButton(false),color:"#f1b8b1",border:`1px solid rgba(198,146,141,0.6)`}}>
+                      {selectedHistoryDates.size}개 삭제
+                    </button>
+                  )}
+                  <button onClick={loadInventoryHistory} style={chipButton(false)}>새로고침</button>
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
+                <input type="date" value={historyFilterDate} onChange={event=>setHistoryFilterDate(event.target.value)} style={{...softInputStyle,padding:"7px 10px"}}/>
+                {historyFilterDate&&(
+                  <button onClick={()=>setHistoryFilterDate("")} style={chipButton(false)}>초기화</button>
+                )}
+              </div>
+
+              <div style={{overflowY:"auto",maxHeight:246,background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14}}>
+                {historyLoading?(
+                  <div style={{padding:"32px 18px",textAlign:"center",fontSize:12,color:inventoryTheme.sub}}>이력을 불러오는 중…</div>
+                ):filteredHistory.length===0?(
+                  <div style={{padding:"32px 18px",textAlign:"center",fontSize:12,color:inventoryTheme.sub}}>등록된 snapshot이 없습니다.</div>
+                ):(
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead style={{position:"sticky",top:0,background:inventoryTheme.panel}}>
+                      <tr style={{borderBottom:`1px solid ${inventoryTheme.line}`}}>
+                        <th style={{padding:"8px 10px",width:32,textAlign:"center"}}>
+                          <input type="checkbox" checked={allHistorySelected} onChange={()=>toggleAllHistorySelection(filteredHistory)}/>
+                        </th>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:inventoryTheme.muted,fontWeight:600}}>snapshot_date</th>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:inventoryTheme.muted,fontWeight:600}}>uploaded_at</th>
+                        <th style={{padding:"8px 10px",textAlign:"right",color:inventoryTheme.muted,fontWeight:600}}>row_count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredHistory.map(item=>{
+                        const isActive=item.snapshot_date===selectedSnapshotDate;
+                        return(
+                          <tr key={item.snapshot_date}
+                            style={{borderBottom:`1px solid ${inventoryTheme.line}`,background:isActive?inventoryTheme.panelAlt:"transparent",cursor:"pointer"}}
+                            onClick={()=>setSelectedSnapshotDate(item.snapshot_date)}>
+                            <td style={{padding:"7px 10px",textAlign:"center"}}>
+                              <input type="checkbox" checked={selectedHistoryDates.has(item.snapshot_date)}
+                                onChange={event=>{event.stopPropagation();toggleHistorySelection(item.snapshot_date);}}/>
+                            </td>
+                            <td style={{padding:"7px 10px",fontWeight:700,color:inventoryTheme.title}}>{item.snapshot_date}</td>
+                            <td style={{padding:"7px 10px",color:inventoryTheme.sub}}>{formatInventoryDateTime(item.uploaded_at)}</td>
+                            <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600,color:inventoryTheme.title}}>
+                              {item.row_count.toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Card style={{background:inventoryTheme.panel,border:`1px solid ${inventoryTheme.border}`,borderRadius:16,boxShadow:inventoryTheme.shadow,marginBottom:18}}>
+        <div style={{display:"grid",gridTemplateColumns:isTablet?"1fr":"minmax(0,1.38fr) minmax(320px,0.62fr)",gap:18}}>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:14}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14,color:inventoryTheme.title}}>Inventory Risk Bubble</div>
+                <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:6,lineHeight:1.7}}>
+                  NoSalesDays와 현재고를 교차해 장기 미판매·과재고 SKU를 빠르게 찾습니다.
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <input type="date" value={selectedSnapshotDate} onChange={event=>setSelectedSnapshotDate(event.target.value)} style={{...softInputStyle,width:170}}/>
+                <input type="text" value={scatterQuery} onChange={event=>setScatterQuery(event.target.value)}
+                  placeholder="상품명 / 옵션 검색" style={{...softInputStyle,width:isMobile?"100%":210}}/>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,minmax(0,1fr))",gap:10,marginBottom:12}}>
+              <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>Snapshot SKU</div>
+                <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{selectedSnapshotSummary.totalSku.toLocaleString()}</div>
+              </div>
+              <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>총 현재고</div>
+                <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{selectedSnapshotSummary.totalStockQty.toLocaleString()}</div>
+              </div>
+              <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>총 재고 금액</div>
+                <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{fmtWon(selectedSnapshotSummary.totalValue)}</div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+              {scatterStatusSummary.map(status=>{
+                const active=selectedStatuses.has(status.key);
+                return(
+                  <button key={status.key} onClick={()=>toggleStatus(status.key)}
+                    style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 11px",borderRadius:999,
+                      border:`1px solid ${active?`${status.color}88`:inventoryTheme.border}`,
+                      background:active?`${status.color}22`:inventoryTheme.panelSoft,
+                      color:inventoryTheme.text,fontSize:11,cursor:"pointer",fontWeight:600,
+                      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:status.color,display:"inline-block"}}/>
+                    {status.label} · {status.count}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{height:440,background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:16,padding:"12px 10px 8px"}}>
+              {snapshotLoading?(
+                <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:inventoryTheme.sub}}>
+                  Snapshot 데이터를 불러오는 중…
+                </div>
+              ):filteredScatterRows.length===0?(
+                <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:inventoryTheme.sub,textAlign:"center",lineHeight:1.7}}>
+                  선택한 조건에 맞는 SKU가 없습니다.<br/>snapshot_date 또는 상태 필터를 바꿔보세요.
+                </div>
+              ):(
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{top:12,right:14,bottom:28,left:6}}>
+                    <CartesianGrid stroke={inventoryTheme.line}/>
+                    <XAxis type="number" dataKey="noSalesDays" name="NoSalesDays"
+                      tick={{fill:inventoryTheme.muted,fontSize:11}}
+                      stroke={inventoryTheme.line}/>
+                    <YAxis type="number" dataKey="current_stock_qty" name="CurrentStockQty"
+                      tick={{fill:inventoryTheme.muted,fontSize:11}}
+                      stroke={inventoryTheme.line}/>
+                    <ZAxis type="number" dataKey="currentInventoryValue" range={[90,1100]}/>
+                    <Tooltip cursor={{stroke:inventoryTheme.line}} content={<InventoryScatterTooltip/>}/>
+                    {scatterGroups.map(status=>(
+                      <Scatter key={status.key} name={status.label} data={status.data} fill={status.color}
+                        shape={props=>{
+                          const isSelected=selectedSkuDetails?.skuKey===props.payload?.skuKey;
+                          return (
+                            <circle
+                              cx={props.cx}
+                              cy={props.cy}
+                              r={Math.max(props.r||0,5)}
+                              fill={status.color}
+                              fillOpacity={0.72}
+                              stroke={isSelected?inventoryTheme.title:inventoryTheme.panel}
+                              strokeWidth={isSelected?2.4:1.2}
+                              style={{cursor:"pointer"}}
+                              onClick={()=>setSelectedSku(props.payload)}
+                            />
+                          );
+                        }}/>
+                    ))}
+                  </ScatterChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:10,fontSize:11,color:inventoryTheme.sub}}>
+              <span>X축: 마지막 판매 이후 경과일 · 오른쪽으로 갈수록 장기 미판매</span>
+              <span>Y축: 현재고 · 위로 갈수록 재고 부담 큼 · Bubble size: 현재 재고 금액</span>
+            </div>
+          </div>
+
+          <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:16,padding:"16px 16px 14px"}}>
+            <div style={{fontWeight:700,fontSize:14,color:inventoryTheme.title,marginBottom:10}}>SKU Detail Panel</div>
+            {selectedSkuDetails?(
+              <>
+                <div style={{paddingBottom:12,borderBottom:`1px solid ${inventoryTheme.line}`,marginBottom:12}}>
+                  <div style={{fontSize:15,fontWeight:800,color:inventoryTheme.title,lineHeight:1.5}}>
+                    {selectedSkuDetails.product_name}
+                  </div>
+                  <div style={{fontSize:12,color:inventoryTheme.sub,marginTop:4}}>
+                    {selectedSkuDetails.option_name||"옵션 미기입"}
+                  </div>
+                  <div style={{marginTop:10}}>
+                    <span style={{background:selectedSkuDetails.agingStatus.fill,color:selectedSkuDetails.agingStatus.color,
+                      border:`1px solid ${selectedSkuDetails.agingStatus.color}55`,borderRadius:999,padding:"5px 10px",fontSize:11,fontWeight:700}}>
+                      {selectedSkuDetails.agingStatus.label}
+                    </span>
+                  </div>
+                </div>
+                {[
+                  ["Snapshot",selectedSkuDetails.snapshot_date],
+                  ["판매가",fmtWon(selectedSkuDetails.selling_price)],
+                  ["현재고",`${(selectedSkuDetails.current_stock_qty||0).toLocaleString()}개`],
+                  ["현재 재고 금액",fmtWon(selectedSkuDetails.currentInventoryValue)],
+                  ["NoSalesDays",`${selectedSkuDetails.noSalesDays}일`],
+                  ["SKUAge",`${selectedSkuDetails.skuAge}일`],
+                  ["PostRestockDays",`${selectedSkuDetails.postRestockDays}일`],
+                  ["처음입고일",selectedSkuDetails.first_inbound_date],
+                  ["마지막입고일",selectedSkuDetails.latest_inbound_date],
+                  ["마지막배송일",selectedSkuDetails.last_delivery_date||"미판매 이력 없음"],
+                  ["누적입고",`${(selectedSkuDetails.cumulative_inbound_qty||0).toLocaleString()}개`],
+                  ["누적배송수량",`${(selectedSkuDetails.cumulative_delivery_qty||0).toLocaleString()}개`],
+                  ["SellThroughProxy",selectedSkuDetails.sellThroughProxy.toFixed(2)],
+                ].map(([label,value])=>(
+                  <div key={label} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,padding:"7px 0",borderBottom:`1px solid ${inventoryTheme.line}`}}>
+                    <span style={{color:inventoryTheme.muted}}>{label}</span>
+                    <span style={{color:inventoryTheme.text,fontWeight:600,textAlign:"right"}}>{value}</span>
+                  </div>
+                ))}
+                <div style={{marginTop:12,fontSize:11,color:inventoryTheme.sub,lineHeight:1.7,background:inventoryTheme.panelTint,borderRadius:12,padding:"11px 12px"}}>
+                  해석: 오른쪽 위에 위치하고 Bubble이 클수록 장기 미판매 + 자금 점유가 큰 위험 SKU입니다.
+                </div>
+              </>
+            ):(
+              <div style={{fontSize:12,color:inventoryTheme.sub,lineHeight:1.8}}>
+                Bubble을 클릭하면 SKU 상세정보와 snapshot 기준 판매/재고 요약이 열립니다.
+                <div style={{marginTop:12,display:"grid",gap:8}}>
+                  {INVENTORY_STATUS_CONFIG.map(status=>(
+                    <div key={status.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"9px 10px",
+                      background:`${status.color}16`,border:`1px solid ${status.color}30`,borderRadius:12}}>
+                      <span style={{display:"inline-flex",alignItems:"center",gap:8,fontWeight:700,color:inventoryTheme.title}}>
+                        <span style={{width:9,height:9,borderRadius:"50%",background:status.color,display:"inline-block"}}/>
+                        {status.label}
+                      </span>
+                      <span style={{fontSize:11,color:inventoryTheme.sub}}>{status.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Card style={{background:inventoryTheme.panel,border:`1px solid ${inventoryTheme.border}`,borderRadius:16,boxShadow:inventoryTheme.shadow}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap",marginBottom:16}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14,color:inventoryTheme.title}}>Aging Trend Stacked Area</div>
+            <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:6,lineHeight:1.7}}>
+              선택 기간 내 snapshot 흐름을 period-end 기준으로 묶어 재고 노화의 방향을 봅니다.
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {[
+              ["30d","최근 30일"],
+              ["90d","최근 90일"],
+              ["1y","최근 1년"],
+              ["custom","기간 지정"],
+            ].map(([key,label])=>(
+              <button key={key} onClick={()=>setTrendRange(key)} style={chipButton(trendRange===key)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {trendRange==="custom"&&(
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+            <input type="date" value={trendCustomStart} onChange={event=>setTrendCustomStart(event.target.value)} style={{...softInputStyle,maxWidth:170}}/>
+            <input type="date" value={trendCustomEnd} onChange={event=>setTrendCustomEnd(event.target.value)} style={{...softInputStyle,maxWidth:170}}/>
+          </div>
+        )}
+
+        <div style={{display:"grid",gridTemplateColumns:isTablet?"repeat(2,minmax(0,1fr))":"repeat(4,minmax(0,1fr))",gap:10,marginBottom:16}}>
+          <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+            <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>Dead Stock Ratio</div>
+            <div style={{fontSize:22,fontWeight:800,color:INVENTORY_STATUS_CONFIG[3].color}}>{(trendKpis.deadRatio*100).toFixed(1)}%</div>
+            <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4}}>latest snapshot {latestTrendSnapshotDate||"—"}</div>
+          </div>
+          <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+            <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>Healthy Ratio</div>
+            <div style={{fontSize:22,fontWeight:800,color:INVENTORY_STATUS_CONFIG[0].color}}>{(trendKpis.healthyRatio*100).toFixed(1)}%</div>
+            <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4}}>마지막 판매 30일 이내 SKU 비율</div>
+          </div>
+          <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+            <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>총 현재고</div>
+            <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{trendKpis.totalStockQty.toLocaleString()}</div>
+            <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4}}>latest snapshot stock qty</div>
+          </div>
+          <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:14,padding:"12px 14px"}}>
+            <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>총 재고 금액</div>
+            <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{fmtWon(trendKpis.totalValue)}</div>
+            <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4}}>current inventory value</div>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:isTablet?"1fr":"minmax(0,1fr) 220px",gap:18}}>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {[["week","주간"],["month","월간"],["quarter","분기"]].map(([key,label])=>(
+                  <button key={key} onClick={()=>setTrendUnit(key)} style={chipButton(trendUnit===key)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {[["skuCount","SKU Count"],["stockQty","Current Stock Quantity"]].map(([key,label])=>(
+                  <button key={key} onClick={()=>setTrendMetric(key)} style={chipButton(trendMetric===key)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{height:420,background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:16,padding:"12px 10px 8px"}}>
+              {trendLoading?(
+                <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:inventoryTheme.sub}}>
+                  Trend 데이터를 불러오는 중…
+                </div>
+              ):trendSeries.length===0?(
+                <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:inventoryTheme.sub,textAlign:"center",lineHeight:1.7}}>
+                  표시할 trend 데이터가 없습니다.<br/>기간 또는 snapshot 업로드 상태를 확인해주세요.
+                </div>
+              ):(
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendSeries} margin={{top:8,right:14,bottom:16,left:0}}>
+                    <defs>
+                      {INVENTORY_STATUS_CONFIG.map(status=>(
+                        <linearGradient key={status.key} id={`inventory-area-${status.key}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={status.color} stopOpacity={0.62}/>
+                          <stop offset="100%" stopColor={status.color} stopOpacity={0.18}/>
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    <CartesianGrid stroke={inventoryTheme.line}/>
+                    <XAxis dataKey="label" tick={{fill:inventoryTheme.muted,fontSize:11}} stroke={inventoryTheme.line}/>
+                    <YAxis tick={{fill:inventoryTheme.muted,fontSize:11}} stroke={inventoryTheme.line}/>
+                    <Tooltip content={<InventoryTrendTooltip metricLabel={trendMetric==="skuCount"?"SKU Count":"Current Stock Quantity"}/>}/>
+                    {INVENTORY_STATUS_CONFIG.map(status=>(
+                      <Area key={status.key} type="monotone" dataKey={status.key} stackId="inventory"
+                        stroke={status.color} strokeWidth={1.6} fill={`url(#inventory-area-${status.key})`}/>
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.border}`,borderRadius:16,padding:"14px 14px 12px"}}>
+            <div style={{fontWeight:700,fontSize:13,color:inventoryTheme.title,marginBottom:12}}>Legend Panel</div>
+            {INVENTORY_STATUS_CONFIG.map(status=>(
+              <div key={status.key} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 0",borderBottom:`1px solid ${inventoryTheme.line}`}}>
+                <span style={{width:10,height:10,borderRadius:"50%",background:status.color,marginTop:4,flexShrink:0}}/>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:inventoryTheme.title}}>{status.label}</div>
+                  <div style={{fontSize:11,color:inventoryTheme.sub,marginTop:4,lineHeight:1.6}}>
+                    {status.description}
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div style={{marginTop:12,padding:"11px 12px",background:inventoryTheme.panelTint,borderRadius:12,fontSize:11,color:inventoryTheme.sub,lineHeight:1.7}}>
+              KPI 카드는 현재 선택된 기간 안에서 가장 최근 snapshot_date를 기준으로 계산합니다.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {replacePrompt&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(25,28,34,0.36)",zIndex:20,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+          onClick={()=>setReplacePrompt(null)}>
+          <div onClick={event=>event.stopPropagation()}
+            style={{width:"min(420px,100%)",background:inventoryTheme.panel,border:`1px solid ${inventoryTheme.border}`,borderRadius:18,padding:"22px 22px 18px",
+              boxShadow:"0 22px 48px rgba(18,22,28,0.28)"}}>
+            <div style={{fontWeight:800,fontSize:17,color:inventoryTheme.title,marginBottom:8}}>Snapshot 충돌 확인</div>
+            <div style={{fontSize:12,color:inventoryTheme.sub,lineHeight:1.8,marginBottom:16}}>
+              <strong>{replacePrompt.snapshotDate}</strong> 날짜의 snapshot이 이미 존재합니다.
+              기존 row count와 신규 row count를 비교한 뒤 replace 여부를 결정해주세요.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.line}`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>Existing</div>
+                <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{(replacePrompt.existingCount||0).toLocaleString()}</div>
+              </div>
+              <div style={{background:inventoryTheme.panelSoft,border:`1px solid ${inventoryTheme.line}`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontSize:10,color:inventoryTheme.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>Incoming</div>
+                <div style={{fontSize:22,fontWeight:800,color:inventoryTheme.title}}>{replacePrompt.rowCount.toLocaleString()}</div>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:inventoryTheme.sub,lineHeight:1.7,marginBottom:18}}>
+              replace를 선택하면 해당 snapshot_date의 기존 데이터 전체를 삭제한 뒤 새 파일을 insert합니다.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setReplacePrompt(null)} style={{...chipButton(false),flex:1}}>취소</button>
+              <button onClick={()=>runInventoryUpload(replacePrompt,true)} style={{...chipButton(true),flex:1}}>Replace 실행</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
