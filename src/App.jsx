@@ -5501,11 +5501,12 @@ function parseInvFile(file,onResult,onError){
       const required=["product_name","current_stock_qty","snapshot_date","first_inbound_date"];
       const missing=required.filter(f=>colMap[f]===undefined);
       if(missing.length>0){onError(`필수 컬럼 누락: ${missing.join(", ")}`);return;}
+      const hasReorder=colMap["_r_weekly"]!==undefined||colMap["_r_avail"]!==undefined;
       const rows=raw.slice(1).map(r=>{
         const get=(f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
-        const getNum=(f)=>parseInt(String(r[colMap[f]]||"0").replace(/[^0-9]/g,""),10)||0;
+        // Remove commas then parse as float→round, so "1,234.5" → 1235, not "12345"
+        const getNum=(f)=>Math.round(parseFloat(String(r[colMap[f]]||"0").replace(/,/g,""))||0);
         const getDate=(f)=>{const v=get(f);if(!v||v==="-") return null;return toDate(v)||v;};
-        const hasReorder=colMap["_r_weekly"]!==undefined||colMap["_r_avail"]!==undefined;
         return{
           snapshot_date:getDate("snapshot_date"),
           product_name:get("product_name"),
@@ -5610,12 +5611,12 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
         computeAndSaveReorder(parsedRows,snapDate).then(()=>onReorderDone()).catch(()=>{});}
       else if(!parsedRows.some(r=>r._r_weekly!=null)&&onReorderDone) onReorderDone();
     }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
-  },[parsedRows,snapDate,loadHistory,onUploaded]);
+  },[parsedRows,snapDate,loadHistory,onUploaded,onReorderDone]);
 
   const handleUploadClick=useCallback(async()=>{
     if(!parsedRows.length||!snapDate) return;
     const db=await getSupabase();
-    const{count}=await db.from("inventory_snapshot").select("id",{count:"exact",head:true}).eq("snapshot_date",snapDate);
+    const{count}=await db.from("inventory_snapshot").select("snapshot_date",{count:"exact",head:true}).eq("snapshot_date",snapDate);
     if(count&&count>0){
       setConflictInfo({date:snapDate,existingCount:count,newCount:parsedRows.length});
       setShowModal(true);
@@ -7199,7 +7200,7 @@ function DataCompare({revenues,storeSales=[]}){
         )}
       </div>
 
-      <InventoryTrend DC={DC} onReorderRefresh={()=>setReorderKey(k=>k+1)}/>
+      <InventoryTrend DC={DC} onReorderRefresh={useCallback(()=>setReorderKey(k=>k+1),[])}/>
 
       <ReorderCalculator DC={DC} refreshKey={reorderKey}/>
     </div>
