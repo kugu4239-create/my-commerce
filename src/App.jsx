@@ -5254,6 +5254,16 @@ function RevenueSankeyChart({periods,svgW}){
     return{...p,colX,nodes};
   }),[periods,svgW,heightScale]);
 
+  // 채널별 첫 번째 데이터가 있는 컬럼 인덱스
+  const firstVisPi=useMemo(()=>{
+    const map={};
+    COMPARE_CHANNELS.forEach(ch=>{
+      const idx=cols.findIndex(col=>(col.nodes.find(n=>n.ch===ch)?.h||0)>=14);
+      if(idx>=0) map[ch]=idx;
+    });
+    return map;
+  },[cols]);
+
   // 베지어 곡선 리본
   const links=useMemo(()=>{
     const res=[];
@@ -5360,8 +5370,8 @@ function RevenueSankeyChart({periods,svgW}){
                     {selIdx(pi,n.ch)+1}
                   </text>
                 )}
-                {/* 첫 번째 컬럼 노드 안에 채널명 삽입 */}
-                {pi===0&&n.h>=14&&(
+                {/* 채널별 첫 번째 유효 노드 안에 채널명 삽입 */}
+                {firstVisPi[n.ch]===pi&&n.h>=14&&(
                   <text x={n.x+NODE_W/2} y={n.y+n.h/2}
                     textAnchor="middle" dominantBaseline="middle"
                     fontSize={9} fontWeight={700} fill="#000"
