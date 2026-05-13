@@ -5226,7 +5226,7 @@ const COMPARE_CH_COLOR={
   "무신사":"#6D28D9",
   "오프라인 스토어":"#B45309",
 };
-const COMPARE_CHANNELS=["자사몰","29CM","무신사","오프라인 스토어"];
+const COMPARE_CHANNELS=["자사몰","29CM","오프라인 스토어","무신사"];
 
 function RevenueSankeyChart({periods,svgW}){
   const wrapRef=useRef(null);
@@ -5254,7 +5254,7 @@ function RevenueSankeyChart({periods,svgW}){
     return{...p,colX,nodes};
   }),[periods,svgW,heightScale]);
 
-  // 직각 step 리본
+  // 베지어 곡선 리본
   const links=useMemo(()=>{
     const res=[];
     for(let pi=0;pi<cols.length-1;pi++){
@@ -5264,8 +5264,8 @@ function RevenueSankeyChart({periods,svgW}){
         if(!ln||!rn||ln.h<1||rn.h<1) return;
         const x1=ln.x+NODE_W,x2=rn.x,mx=(x1+x2)/2;
         const path=[
-          `M${x1} ${ln.y}L${mx} ${ln.y}L${mx} ${rn.y}L${x2} ${rn.y}`,
-          `L${x2} ${rn.y+rn.h}L${mx} ${rn.y+rn.h}L${mx} ${ln.y+ln.h}L${x1} ${ln.y+ln.h}Z`,
+          `M${x1} ${ln.y}C${mx} ${ln.y},${mx} ${rn.y},${x2} ${rn.y}`,
+          `L${x2} ${rn.y+rn.h}C${mx} ${rn.y+rn.h},${mx} ${ln.y+ln.h},${x1} ${ln.y+ln.h}Z`,
         ].join(" ");
         res.push({ch,path,color:COMPARE_CH_COLOR[ch]});
       });
@@ -5376,13 +5376,23 @@ function RevenueSankeyChart({periods,svgW}){
               textAnchor="middle" fontSize={10} fill="#fff" style={{pointerEvents:"none"}}>
               {col.label}
             </text>
-            {/* 매출 합계 라벨 — 흰색 */}
-            {col.total>0&&(
-              <text x={col.colX+NODE_W/2} y={PAD_T-12}
-                textAnchor="middle" fontSize={9} fill="#fff" style={{pointerEvents:"none"}}>
-                {fmtAmt(col.total)}
-              </text>
-            )}
+            {/* 매출 합계 라벨 — 오른쪽 세로 방향 (노드 두께 = 금액) */}
+            {col.total>0&&(()=>{
+              const vis=col.nodes.filter(n=>n.h>0);
+              if(!vis.length) return null;
+              const top=Math.min(...vis.map(n=>n.y));
+              const bot=Math.max(...vis.map(n=>n.y+n.h));
+              const midY=(top+bot)/2;
+              const rx=col.colX+NODE_W+11;
+              return(
+                <text x={rx} y={midY}
+                  transform={`rotate(90 ${rx} ${midY})`}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={9} fill="#fff" style={{pointerEvents:"none",userSelect:"none"}}>
+                  {fmtAmt(col.total)}
+                </text>
+              );
+            })()}
           </g>
         ))}
       </svg>
@@ -5427,7 +5437,7 @@ function RevenueSankeyChart({periods,svgW}){
       })()}
 
       {/* 사용 안내 */}
-      <div style={{marginTop:14,textAlign:"center",fontSize:11,color:"#3a3a3a",letterSpacing:"0.02em",userSelect:"none"}}>
+      <div style={{marginTop:14,textAlign:"center",fontSize:15,color:"#fff",letterSpacing:"0.02em",userSelect:"none"}}>
         노드를 순서대로 두 번 탭 · 클릭하면 기간/채널 간 매출 증감률을 비교할 수 있습니다
       </div>
     </div>
