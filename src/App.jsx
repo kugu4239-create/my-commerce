@@ -1540,7 +1540,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     판교점:pankyo,
                     일산점:ilsan};
                 }
-                return{name:c.name,revenue:c.revenue,판교점:0,일산점:0};
+                return{name:c.name,revenue:c.revenue};
               });
               return(
                 <BarChart data={chartData} layout="vertical" barCategoryGap="28%">
