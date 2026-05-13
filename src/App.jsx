@@ -5406,25 +5406,26 @@ function RevenueSankeyChart({periods,svgW}){
           </g>
         ))}
 
-        {/* 컬럼 간 전체 매출 증감률 점선 */}
+        {/* 컬럼 간 전체 매출 증감률 — 하단 세로 점선 */}
         {cols.slice(0,-1).map((col,pi)=>{
           const next=cols[pi+1];
           if(!col.total||!next.total) return null;
           const pct=((next.total-col.total)/col.total*100);
           const up=pct>=0;
           const clr=up?"#4ade80":"#f87171";
-          // 각 컬럼의 노드 스택 상단 y
-          const topY=(c)=>{const vis=c.nodes.filter(n=>n.h>0);return vis.length?Math.min(...vis.map(n=>n.y)):PAD_T;};
-          const y1=topY(col), y2=topY(next);
-          const x1=col.colX+NODE_W, x2=next.colX;
-          const mx=(x1+x2)/2, my=(y1+y2)/2-14;
+          const botY=(c)=>{const vis=c.nodes.filter(n=>n.h>0);return vis.length?Math.max(...vis.map(n=>n.y+n.h)):PAD_T+AVAIL_H;};
+          const lineTop=Math.max(botY(col),botY(next))+6;
+          const lineBot=SVG_H-PAD_B-4;
+          const mx=(col.colX+NODE_W+next.colX)/2;
+          const midY=(lineTop+lineBot)/2;
+          if(lineTop>=lineBot) return null;
           return(
             <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
-              <line x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={clr} strokeWidth={1} strokeDasharray="4 3" opacity={0.55}/>
-              <rect x={mx-22} y={my-9} width={44} height={18} rx={4}
-                fill="#111" opacity={0.85}/>
-              <text x={mx} y={my+1} textAnchor="middle" dominantBaseline="middle"
+              <line x1={mx} y1={lineTop} x2={mx} y2={lineBot}
+                stroke={clr} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6}/>
+              <text x={mx} y={midY}
+                transform={`rotate(90 ${mx} ${midY})`}
+                textAnchor="middle" dominantBaseline="middle"
                 fontSize={9} fontWeight={700} fill={clr} style={{userSelect:"none"}}>
                 {up?"+":""}{pct.toFixed(1)}%
               </text>
