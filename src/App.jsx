@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import dayjs from "dayjs";
@@ -2927,7 +2927,7 @@ function DateButtonPicker({value,onChange}){
   );
 }
 
-function PromoFlow({ revenues }) {
+function PromoFlow({ revenues, storeSales=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
@@ -2943,6 +2943,15 @@ function PromoFlow({ revenues }) {
   const formFileRef=useRef(null);
   const [formFileDragOver,setFormFileDragOver]=useState(false);
   const [tableFileDragOver,setTableFileDragOver]=useState(null);
+  // Hidden promo log (localStorage only — no schema change needed)
+  const getHiddenLog=()=>{try{return JSON.parse(localStorage.getItem("hidden_promo_log")||"[]");}catch{return[];}};
+  const [hiddenLog,setHiddenLog]=useState(getHiddenLog);
+  const hiddenIds=useMemo(()=>new Set(hiddenLog.map(h=>h.id)),[hiddenLog]);
+  const [selHiddenIds,setSelHiddenIds]=useState(new Set());
+  // Promo search
+  const [searchStart,setSearchStart]=useState("");
+  const [searchEnd,setSearchEnd]=useState("");
+  const [searchCh,setSearchCh]=useState("");
   const addFilesFromList=(fileList,currentCount,onFile)=>{
     const remaining=3-currentCount;
     Array.from(fileList).slice(0,remaining).forEach(file=>readFileData(file,onFile));
@@ -3030,6 +3039,16 @@ function PromoFlow({ revenues }) {
     const promo=promos.find(p=>p.id===id);
     patchPromo(id,{files:(promo?.files||[]).filter((_,i)=>i!==idx)});
   };
+  const hidePromo=p=>{
+    const entry={...p,hidden_at:new Date().toISOString()};
+    const next=[...hiddenLog.filter(h=>h.id!==p.id),entry];
+    setHiddenLog(next);localStorage.setItem("hidden_promo_log",JSON.stringify(next));
+  };
+  const delFromHiddenLog=ids=>{
+    const next=hiddenLog.filter(h=>!ids.has(h.id));
+    setHiddenLog(next);setSelHiddenIds(new Set());
+    localStorage.setItem("hidden_promo_log",JSON.stringify(next));
+  };
 
   const getSubmitPromos=()=>{try{return JSON.parse(localStorage.getItem("submit_promos")||"[]");}catch{return [];}};
   const saveSubmitPromosLocal=data=>localStorage.setItem("submit_promos",JSON.stringify(data));
@@ -3100,8 +3119,19 @@ function PromoFlow({ revenues }) {
       if(!byDate[r.date]) return;
       byDate[r.date][r.channel]=(byDate[r.date][r.channel]||0)+(r.amount||0);
     });
+    // 오프라인 스토어 순매출 (배송 - 반품)
+    storeSales.filter(r=>r.sale_date>=viewStart&&r.sale_date<=viewEnd).forEach(r=>{
+      if(!byDate[r.sale_date]) return;
+      const ch="오프라인 스토어";
+      const cur=byDate[r.sale_date][ch]||0;
+      if(r.status==="배송") byDate[r.sale_date][ch]=cur+(r.amount||0);
+      else if(r.status==="반품") byDate[r.sale_date][ch]=cur-(r.amount||0);
+    });
+    Object.values(byDate).forEach(row=>{
+      if((row["오프라인 스토어"]||0)<0) row["오프라인 스토어"]=0;
+    });
     return Object.values(byDate).sort((a,b)=>a.date>b.date?1:-1);
-  },[revenues,viewStart,viewEnd]);
+  },[revenues,storeSales,viewStart,viewEnd]);
 
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"8px 12px",fontSize:16,color:D.text,width:"100%",boxSizing:"border-box",
@@ -3375,9 +3405,11 @@ function PromoFlow({ revenues }) {
                 if(!active||!payload?.length) return null;
                 const fullDate=payload[0]?.payload?.fullDate||"";
                 const label=payload[0]?.payload?.date||"";
-                const activePromos=promos.filter(p=>
-                  p.start_date.slice(0,10)<=fullDate&&p.end_date.slice(0,10)>=fullDate
-                );
+                // 진행 중 / 진행했던 분리 (hidden 포함)
+                const allForTip=[...promos,...hiddenLog.filter(h=>!promos.find(p=>p.id===h.id))];
+                const inRange=allForTip.filter(p=>p.start_date.slice(0,10)<=fullDate&&(p.end_date||"9999").slice(0,10)>=fullDate);
+                const runningPromos=inRange.filter(p=>!isEnded(p));
+                const pastPromos=inRange.filter(p=>isEnded(p));
                 return (
                   <div style={{background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
                     padding:"10px 14px",fontSize:13,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180}}>
@@ -3389,14 +3421,26 @@ function PromoFlow({ revenues }) {
                         <span style={{fontWeight:600}}>₩{(p.value||0).toLocaleString()}</span>
                       </div>
                     ))}
-                    {activePromos.length>0&&(
+                    {runningPromos.length>0&&(
                       <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${D.border}`}}>
                         <div style={{fontSize:11,color:D.textMeta,marginBottom:4,letterSpacing:"0.05em"}}>진행 중인 프로모션</div>
-                        {activePromos.map(p=>(
+                        {runningPromos.map(p=>(
                           <div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
                             <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
                             <span style={{color:D.textSub,fontSize:12}}>{p.platform}</span>
                             <span style={{fontWeight:600,fontSize:12,marginLeft:2}}>{p.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {pastPromos.length>0&&(
+                      <div style={{marginTop:6,paddingTop:6,borderTop:`1px solid ${D.border}`}}>
+                        <div style={{fontSize:11,color:"#aaa",marginBottom:4,letterSpacing:"0.05em"}}>진행했던 프로모션</div>
+                        {pastPromos.map(p=>(
+                          <div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:2,opacity:0.7}}>
+                            <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
+                            <span style={{color:D.textSub,fontSize:12}}>{p.platform}</span>
+                            <span style={{fontWeight:600,fontSize:12,marginLeft:2,textDecoration:"line-through"}}>{p.name}</span>
                           </div>
                         ))}
                       </div>
@@ -3525,20 +3569,20 @@ function PromoFlow({ revenues }) {
       </Card>
 
       {/* 등록된 프로모션 목록 표 */}
-      {promos.length>0&&(
+      {promos.filter(p=>!hiddenIds.has(p.id)).length>0&&(
         <Card>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>등록된 프로모션</div>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                {["채널","프로모션명","기간","상세 내용","첨부 파일","",""].map(h=>(
-                  <th key={h} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
+                {["채널","프로모션명","기간","상세 내용","첨부 파일","","",""].map((h,i)=>(
+                  <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
                     color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {[...promos].sort((a,b)=>a.start_date>b.start_date?1:-1).map(p=>{
+              {[...promos].filter(p=>!hiddenIds.has(p.id)).sort((a,b)=>a.start_date>b.start_date?1:-1).map(p=>{
                 const ended=isEnded(p);
                 const isEditing=editingPromoId===p.id;
                 const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
@@ -3662,6 +3706,15 @@ function PromoFlow({ revenues }) {
                           cursor:"pointer",padding:"2px 4px",fontSize:15,filter:"grayscale(1)"}}>✎</button>
                     </td>
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
+                      {ended&&(
+                        <button onClick={()=>hidePromo(p)} title="가리기 (종료 프로모션 로그)"
+                          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+                            color:D.textMeta,cursor:"pointer",padding:"2px 8px",fontSize:11,whiteSpace:"nowrap",marginRight:4}}>
+                          가리기
+                        </button>
+                      )}
+                    </td>
+                    <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                       <button onClick={()=>delPromo(p.id)}
                         style={{background:"transparent",border:"none",color:D.textMeta,
                           cursor:"pointer",padding:0,fontSize:14}}>✕</button>
@@ -3673,6 +3726,157 @@ function PromoFlow({ revenues }) {
           </table>
         </Card>
       )}
+
+      {/* 가려진 프로모션 로그 */}
+      {hiddenLog.length>0&&(
+        <Card style={{marginTop:12}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div style={{fontWeight:600,fontSize:14,color:D.black}}>가려진 프로모션 로그</div>
+            {selHiddenIds.size>0&&(
+              <button onClick={()=>delFromHiddenLog(selHiddenIds)}
+                style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                  padding:"4px 12px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+                선택 삭제 ({selHiddenIds.size})
+              </button>
+            )}
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:D.surfaceAlt}}>
+                <th style={{padding:"4px 6px",width:22}}/>
+                {["채널","프로모션명","기간","가린 시각"].map(h=>(
+                  <th key={h} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
+                <tr key={h.id} style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                  <td style={{padding:"4px 6px"}}>
+                    <input type="checkbox" checked={selHiddenIds.has(h.id)}
+                      onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
+                      style={{cursor:"pointer"}}/>
+                  </td>
+                  <td style={{padding:"4px 8px"}}>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:chColor(h.platform),display:"inline-block"}}/>
+                      {h.platform}
+                    </span>
+                  </td>
+                  <td style={{padding:"4px 8px",color:D.text,fontWeight:500}}>{h.name}</td>
+                  <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{h.start_date?.slice(0,10)} ~ {h.end_date?.slice(0,10)}</td>
+                  <td style={{padding:"4px 8px",fontSize:11}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {/* 프로모션 검색 */}
+      <Card style={{marginTop:12}}>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>프로모션 검색</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+          <input type="date" value={searchStart} onChange={e=>setSearchStart(e.target.value)}
+            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:13,color:D.text}}/>
+          <span style={{color:D.textMeta}}>~</span>
+          <input type="date" value={searchEnd} onChange={e=>setSearchEnd(e.target.value)}
+            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:13,color:D.text}}/>
+          <span style={{color:D.borderMid,fontSize:14}}>|</span>
+          {["",...PROMO_PLATFORMS].map(ch=>(
+            <button key={ch||"all"} onClick={()=>setSearchCh(ch)}
+              style={{background:searchCh===ch?D.black:"transparent",color:searchCh===ch?"#fff":D.textSub,
+                border:`1px solid ${searchCh===ch?D.black:D.border}`,borderRadius:5,
+                padding:"4px 10px",fontSize:12,cursor:"pointer"}}>
+              {ch||"전체 채널"}
+            </button>
+          ))}
+          {(searchStart||searchEnd||searchCh)&&(
+            <button onClick={()=>{setSearchStart("");setSearchEnd("");setSearchCh("");}}
+              style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",fontSize:13}}>✕ 초기화</button>
+          )}
+        </div>
+        {(()=>{
+          const s=searchStart||"0000-01-01";const e=searchEnd||"9999-12-31";
+          const allP=[...promos,...hiddenLog.filter(h=>!promos.find(p=>p.id===h.id))];
+          const matched=allP.filter(p=>{
+            const overlap=p.start_date.slice(0,10)<=e&&(p.end_date||"9999-12-31").slice(0,10)>=s;
+            const chMatch=!searchCh||p.platform===searchCh;
+            return overlap&&chMatch;
+          }).sort((a,b)=>a.start_date>b.start_date?1:-1);
+          // Revenue for period + channel
+          const revTotal=(()=>{
+            let t=0;
+            revenues.filter(r=>r.date>=s&&r.date<=e&&(!searchCh||r.channel===searchCh)).forEach(r=>t+=(r.amount||0));
+            if(!searchCh||searchCh==="오프라인 스토어"){
+              storeSales.filter(r=>r.sale_date>=s&&r.sale_date<=e).forEach(r=>{
+                if(r.status==="배송") t+=(r.amount||0);
+                else if(r.status==="반품") t-=(r.amount||0);
+              });
+            }
+            return Math.max(0,t);
+          })();
+          if(!matched.length&&!(searchStart||searchEnd||searchCh)){
+            return <div style={{textAlign:"center",padding:"20px 0",color:D.textMeta,fontSize:13}}>기간 또는 채널을 선택하면 검색 결과가 표시됩니다</div>;
+          }
+          return(
+            <>
+              <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+                <div style={{background:D.surfaceAlt,borderRadius:7,padding:"10px 16px",minWidth:140}}>
+                  <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>검색된 프로모션</div>
+                  <div style={{fontSize:18,fontWeight:700,color:D.black}}>{matched.length}개</div>
+                </div>
+                {(searchStart||searchEnd)&&(
+                  <div style={{background:D.surfaceAlt,borderRadius:7,padding:"10px 16px",minWidth:140}}>
+                    <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>기간 매출{searchCh?` (${searchCh})`:" (전체)"}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:D.black}}>₩{revTotal.toLocaleString()}</div>
+                  </div>
+                )}
+              </div>
+              {matched.length>0&&(
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{background:D.surfaceAlt}}>
+                      {["채널","프로모션명","기간","상태"].map(h=>(
+                        <th key={h} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
+                          color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matched.map(p=>{
+                      const ended=isEnded(p);const hidden=hiddenIds.has(p.id);
+                      return(
+                        <tr key={p.id} style={{borderBottom:`1px solid ${D.border}`,opacity:hidden?0.55:1}}>
+                          <td style={{padding:"5px 8px"}}>
+                            <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                              <span style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),display:"inline-block"}}/>
+                              <span style={{color:D.textSub}}>{p.platform}</span>
+                            </span>
+                          </td>
+                          <td style={{padding:"5px 8px",fontWeight:600,color:D.text}}>
+                            {p.name}
+                            {hidden&&<span style={{marginLeft:6,fontSize:10,color:D.textMeta,fontWeight:400}}>(가려짐)</span>}
+                          </td>
+                          <td style={{padding:"5px 8px",color:D.textSub,whiteSpace:"nowrap",fontSize:12}}>
+                            {p.start_date?.slice(0,10)} ~ {p.end_date?.slice(0,10)}
+                          </td>
+                          <td style={{padding:"5px 8px"}}>
+                            {ended
+                              ?<span style={{fontSize:11,color:D.red,fontWeight:600}}>종료</span>
+                              :<span style={{fontSize:11,color:D.green,fontWeight:600}}>진행 중</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </>
+          );
+        })()}
+      </Card>
     </div>
   );
 }
@@ -5264,6 +5468,11 @@ const INV_COL_ALIASES={
   last_delivery_date:     ["마지막배송일","last_delivery_date","최근배송일","최근출고일"],
   cumulative_delivery_qty:["누적배송수량","cumulative_delivery_qty","누적배송","누적출고"],
   snapshot_date:          ["데이터날짜","snapshot_date","날짜"],
+  // Reorder-specific columns (optional — extracted separately, not saved to inventory_snapshot)
+  _r_avail:               ["가용재고","available_stock"],
+  _r_incoming:            ["입고대기","incoming_stock"],
+  _r_weekly:              ["1주발주합계","weekly_sales","1주판매합계"],
+  _r_monthly:             ["4주발주합계","monthly_sales","4주판매합계"],
 };
 
 function mapInvCols(headers){
@@ -5296,6 +5505,7 @@ function parseInvFile(file,onResult,onError){
         const get=(f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
         const getNum=(f)=>parseInt(String(r[colMap[f]]||"0").replace(/[^0-9]/g,""),10)||0;
         const getDate=(f)=>{const v=get(f);if(!v||v==="-") return null;return toDate(v)||v;};
+        const hasReorder=colMap["_r_weekly"]!==undefined||colMap["_r_avail"]!==undefined;
         return{
           snapshot_date:getDate("snapshot_date"),
           product_name:get("product_name"),
@@ -5309,6 +5519,13 @@ function parseInvFile(file,onResult,onError){
           latest_inbound_qty:getNum("latest_inbound_qty"),
           last_delivery_date:getDate("last_delivery_date"),
           cumulative_delivery_qty:getNum("cumulative_delivery_qty"),
+          // Optional reorder fields (stripped before inventory_snapshot insert)
+          ...(hasReorder?{
+            _r_avail:getNum("_r_avail"),
+            _r_incoming:getNum("_r_incoming"),
+            _r_weekly:getNum("_r_weekly"),
+            _r_monthly:getNum("_r_monthly"),
+          }:{}),
         };
       }).filter(r=>r.product_name&&r.snapshot_date&&r.first_inbound_date);
       onResult(rows);
@@ -5321,7 +5538,7 @@ function parseInvFile(file,onResult,onError){
 // ─────────────────────────────────────────────
 // INVENTORY UPLOADER
 // ─────────────────────────────────────────────
-function InventoryUploader({DC,onUploaded}){
+function InventoryUploader({DC,onUploaded,onReorderDone}){
   const [file,setFile]=useState(null);
   const [uploadStatus,setUploadStatus]=useState(null);
   const [statusMsg,setStatusMsg]=useState("");
@@ -5377,15 +5594,21 @@ function InventoryUploader({DC,onUploaded}){
         const{error:de}=await db.from("inventory_snapshot").delete().eq("snapshot_date",snapDate);
         if(de) throw new Error(de.message);
       }
+      // Strip reorder-specific fields before inserting to inventory_snapshot
+      const invRows=parsedRows.map(({_r_avail,_r_incoming,_r_weekly,_r_monthly,...rest})=>rest);
       const CHUNK=500;
-      for(let i=0;i<parsedRows.length;i+=CHUNK){
-        const{error}=await db.from("inventory_snapshot").insert(parsedRows.slice(i,i+CHUNK));
+      for(let i=0;i<invRows.length;i+=CHUNK){
+        const{error}=await db.from("inventory_snapshot").insert(invRows.slice(i,i+CHUNK));
         if(error) throw new Error(error.message);
       }
       setUploadStatus("done");setStatusMsg(`${parsedRows.length.toLocaleString()}개 행 저장 완료`);
       setFile(null);setParsedRows([]);setSnapDate(null);setConflictInfo(null);setShowModal(false);
       await loadHistory();
       if(onUploaded) onUploaded();
+      // Post-process: reorder calculation (fire-and-forget, never blocks upload)
+      if(onReorderDone&&parsedRows.some(r=>r._r_weekly!=null)){
+        computeAndSaveReorder(parsedRows,snapDate).then(()=>onReorderDone()).catch(()=>{});}
+      else if(!parsedRows.some(r=>r._r_weekly!=null)&&onReorderDone) onReorderDone();
     }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
   },[parsedRows,snapDate,loadHistory,onUploaded]);
 
@@ -6050,9 +6273,354 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
 }
 
 // ─────────────────────────────────────────────
+// REORDER CALCULATION
+// SQL for new table (run once in Supabase):
+// create table if not exists public.reorder_recommendations (
+//   reorder_id uuid default gen_random_uuid() primary key,
+//   reorder_data_date date not null,
+//   reorder_product_name text not null,
+//   reorder_option_name text default '',
+//   reorder_available_stock integer default 0,
+//   reorder_incoming_stock integer default 0,
+//   reorder_effective_stock integer default 0,
+//   reorder_weekly_sales integer default 0,
+//   reorder_monthly_sales integer default 0,
+//   reorder_expected_daily_sales numeric(10,4) default 0,
+//   reorder_days_left numeric(10,2) default 9999,
+//   reorder_trend_ratio numeric(10,4) default 0,
+//   reorder_recommended_qty integer default 0,
+//   reorder_created_at timestamptz default now()
+// );
+// ─────────────────────────────────────────────
+async function computeAndSaveReorder(parsedRows,snapDate){
+  const rows=parsedRows.filter(r=>r._r_weekly!=null);
+  if(!rows.length) return;
+  const computed=rows.map(r=>{
+    const avail=r._r_avail||0;
+    const incoming=r._r_incoming||0;
+    const weekly=r._r_weekly||0;
+    const monthly=r._r_monthly||0;
+    const effective=avail+incoming;
+    const daily7=weekly/7;
+    const daily28=monthly>0?monthly/28:0;
+    const expectedDaily=(daily7*0.7)+(daily28*0.3);
+    if(expectedDaily<=0) return null;
+    const daysLeft=effective/expectedDaily;
+    const trendRatio=daily28>0?daily7/daily28:0;
+    const recommended=Math.max(0,Math.round(expectedDaily*14-effective));
+    return{
+      reorder_data_date:snapDate,
+      reorder_product_name:r.product_name,
+      reorder_option_name:r.option_name||"",
+      reorder_available_stock:avail,
+      reorder_incoming_stock:incoming,
+      reorder_effective_stock:effective,
+      reorder_weekly_sales:weekly,
+      reorder_monthly_sales:monthly,
+      reorder_expected_daily_sales:Math.round(expectedDaily*10000)/10000,
+      reorder_days_left:Math.round(daysLeft*100)/100,
+      reorder_trend_ratio:Math.round(trendRatio*10000)/10000,
+      reorder_recommended_qty:recommended,
+    };
+  }).filter(r=>r&&r.reorder_days_left<14);
+  if(!computed.length) return;
+  const db=await getSupabase();
+  // Check latest saved date — skip if we already have newer data
+  const{data:latest}=await db.from("reorder_recommendations")
+    .select("reorder_data_date").order("reorder_data_date",{ascending:false}).limit(1);
+  const latestDate=latest?.[0]?.reorder_data_date;
+  if(latestDate&&snapDate<latestDate) return;
+  // Replace all existing records with latest
+  await db.from("reorder_recommendations").delete().lte("reorder_created_at",new Date().toISOString());
+  const CHUNK=200;
+  for(let i=0;i<computed.length;i+=CHUNK){
+    await db.from("reorder_recommendations").insert(computed.slice(i,i+CHUNK));
+  }
+}
+
+// ─────────────────────────────────────────────
+// REORDER CALCULATOR COMPONENT
+// ─────────────────────────────────────────────
+function ReorderCalculator({DC,refreshKey}){
+  const [data,setData]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [search,setSearch]=useState("");
+  const [sortKey,setSortKey]=useState("reorder_days_left");
+  const [sortDir,setSortDir]=useState("asc");
+  const [pg,setPg]=useState(0);
+  const PG=20;
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const db=await getSupabase();
+    const{data:rows}=await db.from("reorder_recommendations")
+      .select("*").order("reorder_days_left",{ascending:true});
+    setData(rows||[]);
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load,refreshKey]);
+
+  const kpi=useMemo(()=>{
+    if(!data.length) return null;
+    const n=data.length;
+    const avgDays=data.reduce((s,r)=>s+(r.reorder_days_left||0),0)/n;
+    const totalQty=data.reduce((s,r)=>s+(r.reorder_recommended_qty||0),0);
+    const totalIncoming=data.reduce((s,r)=>s+(r.reorder_incoming_stock||0),0);
+    return{n,avgDays,totalQty,totalIncoming};
+  },[data]);
+
+  const filtered=useMemo(()=>{
+    let rows=data;
+    if(search) rows=rows.filter(r=>
+      (r.reorder_product_name||"").toLowerCase().includes(search.toLowerCase())||
+      (r.reorder_option_name||"").toLowerCase().includes(search.toLowerCase())
+    );
+    return[...rows].sort((a,b)=>{
+      const va=a[sortKey]??0,vb=b[sortKey]??0;
+      return sortDir==="asc"?(va>vb?1:-1):(va<vb?1:-1);
+    });
+  },[data,search,sortKey,sortDir]);
+
+  const paged=filtered.slice(pg*PG,(pg+1)*PG);
+  const totalPgs=Math.ceil(filtered.length/PG);
+
+  const daysDistData=useMemo(()=>
+    [{label:"0~3일",min:0,max:3},{label:"3~7일",min:3,max:7},{label:"7~10일",min:7,max:10},{label:"10~14일",min:10,max:14}]
+      .map(b=>({label:b.label,count:data.filter(r=>(r.reorder_days_left||0)>=b.min&&(r.reorder_days_left||0)<b.max).length}))
+  ,[data]);
+
+  const topSales=useMemo(()=>
+    [...data].sort((a,b)=>(b.reorder_expected_daily_sales||0)-(a.reorder_expected_daily_sales||0)).slice(0,10).map(r=>({
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+      value:r.reorder_expected_daily_sales||0,
+    }))
+  ,[data]);
+
+  const topReorder=useMemo(()=>
+    [...data].sort((a,b)=>(b.reorder_recommended_qty||0)-(a.reorder_recommended_qty||0)).slice(0,10).map(r=>({
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+      value:r.reorder_recommended_qty||0,
+    }))
+  ,[data]);
+
+  const rising=useMemo(()=>
+    [...data].filter(r=>(r.reorder_trend_ratio||0)>=1.2).sort((a,b)=>(b.reorder_trend_ratio||0)-(a.reorder_trend_ratio||0)).slice(0,10).map(r=>({
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+      value:Math.round((r.reorder_trend_ratio||0)*100)/100,
+    }))
+  ,[data]);
+
+  const downloadCSV=()=>{
+    const hdr=["상품명","옵션","현재고","입고대기","실질가용재고","1주판매","4주판매","예상일판매량","판매추세","재고잔여일","추천리오더수량"];
+    const rows=filtered.map(r=>[
+      r.reorder_product_name,r.reorder_option_name,r.reorder_available_stock,r.reorder_incoming_stock,
+      r.reorder_effective_stock,r.reorder_weekly_sales,r.reorder_monthly_sales,
+      r.reorder_expected_daily_sales,r.reorder_trend_ratio,r.reorder_days_left,r.reorder_recommended_qty,
+    ]);
+    const csv=[hdr,...rows].map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${new Date().toISOString().slice(0,10)}.csv`});
+    a.click();URL.revokeObjectURL(a.href);
+  };
+
+  const trendTag=r=>{const t=r.reorder_trend_ratio||0;return t>=1.2?{label:"↑ 상승",color:"#7EC8A4"}:t>=0.8?{label:"→ 안정",color:"#7B9EC8"}:{label:"↓ 감소",color:"#C87B7B"};};
+
+  const SortTh=({k,label})=>(
+    <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
+      style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,
+        fontSize:11,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
+      {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
+    </th>
+  );
+
+  const chartStyle={background:"rgba(255,255,255,0.02)",border:`1px solid ${DC.border}`,borderRadius:9,padding:"14px 12px"};
+  const ttStyle={contentStyle:{background:"#161616",border:"1px solid #2e2e2e",borderRadius:7,fontSize:12},cursor:false};
+
+  return(
+    <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
+      <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:4}}>리오더 계산기</div>
+      <div style={{fontSize:11,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+
+      {/* Calculation flow card */}
+      <div style={{marginBottom:20,background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
+        <div style={{fontSize:10,fontWeight:700,color:DC.sub,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
+        <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
+          {[
+            {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
+            {title:"실질 가용재고",body:"현재고\n+입고대기"},
+            {title:"예상 재고잔여일",body:"실질가용재고\n÷예상일판매량"},
+            {title:"14일 미만→\n리오더 추천",body:"days_left\n< 14일"},
+            {title:"추천 리오더 수량",body:"(일판매량×14)\n−실질가용재고"},
+          ].map((s,i,a)=>(
+            <React.Fragment key={s.title}>
+              <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
+                <div style={{fontSize:10,color:DC.sub,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
+                <div style={{fontSize:11,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
+              </div>
+              {i<a.length-1&&<div style={{color:DC.sub,fontSize:16,padding:"0 6px",flexShrink:0}}>→</div>}
+            </React.Fragment>
+          ))}
+        </div>
+        <div style={{marginTop:10,fontSize:11,color:DC.dim,lineHeight:1.8}}>
+          추세: <span style={{color:"#7EC8A4"}}>≥1.2 상승</span> · <span style={{color:"#7B9EC8"}}>0.8~1.2 안정</span> · <span style={{color:"#C87B7B"}}>&lt;0.8 감소</span>
+          {" "}· 예외: 4주판매=0이면 trend=0 / 일판매=0이면 미저장
+        </div>
+      </div>
+
+      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>}
+
+      {!loading&&data.length===0&&(
+        <div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:13,lineHeight:2}}>
+          Inventory Trend 엑셀 업로드 완료 후 리오더 데이터가 자동 생성됩니다.<br/>
+          <span style={{fontSize:11}}>엑셀에 <strong style={{color:DC.sub}}>가용재고 · 입고대기 · 1주발주합계 · 4주발주합계</strong> 컬럼 포함 필요</span>
+        </div>
+      )}
+
+      {!loading&&data.length>0&&(
+        <>
+          {/* KPI */}
+          {kpi&&(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+              {[
+                {label:"리오더 추천 SKU",value:`${kpi.n}개`,color:"#C87B7B"},
+                {label:"평균 재고잔여일",value:`${kpi.avgDays.toFixed(1)}일`,color:"#C8A87B"},
+                {label:"총 추천 리오더 수량",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
+                {label:"총 입고대기 수량",value:`${kpi.totalIncoming.toLocaleString()}개`,color:"#7B9EC8"},
+              ].map(c=>(
+                <div key={c.label} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
+                  <div style={{fontSize:10,color:DC.sub,marginBottom:5}}>{c.label}</div>
+                  <div style={{fontSize:16,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Charts */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+            <div style={chartStyle}>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>재고잔여일 분포</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={daysDistData} margin={{top:4,right:8,bottom:4,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c"/>
+                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <Tooltip {...ttStyle}/>
+                  <Bar dataKey="count" name="SKU 수" fill="#C87B7B" radius={[3,3,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={chartStyle}>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top10 (추세비율)</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={rising} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <Tooltip {...ttStyle}/>
+                  <Bar dataKey="value" name="추세비율" fill="#7EC8A4" radius={[0,3,3,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={chartStyle}>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top SKU (예상 일판매량)</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={topSales} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <Tooltip {...ttStyle} formatter={v=>[v.toFixed(2),"일판매량"]}/>
+                  <Bar dataKey="value" name="일판매량" fill="#7B9EC8" radius={[0,3,3,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={chartStyle}>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top SKU</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={topReorder} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <Tooltip {...ttStyle}/>
+                  <Bar dataKey="value" name="추천리오더" fill="#C8A87B" radius={[0,3,3,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+            <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
+              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"5px 10px",fontSize:12,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontSize:11,color:DC.sub}}>{filtered.length.toLocaleString()}개 SKU</span>
+              <button onClick={downloadCSV}
+                style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,
+                  padding:"4px 12px",fontSize:11,cursor:"pointer"}}>↓ CSV</button>
+            </div>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"auto"}}>
+              <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
+                <tr>
+                  <SortTh k="reorder_product_name" label="상품명"/>
+                  <SortTh k="reorder_option_name" label="옵션"/>
+                  <SortTh k="reorder_available_stock" label="현재고"/>
+                  <SortTh k="reorder_incoming_stock" label="입고대기"/>
+                  <SortTh k="reorder_effective_stock" label="실질 가용재고"/>
+                  <SortTh k="reorder_weekly_sales" label="1주 판매"/>
+                  <SortTh k="reorder_monthly_sales" label="4주 판매"/>
+                  <SortTh k="reorder_expected_daily_sales" label="예상 일판매"/>
+                  <SortTh k="reorder_trend_ratio" label="판매 추세"/>
+                  <SortTh k="reorder_days_left" label="재고잔여일"/>
+                  <SortTh k="reorder_recommended_qty" label="추천 리오더"/>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.map((r,i)=>{
+                  const trend=trendTag(r);
+                  const urgent=(r.reorder_days_left||0)<7;
+                  return(
+                    <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`}}>
+                      <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"right",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"right"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:11,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
+                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
+                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {totalPgs>1&&(
+            <div style={{display:"flex",justifyContent:"center",gap:5,marginTop:14}}>
+              {Array.from({length:totalPgs}).map((_,i)=>(
+                <button key={i} onClick={()=>setPg(i)}
+                  style={{background:pg===i?"#fff":"transparent",color:pg===i?"#000":DC.sub,
+                    border:`1px solid ${pg===i?"#fff":DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>
+                  {i+1}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // INVENTORY TREND WRAPPER
 // ─────────────────────────────────────────────
-function InventoryTrend({DC}){
+function InventoryTrend({DC,onReorderRefresh}){
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [refreshKey,setRefreshKey]=useState(0);
   const [tab,setTab]=useState("bubble");
@@ -6066,12 +6634,13 @@ function InventoryTrend({DC}){
   useEffect(()=>{loadDates();},[loadDates]);
 
   const onUploaded=useCallback(()=>{loadDates();setRefreshKey(k=>k+1);},[loadDates]);
+  const onReorderDone=useCallback(()=>{if(onReorderRefresh) onReorderRefresh();},[onReorderRefresh]);
 
   return(
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
       <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory Trend</div>
 
-      <InventoryUploader DC={DC} onUploaded={onUploaded}/>
+      <InventoryUploader DC={DC} onUploaded={onUploaded} onReorderDone={onReorderDone}/>
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginTop:28,marginBottom:20,borderBottom:`1px solid ${DC.border}`}}>
@@ -6384,6 +6953,7 @@ function DataCompare({revenues,storeSales=[]}){
   const [customEnd,setCustomEnd]=useState("");
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
+  const [reorderKey,setReorderKey]=useState(0);
 
   useEffect(()=>{
     const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-48)));
@@ -6530,7 +7100,9 @@ function DataCompare({revenues,storeSales=[]}){
         </div>
       </div>
 
-      <InventoryTrend DC={DC}/>
+      <InventoryTrend DC={DC} onReorderRefresh={()=>setReorderKey(k=>k+1)}/>
+
+      <ReorderCalculator DC={DC} refreshKey={reorderKey}/>
     </div>
   );
 }
@@ -6699,7 +7271,7 @@ export default function App() {
             onRefresh={loadData}/>
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
-        {page==="promo"&&<PromoFlow revenues={revenues}/>}
+        {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales}/>}
         {page==="input"&&(
           <DataInput
