@@ -5233,6 +5233,7 @@ function RevenueSankeyChart({periods,svgW}){
   const [hoveredCh,setHoveredCh]=useState(null);
   const [selNodes,setSelNodes]=useState([]);   // max 2 [{key,pi,ch,amt,label}]
   const [modal,setModal]=useState(null);       // {x,y,a,b}
+  const [activeGrowth,setActiveGrowth]=useState(null); // {pi,px,py,pct,col,next}
 
   const SVG_H=480,PAD_T=70,PAD_B=52,PAD_H=28,NODE_W=40,GAP=3,AVAIL_H=SVG_H-PAD_T-PAD_B;
   const CH_LABEL_W=52; // first-col label area
@@ -5321,7 +5322,7 @@ function RevenueSankeyChart({periods,svgW}){
 
   return(
     <div ref={wrapRef} style={{position:"relative"}}
-      onClick={()=>{setSelNodes([]);setModal(null);}}>
+      onClick={()=>{setSelNodes([]);setModal(null);setActiveGrowth(null);}}>
       <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}>
         <defs>
           {COMPARE_CHANNELS.map(ch=>{
@@ -5406,24 +5407,32 @@ function RevenueSankeyChart({periods,svgW}){
           </g>
         ))}
 
-        {/* 볼륨 증가 시 단차 지점 점선 */}
+        {/* 볼륨 증가 시 노드 상단 점선 (클릭 시 상세 표시) */}
         {cols.slice(0,-1).map((col,pi)=>{
           const next=cols[pi+1];
           if(!col.total||!next.total) return null;
           const pct=((next.total-col.total)/col.total*100);
-          if(pct<=0) return null;          // 증가일 때만
-          const clr="#4ade80";
-          const botCur=col.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.max(m,n.y+n.h),PAD_T);
-          const botNext=next.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.max(m,n.y+n.h),PAD_T);
-          const lineTop=botCur;   // 이전 컬럼 하단 (단차 시작)
-          const lineBot=botNext;  // 다음 컬럼 하단 (단차 끝)
-          if(lineBot<=lineTop+4) return null;
+          if(pct<=0) return null;
+          const clr="#fff";
+          const topNext=next.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.min(m,n.y),SVG_H);
+          const lineTop=6;
+          const lineBot=topNext-4;
+          if(lineBot<=lineTop+8) return null;
           const mx=next.colX+NODE_W/2;
           const midY=(lineTop+lineBot)/2;
+          const isActive=activeGrowth&&activeGrowth.pi===pi;
           return(
-            <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
+            <g key={`gr_${pi}`} style={{cursor:"pointer"}}
+              onClick={e=>{
+                e.stopPropagation();
+                if(isActive){setActiveGrowth(null);return;}
+                const rect=wrapRef.current?.getBoundingClientRect();
+                const px=Math.round(e.clientX-(rect?.left||0));
+                const py=Math.round(e.clientY-(rect?.top||0));
+                setActiveGrowth({pi,px,py,pct,col,next});
+              }}>
               <line x1={mx} y1={lineTop} x2={mx} y2={lineBot}
-                stroke={clr} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.7}/>
+                stroke={clr} strokeWidth={1.5} strokeDasharray="4 3" opacity={isActive?1:0.75}/>
               <text x={mx} y={midY}
                 transform={`rotate(90 ${mx} ${midY})`}
                 textAnchor="middle" dominantBaseline="middle"
@@ -5449,15 +5458,15 @@ function RevenueSankeyChart({periods,svgW}){
               boxShadow:"0 8px 32px #000c",zIndex:20,pointerEvents:"auto"}}>
             <button onClick={()=>{setSelNodes([]);setModal(null);}}
               style={{position:"absolute",top:7,right:9,background:"none",border:"none",
-                color:"#555",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
-            <div style={{fontSize:10,color:"#555",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
+                color:"#fff",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+            <div style={{fontSize:10,color:"#fff",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
             {[a,b].map((nd,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                 <span style={{width:18,height:18,borderRadius:3,background:COMPARE_CH_COLOR[nd.ch]||"#444",
                   display:"inline-flex",alignItems:"center",justifyContent:"center",
                   fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>{i+1}</span>
                 <div>
-                  <div style={{fontSize:10,color:"#777"}}>{nd.label} · {nd.ch}</div>
+                  <div style={{fontSize:10,color:"#fff",opacity:0.7}}>{nd.label} · {nd.ch}</div>
                   <div style={{fontSize:13,color:"#fff",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
                 </div>
               </div>
@@ -5466,7 +5475,45 @@ function RevenueSankeyChart({periods,svgW}){
               <span style={{fontSize:15,fontWeight:800,color:up?"#4ade80":"#f87171"}}>
                 {up?"▲":"▼"} {pct!==null?`${Math.abs(pct).toFixed(1)}%`:"—"}
               </span>
-              <span style={{fontSize:11,color:"#666"}}>
+              <span style={{fontSize:11,color:"#fff"}}>
+                ({up?"+":""}{diff.toLocaleString()}원)
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 증감률 상세 모달 */}
+      {activeGrowth&&(()=>{
+        const{px,py,pct,col,next}=activeGrowth;
+        const diff=next.total-col.total;
+        const up=diff>=0;
+        const mw=186;
+        const cx=Math.min(Math.max(px-mw/2,4),(svgW||600)-mw-4);
+        const cy=Math.max(py-10,4);
+        return(
+          <div onClick={e=>e.stopPropagation()}
+            style={{position:"absolute",left:cx,top:cy,
+              background:"#0e0e0e",border:"1px solid #2a2a2a",borderRadius:10,
+              padding:"12px 14px 10px",minWidth:mw,
+              boxShadow:"0 8px 32px #000c",zIndex:21,pointerEvents:"auto"}}>
+            <button onClick={()=>setActiveGrowth(null)}
+              style={{position:"absolute",top:6,right:8,background:"none",border:"none",
+                color:"#fff",cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
+            <div style={{fontSize:10,color:"#fff",marginBottom:8,letterSpacing:"0.08em",textTransform:"uppercase"}}>증감 상세</div>
+            <div style={{marginBottom:6}}>
+              <div style={{fontSize:10,color:"#fff",opacity:0.6}}>{col.label}</div>
+              <div style={{fontSize:12,color:"#fff",fontWeight:700}}>₩{col.total.toLocaleString()}</div>
+            </div>
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:"#fff",opacity:0.6}}>{next.label}</div>
+              <div style={{fontSize:12,color:"#fff",fontWeight:700}}>₩{next.total.toLocaleString()}</div>
+            </div>
+            <div style={{borderTop:"1px solid #222",paddingTop:8,display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontSize:15,fontWeight:800,color:up?"#4ade80":"#f87171"}}>
+                {up?"▲":"▼"} {Math.abs(pct).toFixed(1)}%
+              </span>
+              <span style={{fontSize:11,color:"#fff"}}>
                 ({up?"+":""}{diff.toLocaleString()}원)
               </span>
             </div>
