@@ -5420,8 +5420,8 @@ function RevenueSankeyChart({periods,svgW}){
             <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
               <text x={gapMidX} y={y}
                 textAnchor="middle" dominantBaseline="middle"
-                fontSize={11} fontWeight={700} fill="#fff" style={{userSelect:"none"}}>
-                {up?"▲":"▼"} {up?"+":""}{pct.toFixed(1)}%
+                fontSize={11} fontWeight={700} fill={up?"#7dbf9e":"#c97b7b"} style={{userSelect:"none"}}>
+                {up?"▲":"▼"} {Math.abs(pct).toFixed(1)}%
               </text>
             </g>
           );
