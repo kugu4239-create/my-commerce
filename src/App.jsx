@@ -3603,7 +3603,10 @@ function PromoFlow({ revenues }) {
                         {p.platform}
                       </div>
                     </td>
-                    <td {...td} style={{...td.style,fontWeight:600}}>{p.name}</td>
+                    <td {...td} style={{...td.style,fontWeight:600}}>
+                      {p.name}
+                      {ended&&<span style={{marginLeft:6,fontSize:11,fontWeight:500,color:D.red}}>종료된 프로모션</span>}
+                    </td>
                     <td {...td} style={{...td.style,whiteSpace:"nowrap",textDecoration:"none"}}>
                       {[p.start_date,p.end_date].map((dt,i)=>{
                         const [d,t]=(dt||"").split("T");
@@ -3615,7 +3618,7 @@ function PromoFlow({ revenues }) {
                         );
                       })}
                     </td>
-                    <td {...td} style={{...td.style,maxWidth:200,color:D.textSub,whiteSpace:"pre-wrap"}}>{p.content||p.memo||"—"}</td>
+                    <td {...td} style={{...td.style,maxWidth:200,color:ended?"#bbb":D.textSub,whiteSpace:"pre-wrap"}}>{p.content||p.memo||"—"}</td>
                     <td {...td} style={{...td.style,minWidth:160}}>
                       <div
                         onDragOver={e=>{e.preventDefault();setTableFileDragOver(p.id);}}
@@ -3631,7 +3634,7 @@ function PromoFlow({ revenues }) {
                         {(p.files||[]).map((f,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:3}}>
                             <a href={f.data} download={f.name}
-                              style={{fontSize:12,color:D.textSub,textDecoration:"none",
+                              style={{fontSize:12,color:ended?"#bbb":D.textSub,textDecoration:"none",
                                 wordBreak:"break-all",flex:1}}
                               title={f.name}>📎 {f.name}</a>
                             <button onClick={()=>removeFileFromPromo(p.id,i)}
