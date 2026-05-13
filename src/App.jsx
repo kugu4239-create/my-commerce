@@ -5364,12 +5364,26 @@ function RevenueSankeyChart({periods,svgW}){
                 onClick={e=>handleNodeClick(e,pi,n.ch,n.amt,col.label)}
                 onMouseEnter={()=>setHoveredCh(n.ch)}
                 onMouseLeave={()=>setHoveredCh(null)}>
-                {/* 직각 노드 rx=0 */}
-                <rect x={n.x} y={n.y} width={NODE_W} height={n.h}
-                  fill={n.color} rx={0}
-                  opacity={hoveredCh===null?1:hoveredCh===n.ch?1:0.18}
-                  stroke={isSel(pi,n.ch)?"#fff":"none"} strokeWidth={2}
-                  style={{transition:"opacity .15s"}}/>
+                {/* 하단 모서리만 둥근 노드 */}
+                {(()=>{
+                  const r=Math.min(3,n.h/2,NODE_W/2);
+                  const{x:nx,y:ny,h:nh}=n;
+                  const d=[
+                    `M${nx} ${ny}`,
+                    `H${nx+NODE_W}`,
+                    `V${ny+nh-r}`,
+                    `Q${nx+NODE_W} ${ny+nh} ${nx+NODE_W-r} ${ny+nh}`,
+                    `H${nx+r}`,
+                    `Q${nx} ${ny+nh} ${nx} ${ny+nh-r}`,
+                    `Z`,
+                  ].join(" ");
+                  return(
+                    <path d={d} fill={n.color}
+                      opacity={hoveredCh===null?1:hoveredCh===n.ch?1:0.18}
+                      stroke={isSel(pi,n.ch)?"#fff":"none"} strokeWidth={2}
+                      style={{transition:"opacity .15s"}}/>
+                  );
+                })()}
                 {/* 선택 번호 뱃지 */}
                 {isSel(pi,n.ch)&&(
                   <text x={n.x+NODE_W/2} y={n.y+n.h/2} textAnchor="middle"
