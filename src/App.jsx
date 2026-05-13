@@ -5585,7 +5585,7 @@ function DataCompare({revenues,storeSales=[]}){
     const byChannel={};
     COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
     revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
-      if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0);
+      if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0)-(r.refund_amount||0);
     });
     storeSales.filter(r=>{const d=r.sale_date||"";return d>=p.start&&d<=p.end;}).forEach(r=>{
       if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
