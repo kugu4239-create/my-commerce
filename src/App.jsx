@@ -5176,7 +5176,7 @@ function StoreUploader({ onUpdate }) {
               order_id:(r["ID"]||"").trim(),
               status:qty<0?"반품":"배송",
             };
-          }).filter(r=>r.sale_date&&r.product_name&&r.qty>0);
+          }).filter(r=>r.sale_date&&r.product_name&&r.qty>0&&r.amount>0);
           const dates=[...new Set(rows.map(r=>r.sale_date))].sort();
           setDateRange({start:dates[0]||"",end:dates[dates.length-1]||""});
           setPreview(rows); setStep(1);
@@ -6964,11 +6964,89 @@ function RevenueSankeyChart({periods,svgW}){
   );
 }
 
+function VolumeSlider({total,range,onChange,DC}){
+  const trackRef=useRef(null);
+  const drag=useRef(null);
+  const startFrac=total<=1?0:range[0]/(total-1);
+  const endFrac=total<=1?1:range[1]/(total-1);
+
+  useEffect(()=>{
+    const move=e=>{
+      if(!drag.current||!trackRef.current) return;
+      const clientX=e.touches?e.touches[0].clientX:e.clientX;
+      const rect=trackRef.current.getBoundingClientRect();
+      const dIdx=Math.round(((clientX-drag.current.startX)/rect.width)*(total-1));
+      const {type,base}=drag.current;
+      if(type==="left"){
+        const s=Math.max(0,Math.min(base[1]-1,base[0]+dIdx));
+        onChange([s,base[1]]);
+      } else if(type==="right"){
+        const e2=Math.max(base[0]+1,Math.min(total-1,base[1]+dIdx));
+        onChange([base[0],e2]);
+      } else {
+        const span=base[1]-base[0];
+        const s=Math.max(0,Math.min(total-1-span,base[0]+dIdx));
+        onChange([s,s+span]);
+      }
+    };
+    const up=()=>{drag.current=null;};
+    document.addEventListener("mousemove",move);
+    document.addEventListener("mouseup",up);
+    document.addEventListener("touchmove",move,{passive:false});
+    document.addEventListener("touchend",up);
+    return()=>{
+      document.removeEventListener("mousemove",move);
+      document.removeEventListener("mouseup",up);
+      document.removeEventListener("touchmove",move);
+      document.removeEventListener("touchend",up);
+    };
+  },[total,onChange]);
+
+  const startDrag=(type,e)=>{
+    e.preventDefault();e.stopPropagation();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    drag.current={type,startX:clientX,base:[...range]};
+  };
+
+  if(total<=1) return null;
+  return(
+    <div style={{padding:"10px 6px 2px"}}>
+      <div ref={trackRef} style={{position:"relative",height:24,userSelect:"none"}}>
+        {/* track */}
+        <div style={{position:"absolute",top:10,left:0,right:0,height:4,background:DC.border,borderRadius:2}}/>
+        {/* filled range — drag to scroll */}
+        <div
+          onMouseDown={e=>startDrag("body",e)}
+          onTouchStart={e=>startDrag("body",e)}
+          style={{position:"absolute",top:10,left:`${startFrac*100}%`,
+            width:`${(endFrac-startFrac)*100}%`,height:4,
+            background:"#7EC8A4",borderRadius:2,cursor:"grab"}}/>
+        {/* left handle */}
+        <div
+          onMouseDown={e=>startDrag("left",e)}
+          onTouchStart={e=>startDrag("left",e)}
+          style={{position:"absolute",top:5,left:`${startFrac*100}%`,
+            transform:"translateX(-50%)",width:14,height:14,
+            background:"#fff",border:"2px solid #7EC8A4",borderRadius:"50%",
+            cursor:"ew-resize",zIndex:3}}/>
+        {/* right handle */}
+        <div
+          onMouseDown={e=>startDrag("right",e)}
+          onTouchStart={e=>startDrag("right",e)}
+          style={{position:"absolute",top:5,left:`${endFrac*100}%`,
+            transform:"translateX(-50%)",width:14,height:14,
+            background:"#fff",border:"2px solid #7EC8A4",borderRadius:"50%",
+            cursor:"ew-resize",zIndex:3}}/>
+      </div>
+    </div>
+  );
+}
+
 function DataCompare({revenues,storeSales=[]}){
-  // 전체 매출 볼륨 전용 필터 (초기값: 월단위)
   const [volUnit,setVolUnit]=useState("month");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
+  const [sliderIdx,setSliderIdx]=useState([0,0]);
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
   const [reorderKey,setReorderKey]=useState(0);
@@ -6979,70 +7057,59 @@ function DataCompare({revenues,storeSales=[]}){
     return()=>obs.disconnect();
   },[]);
 
-  const volPeriods=useMemo(()=>{
+  // All available periods from data range to today
+  const allVolPeriods=useMemo(()=>{
+    const dates=[...revenues.map(r=>r.date),...storeSales.map(r=>r.sale_date)].filter(Boolean).sort();
     const today=new Date();
+    const from=dates.length?new Date(dates[0]):new Date(today.getFullYear(),0,1);
     const res=[];
-    // 직접 날짜 선택 모드: 선택 범위를 현재 단위로 분할
-    const rangeStart=customStart?new Date(customStart):null;
-    const rangeEnd=customEnd?new Date(customEnd):null;
-    if(rangeStart&&rangeEnd&&rangeStart<=rangeEnd){
-      if(volUnit==="week"){
-        let cur=new Date(rangeStart);
-        while(cur<=rangeEnd){
-          const s=cur.toISOString().slice(0,10);
-          const e=new Date(cur);e.setDate(e.getDate()+6);
-          const eClamp=e>rangeEnd?rangeEnd:e;
-          res.push({label:`${cur.getMonth()+1}/${cur.getDate()}`,start:s,end:eClamp.toISOString().slice(0,10)});
-          cur.setDate(cur.getDate()+7);
-        }
-      } else if(volUnit==="quarter"){
-        let y=rangeStart.getFullYear(),q=Math.floor(rangeStart.getMonth()/3);
-        while(true){
-          const sm=q*3; const s=new Date(y,sm,1); const e=new Date(y,sm+3,0);
-          if(s>rangeEnd) break;
-          const eClamp=e>rangeEnd?rangeEnd:e;
-          res.push({label:`${y}Q${q+1}`,start:s.toISOString().slice(0,10),end:eClamp.toISOString().slice(0,10)});
-          q++; if(q>3){q=0;y++;}
-          if(res.length>20) break;
+    if(volUnit==="year"){
+      for(let y=from.getFullYear();y<=today.getFullYear();y++){
+        res.push({label:String(y),start:`${y}-01-01`,end:`${y}-12-31`});
+      }
+    } else {
+      let cur=new Date(from.getFullYear(),from.getMonth(),1);
+      while(cur<=today&&res.length<60){
+        const e=new Date(cur.getFullYear(),cur.getMonth()+1,0);
+        res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:cur.toISOString().slice(0,10),end:e.toISOString().slice(0,10)});
+        cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+      }
+    }
+    return res;
+  },[volUnit,revenues,storeSales]);
+
+  // Reset slider to show last N periods when allVolPeriods changes
+  useEffect(()=>{
+    const n=allVolPeriods.length;
+    if(!n){setSliderIdx([0,0]);return;}
+    const def=volUnit==="year"?Math.min(n,5):Math.min(n,12);
+    setSliderIdx([Math.max(0,n-def),n-1]);
+  },[allVolPeriods]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSlider=useCallback(r=>setSliderIdx(r),[]);
+
+  const volPeriods=useMemo(()=>{
+    if(customStart&&customEnd){
+      const rangeStart=new Date(customStart),rangeEnd=new Date(customEnd);
+      if(rangeStart>rangeEnd) return [];
+      const res=[];
+      if(volUnit==="year"){
+        for(let y=rangeStart.getFullYear();y<=rangeEnd.getFullYear();y++){
+          res.push({label:String(y),start:`${y}-01-01`,end:`${y}-12-31`});
         }
       } else {
         let cur=new Date(rangeStart.getFullYear(),rangeStart.getMonth(),1);
-        while(cur<=rangeEnd){
-          const endM=new Date(cur.getFullYear(),cur.getMonth()+1,0);
-          const eClamp=endM>rangeEnd?rangeEnd:endM;
-          res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:cur.toISOString().slice(0,10),end:eClamp.toISOString().slice(0,10)});
+        while(cur<=rangeEnd&&res.length<60){
+          const e=new Date(cur.getFullYear(),cur.getMonth()+1,0);
+          const eC=e>rangeEnd?rangeEnd:e;
+          res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:cur.toISOString().slice(0,10),end:eC.toISOString().slice(0,10)});
           cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
-          if(res.length>24) break;
         }
       }
       return res;
     }
-    // 기본 모드
-    if(volUnit==="week"){
-      for(let i=12;i>=0;i--){
-        const end=new Date(today);end.setDate(end.getDate()-i*7);
-        const start=new Date(end);start.setDate(start.getDate()-6);
-        res.push({label:`${start.getMonth()+1}/${start.getDate()}`,start:start.toISOString().slice(0,10),end:end.toISOString().slice(0,10)});
-      }
-    } else if(volUnit==="quarter"){
-      const curQ=Math.floor(today.getMonth()/3);
-      const curY=today.getFullYear();
-      for(let i=3;i>=0;i--){
-        let q=curQ-i,y=curY;
-        while(q<0){q+=4;y--;}
-        const sm=q*3;
-        const s=new Date(y,sm,1);const e=new Date(y,sm+3,0);
-        res.push({label:`${y}Q${q+1}`,start:s.toISOString().slice(0,10),end:e.toISOString().slice(0,10)});
-      }
-    } else {
-      for(let i=3;i>=0;i--){
-        const d=new Date(today.getFullYear(),today.getMonth()-i,1);
-        const endD=new Date(d.getFullYear(),d.getMonth()+1,0);
-        res.push({label:`${d.getFullYear()}.${d.getMonth()+1}`,start:d.toISOString().slice(0,10),end:endD.toISOString().slice(0,10)});
-      }
-    }
-    return res;
-  },[volUnit,customStart,customEnd]);
+    return allVolPeriods.slice(sliderIdx[0],sliderIdx[1]+1);
+  },[volUnit,customStart,customEnd,allVolPeriods,sliderIdx]);
 
   const revenueData=useMemo(()=>volPeriods.map(p=>{
     const byChannel={};
@@ -7060,7 +7127,7 @@ function DataCompare({revenues,storeSales=[]}){
   }),[revenues,storeSales,volPeriods]);
 
   const hasData=revenueData.some(p=>p.total>0);
-  const minSvgW=volUnit==="week"?Math.max(svgW,820):svgW;
+  const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1;
 
   const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
 
@@ -7070,11 +7137,11 @@ function DataCompare({revenues,storeSales=[]}){
 
       {/* 전체 매출 볼륨 카드 — 개별 필터 */}
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
-            {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
-              <button key={u} onClick={()=>setVolUnit(u)}
+            {[["year","연"],["month","월"]].map(([u,lbl])=>(
+              <button key={u} onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
                 style={{background:volUnit===u?"#fff":"transparent",
                   color:volUnit===u?"#000":DC.sub,
                   border:`1px solid ${volUnit===u?"#fff":DC.border}`,
@@ -7100,7 +7167,7 @@ function DataCompare({revenues,storeSales=[]}){
           </div>
         </div>
         {/* 채널 범례 */}
-        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:12}}>
           {COMPARE_CHANNELS.map(ch=>(
             <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
               <span style={{width:8,height:8,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
@@ -7110,12 +7177,21 @@ function DataCompare({revenues,storeSales=[]}){
         </div>
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
           {hasData
-            ?<RevenueSankeyChart periods={revenueData} svgW={minSvgW}/>
+            ?<RevenueSankeyChart periods={revenueData} svgW={svgW}/>
             :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>
               매출 데이터를 업로드하면 그래프가 표시됩니다
             </div>
           }
         </div>
+        {showSlider&&(
+          <div style={{paddingTop:8,borderTop:`1px solid ${DC.border}`,marginTop:8}}>
+            <div style={{fontSize:10,color:DC.dim,marginBottom:2,textAlign:"right"}}>
+              {allVolPeriods[sliderIdx[0]]?.label} ~ {allVolPeriods[sliderIdx[1]]?.label}
+              <span style={{marginLeft:8,color:DC.border}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
+            </div>
+            <VolumeSlider total={allVolPeriods.length} range={sliderIdx} onChange={handleSlider} DC={DC}/>
+          </div>
+        )}
       </div>
 
       <InventoryTrend DC={DC} onReorderRefresh={()=>setReorderKey(k=>k+1)}/>
