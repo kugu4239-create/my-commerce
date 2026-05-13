@@ -5649,18 +5649,27 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           background:dragOver?"rgba(126,200,164,0.06)":DC.card,cursor:"pointer",transition:"all .15s"}}
       >
         <div style={{fontSize:22,opacity:.45,marginBottom:6}}>⬆</div>
-        <div style={{fontSize:13,fontWeight:600,color:DC.text,marginBottom:8}}>Excel / CSV 드래그 &amp; 드롭</div>
-        <div style={{fontSize:10.5,color:DC.sub,lineHeight:1.9,textAlign:"left",display:"inline-block"}}>
-          <div style={{marginBottom:4}}>
-            <span style={{color:"#7EC8A4",fontWeight:700}}>인벤토리 트렌드 필수 컬럼</span>
-            <span style={{color:DC.dim,marginLeft:6}}>상품명 · 옵션 · 판매가 · 현재고 · 처음입고일 · 처음입고수량 · 누적입고 · 마지막입고일 · 마지막입고수량 · 마지막배송일 · 누적배송수량 · 데이터날짜</span>
+        <div style={{fontSize:13,fontWeight:600,color:DC.text,marginBottom:10}}>Excel / CSV 드래그 &amp; 드롭</div>
+        <div style={{fontSize:10.5,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
+          <div style={{marginBottom:6}}>
+            <span style={{color:"#7EC8A4",fontWeight:700,fontSize:11}}>인벤토리 트렌드</span>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
+              {["상품명","옵션","판매가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
+                <span key={c} style={{background:"rgba(126,200,164,0.1)",border:"1px solid rgba(126,200,164,0.25)",
+                  borderRadius:4,padding:"1px 6px",fontSize:10,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
+              ))}
+            </div>
           </div>
-          <div style={{marginBottom:4}}>
-            <span style={{color:"#7B9EC8",fontWeight:700}}>리오더 계산기 추가 컬럼</span>
-            <span style={{color:DC.dim,marginLeft:6}}>가용재고 · 입고예정 · 1주일판매 · 4주판매</span>
-            <span style={{color:DC.border,marginLeft:6}}>— 없으면 리오더 계산 생략</span>
+          <div style={{marginBottom:8}}>
+            <span style={{color:"#7B9EC8",fontWeight:700,fontSize:11}}>리오더 계산기</span>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
+              {["가용재고","입고대기","1주발주합계","4주발주합계"].map(c=>(
+                <span key={c} style={{background:"rgba(123,158,200,0.1)",border:"1px solid rgba(123,158,200,0.25)",
+                  borderRadius:4,padding:"1px 6px",fontSize:10,color:"#7B9EC8",fontFamily:"monospace"}}>{c}</span>
+              ))}
+            </div>
           </div>
-          <div style={{color:DC.border,fontSize:10}}>두 기능이 같은 파일을 공유합니다. 리오더 컬럼 포함 시 업로드 후 자동으로 리오더 추천이 계산됩니다.</div>
+          <div style={{color:DC.dim,fontSize:10}}>인벤토리 트렌드 / 리오더 계산기의 공통 데이터 소스가 됩니다.</div>
         </div>
         {file&&<div style={{marginTop:6,fontSize:11,color:"#7EC8A4"}}>{file.name}</div>}
       </div>
