@@ -5173,22 +5173,29 @@ function LoadingScreen() {
 // ─────────────────────────────────────────────
 // DATA COMPARE
 // ─────────────────────────────────────────────
-const COMPARE_CH_COLOR={"자사몰":"#60A5FA","29CM":"#34D399","무신사":"#A78BFA","오프라인 스토어":"#FB923C"};
+const COMPARE_CH_COLOR={
+  "자사몰":"#1D4ED8",
+  "29CM":"#15803D",
+  "무신사":"#6D28D9",
+  "오프라인 스토어":"#B45309",
+};
 const COMPARE_CHANNELS=["자사몰","29CM","무신사","오프라인 스토어"];
 
 function RevenueSankeyChart({periods,svgW}){
+  const wrapRef=useRef(null);
   const [hoveredCh,setHoveredCh]=useState(null);
-  const [tooltip,setTooltip]=useState(null);
-  const SVG_H=500,PAD_T=32,PAD_B=48,PAD_H=24,NODE_W=42,GAP=4,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const [selNodes,setSelNodes]=useState([]);   // max 2 [{key,pi,ch,amt,label}]
+  const [modal,setModal]=useState(null);       // {x,y,a,b}
 
-  // 전체 기간 중 최대 총매출로 통일 스케일 계산 (세로 = 절대 매출량)
+  const SVG_H=480,PAD_T=42,PAD_B=52,PAD_H=28,NODE_W=40,GAP=3,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const CH_LABEL_W=52; // first-col label area
+
   const maxTotal=Math.max(...periods.map(p=>p.total),1);
   const heightScale=AVAIL_H/maxTotal;
 
   const cols=useMemo(()=>periods.map((p,pi)=>{
     const colX=periods.length===1?(svgW-NODE_W)/2
-      :PAD_H+pi*(svgW-2*PAD_H-NODE_W)/(periods.length-1);
-    // 모든 컬럼 상단 정렬, 채널 위→아래 순서 고정
+      :PAD_H+CH_LABEL_W+pi*(svgW-2*PAD_H-CH_LABEL_W-NODE_W)/(periods.length-1);
     let y=PAD_T;
     const nodes=COMPARE_CHANNELS.map(ch=>{
       const amt=p.byChannel[ch]||0;
@@ -5200,6 +5207,7 @@ function RevenueSankeyChart({periods,svgW}){
     return{...p,colX,nodes};
   }),[periods,svgW,heightScale]);
 
+  // 직각 step 리본
   const links=useMemo(()=>{
     const res=[];
     for(let pi=0;pi<cols.length-1;pi++){
@@ -5209,8 +5217,8 @@ function RevenueSankeyChart({periods,svgW}){
         if(!ln||!rn||ln.h<1||rn.h<1) return;
         const x1=ln.x+NODE_W,x2=rn.x,mx=(x1+x2)/2;
         const path=[
-          `M${x1} ${ln.y}C${mx} ${ln.y},${mx} ${rn.y},${x2} ${rn.y}`,
-          `L${x2} ${rn.y+rn.h}C${mx} ${rn.y+rn.h},${mx} ${ln.y+ln.h},${x1} ${ln.y+ln.h}Z`,
+          `M${x1} ${ln.y}L${mx} ${ln.y}L${mx} ${rn.y}L${x2} ${rn.y}`,
+          `L${x2} ${rn.y+rn.h}L${mx} ${rn.y+rn.h}L${mx} ${ln.y+ln.h}L${x1} ${ln.y+ln.h}Z`,
         ].join(" ");
         res.push({ch,path,color:COMPARE_CH_COLOR[ch]});
       });
@@ -5224,83 +5232,164 @@ function RevenueSankeyChart({periods,svgW}){
     return a.toLocaleString();
   };
 
+  const handleNodeClick=(e,pi,ch,amt,label)=>{
+    e.stopPropagation();
+    const rect=wrapRef.current?.getBoundingClientRect();
+    const px=Math.round(e.clientX-(rect?.left||0));
+    const py=Math.round(e.clientY-(rect?.top||0));
+    const key=`${pi}__${ch}`;
+    setSelNodes(prev=>{
+      const already=prev.findIndex(n=>n.key===key);
+      if(already>=0){
+        const next=prev.filter(n=>n.key!==key);
+        if(next.length<2) setModal(null);
+        return next;
+      }
+      const node={key,pi,ch,amt,label};
+      if(prev.length>=2){setModal(null);return[node];}
+      const next=[...prev,node];
+      if(next.length===2){
+        // clamp modal so it stays in view
+        const mw=200,mh=140;
+        const cx=Math.min(Math.max(px-mw/2,4),(svgW||600)-mw-4);
+        const cy=Math.max(py-mh-12,4);
+        setModal({x:cx,y:cy,a:next[0],b:next[1]});
+      }
+      return next;
+    });
+  };
+
+  const isSel=(pi,ch)=>selNodes.some(n=>n.pi===pi&&n.ch===ch);
+  const selIdx=(pi,ch)=>selNodes.findIndex(n=>n.pi===pi&&n.ch===ch);
+
   return(
-    <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}>
-      <defs>
-        {COMPARE_CHANNELS.map(ch=>{
-          const id=`cg_${ch.replace(/[^a-z0-9]/gi,"_")}`;
-          const c=COMPARE_CH_COLOR[ch];
-          return(
-            <linearGradient key={ch} id={id} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={c} stopOpacity={0.6}/>
-              <stop offset="50%" stopColor={c} stopOpacity={0.3}/>
-              <stop offset="100%" stopColor={c} stopOpacity={0.6}/>
-            </linearGradient>
-          );
-        })}
-      </defs>
+    <div ref={wrapRef} style={{position:"relative"}}
+      onClick={()=>{setSelNodes([]);setModal(null);}}>
+      <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}>
+        <defs>
+          {COMPARE_CHANNELS.map(ch=>{
+            const id=`cg2_${ch.replace(/[^a-z0-9]/gi,"_")}`;
+            const c=COMPARE_CH_COLOR[ch];
+            return(
+              <linearGradient key={ch} id={id} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor={c} stopOpacity={0.55}/>
+                <stop offset="50%" stopColor={c} stopOpacity={0.2}/>
+                <stop offset="100%" stopColor={c} stopOpacity={0.55}/>
+              </linearGradient>
+            );
+          })}
+        </defs>
 
-      {/* Ribbons */}
-      {links.map((l,i)=>(
-        <path key={i} d={l.path}
-          fill={`url(#cg_${l.ch.replace(/[^a-z0-9]/gi,"_")})`}
-          opacity={hoveredCh===null?0.85:hoveredCh===l.ch?1:0.06}
-          style={{transition:"opacity .15s",cursor:"default"}}
-          onMouseEnter={()=>setHoveredCh(l.ch)}
-          onMouseLeave={()=>setHoveredCh(null)}
-        />
-      ))}
+        {/* 직각 리본 */}
+        {links.map((l,i)=>(
+          <path key={i} d={l.path}
+            fill={`url(#cg2_${l.ch.replace(/[^a-z0-9]/gi,"_")})`}
+            opacity={hoveredCh===null?0.65:hoveredCh===l.ch?0.9:0.04}
+            style={{transition:"opacity .15s",cursor:"default"}}
+            onMouseEnter={()=>setHoveredCh(l.ch)}
+            onMouseLeave={()=>setHoveredCh(null)}
+          />
+        ))}
 
-      {/* Nodes + labels */}
-      {cols.map((col,pi)=>(
-        <g key={pi}>
-          {col.nodes.map((n,ni)=>n.h>=1&&(
-            <g key={ni}
-              onMouseEnter={()=>{setHoveredCh(n.ch);setTooltip({x:n.x+NODE_W/2,y:n.y,ch:n.ch,amt:n.amt,label:col.label});}}
-              onMouseLeave={()=>{setHoveredCh(null);setTooltip(null);}}>
-              <rect x={n.x} y={n.y} width={NODE_W} height={n.h} fill={n.color}
-                opacity={hoveredCh===null?1:hoveredCh===n.ch?1:0.2}
-                rx={4} style={{transition:"opacity .15s",cursor:"default"}}/>
-              {n.h>=22&&(
-                <text x={n.x+NODE_W/2} y={n.y+n.h/2+4}
-                  textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff"
-                  style={{pointerEvents:"none",userSelect:"none"}}>
-                  {n.ch==="오프라인 스토어"?"오프라인":n.ch}
-                </text>
-              )}
-            </g>
-          ))}
-          <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+16}
-            textAnchor="middle" fontSize={10} fill="#666">
-            {col.label}
-          </text>
-          {col.total>0&&(
-            <text x={col.colX+NODE_W/2} y={PAD_T-10}
-              textAnchor="middle" fontSize={9} fill="#555">
-              {fmtAmt(col.total)}
+        {/* 노드 + 라벨 */}
+        {cols.map((col,pi)=>(
+          <g key={pi}>
+            {col.nodes.map((n,ni)=>n.h>=1&&(
+              <g key={ni} style={{cursor:"pointer"}}
+                onClick={e=>handleNodeClick(e,pi,n.ch,n.amt,col.label)}
+                onMouseEnter={()=>setHoveredCh(n.ch)}
+                onMouseLeave={()=>setHoveredCh(null)}>
+                {/* 직각 노드 rx=0 */}
+                <rect x={n.x} y={n.y} width={NODE_W} height={n.h}
+                  fill={n.color} rx={0}
+                  opacity={hoveredCh===null?1:hoveredCh===n.ch?1:0.18}
+                  stroke={isSel(pi,n.ch)?"#fff":"none"} strokeWidth={2}
+                  style={{transition:"opacity .15s"}}/>
+                {/* 선택 번호 뱃지 */}
+                {isSel(pi,n.ch)&&(
+                  <text x={n.x+NODE_W/2} y={n.y+n.h/2} textAnchor="middle"
+                    dominantBaseline="middle" fontSize={11} fontWeight={800} fill="#fff"
+                    style={{pointerEvents:"none",userSelect:"none"}}>
+                    {selIdx(pi,n.ch)+1}
+                  </text>
+                )}
+                {/* 첫 번째 컬럼에만 채널명 (노드 왼쪽) */}
+                {pi===0&&n.h>=10&&(
+                  <text x={n.x-6} y={n.y+n.h/2}
+                    textAnchor="end" dominantBaseline="middle"
+                    fontSize={10} fontWeight={600} fill="#fff"
+                    style={{pointerEvents:"none",userSelect:"none"}}>
+                    {n.ch==="오프라인 스토어"?"오프라인":n.ch}
+                  </text>
+                )}
+              </g>
+            ))}
+            {/* 일정 라벨 — 흰색 */}
+            <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+18}
+              textAnchor="middle" fontSize={10} fill="#fff" style={{pointerEvents:"none"}}>
+              {col.label}
             </text>
-          )}
-        </g>
-      ))}
+            {/* 매출 합계 라벨 — 흰색 */}
+            {col.total>0&&(
+              <text x={col.colX+NODE_W/2} y={PAD_T-12}
+                textAnchor="middle" fontSize={9} fill="#fff" style={{pointerEvents:"none"}}>
+                {fmtAmt(col.total)}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
 
-      {/* Tooltip */}
-      {tooltip&&(
-        <g style={{pointerEvents:"none"}}>
-          <rect x={tooltip.x-62} y={tooltip.y-42} width={124} height={32} rx={6} fill="#111" opacity={0.9}/>
-          <text x={tooltip.x} y={tooltip.y-22} textAnchor="middle" fontSize={11} fill="#fff" fontWeight={600}>
-            {tooltip.label} · {tooltip.ch}
-          </text>
-          <text x={tooltip.x} y={tooltip.y-8} textAnchor="middle" fontSize={11} fill="#fff">
-            {fmtAmt(tooltip.amt)}
-          </text>
-        </g>
-      )}
-    </svg>
+      {/* 비교 모달 */}
+      {modal&&(()=>{
+        const{x,y,a,b}=modal;
+        const diff=b.amt-a.amt;
+        const pct=a.amt>0?((diff/a.amt)*100):null;
+        const up=diff>=0;
+        return(
+          <div onClick={e=>e.stopPropagation()}
+            style={{position:"absolute",left:x,top:y,
+              background:"#0e0e0e",border:"1px solid #2a2a2a",borderRadius:10,
+              padding:"14px 16px 12px",minWidth:192,
+              boxShadow:"0 8px 32px #000c",zIndex:20,pointerEvents:"auto"}}>
+            <button onClick={()=>{setSelNodes([]);setModal(null);}}
+              style={{position:"absolute",top:7,right:9,background:"none",border:"none",
+                color:"#555",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+            <div style={{fontSize:10,color:"#555",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
+            {[a,b].map((nd,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{width:18,height:18,borderRadius:3,background:COMPARE_CH_COLOR[nd.ch]||"#444",
+                  display:"inline-flex",alignItems:"center",justifyContent:"center",
+                  fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>{i+1}</span>
+                <div>
+                  <div style={{fontSize:10,color:"#777"}}>{nd.label} · {nd.ch}</div>
+                  <div style={{fontSize:13,color:"#fff",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{borderTop:"1px solid #222",marginTop:8,paddingTop:8,display:"flex",alignItems:"baseline",gap:8}}>
+              <span style={{fontSize:15,fontWeight:800,color:up?"#4ade80":"#f87171"}}>
+                {up?"▲":"▼"} {pct!==null?`${Math.abs(pct).toFixed(1)}%`:"—"}
+              </span>
+              <span style={{fontSize:11,color:"#666"}}>
+                ({up?"+":""}{diff.toLocaleString()}원)
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 사용 안내 */}
+      <div style={{marginTop:14,textAlign:"center",fontSize:11,color:"#3a3a3a",letterSpacing:"0.02em",userSelect:"none"}}>
+        노드를 순서대로 두 번 탭 · 클릭하면 기간/채널 간 매출 증감률을 비교할 수 있습니다
+      </div>
+    </div>
   );
 }
 
 function DataCompare({revenues,storeSales=[]}){
-  const [unit,setUnit]=useState("week");
+  // 전체 매출 볼륨 전용 필터 (초기값: 월단위)
+  const [volUnit,setVolUnit]=useState("month");
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
 
@@ -5310,10 +5399,10 @@ function DataCompare({revenues,storeSales=[]}){
     return()=>obs.disconnect();
   },[]);
 
-  const periods=useMemo(()=>{
+  const volPeriods=useMemo(()=>{
     const today=new Date();
     const res=[];
-    if(unit==="week"){
+    if(volUnit==="week"){
       for(let i=12;i>=0;i--){
         const end=new Date(today);end.setDate(end.getDate()-i*7);
         const start=new Date(end);start.setDate(start.getDate()-6);
@@ -5327,16 +5416,14 @@ function DataCompare({revenues,storeSales=[]}){
       }
     }
     return res;
-  },[unit]);
+  },[volUnit]);
 
-  const revenueData=useMemo(()=>periods.map(p=>{
+  const revenueData=useMemo(()=>volPeriods.map(p=>{
     const byChannel={};
     COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
-    // 온라인 채널 매출
     revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
       if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0);
     });
-    // 오프라인 스토어 매출 (store_sales)
     storeSales.filter(r=>{const d=r.sale_date||"";return d>=p.start&&d<=p.end;}).forEach(r=>{
       if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
       else if(r.status==="반품") byChannel["오프라인 스토어"]-=(r.amount||0);
@@ -5344,42 +5431,42 @@ function DataCompare({revenues,storeSales=[]}){
     COMPARE_CHANNELS.forEach(ch=>{if(byChannel[ch]<0) byChannel[ch]=0;});
     const total=Object.values(byChannel).reduce((a,b)=>a+b,0);
     return{...p,byChannel,total};
-  }),[revenues,storeSales,periods]);
+  }),[revenues,storeSales,volPeriods]);
 
   const hasData=revenueData.some(p=>p.total>0);
-  const minSvgW=unit==="week"?Math.max(svgW,780):svgW;
+  const minSvgW=volUnit==="week"?Math.max(svgW,820):svgW;
 
   const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
 
   return(
     <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
-        <div style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px"}}>데이터 컴페어</div>
-        <div style={{display:"flex",gap:4}}>
-          {[["week","주단위"],["month","월단위"]].map(([u,lbl])=>(
-            <button key={u} onClick={()=>setUnit(u)}
-              style={{background:unit===u?"#fff":"transparent",
-                color:unit===u?"#000":DC.sub,
-                border:`1px solid ${unit===u?"#fff":DC.border}`,
-                borderRadius:6,padding:"5px 14px",fontSize:12,
-                cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
-              {lbl}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
 
+      {/* 전체 매출 볼륨 카드 — 개별 필터 */}
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
-          <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-            {COMPARE_CHANNELS.map(ch=>(
-              <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
-                <span style={{width:8,height:8,borderRadius:2,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0,boxShadow:`0 0 6px ${COMPARE_CH_COLOR[ch]}88`}}/>
-                {ch}
-              </span>
+          <div style={{display:"flex",gap:4}}>
+            {[["week","주단위"],["month","월단위"]].map(([u,lbl])=>(
+              <button key={u} onClick={()=>setVolUnit(u)}
+                style={{background:volUnit===u?"#fff":"transparent",
+                  color:volUnit===u?"#000":DC.sub,
+                  border:`1px solid ${volUnit===u?"#fff":DC.border}`,
+                  borderRadius:6,padding:"4px 12px",fontSize:11,
+                  cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
+                {lbl}
+              </button>
             ))}
           </div>
+        </div>
+        {/* 채널 범례 */}
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
+          {COMPARE_CHANNELS.map(ch=>(
+            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
+              <span style={{width:8,height:8,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
+              {ch}
+            </span>
+          ))}
         </div>
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
           {hasData
