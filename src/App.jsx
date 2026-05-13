@@ -5946,6 +5946,25 @@ function InvBubblePlot({DC,snapshotDates}){
               );
             })}
           </div>
+          {/* 프로모션 제안 버튼 — 달력 하단 */}
+          <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
+            <button onClick={()=>setShowSaleRec(p=>!p)}
+              style={{width:"100%",background:showSaleRec?"rgba(200,123,123,0.18)":"rgba(255,255,255,0.04)",
+                color:showSaleRec?"#C87B7B":DC.sub,
+                border:`1px solid ${showSaleRec?"#C87B7B":DC.border}`,
+                borderRadius:7,padding:"9px 0",fontSize:13,fontWeight:600,cursor:"pointer",
+                letterSpacing:"-0.2px",transition:"all .12s"}}>
+              {"프로모션 제안"}{showSaleRec&&saleRecs.length>0?` (${saleRecs.length})`:""}
+            </button>
+            {showSaleRec&&saleRecs.length>0&&(
+              <button onClick={downloadSaleRecs}
+                style={{width:"100%",marginTop:6,background:"transparent",color:"#7EC8A4",
+                  border:"1px solid #7EC8A4",borderRadius:7,padding:"7px 0",fontSize:12,
+                  fontWeight:600,cursor:"pointer"}}>
+                ↓ 엑셀 다운로드
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -5974,18 +5993,8 @@ function InvBubblePlot({DC,snapshotDates}){
                 style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                   padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
             </div>
-            <button onClick={()=>setShowSaleRec(p=>!p)}
-              style={{background:showSaleRec?"rgba(200,123,123,0.18)":"transparent",color:showSaleRec?"#C87B7B":DC.sub,
-                border:`1px solid ${showSaleRec?"#C87B7B":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",flexShrink:0}}>
-              세일 추천 {showSaleRec&&saleRecs.length>0?`(${saleRecs.length})`:""}</button>
-            {showSaleRec&&saleRecs.length>0&&(
-              <button onClick={downloadSaleRecs}
-                style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",flexShrink:0}}>
-                ↓ 엑셀
-              </button>
-            )}
           </div>
-          {selDate&&<div style={{fontSize:11,color:DC.sub}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 세일 추천 ${saleRecs.length}개`:""}</div>}
+          {selDate&&<div style={{fontSize:11,color:DC.sub}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
         </div>
       </div>
 
