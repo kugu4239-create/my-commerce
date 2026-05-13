@@ -5448,7 +5448,7 @@ function RevenueSankeyChart({periods,svgW}){
 
       {/* 사용 안내 */}
       <div style={{marginTop:14,textAlign:"center",fontSize:15,color:"#fff",letterSpacing:"0.02em",userSelect:"none"}}>
-        노드를 순서대로 두 번 탭 · 클릭하면 기간/채널 간 매출 증감률을 비교할 수 있습니다
+        노드 매출 지점을 왼쪽에서 오른쪽 순으로 두번 클릭하면 해당 기간의 매출 증감률을 볼 수 있습니다
       </div>
     </div>
   );
