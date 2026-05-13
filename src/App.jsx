@@ -1542,12 +1542,31 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 }
                 return{name:c.name,revenue:c.revenue};
               });
+              const ChTip=({active,payload,label})=>{
+                if(!active||!payload?.length) return null;
+                const isOffline=label==="오프라인 스토어";
+                const entries=payload.filter(p=>(p.value||0)>0);
+                const total=entries.reduce((s,p)=>s+(p.value||0),0);
+                return(
+                  <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,padding:"8px 12px",fontSize:11,boxShadow:"0 2px 8px #0001"}}>
+                    <div style={{color:D.textMeta,marginBottom:3}}>{label}</div>
+                    {isOffline&&entries.length>1&&(
+                      <div style={{color:D.text,marginBottom:2}}>합계: <strong>{total.toLocaleString()}원</strong></div>
+                    )}
+                    {entries.map((p,i)=>(
+                      <div key={i} style={{color:p.color||D.text}}>
+                        {p.name}: <strong>{(p.value||0).toLocaleString()}원</strong>
+                      </div>
+                    ))}
+                  </div>
+                );
+              };
               return(
                 <BarChart data={chartData} layout="vertical" barCategoryGap="28%">
                   <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
                   <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
                   <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
-                  <Tooltip content={<Tip/>}/>
+                  <Tooltip content={<ChTip/>}/>
                   <Bar dataKey="revenue" name="매출" stackId="a" radius={[0,3,3,0]}>
                     {chartData.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
                   </Bar>
