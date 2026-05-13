@@ -6213,7 +6213,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
 
       {/* Controls */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-        <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
+        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
         {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
           <button key={v} onClick={()=>setDateRange(v)}
             style={{background:dateRange===v?"#fff":"transparent",color:dateRange===v?"#000":DC.sub,
@@ -6222,7 +6222,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
           </button>
         ))}
         <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-        <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
+        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
         {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
           <button key={v} onClick={()=>setAggUnit(v)}
             style={{background:aggUnit===v?"rgba(255,255,255,0.08)":"transparent",color:aggUnit===v?DC.text:DC.sub,
@@ -6231,7 +6231,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
           </button>
         ))}
         <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-        <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
+        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
         {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
           <button key={v} onClick={()=>setYMode(v)}
             style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
@@ -6484,10 +6484,6 @@ function ReorderCalculator({DC,refreshKey}){
               {i<a.length-1&&<div style={{color:DC.sub,fontSize:16,padding:"0 6px",flexShrink:0}}>→</div>}
             </React.Fragment>
           ))}
-        </div>
-        <div style={{marginTop:10,fontSize:11,color:DC.dim,lineHeight:1.8}}>
-          추세: <span style={{color:"#7EC8A4"}}>≥1.2 상승</span> · <span style={{color:"#7B9EC8"}}>0.8~1.2 안정</span> · <span style={{color:"#C87B7B"}}>&lt;0.8 감소</span>
-          {" "}· 예외: 4주판매=0이면 trend=0 / 일판매=0이면 미저장
         </div>
       </div>
 
