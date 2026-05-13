@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import dayjs from "dayjs";
+// XLSX and papaparse are lazy-loaded on first use to keep initial bundle small
+const getXLSX = () => import("xlsx").then(m => m);
+const getPapa = () => import("papaparse").then(m => m.default);
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
@@ -404,8 +405,9 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="xlsx"||ext==="xls"){
     const reader=new FileReader();
-    reader.onload=e=>{
+    reader.onload=async e=>{
       try{
+        const XLSX=await getXLSX();
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
         const ws=wb.Sheets[wb.SheetNames[0]];
         let data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
@@ -415,7 +417,7 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
     };
     reader.readAsArrayBuffer(file);
   }else{
-    Papa.parse(file,{...opts,complete:completeCb,error:errorCb});
+    getPapa().then(Papa=>Papa.parse(file,{...opts,complete:completeCb,error:errorCb}));
   }
 };
 
@@ -5490,8 +5492,9 @@ function mapInvCols(headers){
 
 function parseInvFile(file,onResult,onError){
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try{
+      const XLSX=await getXLSX();
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:"YYYY-MM-DD"});
@@ -5890,8 +5893,9 @@ function InvBubblePlot({DC,snapshotDates}){
     );
   };
 
-  const downloadSaleRecs=()=>{
+  const downloadSaleRecs=async()=>{
     if(!saleRecs.length) return;
+    const XLSX=await getXLSX();
     const wb=XLSX.utils.book_new();
     const ws=XLSX.utils.json_to_sheet(saleRecs.map(d=>({
       상품명:d.product_name,옵션:d.option_name,판매가:d.selling_price,
