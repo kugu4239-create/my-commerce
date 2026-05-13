@@ -5394,19 +5394,16 @@ function RevenueSankeyChart({periods,svgW}){
               textAnchor="middle" fontSize={10} fill="#fff" style={{pointerEvents:"none"}}>
               {col.label}
             </text>
-            {/* 매출 합계 라벨 — 오른쪽 세로 방향 (노드 두께 = 금액) */}
+            {/* 매출 합계 라벨 — 노드 스택 상단 가로 */}
             {col.total>0&&(()=>{
               const vis=col.nodes.filter(n=>n.h>0);
               if(!vis.length) return null;
               const top=Math.min(...vis.map(n=>n.y));
-              const bot=Math.max(...vis.map(n=>n.y+n.h));
-              const midY=(top+bot)/2;
-              const rx=col.colX+NODE_W+11;
               return(
-                <text x={rx} y={midY}
-                  transform={`rotate(90 ${rx} ${midY})`}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize={15} fill="#fff" style={{pointerEvents:"none",userSelect:"none"}}>
+                <text x={col.colX+NODE_W/2} y={top-7}
+                  textAnchor="middle" dominantBaseline="auto"
+                  fontSize={13} fontWeight={700} fill="#fff"
+                  style={{pointerEvents:"none",userSelect:"none"}}>
                   {fmtAmt(col.total)}
                 </text>
               );
