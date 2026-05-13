@@ -687,7 +687,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
   const chanTotal    = channels.reduce((s,c)=>s+c.shipped,0)||1;
 
   // 상품마다 충분한 높이 확보 — 압축 없이 총 높이를 늘림
-  const ROW_H = 17;
+  const ROW_H = 22;
   const TARGET_H = n * ROW_H;
   const rawH = prods.map(p => p.stock>0 ? Math.max(MIN_H, (p.stock/totalStock)*TARGET_H) : MIN_H);
   const rawSum = rawH.reduce((s,h)=>s+h,0);
@@ -5395,12 +5395,12 @@ function DataCompare({revenues,storeSales=[]}){
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","flow","promo","input"];
+  const validPages=["dashboard","flow","promo","input","compare"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
   useEffect(()=>{
-    const onHash=()=>setPageState(hashPage());
+    const onHash=()=>{const h=window.location.hash.replace("#","");if(validPages.includes(h))setPageState(h);};
     window.addEventListener("hashchange",onHash);
     return()=>window.removeEventListener("hashchange",onHash);
   },[]);
@@ -5512,24 +5512,30 @@ export default function App() {
 
   if(appLoading) return <LoadingScreen/>;
 
+  const isDark=page==="compare";
+  const DK={bg:"#0A0A0A",surface:"#141414",border:"#2a2a2a",text:"#F0F0F0",sub:"#888",active:"#242424"};
+
   return (
-    <div style={{ display:"flex", flexDirection:"column", minHeight:"100vh", background:D.bg,
+    <div style={{ display:"flex", flexDirection:"column", minHeight:"100vh",
+      background:isDark?DK.bg:D.bg,
       fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
-      color:D.text, fontSize:14,
-      opacity:visible?1:0, transition:"opacity 0.35s ease" }}>
+      color:isDark?DK.text:D.text, fontSize:14,
+      opacity:visible?1:0, transition:"opacity 0.35s ease, background 0.2s ease" }}>
 
       {/* top bar */}
-      <div style={{ background:D.surface, borderBottom:`1px solid ${D.border}`,
-        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0 }}>
+      <div style={{ background:isDark?DK.surface:D.surface,
+        borderBottom:`1px solid ${isDark?DK.border:D.border}`,
+        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0,
+        transition:"background 0.2s ease" }}>
         <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1, marginRight:8 }}>
-          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:D.black }}>MERRYON</span>
-          <span style={{ fontSize:10, color:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
+          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:isDark?"#fff":D.black }}>MERRYON</span>
+          <span style={{ fontSize:10, color:isDark?DK.sub:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
         </div>
         <nav style={{ display:"flex", gap:2, flex:1 }}>
           {nav.map(n=>(
             <button key={n.key} onClick={()=>setPage(n.key)}
-              style={{ background:page===n.key?D.surfaceAlt:"transparent",
-                color:page===n.key?D.black:D.textSub,
+              style={{ background:page===n.key?(isDark?DK.active:D.surfaceAlt):"transparent",
+                color:page===n.key?(isDark?"#fff":D.black):(isDark?DK.sub:D.textSub),
                 border:"none", borderRadius:6, padding:"6px 14px",
                 cursor:"pointer", fontSize:12,
                 fontWeight:page===n.key?600:400 }}>
@@ -5537,7 +5543,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div style={{ color:D.textMeta, fontSize:11, flexShrink:0 }}>
+        <div style={{ color:isDark?DK.sub:D.textMeta, fontSize:11, flexShrink:0 }}>
           {new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}
         </div>
       </div>
