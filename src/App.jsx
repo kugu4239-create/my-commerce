@@ -5860,8 +5860,11 @@ function InvBubblePlot({DC,snapshotDates}){
     const r=getR(payload.currentInventoryValue);
     const col=INV_AGING_DEFS[payload.agingKey]?.color||"#888";
     const isSR=showSaleRec&&saleRecIds.has(payload.id);
+    // Opacity = 판매력(sellThroughProxy): 0→투명, 5+→불투명. cap at 5 for normalization
+    const stp=payload.sellThroughProxy||0;
+    const fillOpacity=0.15+Math.min(stp,5)/5*0.73;
     return(
-      <circle cx={cx} cy={cy} r={r} fill={col} fillOpacity={0.62}
+      <circle cx={cx} cy={cy} r={r} fill={col} fillOpacity={fillOpacity}
         stroke={isSR?"#fff":col} strokeWidth={isSR?2:0.8}
         style={{cursor:"pointer"}}
         onClick={()=>setSelectedSku(payload)}/>
@@ -6019,7 +6022,7 @@ function InvBubblePlot({DC,snapshotDates}){
             :<div style={{width:"100%",height:460}}>
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{top:20,right:24,bottom:44,left:16}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#2c2c2c"/>
                   <XAxis dataKey="noSalesDays" type="number" name="미판매 일수"
                     tick={{fill:DC.sub,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
                     label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:DC.sub,fontSize:11}}/>
@@ -6039,7 +6042,7 @@ function InvBubblePlot({DC,snapshotDates}){
         <div style={{marginTop:10,padding:"9px 14px",background:"rgba(255,255,255,0.03)",borderRadius:7,
           border:`1px solid ${DC.border}`,fontSize:11,color:DC.sub,lineHeight:1.8}}>
           <span style={{color:DC.text,fontWeight:600}}>해석:</span>
-          {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
+          {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 불투명도 = 판매력 (누적납품÷현재고가 높을수록 진하게 표시) · 버블 클릭 시 SKU 상세 확인
         </div>
       )}
 
