@@ -5565,11 +5565,13 @@ function DataCompare({revenues,storeSales=[]}){
             <span style={{color:DC.border,fontSize:14,margin:"0 4px"}}>|</span>
             <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"3px 7px",fontSize:11,color:DC.text,colorScheme:"dark"}}/>
+                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+                fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             <span style={{color:DC.sub,fontSize:11}}>~</span>
             <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"3px 7px",fontSize:11,color:DC.text,colorScheme:"dark"}}/>
+                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+                fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             {(customStart||customEnd)&&(
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
                 style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:14,padding:"0 2px"}}>✕</button>
