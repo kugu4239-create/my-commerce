@@ -5233,6 +5233,7 @@ function RevenueSankeyChart({periods,svgW}){
   const [hoveredCh,setHoveredCh]=useState(null);
   const [selNodes,setSelNodes]=useState([]);   // max 2 [{key,pi,ch,amt,label}]
   const [modal,setModal]=useState(null);       // {x,y,a,b}
+  const [orderWarn,setOrderWarn]=useState(false);
 
   const SVG_H=480,PAD_T=70,PAD_B=52,PAD_H=28,NODE_W=40,GAP=3,AVAIL_H=SVG_H-PAD_T-PAD_B;
   const CH_LABEL_W=52; // first-col label area
@@ -5306,7 +5307,12 @@ function RevenueSankeyChart({periods,svgW}){
       if(prev.length>=2){setModal(null);return[node];}
       const next=[...prev,node];
       if(next.length===2){
-        // clamp modal so it stays in view
+        if(next[0].pi>next[1].pi){
+          // 미래→과거 순서: 경고 후 첫 번째 선택만 유지
+          setOrderWarn(true);
+          setTimeout(()=>setOrderWarn(false),2500);
+          return[next[1]];
+        }
         const mw=200,mh=140;
         const cx=Math.min(Math.max(px-mw/2,4),(svgW||600)-mw-4);
         const cy=Math.max(py-mh-12,4);
@@ -5321,9 +5327,9 @@ function RevenueSankeyChart({periods,svgW}){
 
   return(
     <div ref={wrapRef} style={{position:"relative"}}
-      onClick={()=>{setSelNodes([]);setModal(null);}}>
+      onClick={()=>{setSelNodes([]);setModal(null);setOrderWarn(false);}}>
       <svg width={svgW} height={SVG_H} style={{overflow:"visible",display:"block"}}
-        onClick={()=>{setSelNodes([]);setModal(null);}}>
+        onClick={()=>{setSelNodes([]);setModal(null);setOrderWarn(false);}}>
         <rect x={0} y={0} width={svgW} height={SVG_H} fill="transparent"/>
         <defs>
           {COMPARE_CHANNELS.map(ch=>{
@@ -5468,8 +5474,17 @@ function RevenueSankeyChart({periods,svgW}){
       })()}
 
 
+      {/* 순서 경고 */}
+      {orderWarn&&(
+        <div style={{marginTop:10,textAlign:"center",fontSize:13,color:"#f87171",
+          fontWeight:600,letterSpacing:"0.02em",userSelect:"none",
+          animation:"fadeIn 0.2s ease"}}>
+          매출 지점을 과거에서 미래로 선택해주세요
+        </div>
+      )}
+
       {/* 사용 안내 */}
-      <div style={{marginTop:14,textAlign:"center",fontSize:15,color:"#fff",letterSpacing:"0.02em",userSelect:"none"}}>
+      <div style={{marginTop:orderWarn?4:14,textAlign:"center",fontSize:15,color:"#fff",letterSpacing:"0.02em",userSelect:"none"}}>
         노드 매출 지점을 왼쪽에서 오른쪽 순으로 두번 클릭하면 해당 기간의 매출 증감률을 볼 수 있습니다
       </div>
     </div>
