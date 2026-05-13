@@ -5406,7 +5406,7 @@ function RevenueSankeyChart({periods,svgW}){
           </g>
         ))}
 
-        {/* 컬럼 간 전체 매출 증감률 — 다음 컬럼 시작점 세로 점선 */}
+        {/* 컬럼 간 전체 매출 증감률 — 노드 하단~날짜 라벨 사이 세로 점선 */}
         {cols.slice(0,-1).map((col,pi)=>{
           const next=cols[pi+1];
           if(!col.total||!next.total) return null;
@@ -5414,9 +5414,11 @@ function RevenueSankeyChart({periods,svgW}){
           const up=pct>=0;
           const clr=up?"#4ade80":"#f87171";
           const mx=next.colX+NODE_W/2;
-          const lineTop=4;
-          const lineBot=PAD_T-6;
+          const botOfCol=next.nodes.filter(n=>n.h>0).reduce((m,n)=>Math.max(m,n.y+n.h),PAD_T);
+          const lineTop=botOfCol+6;
+          const lineBot=SVG_H-PAD_B-4;
           const midY=(lineTop+lineBot)/2;
+          if(lineTop>=lineBot-4) return null;
           return(
             <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
               <line x1={mx} y1={lineTop} x2={mx} y2={lineBot}
