@@ -3,8 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=1080, user-scalable=no, maximum-scale=1.0" />
     <title>my-commerce</title>
+    <style>
+      /* 모바일에서 텍스트 입력 시 iOS 자동 줌인 방지 */
+      input, select, textarea {
+        font-size: 16px !important;
+        touch-action: manipulation;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
