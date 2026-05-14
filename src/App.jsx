@@ -6206,7 +6206,8 @@ function InvBubblePlot({DC,snapshotDates}){
                     <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
                     <XAxis dataKey="noSalesDays" type="number" name="미판매 일수" domain={xDomain}
                       tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                      label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:DC.text,fontSize:11}}/>
+                      tickFormatter={v=>{const m=Math.round(v/30);if(m<=0)return"0";if(m<12)return`${m}개월`;const y=Math.floor(m/12),rm=m%12;return rm>0?`${y}년${rm}개월`:`${y}년`;}}
+                      label={{value:"미판매 →",position:"insideBottom",offset:-28,fill:DC.text,fontSize:11}}/>
                     <YAxis dataKey="current_stock_qty" type="number" name="현재고" domain={yDomain}
                       tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
                       label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:DC.text,fontSize:11}}/>
