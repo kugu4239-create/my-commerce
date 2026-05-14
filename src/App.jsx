@@ -1254,19 +1254,14 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     const uq=(chOrderIds[c.name]||new Set()).size||c.shipped;
     c.uniqueOrders=uq;
     if(c.name==="오프라인 스토어"){
-      // 오프라인: 기존 방식 (store_sales CSV 매출 / unique 주문ID)
+      // 오프라인: store_sales CSV 매출 / unique 주문ID
       c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
     } else {
-      // 온라인: 이지어드민 CSV 주문금액 합 / unique 주문번호 수
+      // 온라인: orders CSV 주문금액 합 / unique 주문번호 수만 사용 (revenues CSV 제외)
       const orderMap=chOrderAmt[c.name]||{};
       const totalAmt=Object.values(orderMap).reduce((s,a)=>s+a,0);
-      const orderCount=Object.keys(orderMap).length||uq;
-      if(orderCount>0&&totalAmt>0){
-        c.avgOrderValue=Math.round(totalAmt/orderCount);
-      } else {
-        // 주문 amount 미입력 시 revenues CSV 매출 기반 폴백
-        c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
-      }
+      const orderCount=Object.keys(orderMap).length;
+      c.avgOrderValue=(orderCount>0&&totalAmt>0)?Math.round(totalAmt/orderCount):0;
     }
   });
 
