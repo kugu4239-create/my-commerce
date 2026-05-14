@@ -61,7 +61,16 @@ const toNum = v => parseFloat(String(v||"0").replace(/[^0-9.-]/g,""))||0;
 
 const toDate = raw => {
   if (!raw) return null;
+  // Excel serial number (숫자로 저장된 날짜, 예: 46162 → 2026-05-11)
+  const num = Number(raw);
+  if (!isNaN(num) && num > 40000 && num < 80000 && String(raw).trim().length <= 5) {
+    const d = new Date(Date.UTC(1899, 11, 30) + num * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
   const s = String(raw).trim();
+  // YYYY년 M월 D일 (한국어 날짜 포맷, 예: "2026년 5월 11일")
+  const mKr = s.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (mKr) return `${mKr[1]}-${mKr[2].padStart(2,"0")}-${mKr[3].padStart(2,"0")}`;
   // YYYY. M. D (점+공백 포함, 예: "2025. 10. 16")
   const m0 = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
   if (m0) return `${m0[1]}-${m0[2].padStart(2,"0")}-${m0[3].padStart(2,"0")}`;
@@ -74,10 +83,19 @@ const toDate = raw => {
   // YYMMDD 6자리 (예: "241223" → 2024-12-23)
   const m4 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
   if (m4) { const yr=2000+parseInt(m4[1],10); return `${yr}-${m4[2]}-${m4[3]}`; }
-  // M/D/YY (Excel 한국어 내보내기 포맷, 예: "12/23/24" → 2024-12-23)
-  const m5 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  // M/D/YY or M/D/YY H:MM (Excel 포맷, 예: "5/14/26 9:47" → 2026-05-14)
+  const m5 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})(?!\d)/);
   if (m5) { const yr=2000+parseInt(m5[3],10); return `${yr}-${m5[1].padStart(2,"0")}-${m5[2].padStart(2,"0")}`; }
   return null;
+};
+
+const fmtDays = days => {
+  const d = Math.round(days || 0);
+  if (d < 30) return `${d}일`;
+  const months = Math.round(d / 30);
+  if (months < 12) return `${months}개월`;
+  const y = Math.floor(months / 12), m = months % 12;
+  return m > 0 ? `${y}년 ${m}개월` : `${y}년`;
 };
 
 // 판매처 이름 정규화
@@ -546,9 +564,9 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
           // True binary Excel — use XLSX.js
           try{
             const XLSX=await getXLSX();
-            const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+            const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:false});
             const ws=wb.Sheets[wb.SheetNames[0]];
-            data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
+            data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false,dateNF:"yyyy-mm-dd"});
             if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
           }catch(_){}
         }
@@ -5400,10 +5418,7 @@ function StoreUploader({ onUpdate }) {
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          const rows=data.filter(r=>{
-            const refPrice=parseKRW(r["기준판매가"]);
-            return refPrice!==0; // 사은품·0원 상품 제외
-          }).map(r=>{
+          const rows=data.map(r=>{
             const qty=parseKRW(r["수량"]);
             const amount=parseKRW(r["실판매금액"]);
             return{
@@ -5450,13 +5465,13 @@ function StoreUploader({ onUpdate }) {
             <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 CSV 업로드</div>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.7}}>
               POS 시스템 판매 데이터를 업로드합니다.<br/>
-              인식 컬럼: <b>구매일자</b>, <b>매장</b>, <b>상품명</b>, <b>옵션</b>,<br/>
-              <b>수량</b> (괄호=반품), <b>실판매금액</b>, <b>ID</b> (객단가 분모)<br/>
-              기준판매가=0인 사은품 행 자동 제외
+              인식 컬럼: <b>구매일자</b>, <b>상품명</b>, <b>수량</b>, <b>실판매금액</b><br/>
+              <b>매장</b>, <b>옵션</b>, <b>ID</b> (객단가 분모) 선택<br/>
+              실판매금액=0인 행 자동 제외
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"
-              required="기준판매가 · 구매일자 · 상품명 · 수량"
-              optional="매장 · 옵션 · 실판매금액 · ID"/>
+              required="구매일자 · 상품명 · 수량 · 실판매금액"
+              optional="매장 · 옵션 · ID"/>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
@@ -6047,6 +6062,9 @@ function InvBubblePlot({DC,snapshotDates}){
   const [minStock,setMinStock]=useState(1);
   const [selectedSku,setSelectedSku]=useState(null);
   const [showSaleRec,setShowSaleRec]=useState(false);
+  const [promoPage,setPromoPage]=useState(0);
+  const [promoTableVisible,setPromoTableVisible]=useState(false);
+  const promoTableRef=useRef(null);
 
   useEffect(()=>{ setSelDate(null); setSelDateEnd(null); setData([]); },[dateMode]);
 
@@ -6094,6 +6112,7 @@ function InvBubblePlot({DC,snapshotDates}){
     return{medX:xs[mid]||0,medY:ys[mid]||0};
   },[filtered]);
 
+  // In-range: right-upper quadrant (high unsold days AND high stock), with inbound constraint → 30~70%
   const saleRecs=useMemo(()=>{
     if(!loadDate||!filtered.length) return[];
     const snapM=dayjs(loadDate).month();
@@ -6117,11 +6136,35 @@ function InvBubblePlot({DC,snapshotDates}){
     return candidates.map((d,i)=>{
       const n=Math.max(1,candidates.length-1);
       const rate=Math.max(30,Math.min(70,Math.round((70-(i/n)*40)/10)*10));
-      return{...d,recommendedDiscount:rate};
+      return{...d,recommendedDiscount:rate,inZone:true};
     });
-  },[filtered,medX,medY,selDate]);
+  },[filtered,medX,medY,loadDate]);
+
+  // All SKUs with discount rate: in-zone 30~70%, out-of-zone 10~20%
+  const allDiscountRecs=useMemo(()=>{
+    if(!filtered.length) return[];
+    const inZoneIds=new Set(saleRecs.map(d=>d.id));
+    const outZone=filtered
+      .filter(d=>!inZoneIds.has(d.id))
+      .map(d=>({
+        ...d,
+        recommendedDiscount:(d.noSalesDays/Math.max(1,medX))<0.5?10:20,
+        inZone:false,
+      }));
+    return[...saleRecs,...outZone].sort((a,b)=>b.recommendedDiscount-a.recommendedDiscount||b.noSalesDays-a.noSalesDays);
+  },[filtered,saleRecs,medX]);
 
   const saleRecIds=useMemo(()=>new Set(saleRecs.map(d=>d.id)),[saleRecs]);
+
+  useEffect(()=>{
+    const el=promoTableRef.current;
+    if(!el||!showSaleRec){setPromoTableVisible(false);return;}
+    const obs=new IntersectionObserver(([e])=>setPromoTableVisible(e.isIntersecting),{threshold:0.01});
+    obs.observe(el);
+    return()=>obs.disconnect();
+  },[showSaleRec]);
+
+  useEffect(()=>{setPromoPage(0);},[showSaleRec]);
 
   const maxZ=useMemo(()=>Math.max(...filtered.map(d=>d.currentInventoryValue),1),[filtered]);
   const minZ=useMemo(()=>Math.min(...filtered.filter(d=>d.currentInventoryValue>0).map(d=>d.currentInventoryValue),0),[filtered]);
@@ -6172,14 +6215,15 @@ function InvBubblePlot({DC,snapshotDates}){
   };
 
   const downloadSaleRecs=async()=>{
-    if(!saleRecs.length) return;
+    if(!allDiscountRecs.length) return;
     const XLSX=await getXLSX();
     const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.json_to_sheet(saleRecs.map(d=>({
+    const ws=XLSX.utils.json_to_sheet(allDiscountRecs.map(d=>({
       상품명:d.product_name,옵션:d.option_name,판매가:d.selling_price,
       현재고:d.current_stock_qty,재고금액:d.currentInventoryValue,
       미판매일수:d.noSalesDays,SKU기간:d.skuAge,
       판매효율:d.sellThroughProxy,Aging상태:INV_AGING_DEFS[d.agingKey]?.label,
+      제안범위:d.inZone?"범위 내":"범위 외",
       권장할인율:`${d.recommendedDiscount}%`,
     })));
     XLSX.utils.book_append_sheet(wb,ws,"세일추천");
@@ -6233,7 +6277,7 @@ function InvBubblePlot({DC,snapshotDates}){
                 border:`1px solid ${showSaleRec?"#C87B7B":DC.border}`,
                 borderRadius:7,padding:"9px 0",fontSize:13,fontWeight:600,cursor:"pointer",
                 letterSpacing:"-0.2px",transition:"all .12s"}}>
-              {"프로모션 제안"}{showSaleRec&&saleRecs.length>0?` (${saleRecs.length})`:""}
+              {"프로모션 제안"}{showSaleRec&&allDiscountRecs.length>0?` (${allDiscountRecs.length})`:""}
             </button>
             {/* 선정 기준 설명 토글 */}
             <button onClick={()=>setShowPromoInfo(p=>!p)}
@@ -6302,7 +6346,7 @@ function InvBubblePlot({DC,snapshotDates}){
                 padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
           </div>
         </div>
-        {selDate&&<div style={{fontSize:12,color:DC.sub,marginBottom:8}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
+        {selDate&&<div style={{fontSize:12,color:DC.sub,marginBottom:8}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${allDiscountRecs.length}개`:""}</div>}
 
         {/* Chart */}
         {!selDate
@@ -6340,22 +6384,40 @@ function InvBubblePlot({DC,snapshotDates}){
         )}
 
         {/* 프로모션 제안 테이블 */}
-        {showSaleRec&&saleRecs.length>0&&(
-          <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:13,fontWeight:700,color:"#C87B7B"}}>프로모션 제안 SKU ({saleRecs.length})</span>
-              <button onClick={downloadSaleRecs}
-                style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",
-                  borderRadius:6,padding:"4px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                ↓ 엑셀 다운로드
-              </button>
+        {showSaleRec&&allDiscountRecs.length>0&&(
+          <div ref={promoTableRef} style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+            {/* Header */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,gap:8,flexWrap:"wrap"}}>
+              <div>
+                <span style={{fontSize:13,fontWeight:700,color:"#C87B7B"}}>전체 SKU 할인율 ({allDiscountRecs.length})</span>
+                <span style={{fontSize:11,color:DC.dim,marginLeft:8}}>
+                  제안 범위: 미판매 &gt; {fmtDays(medX)} AND 현재고 &gt; {medY.toLocaleString()}개 (중앙값)
+                </span>
+              </div>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <button onClick={downloadSaleRecs}
+                  style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",
+                    borderRadius:6,padding:"4px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  ↓ 엑셀
+                </button>
+                <button onClick={()=>setShowSaleRec(false)}
+                  style={{background:"transparent",color:DC.dim,border:`1px solid ${DC.border}`,
+                    borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer"}}>
+                  닫기
+                </button>
+              </div>
+            </div>
+            {/* Range legend */}
+            <div style={{display:"flex",gap:12,marginBottom:8,fontSize:11,color:DC.sub}}>
+              <span><span style={{color:"#C87B7B",fontWeight:700}}>●</span> 제안 범위 내 30~70%</span>
+              <span><span style={{color:DC.dim,fontWeight:700}}>●</span> 범위 외 10~20%</span>
             </div>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{borderBottom:`1px solid ${DC.border}`}}>
                     {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율"].map(h=>(
-                      <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                      <th key={h} style={{padding:"5px 7px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
                         fontWeight:600,color:DC.text,fontSize:12,whiteSpace:"nowrap"}}>
                         {h}
                       </th>
@@ -6363,30 +6425,32 @@ function InvBubblePlot({DC,snapshotDates}){
                   </tr>
                 </thead>
                 <tbody>
-                  {saleRecs.map((d,i)=>{
+                  {allDiscountRecs.slice(promoPage*50,(promoPage+1)*50).map((d,i)=>{
                     const def=INV_AGING_DEFS[d.agingKey];
+                    const rank=promoPage*50+i+1;
                     return(
                       <tr key={d.id||i} style={{borderBottom:`1px solid ${DC.border}`,
-                        background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
-                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text,fontWeight:700}}>{i+1}</td>
-                        <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:140,
+                        background:i%2===0?"transparent":"rgba(0,0,0,0.02)",
+                        opacity:d.inZone?1:0.75}}>
+                        <td style={{padding:"5px 7px",textAlign:"center",color:d.inZone?"#C87B7B":DC.dim,fontWeight:700}}>{rank}</td>
+                        <td style={{padding:"5px 7px",color:DC.text,fontWeight:500,maxWidth:140,
                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                           title={d.product_name}>{d.product_name}</td>
-                        <td style={{padding:"6px 8px",color:DC.text,maxWidth:100,
+                        <td style={{padding:"5px 7px",color:DC.text,maxWidth:100,
                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                           title={d.option_name}>{d.option_name||"—"}</td>
-                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{(d.current_stock_qty||0).toLocaleString()}</td>
-                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{
+                        <td style={{padding:"5px 7px",textAlign:"center",color:DC.text}}>{(d.current_stock_qty||0).toLocaleString()}</td>
+                        <td style={{padding:"5px 7px",textAlign:"center",color:DC.text}}>{
                           (d.currentInventoryValue||0)>=10000
                             ?`${Math.round((d.currentInventoryValue||0)/10000)}만`
                             :(d.currentInventoryValue||0).toLocaleString()
                         }원</td>
-                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{d.noSalesDays}일</td>
-                        <td style={{padding:"6px 8px",textAlign:"center"}}>
+                        <td style={{padding:"5px 7px",textAlign:"center",color:DC.text}}>{fmtDays(d.noSalesDays)}</td>
+                        <td style={{padding:"5px 7px",textAlign:"center"}}>
                           <span style={{fontSize:12,fontWeight:600,color:def?.color||"#888"}}>{def?.label||"—"}</span>
                         </td>
-                        <td style={{padding:"6px 8px",textAlign:"center"}}>
-                          <span style={{fontWeight:800,fontSize:13,color:"#C87B7B"}}>{d.recommendedDiscount}%</span>
+                        <td style={{padding:"5px 7px",textAlign:"center"}}>
+                          <span style={{fontWeight:800,fontSize:13,color:d.inZone?"#C87B7B":DC.sub}}>{d.recommendedDiscount}%</span>
                         </td>
                       </tr>
                     );
@@ -6394,6 +6458,33 @@ function InvBubblePlot({DC,snapshotDates}){
                 </tbody>
               </table>
             </div>
+            {/* Pagination */}
+            {Math.ceil(allDiscountRecs.length/50)>1&&(
+              <div style={{display:"flex",justifyContent:"center",gap:4,marginTop:10,flexWrap:"wrap"}}>
+                {Array.from({length:Math.ceil(allDiscountRecs.length/50)}).map((_,i)=>(
+                  <button key={i} onClick={()=>{setPromoPage(i);promoTableRef.current?.scrollIntoView({behavior:"smooth",block:"start"});}}
+                    style={{background:promoPage===i?"#C87B7B":"transparent",
+                      color:promoPage===i?"#fff":DC.sub,
+                      border:`1px solid ${promoPage===i?"#C87B7B":DC.border}`,
+                      borderRadius:5,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>
+                    {i+1}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sticky close button — appears when promo table is in viewport */}
+        {showSaleRec&&promoTableVisible&&(
+          <div style={{position:"fixed",bottom:"20vh",left:"50%",transform:"translateX(-50%)",zIndex:800,pointerEvents:"none"}}>
+            <button onClick={()=>setShowSaleRec(false)}
+              style={{pointerEvents:"auto",background:"rgba(30,30,30,0.92)",color:"#fff",
+                border:"1px solid #444",borderRadius:20,padding:"8px 22px",
+                fontSize:13,fontWeight:600,cursor:"pointer",backdropFilter:"blur(8px)",
+                boxShadow:"0 4px 16px rgba(0,0,0,0.4)"}}>
+              ✕ 표 닫기
+            </button>
           </div>
         )}
       </div>
@@ -6463,21 +6554,34 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("month");
   const [yMode,setYMode]=useState("count");
-  const [dateRange,setDateRange]=useState("90d");
+  const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
+  const [customStart,setCustomStart]=useState("");
+  const [customEnd,setCustomEnd]=useState("");
+  const [calPickMode,setCalPickMode]=useState("single"); // "single"|"range"
+  const [showCal,setShowCal]=useState(false);
+  const [drillPage,setDrillPage]=useState(0);
+  const [drillTableVisible,setDrillTableVisible]=useState(false);
+  const drillTableRef=useRef(null);
   const [clickedBar,setClickedBar]=useState(null); // {label, agingKey}
   const [drillRows,setDrillRows]=useState([]);
   const [drillLoading,setDrillLoading]=useState(false);
 
   const rangeStart=useMemo(()=>{
+    if(dateRange==="custom"&&customStart) return customStart;
     const d=dayjs();
     const map={["7d"]:7,["14d"]:14,["30d"]:30,["90d"]:90};
     if(map[dateRange]) return d.subtract(map[dateRange],"day").format("YYYY-MM-DD");
     if(dateRange==="1y") return d.subtract(1,"year").format("YYYY-MM-DD");
     return d.subtract(90,"day").format("YYYY-MM-DD");
-  },[dateRange]);
+  },[dateRange,customStart]);
+
+  const rangeEnd=useMemo(()=>{
+    if(dateRange==="custom"&&customEnd) return customEnd;
+    return null;
+  },[dateRange,customEnd]);
 
   useEffect(()=>{
-    const inRange=snapshotDates.filter(d=>d>=rangeStart);
+    const inRange=snapshotDates.filter(d=>d>=rangeStart&&(!rangeEnd||d<=rangeEnd));
     if(!inRange.length){setRawByDate({});return;}
     setLoading(true);
     (async()=>{
@@ -6492,6 +6596,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
           .range(from,from+PAGE-1);
         if(!rows||rows.length===0) break;
         rows.forEach(r=>{
+          if(rangeEnd&&r.snapshot_date>rangeEnd) return;
           const c=calcInvRow(r);
           if(!map[r.snapshot_date]) map[r.snapshot_date]={};
           if(!map[r.snapshot_date][c.agingKey]) map[r.snapshot_date][c.agingKey]={count:0,qty:0,value:0};
@@ -6505,7 +6610,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
       setRawByDate(map);
       setLoading(false);
     })();
-  },[snapshotDates,rangeStart,refreshKey]);
+  },[snapshotDates,rangeStart,rangeEnd,refreshKey]);
 
   const chartData=useMemo(()=>{
     const dates=Object.keys(rawByDate).sort();
@@ -6582,6 +6687,16 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
     })();
   },[datesByLabel,clickedBar]);
 
+  useEffect(()=>{
+    const el=drillTableRef.current;
+    if(!el||!clickedBar){setDrillTableVisible(false);return;}
+    const obs=new IntersectionObserver(([e])=>setDrillTableVisible(e.isIntersecting),{threshold:0.01});
+    obs.observe(el);
+    return()=>obs.disconnect();
+  },[clickedBar]);
+
+  useEffect(()=>{setDrillPage(0);},[clickedBar]);
+
   const kpi=useMemo(()=>{
     if(!latestDate||!rawByDate[latestDate]) return null;
     const d=rawByDate[latestDate];
@@ -6645,6 +6760,14 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
               {l}
             </button>
           ))}
+          <button onClick={()=>{setDateRange("custom");setShowCal(p=>!p);}}
+            style={{background:dateRange==="custom"?DC.text:"transparent",
+              color:dateRange==="custom"?DC.card:DC.sub,
+              border:`1px solid ${dateRange==="custom"?DC.text:DC.border}`,
+              borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer",
+              fontWeight:dateRange==="custom"?600:400}}>
+            직접 선택
+          </button>
           <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
           <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
           {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
@@ -6665,6 +6788,36 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
           ))}
         </div>
       </div>
+      {showCal&&(
+        <div style={{marginBottom:10,padding:12,border:`1px solid ${DC.border}`,borderRadius:8,
+          display:"inline-flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",gap:4,marginBottom:4}}>
+            {[["single","단일"],["range","기간"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setCalPickMode(k)}
+                style={{flex:1,background:calPickMode===k?DC.text:"transparent",
+                  color:calPickMode===k?DC.card:DC.sub,
+                  border:`1px solid ${calPickMode===k?DC.text:DC.border}`,
+                  borderRadius:5,padding:"4px 0",fontSize:12,cursor:"pointer"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <CalendarPicker
+            mode={calPickMode}
+            value={customStart}
+            onChange={v=>{setCustomStart(v);setCustomEnd("");setShowCal(false);}}
+            rangeStart={customStart}
+            rangeEnd={customEnd}
+            onRangeChange={({start,end})=>{
+              setCustomStart(start);setCustomEnd(end||"");
+              if(start&&end) setShowCal(false);
+            }}
+            availableDates={new Set(snapshotDates)}
+            DC={{bg:"transparent",surface:"rgba(0,0,0,0.04)",border:DC.border,
+              text:DC.text,sub:DC.sub,dim:DC.dim,green:"#7EC8A4",greenBg:"rgba(126,200,164,0.12)"}}
+          />
+        </div>
+      )}
 
       <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
         {/* Stacked bar chart */}
@@ -6950,8 +7103,8 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   const textCols=new Set(["reorder_product_name","reorder_option_name"]);
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
-      style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
-        fontSize:13,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
+      style={{padding:"4px 6px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
+        fontSize:12,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
       {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
     </th>
   );
@@ -7070,7 +7223,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,tableLayout:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
               <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                 <tr>
                   <SortTh k="reorder_product_name" label="상품명"/>
@@ -7092,17 +7245,17 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                   const urgent=(r.reorder_days_left||0)<7;
                   return(
                     <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`}}>
-                      <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
-                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:13,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
-                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
-                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                      <td style={{padding:"4px 6px",textAlign:"center"}}><span style={{fontSize:12,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
+                      <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
+                      <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
                     </tr>
                   );
                 })}
