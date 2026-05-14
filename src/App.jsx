@@ -7672,14 +7672,55 @@ const SKU_VOL_PASTEL={
 };
 
 function ActiveSkuVolume({orders=[],storeSales=[],DC}){
+  const cardRef=useRef(null);
   const [aggUnit,setAggUnit]=useState("month");
-  const [skuModal,setSkuModal]=useState(null); // {label, chSets, onlySkus, commonSkus}
+  const [period,setPeriod]=useState("all");
+  const [customStart,setCustomStart]=useState("");
+  const [customEnd,setCustomEnd]=useState("");
+  const [calOpenFor,setCalOpenFor]=useState(null);
+  const [skuModal,setSkuModal]=useState(null);
   const [modalTab,setModalTab]=useState("common");
+
+  // season → [start, end] in YYYY-MM-DD
+  const seasonRange=useCallback((s)=>{
+    const y=new Date().getFullYear();
+    const m=new Date().getMonth()+1;
+    if(s==="봄") return[`${y}-03-01`,`${y}-05-31`];
+    if(s==="여름") return[`${y}-06-01`,`${y}-08-31`];
+    if(s==="가을") return[`${y}-09-01`,`${y}-11-30`];
+    if(s==="겨울"){
+      const wy=m<=2?y-1:y;
+      return[`${wy}-12-01`,`${wy+1}-02-28`];
+    }
+    return[null,null];
+  },[]);
 
   const {chartRows,channelOrder}=useMemo(()=>{
     const ONLINE_CHS=["자사몰","29CM","무신사"];
     const OFFLINE_CH="오프라인 스토어";
     const ALL_CHS=[...ONLINE_CHS,OFFLINE_CH];
+    const SEASONS=["봄","여름","가을","겨울"];
+
+    // Date range for current period setting
+    let filterStart=null,filterEnd=null;
+    if(period==="custom"&&customStart&&customEnd){
+      filterStart=customStart;filterEnd=customEnd;
+    } else if(SEASONS.includes(period)){
+      [filterStart,filterEnd]=seasonRange(period);
+    } else if(period!=="all"){
+      const d=new Date();
+      if(period==="3m") d.setMonth(d.getMonth()-3);
+      else if(period==="6m") d.setMonth(d.getMonth()-6);
+      else if(period==="1y") d.setFullYear(d.getFullYear()-1);
+      filterStart=[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
+      filterEnd=new Date().toISOString().slice(0,10);
+    }
+
+    const inRange=(dateStr)=>{
+      if(!dateStr) return false;
+      if(!filterStart) return true;
+      return dateStr>=filterStart&&dateStr<=filterEnd;
+    };
 
     const getPK=(dateStr)=>{
       if(!dateStr) return null;
@@ -7713,9 +7754,11 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
 
     orders.forEach(o=>{
       if(!ONLINE_CHS.includes(o.channel)||o.status!=="배송") return;
+      if(!inRange(o.order_date)) return;
       addSku(getPK(o.order_date),o.channel,o.product_name);
     });
     storeSales.forEach(s=>{
+      if(!inRange(s.sale_date)) return;
       addSku(getPK(s.sale_date),OFFLINE_CH,s.product_name);
     });
 
@@ -7730,22 +7773,18 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       const activeChs=ALL_CHS.filter(ch=>chSets[ch]?.size>0);
       const allSkus=new Set();
       activeChs.forEach(ch=>chSets[ch].forEach(s=>allSkus.add(s)));
-
       const commonSkus=new Set();
       const onlySkus={};
       activeChs.forEach(ch=>{onlySkus[ch]=new Set();});
-
       allSkus.forEach(sku=>{
         const inChs=activeChs.filter(ch=>chSets[ch].has(sku));
         if(inChs.length>=2) commonSkus.add(sku);
         else onlySkus[inChs[0]].add(sku);
       });
-
       activeChs.forEach(ch=>{
         gEx[ch].only+=(onlySkus[ch]?.size||0);
         gEx[ch].total+=(chSets[ch]?.size||0);
       });
-
       return{pk,label:getLbl(pk),chSets,commonSkus,onlySkus,allSkus,activeChs};
     });
 
@@ -7767,7 +7806,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     }));
 
     return{chartRows,channelOrder};
-  },[orders,storeSales,aggUnit]);
+  },[orders,storeSales,aggUnit,period,customStart,customEnd,seasonRange]);
 
   const SkuTooltip=useCallback(({active,payload,label})=>{
     if(!active||!payload?.length) return null;
@@ -7813,7 +7852,6 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     );
   },[channelOrder,DC]);
 
-  const ALL_CHS_LOCAL=["자사몰","29CM","무신사","오프라인 스토어"];
   const stackKeys=["common",...channelOrder.map(ch=>`${ch}_only`)];
   const stackColors={common:SKU_VOL_PASTEL.common,...Object.fromEntries(channelOrder.map(ch=>[`${ch}_only`,SKU_VOL_PASTEL[ch]]))};
   const stackLabels={common:"공통",...Object.fromEntries(channelOrder.map(ch=>[`${ch}_only`,`${ch} only`]))};
@@ -7829,37 +7867,45 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     ...(skuModal.common>0?[{key:"common",label:`공통 (${skuModal.common})`}]:[]),
     ...channelOrder
       .filter(ch=>(skuModal._chSets?.[ch]?.length||0)>0)
-      .map(ch=>({
-        key:ch,
-        label:`${ch} (${skuModal._chSets?.[ch]?.length||0})`,
-      })),
+      .map(ch=>({key:ch,label:`${ch} (${skuModal._chSets?.[ch]?.length||0})`})),
   ]:[];
-
-  const modalSkus=skuModal?(
-    modalTab==="common"
-      ?skuModal._commonSkus||[]
-      :(skuModal._chSets?.[modalTab]||[])
-  ):[];
 
   const modalOnlySkus=skuModal&&modalTab!=="common"?(skuModal._onlySkus?.[modalTab]||[]):[];
 
+  const SEASON_PRESETS=[["봄","봄 (3–5월)"],["여름","여름 (6–8월)"],["가을","가을 (9–11월)"],["겨울","겨울 (12–2월)"]];
+  const PERIOD_PRESETS=[["all","전체"],["3m","3개월"],["6m","6개월"],["1y","1년"],...SEASON_PRESETS];
+
   return(
-    <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
+    <div ref={cardRef} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
       {/* 헤더 */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",flex:1}}>
           <span style={{fontWeight:600,fontSize:16,color:DC.text}}>Active SKU 볼륨</span>
           <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 교집합 / 단독 구성</span>
         </div>
-        <div style={{display:"flex",gap:4}}>
-          {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
-            <button key={u} data-hf onClick={()=>setAggUnit(u)}
-              style={{background:aggUnit===u?DC.text:"transparent",color:aggUnit===u?"#fff":DC.sub,
-                border:`1px solid ${aggUnit===u?DC.text:DC.border}`,
-                borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
-              {lbl}
-            </button>
-          ))}
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          {/* 집계 단위 */}
+          <div style={{display:"flex",gap:3}}>
+            {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
+              <button key={u} data-hf onClick={()=>setAggUnit(u)}
+                style={{background:aggUnit===u?DC.text:"transparent",color:aggUnit===u?"#fff":DC.sub,
+                  border:`1px solid ${aggUnit===u?DC.text:DC.border}`,
+                  borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+          <span style={{color:DC.border}}>|</span>
+          {/* 기간 필터 — CalDrop */}
+          <CalDrop id="skuVol" period={period}
+            setPeriod={v=>{setPeriod(v);if(v!=="custom"){setCustomStart("");setCustomEnd("");}}}
+            presets={PERIOD_PRESETS}
+            start={customStart} setStart={setCustomStart}
+            end={customEnd} setEnd={setCustomEnd}
+            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}
+            dark={false}/>
+          <span style={{color:DC.border}}>|</span>
+          <CaptureBtn cardRef={cardRef} filename="Active_SKU_볼륨" DC={DC}/>
         </div>
       </div>
 
@@ -7867,7 +7913,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       <div style={{background:"#f5f5f3",borderRadius:6,padding:"8px 12px",marginBottom:14,fontSize:11,color:DC.sub,lineHeight:1.8}}>
         <span style={{fontWeight:600,color:DC.text}}>SKU 기준:</span> 상품명 기준 (옵션 미포함, 동일 상품명의 여러 옵션은 1 SKU로 집계).&ensp;
         <span style={{fontWeight:600,color:DC.text}}>활성 기준:</span> 온라인(자사몰·29CM·무신사) — 배송 완료 건, 오프라인 스토어 — 구매 전체(반품 포함).&ensp;
-        <span style={{fontWeight:600,color:DC.text}}>공통 SKU:</span> 해당 기간 2개 이상 채널에서 판매된 SKU. 단독 SKU는 해당 채널에서만 판매된 SKU. 스택 순서는 채널 간 교집합 비율에 따라 자동 정렬됩니다.
+        <span style={{fontWeight:600,color:DC.text}}>공통 SKU:</span> 해당 기간 2개 이상 채널에서 판매된 SKU. 스택 순서는 채널 간 교집합 비율에 따라 자동 정렬됩니다.
       </div>
 
       {/* 범례 */}
@@ -7887,7 +7933,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       {/* 차트 */}
       {!chartRows.length?(
         <div style={{textAlign:"center",padding:"60px 0",color:DC.sub,fontSize:14}}>
-          배송/판매 데이터를 업로드하면 그래프가 표시됩니다
+          해당 기간에 데이터가 없습니다
         </div>
       ):(
         <ResponsiveContainer width="100%" height={300}>
@@ -7913,8 +7959,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
           <div style={{background:"#fff",borderRadius:14,padding:"24px 28px",maxWidth:520,width:"92%",maxHeight:"75vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,.18)"}}
             onClick={e=>e.stopPropagation()}>
             <div style={{fontWeight:700,fontSize:15,marginBottom:4,color:"#111"}}>{skuModal.label} — SKU 목록</div>
-            <div style={{fontSize:11,color:"#888",marginBottom:14}}>전체 고유 SKU: {skuModal._allCnt}개 · 클릭한 탭의 SKU를 확인합니다</div>
-            {/* 탭 */}
+            <div style={{fontSize:11,color:"#888",marginBottom:14}}>전체 고유 SKU: {skuModal._allCnt}개 · 탭 선택 후 확인</div>
             <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>
               {modalTabs.map(t=>(
                 <button key={t.key} onClick={()=>setModalTab(t.key)}
@@ -7925,7 +7970,6 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
                 </button>
               ))}
             </div>
-            {/* 탭 설명 */}
             {modalTab!=="common"&&(
               <div style={{fontSize:11,color:"#888",marginBottom:8}}>
                 전체 활성 {skuModal._chSets?.[modalTab]?.length||0}개
@@ -7933,15 +7977,12 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
                 {" · "}공통 포함 {(skuModal._chSets?.[modalTab]?.length||0)-modalOnlySkus.length}개
               </div>
             )}
-            {/* SKU 목록 */}
             <div style={{overflowY:"auto",flex:1,borderTop:"1px solid #f0f0f0",paddingTop:8}}>
               {modalTab!=="common"?(
                 <>
                   {modalOnlySkus.length>0&&(
                     <>
-                      <div style={{fontSize:11,fontWeight:600,color:"#555",marginBottom:4,marginTop:4}}>
-                        단독 SKU ({modalOnlySkus.length}개)
-                      </div>
+                      <div style={{fontSize:11,fontWeight:600,color:"#555",marginBottom:4,marginTop:4}}>단독 SKU ({modalOnlySkus.length}개)</div>
                       {modalOnlySkus.map((s,i)=>(
                         <div key={i} style={{padding:"5px 4px",borderBottom:"1px solid #f5f5f5",fontSize:13,color:"#222"}}>{s}</div>
                       ))}
