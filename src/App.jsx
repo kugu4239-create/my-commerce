@@ -7348,7 +7348,7 @@ function DataCompare({revenues,storeSales=[]}){
   const hasData=revenueData.some(p=>p.total>0);
   const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1;
 
-  const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
+  const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#C8C8C8",dim:"#A0A0A0"};
   // 업로더 카드용 라이트 테마
   const LC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
   const darkCard={background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16};
@@ -7408,7 +7408,7 @@ function DataCompare({revenues,storeSales=[]}){
           <div style={{paddingTop:8,borderTop:`1px solid ${DC.border}`,marginTop:8}}>
             <div style={{fontSize:10,color:DC.dim,marginBottom:2,textAlign:"right"}}>
               {allVolPeriods[sliderIdx[0]]?.label} ~ {allVolPeriods[sliderIdx[1]]?.label}
-              <span style={{marginLeft:8,color:DC.border}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
+              <span style={{marginLeft:8,color:DC.dim}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
             </div>
             <VolumeSlider total={allVolPeriods.length} range={sliderIdx} onChange={handleSlider} DC={DC}/>
           </div>
