@@ -1829,18 +1829,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       {/* 상단 기간 선택 + 새로고침 */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",flexDirection:"column",gap:5}}>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {PERIOD_TABS.map(({key,label})=><PeriodBtn key={key} k={key} l={label}/>)}
-            {period==="custom"&&(
-              <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
-                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:11,color:D.text}}/>
-                <span style={{color:D.textMeta,fontSize:11}}>—</span>
-                <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
-                  style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 7px",fontSize:11,color:D.text}}/>
-              </div>
-            )}
-          </div>
+          <CalDrop id="kpi" period={period} setPeriod={setPeriod}
+            presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"],["all","전체"]]}
+            start={customStart} setStart={setCustomStart}
+            end={customEnd} setEnd={setCustomEnd}
+            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
           <div style={{fontSize:10,color:D.textMeta,paddingLeft:2,minHeight:14,lineHeight:"14px"}}>
             {getPeriodLabel(period)||""}
           </div>
