@@ -6837,16 +6837,27 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       } else {
         key=d.slice(0,7);label=key;
       }
-      if(!groups[key]){groups[key]={label,HEALTHY:0,SLOW:0,AGING:0,DEAD:0,_n:0};}
+      if(!groups[key]){
+        groups[key]={label,HEALTHY:0,SLOW:0,AGING:0,DEAD:0,_n:0};
+        INV_AGING_KEYS.forEach(k=>{groups[key][`${k}_qty`]=0;groups[key][`${k}_val`]=0;});
+      }
       INV_AGING_KEYS.forEach(k=>{
         const v=rawByDate[d][k];
-        if(v) groups[key][k]+=yMode==="count"?v.count:yMode==="qty"?v.qty:v.value;
+        if(v){
+          groups[key][k]+=yMode==="count"?v.count:yMode==="qty"?v.qty:v.value;
+          groups[key][`${k}_qty`]+=v.qty;
+          groups[key][`${k}_val`]+=v.value;
+        }
       });
       groups[key]._n++;
     });
     return Object.values(groups).map(g=>{
       const r={label:g.label};
-      INV_AGING_KEYS.forEach(k=>{r[k]=Math.round(g[k]/g._n);});
+      INV_AGING_KEYS.forEach(k=>{
+        r[k]=Math.round(g[k]/g._n);
+        r[`${k}_qty`]=Math.round((g[`${k}_qty`]||0)/g._n);
+        r[`${k}_val`]=Math.round((g[`${k}_val`]||0)/g._n);
+      });
       return r;
     });
   },[rawByDate,aggUnit,yMode]);
@@ -6914,7 +6925,10 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     INV_AGING_KEYS.forEach(k=>{total+=(d[k]?.count||0);totalQty+=(d[k]?.qty||0);totalVal+=(d[k]?.value||0);});
     const deadQty=d["DEAD"]?.qty||0;const healthyQty=d["HEALTHY"]?.qty||0;
     const qtyByKey={};
-    INV_AGING_KEYS.forEach(k=>{qtyByKey[k]={qty:d[k]?.qty||0,pct:totalQty?((d[k]?.qty||0)/totalQty*100).toFixed(1):"0.0"};});
+    INV_AGING_KEYS.forEach(k=>{
+      const qty=d[k]?.qty||0;const val=d[k]?.value||0;
+      qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0"};
+    });
     return{total,totalQty,totalVal,
       deadPct:totalQty?((deadQty/totalQty)*100).toFixed(1):"0.0",
       healthyPct:totalQty?((healthyQty/totalQty)*100).toFixed(1):"0.0",
@@ -6931,24 +6945,29 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     if(!active||!payload?.length) return null;
     const total=payload.reduce((s,p)=>s+(p.value||0),0);
     const unit=yMode==="count"?" SKU":yMode==="qty"?"개":"";
+    const dp=payload[0]?.payload||{};
+    const totalVal=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_val`]||0),0);
     return(
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:13}}>
-        <div style={{color:DC.sub,marginBottom:6,fontWeight:600}}>{label}</div>
-        {[...payload].reverse().map(p=>(
-          <div key={p.dataKey} style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:3}}>
-            <span style={{color:p.fill||p.stroke}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
-            <span style={{color:DC.text,fontWeight:600}}>
-              {(p.value||0).toLocaleString()}{unit}
-              {total>0&&<span style={{color:DC.sub,fontWeight:400,marginLeft:5}}>({((p.value||0)/total*100).toFixed(1)}%)</span>}
-            </span>
-          </div>
-        ))}
-        {total>0&&(
-          <div style={{borderTop:`1px solid ${DC.border}`,marginTop:6,paddingTop:6,display:"flex",justifyContent:"space-between",gap:14}}>
-            <span style={{color:DC.sub}}>합계</span>
-            <span style={{color:DC.text,fontWeight:600}}>{total.toLocaleString()}{unit}</span>
-          </div>
-        )}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:12,minWidth:200}}>
+        <div style={{color:DC.sub,marginBottom:7,fontWeight:600,fontSize:13}}>{label}</div>
+        {[...payload].reverse().map(p=>{
+          const val=dp[`${p.dataKey}_val`]||0;
+          const qty=dp[`${p.dataKey}_qty`]||0;
+          return(
+            <div key={p.dataKey} style={{marginBottom:6,paddingBottom:6,borderBottom:`1px solid ${DC.border}`}}>
+              <div style={{color:p.fill||p.stroke,fontWeight:600,marginBottom:3}}>{INV_AGING_DEFS[p.dataKey]?.label}</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <span style={{color:DC.text}}>{qty.toLocaleString()}개{total>0&&<span style={{color:DC.sub,marginLeft:3}}>({(qty/(INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0)||1)*100).toFixed(1)}%)</span>}</span>
+                <span style={{color:DC.sub}}>·</span>
+                <span style={{color:DC.text}}>{fmtVal(val)}원{totalVal>0&&<span style={{color:DC.sub,marginLeft:3}}>({(val/totalVal*100).toFixed(1)}%)</span>}</span>
+              </div>
+            </div>
+          );
+        })}
+        <div style={{display:"flex",justifyContent:"space-between",gap:14,paddingTop:2}}>
+          <span style={{color:DC.sub}}>합계</span>
+          <span style={{color:DC.text,fontWeight:600}}>{INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0).toLocaleString()}개 · {fmtVal(totalVal)}원</span>
+        </div>
       </div>
     );
   };
@@ -7077,14 +7096,24 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
             const def=INV_AGING_DEFS[k];
             const q=kpi?.qtyByKey[k];
             return(
-              <div key={k} style={{marginBottom:12}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+              <div key={k} style={{marginBottom:13}}>
+                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
                   <span style={{width:9,height:9,borderRadius:2,background:def.color,display:"inline-block",flexShrink:0}}/>
-                  <span style={{fontSize:13,fontWeight:600,color:def.color}}>{def.label}</span>
-                  {q&&<span style={{fontSize:11,color:DC.sub,marginLeft:"auto",fontWeight:600}}>{q.pct}%</span>}
+                  <span style={{fontSize:12,fontWeight:700,color:def.color}}>{def.label}</span>
                 </div>
-                <div style={{fontSize:11,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
-                {q&&<div style={{fontSize:11,color:DC.sub,paddingLeft:15}}>{q.qty.toLocaleString()}개</div>}
+                <div style={{fontSize:10,color:DC.text,paddingLeft:14,lineHeight:1.4,marginBottom:3}}>{def.desc}</div>
+                {q&&(
+                  <div style={{paddingLeft:14,display:"flex",flexDirection:"column",gap:2}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
+                      <span style={{fontSize:10,color:DC.sub}}>수량</span>
+                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{q.qty.toLocaleString()}개 <span style={{color:DC.sub,fontWeight:400}}>({q.pct}%)</span></span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
+                      <span style={{fontSize:10,color:DC.sub}}>금액</span>
+                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{fmtVal(q.val)}원 <span style={{color:DC.sub,fontWeight:400}}>({q.valPct}%)</span></span>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
