@@ -5435,6 +5435,18 @@ function StoreUploader({ onUpdate }) {
   const [dateRange,setDateRange]=useState({start:"",end:""});
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
+  const [conflictCount,setConflictCount]=useState(0);
+
+  // 파일 파싱 완료 후 기존 데이터 수 조회
+  useEffect(()=>{
+    if(!preview||!dateRange.start||!dateRange.end){setConflictCount(0);return;}
+    (async()=>{
+      const db=await getSupabase();
+      const{count}=await db.from("store_sales").select("*",{count:"exact",head:true})
+        .gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
+      setConflictCount(count||0);
+    })();
+  },[preview,dateRange.start,dateRange.end]);
 
   const parseKRW=s=>{
     const str=String(s||"").trim().replace(/[\s,]/g,"");
@@ -5474,10 +5486,7 @@ function StoreUploader({ onUpdate }) {
     if(!preview?.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    let prevCount=0;
     if(dateRange.start&&dateRange.end){
-      const {count}=await db.from("store_sales").select("*",{count:"exact",head:true}).gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
-      prevCount=count||0;
       await db.from("store_sales").delete().gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
     }
     for(let i=0;i<preview.length;i+=500){
@@ -5485,12 +5494,12 @@ function StoreUploader({ onUpdate }) {
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
+    const replaceNote=conflictCount>0?` (기존 ${conflictCount}건 대체됨)`:"";
     setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료${replaceNote}`,ts:ts2});
     onUpdate(ts2);setLoading(false);
   };
 
-  const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);};
+  const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);setConflictCount(0);};
 
   return(
     <div>
@@ -5516,8 +5525,19 @@ function StoreUploader({ onUpdate }) {
               {label:"기간",value:`${dateRange.start}~${dateRange.end}`},
               {label:"행수",value:`${preview?.length||0}건`,color:D.green},
             ]}/>
+            {conflictCount>0&&(
+              <div style={{background:"#fff9e6",border:`1px solid ${D.amber}`,borderRadius:7,
+                padding:"10px 12px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
+                <div style={{fontWeight:700,color:D.amber,marginBottom:4}}>
+                  ⚠ 기존 데이터 {conflictCount.toLocaleString()}건과 겹칩니다
+                </div>
+                <div style={{color:D.textSub}}>
+                  {dateRange.start} ~ {dateRange.end} 기간의 기존 데이터가 모두 삭제되고 새 데이터로 교체됩니다.
+                </div>
+              </div>
+            )}
             <Btn onClick={handleUpload} disabled={loading} style={{width:"100%",marginBottom:7}}>
-              {loading?"처리 중...":"업로드"}
+              {loading?"처리 중...":conflictCount>0?"덮어쓰기 업로드":"업로드"}
             </Btn>
             <button onClick={reset} style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:"5px"}}>← 다시 선택</button>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
