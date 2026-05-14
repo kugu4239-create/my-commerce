@@ -8080,10 +8080,10 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
 }
 
 const COMPARE_CH_COLOR={
-  "자사몰":"#9be1de",
-  "29CM":"#f99260",
-  "오프라인 스토어":"#b2cbeb",
-  "무신사":"#e7b8b3",
+  "자사몰":"#A8D8B8",
+  "29CM":"#F5C8A0",
+  "오프라인 스토어":"#A8C8E0",
+  "무신사":"#C4B8E8",
 };
 const COMPARE_CHANNELS=["자사몰","29CM","오프라인 스토어","무신사"];
 
