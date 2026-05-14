@@ -6744,7 +6744,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("week");
-  const [yMode,setYMode]=useState("count");
+  const [yMode,setYMode]=useState("qty");
   const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
@@ -6899,12 +6899,15 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const kpi=useMemo(()=>{
     if(!latestDate||!rawByDate[latestDate]) return null;
     const d=rawByDate[latestDate];
-    let total=0,totalQty=0,totalVal=0,dead=0,healthy=0;
+    let total=0,totalQty=0,totalVal=0;
     INV_AGING_KEYS.forEach(k=>{total+=(d[k]?.count||0);totalQty+=(d[k]?.qty||0);totalVal+=(d[k]?.value||0);});
-    dead=d["DEAD"]?.count||0;healthy=d["HEALTHY"]?.count||0;
-    return{total,totalQty,totalVal,dead,healthy,
-      deadPct:total?((dead/total)*100).toFixed(1):"0.0",
-      healthyPct:total?((healthy/total)*100).toFixed(1):"0.0"};
+    const deadQty=d["DEAD"]?.qty||0;const healthyQty=d["HEALTHY"]?.qty||0;
+    const qtyByKey={};
+    INV_AGING_KEYS.forEach(k=>{qtyByKey[k]={qty:d[k]?.qty||0,pct:totalQty?((d[k]?.qty||0)/totalQty*100).toFixed(1):"0.0"};});
+    return{total,totalQty,totalVal,
+      deadPct:totalQty?((deadQty/totalQty)*100).toFixed(1):"0.0",
+      healthyPct:totalQty?((healthyQty/totalQty)*100).toFixed(1):"0.0",
+      qtyByKey};
   },[latestDate,rawByDate]);
 
   const fmtVal=v=>{
@@ -6915,15 +6918,26 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
 
   const AreaTooltip=({active,payload,label})=>{
     if(!active||!payload?.length) return null;
+    const total=payload.reduce((s,p)=>s+(p.value||0),0);
+    const unit=yMode==="count"?" SKU":yMode==="qty"?"개":"";
     return(
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:14}}>
-        <div style={{color:DC.sub,marginBottom:5,fontWeight:600}}>{label}</div>
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:13}}>
+        <div style={{color:DC.sub,marginBottom:6,fontWeight:600}}>{label}</div>
         {[...payload].reverse().map(p=>(
-          <div key={p.dataKey} style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:2}}>
+          <div key={p.dataKey} style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:3}}>
             <span style={{color:p.fill||p.stroke}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
-            <span style={{color:DC.text,fontWeight:600}}>{(p.value||0).toLocaleString()}{yMode==="count"?" SKU":yMode==="qty"?"개":""}</span>
+            <span style={{color:DC.text,fontWeight:600}}>
+              {(p.value||0).toLocaleString()}{unit}
+              {total>0&&<span style={{color:DC.sub,fontWeight:400,marginLeft:5}}>({((p.value||0)/total*100).toFixed(1)}%)</span>}
+            </span>
           </div>
         ))}
+        {total>0&&(
+          <div style={{borderTop:`1px solid ${DC.border}`,marginTop:6,paddingTop:6,display:"flex",justifyContent:"space-between",gap:14}}>
+            <span style={{color:DC.sub}}>합계</span>
+            <span style={{color:DC.text,fontWeight:600}}>{total.toLocaleString()}{unit}</span>
+          </div>
+        )}
       </div>
     );
   };
@@ -7050,13 +7064,16 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           <div style={{fontSize:12,fontWeight:700,color:DC.sub,marginBottom:12,letterSpacing:".06em"}}>AGING STATUS</div>
           {INV_AGING_KEYS.map(k=>{
             const def=INV_AGING_DEFS[k];
+            const q=kpi?.qtyByKey[k];
             return(
               <div key={k} style={{marginBottom:12}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                   <span style={{width:9,height:9,borderRadius:2,background:def.color,display:"inline-block",flexShrink:0}}/>
                   <span style={{fontSize:13,fontWeight:600,color:def.color}}>{def.label}</span>
+                  {q&&<span style={{fontSize:11,color:DC.sub,marginLeft:"auto",fontWeight:600}}>{q.pct}%</span>}
                 </div>
-                <div style={{fontSize:12,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
+                <div style={{fontSize:11,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
+                {q&&<div style={{fontSize:11,color:DC.sub,paddingLeft:15}}>{q.qty.toLocaleString()}개</div>}
               </div>
             );
           })}
@@ -7105,7 +7122,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                     </tr>
                   </thead>
                   <tbody>
-                    {[...drillRows].sort((a,b)=>b.noSalesDays-a.noSalesDays).slice(drillPage*50,(drillPage+1)*50).map((r,i)=>(
+                    {[...drillRows].sort((a,b)=>(b.current_stock_qty||0)-(a.current_stock_qty||0)||b.noSalesDays-a.noSalesDays).slice(drillPage*50,(drillPage+1)*50).map((r,i)=>(
                       <tr key={r.id||i} style={{borderBottom:`1px solid ${DC.border}`,
                         background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
                         <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:160,
