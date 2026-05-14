@@ -6395,7 +6395,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const AreaTooltip=({active,payload,label})=>{
     if(!active||!payload?.length) return null;
     return(
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:12}}>
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:14}}>
         <div style={{color:DC.sub,marginBottom:5,fontWeight:600}}>{label}</div>
         {[...payload].reverse().map(p=>(
           <div key={p.dataKey} style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:2}}>
@@ -6419,8 +6419,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
             {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B"},
           ].map(c=>(
             <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
-              <div style={{fontSize:10,color:DC.sub,marginBottom:5}}>{c.label}</div>
-              <div style={{fontSize:16,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+              <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
+              <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -6428,29 +6428,29 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
 
       {/* Controls */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
+        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
         {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
           <button key={v} onClick={()=>setDateRange(v)}
-            style={{background:dateRange===v?"#fff":"transparent",color:dateRange===v?"#000":DC.sub,
-              border:`1px solid ${dateRange===v?"#fff":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
+            style={{background:dateRange===v?DC.text:"transparent",color:dateRange===v?DC.card:DC.sub,
+              border:`1px solid ${dateRange===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
             {l}
           </button>
         ))}
-        <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
+        <span style={{color:DC.border,margin:"0 3px",fontSize:16}}>|</span>
+        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
         {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
           <button key={v} onClick={()=>setAggUnit(v)}
-            style={{background:aggUnit===v?"rgba(255,255,255,0.08)":"transparent",color:aggUnit===v?DC.text:DC.sub,
-              border:`1px solid ${aggUnit===v?"#555":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+            style={{background:aggUnit===v?DC.text:"transparent",color:aggUnit===v?DC.card:DC.sub,
+              border:`1px solid ${aggUnit===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
             {l}
           </button>
         ))}
-        <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
+        <span style={{color:DC.border,margin:"0 3px",fontSize:16}}>|</span>
+        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
         {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
           <button key={v} onClick={()=>setYMode(v)}
             style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
-              border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+              border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
             {l}
           </button>
         ))}
@@ -6460,17 +6460,17 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
         {/* Stacked bar chart */}
         <div style={{flex:1,height:340}}>
           {loading
-            ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
+            ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>데이터 로딩 중...</div>
             :chartData.length===0
-              ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>해당 기간 데이터 없음</div>
+              ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>해당 기간 데이터 없음</div>
               :<ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}} barCategoryGap="22%">
-                  <CartesianGrid strokeDasharray="2 5" stroke="#1c1c1c" vertical={false}/>
-                  <XAxis dataKey="label" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
+                  <CartesianGrid strokeDasharray="2 5" stroke={DC.border} vertical={false}/>
+                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     angle={-20} textAnchor="end" interval="preserveStartEnd" dy={6}/>
-                  <YAxis tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
+                  <YAxis tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
-                  <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(255,255,255,0.04)"}}/>
+                  <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(0,0,0,0.04)"}}/>
                   {INV_AGING_KEYS.map(k=>(
                     <Bar key={k} dataKey={k} stackId="1"
                       fill={INV_AGING_DEFS[k].color} fillOpacity={0.85} radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}/>
@@ -6482,16 +6482,16 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
 
         {/* Legend panel */}
         <div style={{width:148,flexShrink:0,paddingTop:8}}>
-          <div style={{fontSize:10,fontWeight:700,color:DC.sub,marginBottom:12,letterSpacing:".06em"}}>AGING STATUS</div>
+          <div style={{fontSize:12,fontWeight:700,color:DC.sub,marginBottom:12,letterSpacing:".06em"}}>AGING STATUS</div>
           {INV_AGING_KEYS.map(k=>{
             const def=INV_AGING_DEFS[k];
             return(
               <div key={k} style={{marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                   <span style={{width:9,height:9,borderRadius:2,background:def.color,display:"inline-block",flexShrink:0}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:def.color}}>{def.label}</span>
+                  <span style={{fontSize:14,fontWeight:600,color:def.color}}>{def.label}</span>
                 </div>
-                <div style={{fontSize:11,color:"#fff",paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
+                <div style={{fontSize:13,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
               </div>
             );
           })}
@@ -6499,8 +6499,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
       </div>
 
       {/* Footnote */}
-      <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid #1e1e1e",fontSize:10,color:"#555",lineHeight:1.7}}>
-        <span style={{color:"#666",fontWeight:600,marginRight:6}}>계산 방식</span>
+      <div style={{marginTop:16,paddingTop:12,borderTop:`1px solid ${DC.border}`,fontSize:12,color:DC.dim,lineHeight:1.7}}>
+        <span style={{color:DC.sub,fontWeight:600,marginRight:6}}>계산 방식</span>
         마지막 판매일 기준 경과일수로 에이징을 분류합니다.&nbsp;
         <span style={{color:INV_AGING_DEFS.HEALTHY.color}}>Healthy</span> 0~30일 ·&nbsp;
         <span style={{color:INV_AGING_DEFS.SLOW.color}}>Slow-moving</span> 31~90일 ·&nbsp;
@@ -6685,25 +6685,25 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
       style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,
-        fontSize:11,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
+        fontSize:13,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
       {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
     </th>
   );
 
-  const chartStyle={background:"rgba(255,255,255,0.02)",border:`1px solid ${DC.border}`,borderRadius:9,padding:"14px 12px"};
-  const ttStyle={contentStyle:{background:"#161616",border:"1px solid #2e2e2e",borderRadius:7,fontSize:12},cursor:false};
+  const chartStyle={background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:9,padding:"14px 12px"};
+  const ttStyle={contentStyle:{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:7,fontSize:14},cursor:false};
 
   return(
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
-        <span style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
-        {latestDataDate&&<span style={{fontSize:13,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {latestDataDate}</span>}
+        <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
+        {latestDataDate&&<span style={{fontSize:15,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {latestDataDate}</span>}
       </div>
-      <div style={{fontSize:13,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+      <div style={{fontSize:15,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
 
       {/* Calculation flow card */}
-      <div style={{marginBottom:20,background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
-        <div style={{fontSize:10,fontWeight:700,color:DC.sub,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
+      <div style={{marginBottom:20,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
+        <div style={{fontSize:12,fontWeight:700,color:DC.sub,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
           {[
             {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
@@ -6713,22 +6713,22 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
             {title:"추천 리오더 수량",body:"(일판매량×14)\n−실질가용재고"},
           ].map((s,i,a)=>(
             <React.Fragment key={s.title}>
-              <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
-                <div style={{fontSize:10,color:DC.sub,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
-                <div style={{fontSize:11,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
+              <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
+                <div style={{fontSize:12,color:DC.sub,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
+                <div style={{fontSize:13,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
               </div>
-              {i<a.length-1&&<div style={{color:DC.sub,fontSize:16,padding:"0 6px",flexShrink:0}}>→</div>}
+              {i<a.length-1&&<div style={{color:DC.sub,fontSize:18,padding:"0 6px",flexShrink:0}}>→</div>}
             </React.Fragment>
           ))}
         </div>
       </div>
 
-      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>}
+      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:15}}>데이터 로딩 중...</div>}
 
       {!loading&&data.length===0&&(
-        <div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:13,lineHeight:2}}>
+        <div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:15,lineHeight:2}}>
           Inventory Trend 엑셀 업로드 완료 후 리오더 데이터가 자동 생성됩니다.<br/>
-          <span style={{fontSize:11}}>엑셀에 <strong style={{color:DC.sub}}>가용재고 · 입고대기 · 1주발주합계 · 4주발주합계</strong> 컬럼 포함 필요</span>
+          <span style={{fontSize:13}}>엑셀에 <strong style={{color:DC.sub}}>가용재고 · 입고대기 · 1주발주합계 · 4주발주합계</strong> 컬럼 포함 필요</span>
         </div>
       )}
 
@@ -6743,9 +6743,9 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                 {label:"총 추천 리오더 수량",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
                 {label:"총 입고대기 수량",value:`${kpi.totalIncoming.toLocaleString()}개`,color:"#7B9EC8"},
               ].map(c=>(
-                <div key={c.label} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
-                  <div style={{fontSize:10,color:DC.sub,marginBottom:5}}>{c.label}</div>
-                  <div style={{fontSize:16,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+                <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
+                  <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
+                  <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
                 </div>
               ))}
             </div>
@@ -6754,36 +6754,36 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
           {/* Charts */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top5 (추세비율)</div>
+              <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top5 (추세비율)</div>
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={rising} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={140}/>
+                  <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추세비율" fill="#7EC8A4" radius={[0,3,3,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top5 (예상 일판매량)</div>
+              <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top5 (예상 일판매량)</div>
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={topSales} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={140}/>
+                  <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle} formatter={v=>[v.toFixed(2),"일판매량"]}/>
                   <Bar dataKey="value" name="일판매량" fill="#7B9EC8" radius={[0,3,3,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top5</div>
+              <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top5</div>
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={topReorder} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={140}/>
+                  <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추천리오더" fill="#C8A87B" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -6795,16 +6795,16 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"5px 10px",fontSize:12,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
+                padding:"5px 10px",fontSize:14,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontSize:11,color:DC.sub}}>{filtered.length.toLocaleString()}개 SKU</span>
+              <span style={{fontSize:13,color:DC.sub}}>{filtered.length.toLocaleString()}개 SKU</span>
               <button onClick={downloadCSV}
                 style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,
-                  padding:"4px 12px",fontSize:11,cursor:"pointer"}}>↓ CSV</button>
+                  padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ CSV</button>
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,tableLayout:"auto"}}>
               <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                 <tr>
                   <SortTh k="reorder_product_name" label="상품명"/>
@@ -6834,7 +6834,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                       <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
                       <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
                       <td style={{padding:"6px 8px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
-                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:11,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
+                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:13,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
                       <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
                       <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
                     </tr>
@@ -6847,8 +6847,8 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
             <div style={{display:"flex",justifyContent:"center",gap:5,marginTop:14}}>
               {Array.from({length:totalPgs}).map((_,i)=>(
                 <button key={i} onClick={()=>setPg(i)}
-                  style={{background:pg===i?"#fff":"transparent",color:pg===i?"#000":DC.sub,
-                    border:`1px solid ${pg===i?"#fff":DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>
+                  style={{background:pg===i?DC.text:"transparent",color:pg===i?DC.card:DC.sub,
+                    border:`1px solid ${pg===i?DC.text:DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:13,cursor:"pointer"}}>
                   {i+1}
                 </button>
               ))}
@@ -7371,42 +7371,42 @@ function DataCompare({revenues,storeSales=[]}){
 
   return(
     <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
-      <div style={{fontWeight:700,fontSize:20,color:"#111111",letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
+      <div style={{fontWeight:700,fontSize:22,color:"#111111",letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
 
       {/* ① 전체 매출 볼륨 — 다크 카드 */}
       <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
+          <div style={{fontWeight:600,fontSize:16,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
             {[["year","연"],["month","월"]].map(([u,lbl])=>(
               <button key={u} onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
-                style={{background:volUnit===u?"#fff":"transparent",
-                  color:volUnit===u?"#000":DC.sub,
-                  border:`1px solid ${volUnit===u?"#fff":DC.border}`,
-                  borderRadius:6,padding:"4px 10px",fontSize:11,
+                style={{background:volUnit===u?DC.text:"transparent",
+                  color:volUnit===u?DC.card:DC.sub,
+                  border:`1px solid ${volUnit===u?DC.text:DC.border}`,
+                  borderRadius:6,padding:"4px 10px",fontSize:13,
                   cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
                 {lbl}
               </button>
             ))}
-            <span style={{color:DC.border,fontSize:14,margin:"0 4px"}}>|</span>
+            <span style={{color:DC.border,fontSize:16,margin:"0 4px"}}>|</span>
             <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"light",
+                padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
-            <span style={{color:DC.sub,fontSize:11}}>~</span>
+            <span style={{color:DC.sub,fontSize:13}}>~</span>
             <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"light",
+                padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             {(customStart||customEnd)&&(
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
-                style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:14,padding:"0 2px"}}>✕</button>
+                style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:16,padding:"0 2px"}}>✕</button>
             )}
           </div>
         </div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:12}}>
           {COMPARE_CHANNELS.map(ch=>(
-            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
+            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:DC.sub}}>
               <span style={{width:8,height:8,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
               {ch}
             </span>
@@ -7415,14 +7415,14 @@ function DataCompare({revenues,storeSales=[]}){
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
           {hasData
             ?<RevenueSankeyChart periods={revenueData} svgW={svgW}/>
-            :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>
+            :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>
               매출 데이터를 업로드하면 그래프가 표시됩니다
             </div>
           }
         </div>
         {showSlider&&(
           <div style={{paddingTop:8,borderTop:`1px solid ${DC.border}`,marginTop:8}}>
-            <div style={{fontSize:10,color:DC.dim,marginBottom:2,textAlign:"right"}}>
+            <div style={{fontSize:12,color:DC.dim,marginBottom:2,textAlign:"right"}}>
               {allVolPeriods[sliderIdx[0]]?.label} ~ {allVolPeriods[sliderIdx[1]]?.label}
               <span style={{marginLeft:8,color:DC.dim}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
             </div>
@@ -7433,21 +7433,21 @@ function DataCompare({revenues,storeSales=[]}){
 
       {/* Inventory Uploader — 라이트 카드 */}
       <div style={{background:LC.card,border:`1px solid ${LC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
-        <div style={{fontWeight:600,fontSize:14,color:LC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
+        <div style={{fontWeight:600,fontSize:16,color:LC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
         <InventoryUploader DC={LC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
       </div>
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
       <div style={sectionCard}>
-        <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
+        <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
         <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
       </div>
 
       {/* ③ Aging Trend — 섹션 카드 */}
       <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-          <span style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
-          {agingDate&&<span style={{fontSize:13,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {agingDate}</span>}
+          <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
+          {agingDate&&<span style={{fontSize:15,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {agingDate}</span>}
           <span style={{fontSize:15,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate}/>
