@@ -6296,7 +6296,7 @@ function InvBubblePlot({DC,snapshotDates}){
 // ─────────────────────────────────────────────
 // INV AGING TREND (STACKED AREA)
 // ─────────────────────────────────────────────
-function InvAgingTrend({DC,snapshotDates,refreshKey}){
+function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("month");
@@ -6373,6 +6373,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
 
   const latestDate=useMemo(()=>{const d=Object.keys(rawByDate).sort();return d[d.length-1]||null;},[rawByDate]);
 
+  useEffect(()=>{if(onDateReady) onDateReady(latestDate);},[latestDate,onDateReady]);
+
   const kpi=useMemo(()=>{
     if(!latestDate||!rawByDate[latestDate]) return null;
     const d=rawByDate[latestDate];
@@ -6393,12 +6395,12 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
   const AreaTooltip=({active,payload,label})=>{
     if(!active||!payload?.length) return null;
     return(
-      <div style={{background:"#161616",border:"1px solid #2e2e2e",borderRadius:8,padding:"10px 14px",fontSize:12}}>
-        <div style={{color:"#888",marginBottom:5,fontWeight:600}}>{label}</div>
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:12}}>
+        <div style={{color:DC.sub,marginBottom:5,fontWeight:600}}>{label}</div>
         {[...payload].reverse().map(p=>(
           <div key={p.dataKey} style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:2}}>
             <span style={{color:p.fill||p.stroke}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
-            <span style={{color:"#F0F0F0",fontWeight:600}}>{(p.value||0).toLocaleString()}{yMode==="count"?" SKU":yMode==="qty"?"개":""}</span>
+            <span style={{color:DC.text,fontWeight:600}}>{(p.value||0).toLocaleString()}{yMode==="count"?" SKU":yMode==="qty"?"개":""}</span>
           </div>
         ))}
       </div>
@@ -6416,7 +6418,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
             {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
             {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B"},
           ].map(c=>(
-            <div key={c.label} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
+            <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
               <div style={{fontSize:10,color:DC.sub,marginBottom:5}}>{c.label}</div>
               <div style={{fontSize:16,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
             </div>
@@ -6579,7 +6581,7 @@ async function computeAndSaveReorder(parsedRows,snapDate){
 // ─────────────────────────────────────────────
 // REORDER CALCULATOR COMPONENT
 // ─────────────────────────────────────────────
-function ReorderCalculator({DC,refreshKey}){
+function ReorderCalculator({DC,refreshKey,onDateReady}){
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
@@ -6605,6 +6607,14 @@ function ReorderCalculator({DC,refreshKey}){
   },[]);
 
   useEffect(()=>{load();},[load,refreshKey]);
+
+  const latestDataDate=useMemo(()=>{
+    if(!data.length) return null;
+    const dates=data.map(r=>r.reorder_data_date||"").filter(Boolean).sort();
+    return dates[dates.length-1]||null;
+  },[data]);
+
+  useEffect(()=>{if(onDateReady) onDateReady(latestDataDate);},[latestDataDate,onDateReady]);
 
   const kpi=useMemo(()=>{
     if(!data.length) return null;
@@ -6685,8 +6695,11 @@ function ReorderCalculator({DC,refreshKey}){
 
   return(
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
-      <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:4}}>리오더 계산기</div>
-      <div style={{fontSize:11,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+        <span style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
+        {latestDataDate&&<span style={{fontSize:13,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {latestDataDate}</span>}
+      </div>
+      <div style={{fontSize:13,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
 
       {/* Calculation flow card */}
       <div style={{marginBottom:20,background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
@@ -6853,6 +6866,7 @@ function ReorderCalculator({DC,refreshKey}){
 function InventoryTrend({DC,onReorderRefresh}){
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [refreshKey,setRefreshKey]=useState(0);
+  const [agingDate,setAgingDate]=useState(null);
 
   const loadDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -6881,9 +6895,10 @@ function InventoryTrend({DC,onReorderRefresh}){
       <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:13,color:DC.text,letterSpacing:"-0.1px"}}>Aging Trend</span>
+          {agingDate&&<span style={{fontSize:13,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {agingDate}</span>}
           <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
-        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey}/>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey} onDateReady={setAgingDate}/>
       </div>
     </div>
   );
@@ -7262,6 +7277,8 @@ function DataCompare({revenues,storeSales=[]}){
   const [reorderKey,setReorderKey]=useState(0);
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [invRefreshKey,setInvRefreshKey]=useState(0);
+  const [agingDate,setAgingDate]=useState(null);
+  const [reorderDate,setReorderDate]=useState(null);
 
   const loadSnapshotDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -7348,17 +7365,16 @@ function DataCompare({revenues,storeSales=[]}){
   const hasData=revenueData.some(p=>p.total>0);
   const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1;
 
-  const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#C8C8C8",dim:"#A0A0A0"};
-  // 업로더 카드용 라이트 테마
-  const LC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
-  const darkCard={background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16};
+  const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  const LC=DC;
+  const sectionCard={background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16};
 
   return(
     <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
       <div style={{fontWeight:700,fontSize:20,color:"#111111",letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
 
       {/* ① 전체 매출 볼륨 — 다크 카드 */}
-      <div style={darkCard}>
+      <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
@@ -7375,12 +7391,12 @@ function DataCompare({revenues,storeSales=[]}){
             <span style={{color:DC.border,fontSize:14,margin:"0 4px"}}>|</span>
             <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             <span style={{color:DC.sub,fontSize:11}}>~</span>
             <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             {(customStart||customEnd)&&(
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
@@ -7422,22 +7438,23 @@ function DataCompare({revenues,storeSales=[]}){
       </div>
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
-      <div style={darkCard}>
+      <div style={sectionCard}>
         <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
         <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
       </div>
 
-      {/* ③ Aging Trend — 다크 카드 */}
-      <div style={darkCard}>
+      {/* ③ Aging Trend — 섹션 카드 */}
+      <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-          <span style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
-          <span style={{fontSize:14,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+          <span style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
+          {agingDate&&<span style={{fontSize:13,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {agingDate}</span>}
+          <span style={{fontSize:15,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
-        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey}/>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate}/>
       </div>
 
-      {/* ④ 리오더 계산기 — 다크 카드 (자체 스타일 포함) */}
-      <ReorderCalculator DC={DC} refreshKey={reorderKey}/>
+      {/* ④ 리오더 계산기 (자체 스타일 포함) */}
+      <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate}/>
     </div>
   );
 }
