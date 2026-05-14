@@ -6159,14 +6159,6 @@ function InvBubblePlot({DC,snapshotDates}){
                 </div>
               </div>
             )}
-            {showSaleRec&&saleRecs.length>0&&(
-              <button onClick={downloadSaleRecs}
-                style={{width:"100%",marginTop:6,background:"transparent",color:"#7EC8A4",
-                  border:"1px solid #7EC8A4",borderRadius:7,padding:"7px 0",fontSize:12,
-                  fontWeight:600,cursor:"pointer"}}>
-                ↓ 엑셀 다운로드
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -6232,6 +6224,64 @@ function InvBubblePlot({DC,snapshotDates}){
             border:`1px solid ${DC.border}`,fontSize:11,color:DC.text,lineHeight:1.8}}>
             <span style={{color:DC.text,fontWeight:600}}>해석:</span>
             {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
+          </div>
+        )}
+
+        {/* 프로모션 제안 테이블 */}
+        {showSaleRec&&saleRecs.length>0&&(
+          <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#C87B7B"}}>프로모션 제안 SKU ({saleRecs.length})</span>
+              <button onClick={downloadSaleRecs}
+                style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",
+                  borderRadius:6,padding:"4px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                ↓ 엑셀 다운로드
+              </button>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${DC.border}`}}>
+                    {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율"].map(h=>(
+                      <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                        fontWeight:600,color:DC.text,fontSize:11,whiteSpace:"nowrap"}}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {saleRecs.map((d,i)=>{
+                    const def=INV_AGING_DEFS[d.agingKey];
+                    return(
+                      <tr key={d.id||i} style={{borderBottom:`1px solid ${DC.border}`,
+                        background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text,fontWeight:700}}>{i+1}</td>
+                        <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:140,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={d.product_name}>{d.product_name}</td>
+                        <td style={{padding:"6px 8px",color:DC.text,maxWidth:100,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={d.option_name}>{d.option_name||"—"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{(d.current_stock_qty||0).toLocaleString()}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{
+                          (d.currentInventoryValue||0)>=10000
+                            ?`${Math.round((d.currentInventoryValue||0)/10000)}만`
+                            :(d.currentInventoryValue||0).toLocaleString()
+                        }원</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{d.noSalesDays}일</td>
+                        <td style={{padding:"6px 8px",textAlign:"center"}}>
+                          <span style={{fontSize:11,fontWeight:600,color:def?.color||"#888"}}>{def?.label||"—"}</span>
+                        </td>
+                        <td style={{padding:"6px 8px",textAlign:"center"}}>
+                          <span style={{fontWeight:800,fontSize:13,color:"#C87B7B"}}>{d.recommendedDiscount}%</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
