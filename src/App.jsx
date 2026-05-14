@@ -7780,6 +7780,35 @@ function VolumeSlider({total,range,onChange,DC}){
   );
 }
 
+function CaptureBtn({cardRef,filename,DC}){
+  const [busy,setBusy]=useState(false);
+  const capture=async()=>{
+    if(!cardRef?.current||busy) return;
+    setBusy(true);
+    try{
+      const {default:html2canvas}=await import("html2canvas");
+      const canvas=await html2canvas(cardRef.current,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+      const a=document.createElement("a");
+      a.download=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
+      a.href=canvas.toDataURL("image/png");
+      a.click();
+    }catch(e){console.error(e);}
+    setBusy(false);
+  };
+  return(
+    <button onClick={capture} disabled={busy} title="카드 이미지 저장"
+      style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,
+        padding:"4px 8px",fontSize:12,color:DC.sub,cursor:busy?"wait":"pointer",
+        display:"flex",alignItems:"center",gap:4,opacity:busy?0.5:1,transition:"opacity .15s",flexShrink:0}}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      {busy?"저장중…":"저장"}
+    </button>
+  );
+}
+
 function DataCompare({revenues,storeSales=[]}){
   const [volUnit,setVolUnit]=useState("month");
   const [customStart,setCustomStart]=useState("");
@@ -7788,6 +7817,10 @@ function DataCompare({revenues,storeSales=[]}){
   const containerRef=useRef(null);
   const agingTrendSecRef=useRef(null);
   const reorderSecRef=useRef(null);
+  const volCardRef=useRef(null);
+  const bubbleCardRef=useRef(null);
+  const agingCardRef=agingTrendSecRef; // reuse existing ref
+  const reorderCardRef=reorderSecRef;  // reuse existing ref
   const [svgW,setSvgW]=useState(760);
   const [reorderKey,setReorderKey]=useState(0);
   const [snapshotDates,setSnapshotDates]=useState([]);
@@ -7898,7 +7931,7 @@ function DataCompare({revenues,storeSales=[]}){
       <div style={{fontWeight:700,fontSize:22,color:"#111111",letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
 
       {/* ① 전체 매출 볼륨 — 다크 카드 */}
-      <div style={sectionCard}>
+      <div ref={volCardRef} style={sectionCard}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:600,fontSize:16,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
@@ -7926,6 +7959,8 @@ function DataCompare({revenues,storeSales=[]}){
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
                 style={{background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,padding:"0 2px"}}>✕</button>
             )}
+            <span style={{color:DC.border,margin:"0 2px"}}>|</span>
+            <CaptureBtn cardRef={volCardRef} filename="매출볼륨" DC={DC}/>
           </div>
         </div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:12}}>
@@ -7962,23 +7997,32 @@ function DataCompare({revenues,storeSales=[]}){
       </div>
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
-      <div style={sectionCard}>
-        <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
+      <div ref={bubbleCardRef} style={sectionCard}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>SKU Risk Bubble</div>
+          <CaptureBtn cardRef={bubbleCardRef} filename="SKU_Risk_Bubble" DC={DC}/>
+        </div>
         <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef}/>
       </div>
 
       {/* ③ Aging Trend — 섹션 카드 */}
       <div ref={agingTrendSecRef} style={sectionCard}>
-        <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-          <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
-          {agingDate&&<span style={{fontSize:12,color:DC.sub}}>· 기준일 {agingDate}</span>}
-          <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",flex:1,minWidth:0}}>
+            <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
+            {agingDate&&<span style={{fontSize:12,color:DC.sub}}>· 기준일 {agingDate}</span>}
+            <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+          </div>
+          <CaptureBtn cardRef={agingCardRef} filename="Aging_Trend" DC={DC}/>
         </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate} stopRef={reorderSecRef}/>
       </div>
 
       {/* ④ 리오더 계산기 (자체 스타일 포함) */}
-      <div ref={reorderSecRef}>
+      <div ref={reorderSecRef} style={{position:"relative"}}>
+        <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
+          <CaptureBtn cardRef={reorderCardRef} filename="리오더_계산기" DC={DC}/>
+        </div>
         <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate}/>
       </div>
     </div>
