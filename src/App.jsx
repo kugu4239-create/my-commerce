@@ -6466,9 +6466,9 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
               :<ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}} barCategoryGap="22%">
                   <CartesianGrid strokeDasharray="2 5" stroke={DC.border} vertical={false}/>
-                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
+                  <XAxis dataKey="label" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     angle={-20} textAnchor="end" interval="preserveStartEnd" dy={6}/>
-                  <YAxis tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
+                  <YAxis tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
                   <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(0,0,0,0.04)"}}/>
                   {INV_AGING_KEYS.map(k=>(
@@ -6499,8 +6499,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
       </div>
 
       {/* Footnote */}
-      <div style={{marginTop:16,paddingTop:12,borderTop:`1px solid ${DC.border}`,fontSize:12,color:DC.dim,lineHeight:1.7}}>
-        <span style={{color:DC.sub,fontWeight:600,marginRight:6}}>계산 방식</span>
+      <div style={{marginTop:16,paddingTop:12,borderTop:`1px solid ${DC.border}`,fontSize:12,color:DC.text,lineHeight:1.7}}>
+        <span style={{color:DC.text,fontWeight:600,marginRight:6}}>계산 방식</span>
         마지막 판매일 기준 경과일수로 에이징을 분류합니다.&nbsp;
         <span style={{color:INV_AGING_DEFS.HEALTHY.color}}>Healthy</span> 0~30일 ·&nbsp;
         <span style={{color:INV_AGING_DEFS.SLOW.color}}>Slow-moving</span> 31~90일 ·&nbsp;
@@ -6684,7 +6684,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   const textCols=new Set(["reorder_product_name","reorder_option_name"]);
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
-      style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,
+      style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
         fontSize:13,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
       {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
     </th>
@@ -6697,13 +6697,13 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
         <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
-        {latestDataDate&&<span style={{fontSize:15,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {latestDataDate}</span>}
+        {latestDataDate&&<span style={{fontSize:14,color:DC.text,marginLeft:4}}>· 기준일 {latestDataDate}</span>}
       </div>
-      <div style={{fontSize:15,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+      <div style={{fontSize:15,color:DC.text,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
 
       {/* Calculation flow card */}
       <div style={{marginBottom:20,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
-        <div style={{fontSize:12,fontWeight:700,color:DC.sub,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
+        <div style={{fontSize:12,fontWeight:700,color:DC.text,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
           {[
             {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
@@ -6714,19 +6714,19 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
           ].map((s,i,a)=>(
             <React.Fragment key={s.title}>
               <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
-                <div style={{fontSize:12,color:DC.sub,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
+                <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
                 <div style={{fontSize:13,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
               </div>
-              {i<a.length-1&&<div style={{color:DC.sub,fontSize:18,padding:"0 6px",flexShrink:0}}>→</div>}
+              {i<a.length-1&&<div style={{color:DC.text,fontSize:18,padding:"0 6px",flexShrink:0}}>→</div>}
             </React.Fragment>
           ))}
         </div>
       </div>
 
-      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:15}}>데이터 로딩 중...</div>}
+      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.text,fontSize:15}}>데이터 로딩 중...</div>}
 
       {!loading&&data.length===0&&(
-        <div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:15,lineHeight:2}}>
+        <div style={{textAlign:"center",padding:"40px 0",color:DC.text,fontSize:15,lineHeight:2}}>
           Inventory Trend 엑셀 업로드 완료 후 리오더 데이터가 자동 생성됩니다.<br/>
           <span style={{fontSize:13}}>엑셀에 <strong style={{color:DC.sub}}>가용재고 · 입고대기 · 1주발주합계 · 4주발주합계</strong> 컬럼 포함 필요</span>
         </div>
@@ -6758,7 +6758,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={rising} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <XAxis type="number" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
                   <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추세비율" fill="#7EC8A4" radius={[0,3,3,0]}/>
@@ -6770,7 +6770,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={topSales} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
+                  <XAxis type="number" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
                   <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle} formatter={v=>[v.toFixed(2),"일판매량"]}/>
                   <Bar dataKey="value" name="일판매량" fill="#7B9EC8" radius={[0,3,3,0]}/>
@@ -6782,7 +6782,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={topReorder} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <XAxis type="number" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
                   <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추천리오더" fill="#C8A87B" radius={[0,3,3,0]}/>
@@ -6797,7 +6797,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"5px 10px",fontSize:14,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontSize:13,color:DC.sub}}>{filtered.length.toLocaleString()}개 SKU</span>
+              <span style={{fontSize:13,color:DC.text}}>{filtered.length.toLocaleString()}개 SKU</span>
               <button onClick={downloadCSV}
                 style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,
                   padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ CSV</button>
@@ -6895,8 +6895,8 @@ function InventoryTrend({DC,onReorderRefresh}){
       <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:13,color:DC.text,letterSpacing:"-0.1px"}}>Aging Trend</span>
-          {agingDate&&<span style={{fontSize:13,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {agingDate}</span>}
-          <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+          {agingDate&&<span style={{fontSize:13,color:DC.text}}>· 기준일 {agingDate}</span>}
+          <span style={{fontSize:13,color:DC.text}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey} onDateReady={setAgingDate}/>
       </div>
@@ -7447,8 +7447,8 @@ function DataCompare({revenues,storeSales=[]}){
       <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
-          {agingDate&&<span style={{fontSize:15,color:DC.sub,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px"}}>기준일 {agingDate}</span>}
-          <span style={{fontSize:15,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+          {agingDate&&<span style={{fontSize:16,color:DC.text}}>· 기준일 {agingDate}</span>}
+          <span style={{fontSize:15,color:DC.text}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate}/>
       </div>
