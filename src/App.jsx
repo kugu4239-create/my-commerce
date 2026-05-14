@@ -59,6 +59,21 @@ function UpdatedAt({ ts }) {
 
 const toNum = v => parseFloat(String(v||"0").replace(/[^0-9.-]/g,""))||0;
 
+// 스티키 닫기 버튼 상호 배제: 한 표만 스티키 표시
+let _stickyActiveId = null;
+const _stickyListeners = new Set();
+const _stickyBroadcast = id => { _stickyActiveId = id; _stickyListeners.forEach(cb => cb(id)); };
+function useStickyTable(myId, isVisible) {
+  const { useState: _us, useEffect: _ue } = React;
+  const [activeId, setActiveId] = _us(_stickyActiveId);
+  _ue(() => { _stickyListeners.add(setActiveId); return () => _stickyListeners.delete(setActiveId); }, []);
+  _ue(() => {
+    if (isVisible) _stickyBroadcast(myId);
+    else if (_stickyActiveId === myId) _stickyBroadcast(null);
+  }, [isVisible, myId]);
+  return activeId === myId && isVisible;
+}
+
 const toDate = raw => {
   if (!raw) return null;
   // Excel serial number (숫자로 저장된 날짜, 예: 46162 → 2026-05-11)
@@ -6070,6 +6085,7 @@ function InvBubblePlot({DC,snapshotDates}){
   const [promoPage,setPromoPage]=useState(0);
   const [promoTableVisible,setPromoTableVisible]=useState(false);
   const promoTableRef=useRef(null);
+  const showPromoSticky=useStickyTable("promoTable",showSaleRec&&promoTableVisible);
 
   useEffect(()=>{ setSelDate(null); setSelDateEnd(null); setData([]); },[dateMode]);
 
@@ -6164,7 +6180,7 @@ function InvBubblePlot({DC,snapshotDates}){
   useEffect(()=>{
     const el=promoTableRef.current;
     if(!el||!showSaleRec){setPromoTableVisible(false);return;}
-    const obs=new IntersectionObserver(([e])=>setPromoTableVisible(e.isIntersecting),{threshold:0.01});
+    const obs=new IntersectionObserver(([e])=>setPromoTableVisible(e.isIntersecting),{threshold:0.05});
     obs.observe(el);
     return()=>obs.disconnect();
   },[showSaleRec]);
@@ -6480,8 +6496,8 @@ function InvBubblePlot({DC,snapshotDates}){
           </div>
         )}
 
-        {/* Sticky close button — appears when promo table is in viewport */}
-        {showSaleRec&&promoTableVisible&&(
+        {/* Sticky close button — appears when promo table is in viewport (hides if another table also enters) */}
+        {showPromoSticky&&(
           <div style={{position:"fixed",bottom:"20vh",left:"50%",transform:"translateX(-50%)",zIndex:800,pointerEvents:"none"}}>
             <button onClick={()=>setShowSaleRec(false)}
               style={{pointerEvents:"auto",background:"rgba(30,30,30,0.92)",color:"#fff",
@@ -6568,6 +6584,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [drillTableVisible,setDrillTableVisible]=useState(false);
   const drillTableRef=useRef(null);
   const [clickedBar,setClickedBar]=useState(null); // {label, agingKey}
+  const showDrillSticky=useStickyTable("drillTable",!!clickedBar&&drillTableVisible);
   const [drillRows,setDrillRows]=useState([]);
   const [drillLoading,setDrillLoading]=useState(false);
 
@@ -6695,7 +6712,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   useEffect(()=>{
     const el=drillTableRef.current;
     if(!el||!clickedBar){setDrillTableVisible(false);return;}
-    const obs=new IntersectionObserver(([e])=>setDrillTableVisible(e.isIntersecting),{threshold:0.01});
+    const obs=new IntersectionObserver(([e])=>setDrillTableVisible(e.isIntersecting),{threshold:0.05});
     obs.observe(el);
     return()=>obs.disconnect();
   },[clickedBar]);
@@ -6946,8 +6963,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
         </div>
       )}
 
-      {/* Sticky close button — appears when drill table is in viewport */}
-      {clickedBar&&drillTableVisible&&(
+      {/* Sticky close button — appears when drill table is in viewport (hides if another table also enters) */}
+      {showDrillSticky&&(
         <div style={{position:"fixed",bottom:"20vh",left:"50%",transform:"translateX(-50%)",zIndex:800,pointerEvents:"none"}}>
           <button onClick={()=>{setClickedBar(null);setDrillRows([]);}}
             style={{pointerEvents:"auto",background:"rgba(30,30,30,0.92)",color:"#fff",
