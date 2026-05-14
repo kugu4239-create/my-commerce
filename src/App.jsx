@@ -61,7 +61,16 @@ const toNum = v => parseFloat(String(v||"0").replace(/[^0-9.-]/g,""))||0;
 
 const toDate = raw => {
   if (!raw) return null;
+  // Excel serial number (숫자로 저장된 날짜, 예: 46162 → 2026-05-11)
+  const num = Number(raw);
+  if (!isNaN(num) && num > 40000 && num < 80000 && String(raw).trim().length <= 5) {
+    const d = new Date(Date.UTC(1899, 11, 30) + num * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
   const s = String(raw).trim();
+  // YYYY년 M월 D일 (한국어 날짜 포맷, 예: "2026년 5월 11일")
+  const mKr = s.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (mKr) return `${mKr[1]}-${mKr[2].padStart(2,"0")}-${mKr[3].padStart(2,"0")}`;
   // YYYY. M. D (점+공백 포함, 예: "2025. 10. 16")
   const m0 = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
   if (m0) return `${m0[1]}-${m0[2].padStart(2,"0")}-${m0[3].padStart(2,"0")}`;
@@ -546,9 +555,9 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
           // True binary Excel — use XLSX.js
           try{
             const XLSX=await getXLSX();
-            const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+            const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:false});
             const ws=wb.Sheets[wb.SheetNames[0]];
-            data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
+            data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false,dateNF:"yyyy-mm-dd"});
             if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
           }catch(_){}
         }
@@ -5400,10 +5409,7 @@ function StoreUploader({ onUpdate }) {
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          const rows=data.filter(r=>{
-            const refPrice=parseKRW(r["기준판매가"]);
-            return refPrice!==0; // 사은품·0원 상품 제외
-          }).map(r=>{
+          const rows=data.map(r=>{
             const qty=parseKRW(r["수량"]);
             const amount=parseKRW(r["실판매금액"]);
             return{
@@ -5450,13 +5456,13 @@ function StoreUploader({ onUpdate }) {
             <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 CSV 업로드</div>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.7}}>
               POS 시스템 판매 데이터를 업로드합니다.<br/>
-              인식 컬럼: <b>구매일자</b>, <b>매장</b>, <b>상품명</b>, <b>옵션</b>,<br/>
-              <b>수량</b> (괄호=반품), <b>실판매금액</b>, <b>ID</b> (객단가 분모)<br/>
-              기준판매가=0인 사은품 행 자동 제외
+              인식 컬럼: <b>구매일자</b>, <b>상품명</b>, <b>수량</b>, <b>실판매금액</b><br/>
+              <b>매장</b>, <b>옵션</b>, <b>ID</b> (객단가 분모) 선택<br/>
+              실판매금액=0인 행 자동 제외
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"
-              required="기준판매가 · 구매일자 · 상품명 · 수량"
-              optional="매장 · 옵션 · 실판매금액 · ID"/>
+              required="구매일자 · 상품명 · 수량 · 실판매금액"
+              optional="매장 · 옵션 · ID"/>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
@@ -6950,8 +6956,8 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   const textCols=new Set(["reorder_product_name","reorder_option_name"]);
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
-      style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
-        fontSize:13,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
+      style={{padding:"4px 6px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
+        fontSize:12,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
       {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
     </th>
   );
@@ -7070,7 +7076,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,tableLayout:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
               <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                 <tr>
                   <SortTh k="reorder_product_name" label="상품명"/>
@@ -7092,17 +7098,17 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                   const urgent=(r.reorder_days_left||0)<7;
                   return(
                     <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`}}>
-                      <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
-                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:13,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
-                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
-                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"4px 6px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                      <td style={{padding:"4px 6px",textAlign:"center"}}><span style={{fontSize:12,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
+                      <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
+                      <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
                     </tr>
                   );
                 })}
