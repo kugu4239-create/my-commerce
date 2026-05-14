@@ -6468,7 +6468,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
                     angle={-20} textAnchor="end" interval="preserveStartEnd" dy={6}/>
                   <YAxis tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
-                  <Tooltip content={<AreaTooltip/>}/>
+                  <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(255,255,255,0.04)"}}/>
                   {INV_AGING_KEYS.map(k=>(
                     <Bar key={k} dataKey={k} stackId="1"
                       fill={INV_AGING_DEFS[k].color} fillOpacity={0.85} radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}/>
