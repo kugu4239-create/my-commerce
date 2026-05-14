@@ -7801,8 +7801,9 @@ function CaptureBtn({cardRef,filename,DC}){
       const canvas=await html2canvas(cardRef.current,{scale:2,useCORS:true,backgroundColor:null,logging:false});
       btns.forEach(b=>{b.style.visibility=b._prevVis||"";});
       const fname=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
-      // Try Web Share API first (iOS Photos / Android Gallery)
-      if(navigator.share){
+      const onMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      // Web Share API: mobile only (PC Chrome도 share 지원하지만 갤러리 연동 불필요)
+      if(onMobile&&navigator.share){
         canvas.toBlob(async blob=>{
           const file=new File([blob],fname,{type:"image/png"});
           try{
