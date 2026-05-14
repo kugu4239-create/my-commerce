@@ -71,6 +71,12 @@ const toDate = raw => {
   if (m2) return `${m2[3]}-${m2[2].padStart(2,"0")}-${m2[1].padStart(2,"0")}`;
   const m3 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m3) return `${m3[1]}-${m3[2]}-${m3[3]}`;
+  // YYMMDD 6자리 (예: "241223" → 2024-12-23)
+  const m4 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (m4) { const yr=2000+parseInt(m4[1],10); return `${yr}-${m4[2]}-${m4[3]}`; }
+  // M/D/YY (Excel 한국어 내보내기 포맷, 예: "12/23/24" → 2024-12-23)
+  const m5 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  if (m5) { const yr=2000+parseInt(m5[3],10); return `${yr}-${m5[1].padStart(2,"0")}-${m5[2].padStart(2,"0")}`; }
   return null;
 };
 
@@ -401,6 +407,108 @@ function DateRange({ start, end, onStart, onEnd }) {
     </div>
   );
 }
+
+// CalendarPicker — inline calendar for single or range date selection (light D theme)
+// single mode: value + onChange(dateStr)
+// range mode:  rangeStart + rangeEnd + onRangeChange({start,end})
+// availableDates (optional Set<string>): only these dates are clickable
+function CalendarPicker({ mode="single", value, onChange, rangeStart, rangeEnd, onRangeChange, availableDates, DC:dc }) {
+  const C = dc || { bg:"transparent", surface:D.surface, border:D.border, text:D.text, sub:D.textSub, dim:D.textMeta, green:"#1a7a4f", greenBg:"rgba(26,122,79,0.12)" };
+  const today = new Date().toISOString().slice(0,10);
+  const initMonth = () => {
+    const base = mode==="range" ? (rangeStart||value||today) : (value||today);
+    const d = new Date(base||today);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  };
+  const [cal, setCal] = useState(initMonth);
+  // range picking state: "start" = waiting for start click, "end" = waiting for end click
+  const [picking, setPicking] = useState("start");
+
+  const firstDay = new Date(cal.y, cal.m, 1).getDay();
+  const totalDays = new Date(cal.y, cal.m+1, 0).getDate();
+  const monthStr = `${cal.y}.${String(cal.m+1).padStart(2,"0")}`;
+  const prevMonth = () => setCal(p => { let {y,m}=p; m--; if(m<0){m=11;y--;} return{y,m}; });
+  const nextMonth = () => setCal(p => { let {y,m}=p; m++; if(m>11){m=0;y++;} return{y,m}; });
+  const ds = (d) => `${cal.y}-${String(cal.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
+  const handleClick = (dateStr) => {
+    if(availableDates && !availableDates.has(dateStr)) return;
+    if(mode==="single") { onChange&&onChange(dateStr); return; }
+    // range mode
+    if(picking==="start" || !rangeStart) {
+      onRangeChange&&onRangeChange({start:dateStr,end:""});
+      setPicking("end");
+    } else {
+      if(dateStr < rangeStart) {
+        onRangeChange&&onRangeChange({start:dateStr,end:rangeStart});
+      } else {
+        onRangeChange&&onRangeChange({start:rangeStart,end:dateStr});
+      }
+      setPicking("start");
+    }
+  };
+
+  const inRange = (dateStr) => rangeStart && rangeEnd && dateStr > rangeStart && dateStr < rangeEnd;
+  const isStart = (dateStr) => dateStr === rangeStart;
+  const isEnd   = (dateStr) => dateStr === rangeEnd;
+  const isSelected = (dateStr) => mode==="single" ? dateStr===value : isStart(dateStr)||isEnd(dateStr);
+
+  const diff = mode==="range" && rangeStart && rangeEnd && rangeStart<=rangeEnd
+    ? Math.round((new Date(rangeEnd)-new Date(rangeStart))/86400000)+1 : null;
+
+  const btnBase = { border:"none", borderRadius:5, padding:"5px 0", fontSize:11,
+    textAlign:"center", cursor:"pointer", width:28, height:26, lineHeight:"16px" };
+
+  return (
+    <div style={{ display:"inline-block" }}>
+      {/* Month nav */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, gap:4 }}>
+        <button onClick={prevMonth} style={{ background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:16, padding:"0 4px", lineHeight:1 }}>‹</button>
+        <span style={{ fontSize:12, fontWeight:600, color:C.text }}>{monthStr}</span>
+        <button onClick={nextMonth} style={{ background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:16, padding:"0 4px", lineHeight:1 }}>›</button>
+      </div>
+      {/* Weekday headers */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,28px)", gap:2, fontSize:10, color:C.sub, marginBottom:3, textAlign:"center" }}>
+        {["일","월","화","수","목","금","토"].map(d=><span key={d}>{d}</span>)}
+      </div>
+      {/* Days grid */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,28px)", gap:2 }}>
+        {Array.from({length:firstDay}).map((_,i)=><span key={`e${i}`}/>)}
+        {Array.from({length:totalDays}).map((_,i)=>{
+          const day=i+1; const dateStr=ds(day);
+          const avail = !availableDates || availableDates.has(dateStr);
+          const sel = isSelected(dateStr);
+          const rng = inRange(dateStr);
+          const bg = sel ? C.green : rng ? C.greenBg : "transparent";
+          const col = sel ? "#fff" : avail ? C.text : C.dim;
+          return (
+            <button key={day} onClick={()=>handleClick(dateStr)} disabled={!avail}
+              style={{ ...btnBase, background:bg, color:col,
+                fontWeight:sel?700:avail?500:400,
+                cursor:avail?"pointer":"default",
+                outline: (isStart(dateStr)||isEnd(dateStr)) ? `2px solid ${C.green}` : "none",
+                outlineOffset: -1,
+              }}>
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      {/* Status line */}
+      {mode==="range" && (
+        <div style={{ marginTop:6, fontSize:10, color:C.sub, textAlign:"center", minHeight:14 }}>
+          {!rangeStart ? "시작일을 선택하세요"
+            : !rangeEnd ? <span style={{color:C.green}}>{rangeStart} 선택됨 · 종료일을 선택하세요</span>
+            : <span>{rangeStart} ~ {rangeEnd} · {diff}일</span>}
+        </div>
+      )}
+      {mode==="single" && value && (
+        <div style={{ marginTop:6, fontSize:10, color:C.sub, textAlign:"center" }}>{value}</div>
+      )}
+    </div>
+  );
+}
+
 const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="xlsx"||ext==="xls"){
@@ -4172,10 +4280,17 @@ function RevenueForm({ onUpdate }) {
 
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
-    const {data}=await db.from("revenues").select("*").order("date",{ascending:false});
+    let all=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data,error}=await db.from("revenues").select("*").order("date",{ascending:false}).range(from,from+PAGE-1);
+      if(error||!data||data.length===0) break;
+      all=all.concat(data);
+      if(data.length<PAGE) break;
+      from+=PAGE;
+    }
     // 대시보드와 동일하게 dedup (date+channel 기준 최신 id만)
     const revMap={};
-    (data||[]).forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
+    all.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
     setHistory(Object.values(revMap).sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:0));
     setHistTs(nowStr());
   },[]);
@@ -4356,7 +4471,7 @@ function RevenueForm({ onUpdate }) {
 
         <div style={{marginBottom:10}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>날짜</div>
-          <div style={{display:"flex",gap:4,marginBottom:6}}>
+          <div style={{display:"flex",gap:4,marginBottom:8}}>
             {[["single","단일"],["range","기간"]].map(([k,l])=>(
               <button key={k} onClick={()=>setDateMode(k)}
                 style={{flex:1,background:dateMode===k?D.black:"transparent",
@@ -4368,12 +4483,9 @@ function RevenueForm({ onUpdate }) {
             ))}
           </div>
           {dateMode==="single"
-            ? <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
-            : <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,width:"50%"}}/>
-                <span style={{color:D.textMeta,flexShrink:0}}>~</span>
-                <input type="date" value={dateEnd} onChange={e=>setDateEnd(e.target.value)} style={{...inp,width:"50%"}}/>
-              </div>
+            ? <CalendarPicker mode="single" value={date} onChange={setDate}/>
+            : <CalendarPicker mode="range" rangeStart={date} rangeEnd={dateEnd}
+                onRangeChange={({start,end})=>{setDate(start);setDateEnd(end||start);}}/>
           }
         </div>
 
@@ -4564,8 +4676,15 @@ function StockUploader({ onUpdate }) {
 
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
-    const {data}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).order("product_name");
-    setHistory(data||[]); setHistTs(nowStr()); setSelected(new Set()); setDeleteConfirm(false);
+    let all=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data,error}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).order("product_name").range(from,from+PAGE-1);
+      if(error||!data||data.length===0) break;
+      all=all.concat(data);
+      if(data.length<PAGE) break;
+      from+=PAGE;
+    }
+    setHistory(all); setHistTs(nowStr()); setSelected(new Set()); setDeleteConfirm(false);
   },[]);
 
   const toggleSelect=id=>setSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
@@ -4636,7 +4755,8 @@ function StockUploader({ onUpdate }) {
         <Card>
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>입고 기간 선택</div>
-            <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
+            <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
+              onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
             <div style={{color:D.red,fontSize:10,marginBottom:20}}>⚠ 확정 시 해당 기간 DB 데이터 전체 교체</div>
             <Btn onClick={confirmDate} disabled={!dateValid||loading} style={{width:"100%"}}>
               {loading?"조회 중...":"기간 확정"}
@@ -4775,10 +4895,12 @@ function StockUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
+const HIST_PAGE=200;
 function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색" }) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
+  const [page,setPage]=useState(0);
   const [selected,setSelected]=useState(new Set());
   const [editCell,setEditCell]=useState(null);
   const [editVal,setEditVal]=useState("");
@@ -4806,10 +4928,13 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
   const filtered=filter
     ?rows.filter(r=>[...searchFields,dateField].some(f=>String(r[f]||"").includes(filter)))
     :rows;
+  const totalPages=Math.max(1,Math.ceil(filtered.length/HIST_PAGE));
+  const safePage=Math.min(page,totalPages-1);
+  const pageRows=filtered.slice(safePage*HIST_PAGE,(safePage+1)*HIST_PAGE);
 
   const toggleSelect=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const toggleAll=()=>{
-    const ids=filtered.map(r=>r.id);
+    const ids=pageRows.map(r=>r.id);
     const allSel=ids.every(id=>selected.has(id));
     setSelected(s=>{const n=new Set(s);ids.forEach(id=>allSel?n.delete(id):n.add(id));return n;});
   };
@@ -4841,7 +4966,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
         <span style={{fontWeight:600,fontSize:13}}>업로드 내역</span>
         <div style={{display:"flex",gap:8,alignItems:"center",flex:1,justifyContent:"flex-end"}}>
-          <input placeholder={placeholder} value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);}}
+          <input placeholder={placeholder} value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);setPage(0);}}
             style={{...inp2,minWidth:180,maxWidth:280}}/>
           <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
             {loading?"로딩 중…":`${filtered.length}건`}
@@ -4872,7 +4997,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
             <thead style={{position:"sticky",top:0,background:D.surface,zIndex:1}}>
               <tr style={{borderBottom:`1px solid ${D.border}`}}>
                 <th style={{padding:"5px 7px",width:28}}>
-                  <input type="checkbox" checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))} onChange={toggleAll}/>
+                  <input type="checkbox" checked={pageRows.length>0&&pageRows.every(r=>selected.has(r.id))} onChange={toggleAll}/>
                 </th>
                 {cols.map(c=>(
                   <th key={c.key} style={{padding:"5px 7px",textAlign:"left",color:D.textMeta,fontWeight:400,whiteSpace:"nowrap"}}>{c.label}</th>
@@ -4880,7 +5005,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0,500).map(r=>(
+              {pageRows.map(r=>(
                 <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,background:selected.has(r.id)?"#f5f5f5":"transparent"}}>
                   <td style={{padding:"4px 7px"}}><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td>
                   {cols.map(c=>{
@@ -4904,6 +5029,19 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {totalPages>1&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:8,fontSize:11,color:D.textMeta}}>
+          <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={safePage===0}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 10px",cursor:safePage===0?"default":"pointer",color:safePage===0?D.textMeta:D.text}}>
+            이전
+          </button>
+          <span>{safePage+1} / {totalPages}</span>
+          <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={safePage===totalPages-1}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 10px",cursor:safePage===totalPages-1?"default":"pointer",color:safePage===totalPages-1?D.textMeta:D.text}}>
+            다음
+          </button>
         </div>
       )}
       {result&&<Alert type={result.type} msg={result.msg}/>}
@@ -5041,7 +5179,8 @@ function EasyAdminUploader({ onUpdate }) {
         <Card>
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>배송일 기간 선택</div>
-            <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
+            <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
+              onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
             <div style={{color:D.blue,fontSize:10,marginBottom:12,lineHeight:1.7}}>
               배송일 기준 · 관리번호 기준 upsert<br/>신규→추가 / 기존→상태업데이트
             </div>
@@ -5560,11 +5699,18 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   const loadHistory=useCallback(async()=>{
     setHistLoading(true);
     const db=await getSupabase();
-    const{data,error}=await db.from("inventory_snapshot")
-      .select("snapshot_date,created_at")
-      .order("snapshot_date",{ascending:false})
-      .limit(2000);
-    if(error||!data){setHistLoading(false);return;}
+    let data=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data:chunk,error}=await db.from("inventory_snapshot")
+        .select("snapshot_date,created_at")
+        .order("snapshot_date",{ascending:false})
+        .range(from,from+PAGE-1);
+      if(error||!chunk||chunk.length===0) break;
+      data=data.concat(chunk);
+      if(chunk.length<PAGE) break;
+      from+=PAGE;
+    }
+    if(!data.length){setHistLoading(false);return;}
     const map={};
     data.forEach(r=>{
       if(!map[r.snapshot_date]) map[r.snapshot_date]={snapshot_date:r.snapshot_date,row_count:0,uploaded_at:r.created_at};
@@ -5792,7 +5938,9 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 // INV BUBBLE SCATTER PLOT
 // ─────────────────────────────────────────────
 function InvBubblePlot({DC,snapshotDates}){
+  const [dateMode,setDateMode]=useState("single"); // "single"|"range"
   const [selDate,setSelDate]=useState(null);
+  const [selDateEnd,setSelDateEnd]=useState(null);
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
@@ -5800,18 +5948,36 @@ function InvBubblePlot({DC,snapshotDates}){
   const [minStock,setMinStock]=useState(1);
   const [selectedSku,setSelectedSku]=useState(null);
   const [showSaleRec,setShowSaleRec]=useState(false);
-  const [calMonth,setCalMonth]=useState(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()};});
 
+  useEffect(()=>{ setSelDate(null); setSelDateEnd(null); setData([]); },[dateMode]);
+
+  // Auto-select latest available date on first load
   useEffect(()=>{
-    if(!selDate){setData([]);return;}
+    if(snapshotDates&&snapshotDates.length>0&&!selDate){
+      const latest=[...snapshotDates].sort().pop();
+      setSelDate(latest);
+    }
+  },[snapshotDates]);
+
+  const loadDate=dateMode==="range"?(selDateEnd||selDate):selDate;
+  useEffect(()=>{
+    if(!loadDate){setData([]);return;}
     setLoading(true);
-    getSupabase().then(db=>
-      db.from("inventory_snapshot").select("*").eq("snapshot_date",selDate)
-    ).then(({data:rows,error})=>{
-      setData(error||!rows?[]:rows.map(calcInvRow));
+    (async()=>{
+      const db=await getSupabase();
+      let all=[];let from=0;const PAGE=1000;
+      while(true){
+        const{data:rows,error}=await db.from("inventory_snapshot").select("*")
+          .eq("snapshot_date",loadDate).range(from,from+PAGE-1);
+        if(error||!rows||rows.length===0) break;
+        all=all.concat(rows);
+        if(rows.length<PAGE) break;
+        from+=PAGE;
+      }
+      setData(all.map(calcInvRow));
       setLoading(false);
-    });
-  },[selDate]);
+    })();
+  },[loadDate]);
 
   const filtered=useMemo(()=>
     data.filter(d=>
@@ -5830,8 +5996,8 @@ function InvBubblePlot({DC,snapshotDates}){
   },[filtered]);
 
   const saleRecs=useMemo(()=>{
-    if(!selDate||!filtered.length) return[];
-    const snapM=dayjs(selDate).month();
+    if(!loadDate||!filtered.length) return[];
+    const snapM=dayjs(loadDate).month();
     const inRange=m=>{const diff=Math.abs(m-snapM);return diff<=2||diff>=10;};
     const candidates=filtered
       .filter(d=>d.noSalesDays>medX&&d.current_stock_qty>medY)
@@ -5911,53 +6077,49 @@ function InvBubblePlot({DC,snapshotDates}){
       권장할인율:`${d.recommendedDiscount}%`,
     })));
     XLSX.utils.book_append_sheet(wb,ws,"세일추천");
-    XLSX.writeFile(wb,`sale_rec_${selDate||"unknown"}.xlsx`);
+    XLSX.writeFile(wb,`sale_rec_${loadDate||"unknown"}.xlsx`);
   };
 
-  // Month calendar
-  const calDays=useMemo(()=>({
-    firstDay:new Date(calMonth.y,calMonth.m,1).getDay(),
-    total:new Date(calMonth.y,calMonth.m+1,0).getDate(),
-  }),[calMonth]);
-  const datesInMonth=useMemo(()=>new Set(
-    snapshotDates.filter(d=>{const dd=dayjs(d);return dd.year()===calMonth.y&&dd.month()===calMonth.m;})
-  ),[snapshotDates,calMonth]);
+  const dcTheme={bg:"transparent",surface:"rgba(255,255,255,0.03)",border:DC.border,
+    text:DC.text,sub:DC.sub,dim:DC.dim,green:"#7EC8A4",greenBg:"rgba(126,200,164,0.15)"};
+  const availSet=useMemo(()=>new Set(snapshotDates),[snapshotDates]);
+
+  // Axis domains — add ~15% headroom so max-radius bubbles don't clip
+  const xMax=useMemo(()=>filtered.length?Math.max(...filtered.map(d=>d.noSalesDays),1):100,[filtered]);
+  const yMax=useMemo(()=>filtered.length?Math.max(...filtered.map(d=>d.current_stock_qty),1):100,[filtered]);
+  const xDomain=useMemo(()=>[0,Math.ceil(xMax*1.18)],[xMax]);
+  const yDomain=useMemo(()=>[0,Math.ceil(yMax*1.18)],[yMax]);
+
+  const [showPromoInfo,setShowPromoInfo]=useState(false);
 
   return(
-    <div>
-      <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-start",marginBottom:16}}>
-        {/* Calendar */}
-        <div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:14,flexShrink:0}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8}}>
-            <button onClick={()=>setCalMonth(p=>{let{y,m}=p;m--;if(m<0){m=11;y--;}return{y,m};})}
-              style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>‹</button>
-            <span style={{fontSize:12,fontWeight:600,color:DC.text}}>{calMonth.y}.{String(calMonth.m+1).padStart(2,"0")}</span>
-            <button onClick={()=>setCalMonth(p=>{let{y,m}=p;m++;if(m>11){m=0;y++;}return{y,m};})}
-              style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>›</button>
+    <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+      {/* Left: Calendar + mode toggle + promo button */}
+      <div style={{flexShrink:0}}>
+        <div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:14}}>
+          {/* Single / Range toggle */}
+          <div style={{display:"flex",gap:4,marginBottom:10}}>
+            {[["single","단일"],["range","기간"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setDateMode(k)}
+                style={{flex:1,background:dateMode===k?"#7EC8A4":"rgba(255,255,255,0.05)",
+                  color:dateMode===k?"#0a1a12":DC.sub,
+                  border:`1px solid ${dateMode===k?"#7EC8A4":DC.border}`,
+                  borderRadius:6,padding:"5px 0",fontSize:11,cursor:"pointer",fontWeight:dateMode===k?700:400}}>
+                {l}
+              </button>
+            ))}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,28px)",gap:2,fontSize:10,color:DC.sub,marginBottom:3,textAlign:"center"}}>
-            {["일","월","화","수","목","금","토"].map(d=><span key={d}>{d}</span>)}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,28px)",gap:2}}>
-            {Array.from({length:calDays.firstDay}).map((_,i)=><span key={`e${i}`}/>)}
-            {Array.from({length:calDays.total}).map((_,i)=>{
-              const day=i+1;
-              const ds=`${calMonth.y}-${String(calMonth.m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-              const has=datesInMonth.has(ds);
-              const sel=selDate===ds;
-              return(
-                <button key={day} onClick={()=>has&&setSelDate(ds)} disabled={!has}
-                  style={{background:sel?"#7EC8A4":has?"rgba(126,200,164,0.15)":"transparent",
-                    color:sel?"#0a1a12":has?DC.text:DC.dim,
-                    border:"none",borderRadius:4,padding:"5px 0",fontSize:11,
-                    cursor:has?"pointer":"default",fontWeight:sel?700:has?500:400,
-                    textAlign:"center",width:28,height:26}}>
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-          {/* 프로모션 제안 버튼 — 달력 하단 */}
+          <CalendarPicker
+            mode={dateMode}
+            value={selDate}
+            onChange={setSelDate}
+            rangeStart={selDate}
+            rangeEnd={selDateEnd}
+            onRangeChange={({start,end})=>{setSelDate(start);setSelDateEnd(end||"");}}
+            availableDates={availSet}
+            DC={dcTheme}
+          />
+          {/* 프로모션 제안 버튼 */}
           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
             <button onClick={()=>setShowSaleRec(p=>!p)}
               style={{width:"100%",background:showSaleRec?"rgba(200,123,123,0.18)":"rgba(255,255,255,0.04)",
@@ -5967,83 +6129,165 @@ function InvBubblePlot({DC,snapshotDates}){
                 letterSpacing:"-0.2px",transition:"all .12s"}}>
               {"프로모션 제안"}{showSaleRec&&saleRecs.length>0?` (${saleRecs.length})`:""}
             </button>
-            {showSaleRec&&saleRecs.length>0&&(
-              <button onClick={downloadSaleRecs}
-                style={{width:"100%",marginTop:6,background:"transparent",color:"#7EC8A4",
-                  border:"1px solid #7EC8A4",borderRadius:7,padding:"7px 0",fontSize:12,
-                  fontWeight:600,cursor:"pointer"}}>
-                ↓ 엑셀 다운로드
-              </button>
+            {/* 선정 기준 설명 토글 */}
+            <button onClick={()=>setShowPromoInfo(p=>!p)}
+              style={{width:"100%",marginTop:4,background:"transparent",border:"none",
+                color:showPromoInfo?"#7EC8A4":DC.dim,fontSize:10,cursor:"pointer",
+                textAlign:"left",padding:"4px 2px",lineHeight:1.4}}>
+              {showPromoInfo?"▲ 선정 기준 닫기":"▼ 선정 기준 보기"}
+            </button>
+            {showPromoInfo&&(
+              <div style={{marginTop:4,padding:"10px 11px",background:"rgba(255,255,255,0.03)",
+                border:`1px solid ${DC.border}`,borderRadius:7,fontSize:10,color:DC.sub,lineHeight:1.75}}>
+                <div style={{color:"#C87B7B",fontWeight:700,marginBottom:5,fontSize:11}}>프로모션 제안 선정 기준</div>
+                <div style={{marginBottom:4}}>
+                  <span style={{color:DC.text,fontWeight:600}}>① 위치 조건</span><br/>
+                  미판매 일수 &gt; 전체 중앙값 <span style={{color:"#7B9EC8"}}>AND</span><br/>
+                  현재고 &gt; 전체 중앙값<br/>
+                  <span style={{color:DC.dim,fontSize:9}}>(차트 우상단 사분면 SKU)</span>
+                </div>
+                <div style={{marginBottom:4}}>
+                  <span style={{color:DC.text,fontWeight:600}}>② 최근 입고 조건</span><br/>
+                  최근 입고일이 스냅샷 기준 ±2개월 이내<br/>
+                  <span style={{color:DC.dim,fontSize:9}}>(오래된 재고보다 최근 발주 재고 우선)</span>
+                </div>
+                <div>
+                  <span style={{color:DC.text,fontWeight:600}}>③ 할인율 산정</span><br/>
+                  중앙값 대비 거리(미판매+재고) 기준 정렬<br/>
+                  → 거리 클수록 <span style={{color:"#C87B7B"}}>최대 70%</span> 할인 권장<br/>
+                  <span style={{color:DC.dim,fontSize:9}}>(최소 10%, 10% 단위)</span>
+                </div>
+              </div>
             )}
           </div>
         </div>
-
-        {/* Filters */}
-        <div style={{flex:1,minWidth:200}}>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
-            <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>Aging 필터</span>
-            {INV_AGING_KEYS.map(k=>{
-              const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
-              return(
-                <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
-                  style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
-                    border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
-                  {def.label}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
-            <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
-            <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
-            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:DC.sub,flexShrink:0}}>
-              <span>최소재고</span>
-              <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
-                style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                  padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
-            </div>
-          </div>
-          {selDate&&<div style={{fontSize:11,color:DC.sub}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
-        </div>
       </div>
 
-      {/* Chart */}
-      {!selDate
-        ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>날짜를 선택하면 버블 차트가 표시됩니다</div>
-        :loading
-          ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
-          :filtered.length===0
-            ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>해당 조건의 데이터 없음</div>
-            :<div style={{width:"100%",height:460}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{top:20,right:24,bottom:44,left:16}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
-                  <XAxis dataKey="noSalesDays" type="number" name="미판매 일수"
-                    tick={{fill:DC.sub,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                    label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:DC.sub,fontSize:11}}/>
-                  <YAxis dataKey="current_stock_qty" type="number" name="현재고"
-                    tick={{fill:DC.sub,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                    label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:DC.sub,fontSize:11}}/>
-                  <ZAxis dataKey="currentInventoryValue" range={[16,1600]} name="재고금액"/>
-                  <Tooltip content={<BubbleTooltip/>} cursor={false}/>
-                  <Scatter data={filtered} shape={<CustomDot/>}/>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-      }
-
-      {/* Note */}
-      {selDate&&filtered.length>0&&(
-        <div style={{marginTop:10,padding:"9px 14px",background:"rgba(255,255,255,0.03)",borderRadius:7,
-          border:`1px solid ${DC.border}`,fontSize:11,color:DC.sub,lineHeight:1.8}}>
-          <span style={{color:DC.text,fontWeight:600}}>해석:</span>
-          {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
+      {/* Right: Filters + Chart + Note */}
+      <div style={{flex:1,minWidth:0}}>
+        {/* Filters */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+          <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>Aging 필터</span>
+          {INV_AGING_KEYS.map(k=>{
+            const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
+            return(
+              <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
+                style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
+                  border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+                {def.label}
+              </button>
+            );
+          })}
         </div>
-      )}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+          <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
+          <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
+            style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+              padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:DC.sub,flexShrink:0}}>
+            <span>최소재고</span>
+            <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
+              style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
+          </div>
+        </div>
+        {selDate&&<div style={{fontSize:11,color:DC.sub,marginBottom:8}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
 
-      {/* Side panel */}
+        {/* Chart */}
+        {!selDate
+          ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>날짜를 선택하면 버블 차트가 표시됩니다</div>
+          :loading
+            ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
+            :filtered.length===0
+              ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>해당 조건의 데이터 없음</div>
+              :<div style={{width:"100%",height:460}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{top:24,right:32,bottom:44,left:16}}>
+                    <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
+                    <XAxis dataKey="noSalesDays" type="number" name="미판매 일수" domain={xDomain}
+                      tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
+                      tickFormatter={v=>{const m=Math.round(v/30);if(m<=0)return"0";if(m<12)return`${m}개월`;const y=Math.floor(m/12),rm=m%12;return rm>0?`${y}년${rm}개월`:`${y}년`;}}
+                      label={{value:"미판매 →",position:"insideBottom",offset:-28,fill:DC.text,fontSize:11}}/>
+                    <YAxis dataKey="current_stock_qty" type="number" name="현재고" domain={yDomain}
+                      tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
+                      label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:DC.text,fontSize:11}}/>
+                    <ZAxis dataKey="currentInventoryValue" range={[16,1600]} name="재고금액"/>
+                    <Tooltip content={<BubbleTooltip/>} cursor={false}/>
+                    <Scatter data={filtered} shape={<CustomDot/>}/>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+        }
+
+        {/* Note */}
+        {selDate&&filtered.length>0&&(
+          <div style={{marginTop:10,padding:"9px 14px",background:"rgba(0,0,0,0.03)",borderRadius:7,
+            border:`1px solid ${DC.border}`,fontSize:11,color:DC.text,lineHeight:1.8}}>
+            <span style={{color:DC.text,fontWeight:600}}>해석:</span>
+            {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
+          </div>
+        )}
+
+        {/* 프로모션 제안 테이블 */}
+        {showSaleRec&&saleRecs.length>0&&(
+          <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#C87B7B"}}>프로모션 제안 SKU ({saleRecs.length})</span>
+              <button onClick={downloadSaleRecs}
+                style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",
+                  borderRadius:6,padding:"4px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                ↓ 엑셀 다운로드
+              </button>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${DC.border}`}}>
+                    {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율"].map(h=>(
+                      <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                        fontWeight:600,color:DC.text,fontSize:11,whiteSpace:"nowrap"}}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {saleRecs.map((d,i)=>{
+                    const def=INV_AGING_DEFS[d.agingKey];
+                    return(
+                      <tr key={d.id||i} style={{borderBottom:`1px solid ${DC.border}`,
+                        background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text,fontWeight:700}}>{i+1}</td>
+                        <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:140,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={d.product_name}>{d.product_name}</td>
+                        <td style={{padding:"6px 8px",color:DC.text,maxWidth:100,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={d.option_name}>{d.option_name||"—"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{(d.current_stock_qty||0).toLocaleString()}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{
+                          (d.currentInventoryValue||0)>=10000
+                            ?`${Math.round((d.currentInventoryValue||0)/10000)}만`
+                            :(d.currentInventoryValue||0).toLocaleString()
+                        }원</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{d.noSalesDays}일</td>
+                        <td style={{padding:"6px 8px",textAlign:"center"}}>
+                          <span style={{fontSize:11,fontWeight:600,color:def?.color||"#888"}}>{def?.label||"—"}</span>
+                        </td>
+                        <td style={{padding:"6px 8px",textAlign:"center"}}>
+                          <span style={{fontWeight:800,fontSize:13,color:"#C87B7B"}}>{d.recommendedDiscount}%</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Side panel — position:fixed, 레이아웃 무관 */}
       {selectedSku&&(()=>{
         const d=selectedSku;
         const def=INV_AGING_DEFS[d.agingKey];
@@ -6103,12 +6347,15 @@ function InvBubblePlot({DC,snapshotDates}){
 // ─────────────────────────────────────────────
 // INV AGING TREND (STACKED AREA)
 // ─────────────────────────────────────────────
-function InvAgingTrend({DC,snapshotDates,refreshKey}){
+function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("month");
   const [yMode,setYMode]=useState("count");
   const [dateRange,setDateRange]=useState("90d");
+  const [clickedBar,setClickedBar]=useState(null); // {label, agingKey}
+  const [drillRows,setDrillRows]=useState([]);
+  const [drillLoading,setDrillLoading]=useState(false);
 
   const rangeStart=useMemo(()=>{
     const d=dayjs();
@@ -6180,6 +6427,50 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
 
   const latestDate=useMemo(()=>{const d=Object.keys(rawByDate).sort();return d[d.length-1]||null;},[rawByDate]);
 
+  useEffect(()=>{if(onDateReady) onDateReady(latestDate);},[latestDate,onDateReady]);
+
+  // label → snapshot dates mapping (for drill-down)
+  const datesByLabel=useMemo(()=>{
+    const map={};
+    Object.keys(rawByDate).sort().forEach(d=>{
+      let key;
+      if(aggUnit==="week"){const dd=dayjs(d);key=dd.subtract(dd.day(),"day").format("YYYY-MM-DD");}
+      else if(aggUnit==="quarter"){const dd=dayjs(d);key=`${dd.year()}-Q${Math.floor(dd.month()/3)+1}`;}
+      else{key=d.slice(0,7);}
+      if(!map[key]) map[key]=[];
+      map[key].push(d);
+    });
+    return map;
+  },[rawByDate,aggUnit]);
+
+  const handleBarClick=useCallback((agingKey,data)=>{
+    if(!data||!data.label) return;
+    const label=data.label;
+    // toggle off
+    if(clickedBar&&clickedBar.label===label&&clickedBar.agingKey===agingKey){
+      setClickedBar(null);setDrillRows([]);return;
+    }
+    setClickedBar({label,agingKey});
+    setDrillLoading(true);
+    const dates=datesByLabel[label]||[];
+    if(!dates.length){setDrillLoading(false);return;}
+    const targetDate=dates[dates.length-1]; // most recent in group
+    (async()=>{
+      const db=await getSupabase();
+      let all=[];let from=0;const PAGE=1000;
+      while(true){
+        const{data:rows,error}=await db.from("inventory_snapshot").select("*")
+          .eq("snapshot_date",targetDate).range(from,from+PAGE-1);
+        if(error||!rows||!rows.length) break;
+        all=all.concat(rows);
+        if(rows.length<PAGE) break;
+        from+=PAGE;
+      }
+      setDrillRows(all.map(calcInvRow).filter(r=>r.agingKey===agingKey));
+      setDrillLoading(false);
+    })();
+  },[datesByLabel,clickedBar]);
+
   const kpi=useMemo(()=>{
     if(!latestDate||!rawByDate[latestDate]) return null;
     const d=rawByDate[latestDate];
@@ -6200,12 +6491,12 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
   const AreaTooltip=({active,payload,label})=>{
     if(!active||!payload?.length) return null;
     return(
-      <div style={{background:"#161616",border:"1px solid #2e2e2e",borderRadius:8,padding:"10px 14px",fontSize:12}}>
-        <div style={{color:"#888",marginBottom:5,fontWeight:600}}>{label}</div>
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",fontSize:14}}>
+        <div style={{color:DC.sub,marginBottom:5,fontWeight:600}}>{label}</div>
         {[...payload].reverse().map(p=>(
           <div key={p.dataKey} style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:2}}>
             <span style={{color:p.fill||p.stroke}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
-            <span style={{color:"#F0F0F0",fontWeight:600}}>{(p.value||0).toLocaleString()}{yMode==="count"?" SKU":yMode==="qty"?"개":""}</span>
+            <span style={{color:DC.text,fontWeight:600}}>{(p.value||0).toLocaleString()}{yMode==="count"?" SKU":yMode==="qty"?"개":""}</span>
           </div>
         ))}
       </div>
@@ -6223,9 +6514,9 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
             {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
             {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B"},
           ].map(c=>(
-            <div key={c.label} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
-              <div style={{fontSize:10,color:DC.sub,marginBottom:5}}>{c.label}</div>
-              <div style={{fontSize:16,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+            <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
+              <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
+              <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -6233,84 +6524,142 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
 
       {/* Controls */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
+        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
         {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
           <button key={v} onClick={()=>setDateRange(v)}
-            style={{background:dateRange===v?"#fff":"transparent",color:dateRange===v?"#000":DC.sub,
-              border:`1px solid ${dateRange===v?"#fff":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
+            style={{background:dateRange===v?DC.text:"transparent",color:dateRange===v?DC.card:DC.sub,
+              border:`1px solid ${dateRange===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
             {l}
           </button>
         ))}
-        <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
+        <span style={{color:DC.border,margin:"0 3px",fontSize:16}}>|</span>
+        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
         {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
           <button key={v} onClick={()=>setAggUnit(v)}
-            style={{background:aggUnit===v?"rgba(255,255,255,0.08)":"transparent",color:aggUnit===v?DC.text:DC.sub,
-              border:`1px solid ${aggUnit===v?"#555":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+            style={{background:aggUnit===v?DC.text:"transparent",color:aggUnit===v?DC.card:DC.sub,
+              border:`1px solid ${aggUnit===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
             {l}
           </button>
         ))}
-        <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-        <span style={{fontSize:11,color:"#fff",fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
+        <span style={{color:DC.border,margin:"0 3px",fontSize:16}}>|</span>
+        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
         {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
           <button key={v} onClick={()=>setYMode(v)}
             style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
-              border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+              border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
             {l}
           </button>
         ))}
       </div>
 
       <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
-        {/* Area chart */}
+        {/* Stacked bar chart */}
         <div style={{flex:1,height:340}}>
           {loading
-            ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
+            ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>데이터 로딩 중...</div>
             :chartData.length===0
-              ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>해당 기간 데이터 없음</div>
+              ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>해당 기간 데이터 없음</div>
               :<ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}}>
-                  <defs>
-                    {INV_AGING_KEYS.map(k=>(
-                      <linearGradient key={k} id={`igt_${k}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={INV_AGING_DEFS[k].color} stopOpacity={0.55}/>
-                        <stop offset="95%" stopColor={INV_AGING_DEFS[k].color} stopOpacity={0.04}/>
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="2 5" stroke="#1c1c1c"/>
-                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
+                <BarChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}} barCategoryGap="22%">
+                  <CartesianGrid strokeDasharray="2 5" stroke={DC.border} vertical={false}/>
+                  <XAxis dataKey="label" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     angle={-20} textAnchor="end" interval="preserveStartEnd" dy={6}/>
-                  <YAxis tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
+                  <YAxis tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
-                  <Tooltip content={<AreaTooltip/>}/>
+                  <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(0,0,0,0.04)"}}/>
                   {INV_AGING_KEYS.map(k=>(
-                    <Area key={k} type="monotone" dataKey={k} stackId="1"
-                      stroke={INV_AGING_DEFS[k].color} strokeWidth={1.5}
-                      fill={`url(#igt_${k})`} fillOpacity={1}/>
+                    <Bar key={k} dataKey={k} stackId="1" style={{cursor:"pointer"}}
+                      fill={INV_AGING_DEFS[k].color}
+                      fillOpacity={clickedBar&&clickedBar.agingKey!==k?0.3:0.85}
+                      radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}
+                      onClick={(data)=>handleBarClick(k,data)}/>
                   ))}
-                </AreaChart>
+                </BarChart>
               </ResponsiveContainer>
           }
         </div>
 
         {/* Legend panel */}
         <div style={{width:148,flexShrink:0,paddingTop:8}}>
-          <div style={{fontSize:10,fontWeight:700,color:DC.sub,marginBottom:12,letterSpacing:".06em"}}>AGING STATUS</div>
+          <div style={{fontSize:12,fontWeight:700,color:DC.sub,marginBottom:12,letterSpacing:".06em"}}>AGING STATUS</div>
           {INV_AGING_KEYS.map(k=>{
             const def=INV_AGING_DEFS[k];
             return(
               <div key={k} style={{marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                   <span style={{width:9,height:9,borderRadius:2,background:def.color,display:"inline-block",flexShrink:0}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:def.color}}>{def.label}</span>
+                  <span style={{fontSize:14,fontWeight:600,color:def.color}}>{def.label}</span>
                 </div>
-                <div style={{fontSize:11,color:"#fff",paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
+                <div style={{fontSize:13,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Footnote */}
+      <div style={{marginTop:16,paddingTop:12,borderTop:`1px solid ${DC.border}`,fontSize:12,color:DC.text,lineHeight:1.7}}>
+        <span style={{color:DC.text,fontWeight:600,marginRight:6}}>계산 방식</span>
+        마지막 판매일 기준 경과일수로 에이징을 분류합니다.&nbsp;
+        <span style={{color:INV_AGING_DEFS.HEALTHY.color}}>Healthy</span> 0~30일 ·&nbsp;
+        <span style={{color:INV_AGING_DEFS.SLOW.color}}>Slow-moving</span> 31~90일 ·&nbsp;
+        <span style={{color:INV_AGING_DEFS.AGING.color}}>Aging</span> 91~180일 ·&nbsp;
+        <span style={{color:INV_AGING_DEFS.DEAD.color}}>Dead Stock</span> 180일 초과.&nbsp;
+        스택 높이는 선택된 지표(SKU 수 / 재고 수량 / 재고 금액)를 기간별로 집계한 값입니다.
+      </div>
+
+      {/* Drill-down table */}
+      {clickedBar&&(
+        <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:13,fontWeight:700,color:INV_AGING_DEFS[clickedBar.agingKey]?.color}}>
+              {clickedBar.label} · {INV_AGING_DEFS[clickedBar.agingKey]?.label}
+            </span>
+            {!drillLoading&&<span style={{fontSize:12,color:DC.text}}>{drillRows.length.toLocaleString()}개 SKU</span>}
+            <button onClick={()=>{setClickedBar(null);setDrillRows([]);}}
+              style={{marginLeft:"auto",background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>
+          </div>
+          {drillLoading
+            ?<div style={{textAlign:"center",padding:"30px 0",color:DC.text,fontSize:13}}>로딩 중...</div>
+            :drillRows.length===0
+              ?<div style={{textAlign:"center",padding:"20px 0",color:DC.text,fontSize:13}}>데이터 없음</div>
+              :<div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:`1px solid ${DC.border}`}}>
+                      {["상품명","옵션","재고 수","미판매 일수","재고 금액"].map(h=>(
+                        <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                          fontWeight:600,color:DC.text,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...drillRows].sort((a,b)=>b.noSalesDays-a.noSalesDays).map((r,i)=>(
+                      <tr key={r.id||i} style={{borderBottom:`1px solid ${DC.border}`,
+                        background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
+                        <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:160,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={r.product_name}>{r.product_name}</td>
+                        <td style={{padding:"6px 8px",color:DC.text,maxWidth:100,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={r.option_name}>{r.option_name||"—"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text,fontWeight:600}}>
+                          {(r.current_stock_qty||0).toLocaleString()}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,
+                          color:INV_AGING_DEFS[r.agingKey]?.color||DC.text}}>
+                          {r.noSalesDays}일</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>
+                          {(r.currentInventoryValue||0)>=10000
+                            ?`${Math.round((r.currentInventoryValue||0)/10000)}만`
+                            :(r.currentInventoryValue||0).toLocaleString()}원</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          }
+        </div>
+      )}
     </div>
   );
 }
@@ -6384,7 +6733,7 @@ async function computeAndSaveReorder(parsedRows,snapDate){
 // ─────────────────────────────────────────────
 // REORDER CALCULATOR COMPONENT
 // ─────────────────────────────────────────────
-function ReorderCalculator({DC,refreshKey}){
+function ReorderCalculator({DC,refreshKey,onDateReady}){
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
@@ -6396,13 +6745,28 @@ function ReorderCalculator({DC,refreshKey}){
   const load=useCallback(async()=>{
     setLoading(true);
     const db=await getSupabase();
-    const{data:rows}=await db.from("reorder_recommendations")
-      .select("*").order("reorder_days_left",{ascending:true});
-    setData(rows||[]);
+    let all=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data:rows,error}=await db.from("reorder_recommendations")
+        .select("*").order("reorder_days_left",{ascending:true}).range(from,from+PAGE-1);
+      if(error||!rows||rows.length===0) break;
+      all=all.concat(rows);
+      if(rows.length<PAGE) break;
+      from+=PAGE;
+    }
+    setData(all);
     setLoading(false);
   },[]);
 
   useEffect(()=>{load();},[load,refreshKey]);
+
+  const latestDataDate=useMemo(()=>{
+    if(!data.length) return null;
+    const dates=data.map(r=>r.reorder_data_date||"").filter(Boolean).sort();
+    return dates[dates.length-1]||null;
+  },[data]);
+
+  useEffect(()=>{if(onDateReady) onDateReady(latestDataDate);},[latestDataDate,onDateReady]);
 
   const kpi=useMemo(()=>{
     if(!data.length) return null;
@@ -6434,22 +6798,22 @@ function ReorderCalculator({DC,refreshKey}){
   ,[data]);
 
   const topSales=useMemo(()=>
-    [...data].sort((a,b)=>(b.reorder_expected_daily_sales||0)-(a.reorder_expected_daily_sales||0)).slice(0,10).map(r=>({
-      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+    [...data].sort((a,b)=>(b.reorder_expected_daily_sales||0)-(a.reorder_expected_daily_sales||0)).slice(0,5).map(r=>({
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,18),
       value:r.reorder_expected_daily_sales||0,
     }))
   ,[data]);
 
   const topReorder=useMemo(()=>
-    [...data].sort((a,b)=>(b.reorder_recommended_qty||0)-(a.reorder_recommended_qty||0)).slice(0,10).map(r=>({
-      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+    [...data].sort((a,b)=>(b.reorder_recommended_qty||0)-(a.reorder_recommended_qty||0)).slice(0,5).map(r=>({
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,18),
       value:r.reorder_recommended_qty||0,
     }))
   ,[data]);
 
   const rising=useMemo(()=>
-    [...data].filter(r=>(r.reorder_trend_ratio||0)>=1.2).sort((a,b)=>(b.reorder_trend_ratio||0)-(a.reorder_trend_ratio||0)).slice(0,10).map(r=>({
-      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+    [...data].filter(r=>(r.reorder_trend_ratio||0)>=1.2).sort((a,b)=>(b.reorder_trend_ratio||0)-(a.reorder_trend_ratio||0)).slice(0,5).map(r=>({
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,18),
       value:Math.round((r.reorder_trend_ratio||0)*100)/100,
     }))
   ,[data]);
@@ -6469,25 +6833,29 @@ function ReorderCalculator({DC,refreshKey}){
 
   const trendTag=r=>{const t=r.reorder_trend_ratio||0;return t>=1.2?{label:"↑ 상승",color:"#7EC8A4"}:t>=0.8?{label:"→ 안정",color:"#7B9EC8"}:{label:"↓ 감소",color:"#C87B7B"};};
 
+  const textCols=new Set(["reorder_product_name","reorder_option_name"]);
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
-      style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,
-        fontSize:11,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
+      style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
+        fontSize:13,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
       {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
     </th>
   );
 
-  const chartStyle={background:"rgba(255,255,255,0.02)",border:`1px solid ${DC.border}`,borderRadius:9,padding:"14px 12px"};
-  const ttStyle={contentStyle:{background:"#161616",border:"1px solid #2e2e2e",borderRadius:7,fontSize:12},cursor:false};
+  const chartStyle={background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:9,padding:"14px 12px"};
+  const ttStyle={contentStyle:{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:7,fontSize:14},cursor:false};
 
   return(
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
-      <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:4}}>리오더 계산기</div>
-      <div style={{fontSize:11,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+        <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
+        {latestDataDate&&<span style={{fontSize:14,color:DC.text,marginLeft:4}}>· 기준일 {latestDataDate}</span>}
+      </div>
+      <div style={{fontSize:15,color:DC.text,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
 
       {/* Calculation flow card */}
-      <div style={{marginBottom:20,background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
-        <div style={{fontSize:10,fontWeight:700,color:DC.sub,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
+      <div style={{marginBottom:20,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
+        <div style={{fontSize:12,fontWeight:700,color:DC.text,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
           {[
             {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
@@ -6497,22 +6865,22 @@ function ReorderCalculator({DC,refreshKey}){
             {title:"추천 리오더 수량",body:"(일판매량×14)\n−실질가용재고"},
           ].map((s,i,a)=>(
             <React.Fragment key={s.title}>
-              <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
-                <div style={{fontSize:10,color:DC.sub,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
-                <div style={{fontSize:11,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
+              <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
+                <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
+                <div style={{fontSize:13,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
               </div>
-              {i<a.length-1&&<div style={{color:DC.sub,fontSize:16,padding:"0 6px",flexShrink:0}}>→</div>}
+              {i<a.length-1&&<div style={{color:DC.text,fontSize:18,padding:"0 6px",flexShrink:0}}>→</div>}
             </React.Fragment>
           ))}
         </div>
       </div>
 
-      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>}
+      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:DC.text,fontSize:15}}>데이터 로딩 중...</div>}
 
       {!loading&&data.length===0&&(
-        <div style={{textAlign:"center",padding:"40px 0",color:DC.dim,fontSize:13,lineHeight:2}}>
+        <div style={{textAlign:"center",padding:"40px 0",color:DC.text,fontSize:15,lineHeight:2}}>
           Inventory Trend 엑셀 업로드 완료 후 리오더 데이터가 자동 생성됩니다.<br/>
-          <span style={{fontSize:11}}>엑셀에 <strong style={{color:DC.sub}}>가용재고 · 입고대기 · 1주발주합계 · 4주발주합계</strong> 컬럼 포함 필요</span>
+          <span style={{fontSize:13}}>엑셀에 <strong style={{color:DC.sub}}>가용재고 · 입고대기 · 1주발주합계 · 4주발주합계</strong> 컬럼 포함 필요</span>
         </div>
       )}
 
@@ -6527,59 +6895,47 @@ function ReorderCalculator({DC,refreshKey}){
                 {label:"총 추천 리오더 수량",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
                 {label:"총 입고대기 수량",value:`${kpi.totalIncoming.toLocaleString()}개`,color:"#7B9EC8"},
               ].map(c=>(
-                <div key={c.label} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
-                  <div style={{fontSize:10,color:DC.sub,marginBottom:5}}>{c.label}</div>
-                  <div style={{fontSize:16,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+                <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
+                  <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
+                  <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
                 </div>
               ))}
             </div>
           )}
 
           {/* Charts */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>재고잔여일 분포</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={daysDistData} margin={{top:4,right:8,bottom:4,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c"/>
-                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <Tooltip {...ttStyle}/>
-                  <Bar dataKey="count" name="SKU 수" fill="#C87B7B" radius={[3,3,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top10 (추세비율)</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={rising} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+              <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top5 (추세비율)</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={rising} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추세비율" fill="#7EC8A4" radius={[0,3,3,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top SKU (예상 일판매량)</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={topSales} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+              <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top5 (예상 일판매량)</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={topSales} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle} formatter={v=>[v.toFixed(2),"일판매량"]}/>
                   <Bar dataKey="value" name="일판매량" fill="#7B9EC8" radius={[0,3,3,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top SKU</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={topReorder} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+              <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top5</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={topReorder} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={DC.border} horizontal={false}/>
+                  <XAxis type="number" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:DC.text,fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추천리오더" fill="#C8A87B" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -6591,16 +6947,16 @@ function ReorderCalculator({DC,refreshKey}){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"5px 10px",fontSize:12,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
+                padding:"5px 10px",fontSize:14,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontSize:11,color:DC.sub}}>{filtered.length.toLocaleString()}개 SKU</span>
+              <span style={{fontSize:13,color:DC.text}}>{filtered.length.toLocaleString()}개 SKU</span>
               <button onClick={downloadCSV}
                 style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,
-                  padding:"4px 12px",fontSize:11,cursor:"pointer"}}>↓ CSV</button>
+                  padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ CSV</button>
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,tableLayout:"auto"}}>
               <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                 <tr>
                   <SortTh k="reorder_product_name" label="상품명"/>
@@ -6624,15 +6980,15 @@ function ReorderCalculator({DC,refreshKey}){
                     <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`}}>
                       <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
                       <td style={{padding:"6px 8px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"right",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"right"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
-                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:11,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
-                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
-                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:13,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
+                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
+                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
                     </tr>
                   );
                 })}
@@ -6643,8 +6999,8 @@ function ReorderCalculator({DC,refreshKey}){
             <div style={{display:"flex",justifyContent:"center",gap:5,marginTop:14}}>
               {Array.from({length:totalPgs}).map((_,i)=>(
                 <button key={i} onClick={()=>setPg(i)}
-                  style={{background:pg===i?"#fff":"transparent",color:pg===i?"#000":DC.sub,
-                    border:`1px solid ${pg===i?"#fff":DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>
+                  style={{background:pg===i?DC.text:"transparent",color:pg===i?DC.card:DC.sub,
+                    border:`1px solid ${pg===i?DC.text:DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:13,cursor:"pointer"}}>
                   {i+1}
                 </button>
               ))}
@@ -6662,6 +7018,7 @@ function ReorderCalculator({DC,refreshKey}){
 function InventoryTrend({DC,onReorderRefresh}){
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [refreshKey,setRefreshKey]=useState(0);
+  const [agingDate,setAgingDate]=useState(null);
 
   const loadDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -6688,8 +7045,12 @@ function InventoryTrend({DC,onReorderRefresh}){
 
       {/* Aging Trend */}
       <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
-        <div style={{fontWeight:600,fontSize:13,color:DC.text,marginBottom:16,letterSpacing:"-0.1px"}}>Aging Trend</div>
-        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey}/>
+        <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <span style={{fontWeight:600,fontSize:13,color:DC.text,letterSpacing:"-0.1px"}}>Aging Trend</span>
+          {agingDate&&<span style={{fontSize:13,color:DC.text}}>· 기준일 {agingDate}</span>}
+          <span style={{fontSize:13,color:DC.text}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+        </div>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey} onDateReady={setAgingDate}/>
       </div>
     </div>
   );
@@ -6881,12 +7242,12 @@ function RevenueSankeyChart({periods,svgW}){
                 )}
               </g>
             ))}
-            {/* 일정 라벨 — 흰색 */}
+            {/* 기간 라벨 */}
             <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+18}
-              textAnchor="middle" fontSize={10} fill="#fff" style={{pointerEvents:"none"}}>
+              textAnchor="middle" fontSize={10} fill="#111111" style={{pointerEvents:"none"}}>
               {col.label}
             </text>
-            {/* 매출 합계 라벨 — 노드 스택 상단 가로 */}
+            {/* 매출 합계 라벨 — 노드 스택 상단 */}
             {col.total>0&&(()=>{
               const vis=col.nodes.filter(n=>n.h>0);
               if(!vis.length) return null;
@@ -6894,7 +7255,7 @@ function RevenueSankeyChart({periods,svgW}){
               return(
                 <text x={col.colX+NODE_W/2} y={top-7}
                   textAnchor="middle" dominantBaseline="auto"
-                  fontSize={13} fontWeight={700} fill="#fff"
+                  fontSize={13} fontWeight={700} fill="#111111"
                   style={{pointerEvents:"none",userSelect:"none"}}>
                   {fmtAmt(col.total)}
                 </text>
@@ -6932,29 +7293,29 @@ function RevenueSankeyChart({periods,svgW}){
         return(
           <div onClick={e=>e.stopPropagation()}
             style={{position:"absolute",left:x,top:y,
-              background:"#0e0e0e",border:"1px solid #2a2a2a",borderRadius:10,
+              background:"#ffffff",border:"1px solid #d8d8d0",borderRadius:10,
               padding:"14px 16px 12px",minWidth:192,
-              boxShadow:"0 8px 32px #000c",zIndex:20,pointerEvents:"auto"}}>
+              boxShadow:"0 4px 20px rgba(0,0,0,0.12)",zIndex:20,pointerEvents:"auto"}}>
             <button onClick={()=>{setSelNodes([]);setModal(null);}}
               style={{position:"absolute",top:7,right:9,background:"none",border:"none",
-                color:"#fff",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
-            <div style={{fontSize:10,color:"#fff",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
+                color:"#111",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+            <div style={{fontSize:10,color:"#111",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
             {[a,b].map((nd,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                 <span style={{width:18,height:18,borderRadius:3,background:COMPARE_CH_COLOR[nd.ch]||"#444",
                   display:"inline-flex",alignItems:"center",justifyContent:"center",
                   fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>{i+1}</span>
                 <div>
-                  <div style={{fontSize:10,color:"#fff",opacity:0.7}}>{nd.label} · {nd.ch}</div>
-                  <div style={{fontSize:13,color:"#fff",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
+                  <div style={{fontSize:10,color:"#444"}}>{nd.label} · {nd.ch}</div>
+                  <div style={{fontSize:13,color:"#111",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
                 </div>
               </div>
             ))}
-            <div style={{borderTop:"1px solid #222",marginTop:8,paddingTop:8,display:"flex",alignItems:"baseline",gap:8}}>
-              <span style={{fontSize:15,fontWeight:800,color:up?"#4ade80":"#f87171"}}>
+            <div style={{borderTop:"1px solid #e8e8e0",marginTop:8,paddingTop:8,display:"flex",alignItems:"baseline",gap:8}}>
+              <span style={{fontSize:15,fontWeight:800,color:up?"#2a9a60":"#c0392b"}}>
                 {up?"▲":"▼"} {pct!==null?`${Math.abs(pct).toFixed(1)}%`:"—"}
               </span>
-              <span style={{fontSize:11,color:"#fff"}}>
+              <span style={{fontSize:11,color:"#111"}}>
                 ({up?"+":""}{diff.toLocaleString()}원)
               </span>
             </div>
@@ -6973,7 +7334,7 @@ function RevenueSankeyChart({periods,svgW}){
       )}
 
       {/* 사용 안내 */}
-      <div style={{marginTop:orderWarn?4:14,textAlign:"center",fontSize:15,color:"#fff",letterSpacing:"0.02em",userSelect:"none"}}>
+      <div style={{marginTop:orderWarn?4:14,textAlign:"center",fontSize:15,color:"#111111",letterSpacing:"0.02em",userSelect:"none"}}>
         노드 매출 지점을 왼쪽에서 오른쪽 순으로 두번 클릭하면 해당 기간의 매출 증감률을 볼 수 있습니다
       </div>
     </div>
@@ -7066,6 +7427,17 @@ function DataCompare({revenues,storeSales=[]}){
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
   const [reorderKey,setReorderKey]=useState(0);
+  const [snapshotDates,setSnapshotDates]=useState([]);
+  const [invRefreshKey,setInvRefreshKey]=useState(0);
+  const [agingDate,setAgingDate]=useState(null);
+  const [reorderDate,setReorderDate]=useState(null);
+
+  const loadSnapshotDates=useCallback(async()=>{
+    const db=await getSupabase();
+    const{data}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false});
+    if(data) setSnapshotDates([...new Set(data.map(r=>r.snapshot_date))]);
+  },[]);
+  useEffect(()=>{loadSnapshotDates();},[loadSnapshotDates]);
 
   useEffect(()=>{
     const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-48)));
@@ -7094,10 +7466,19 @@ function DataCompare({revenues,storeSales=[]}){
     return res;
   },[volUnit,revenues,storeSales]);
 
-  // Reset slider to show last N periods when allVolPeriods changes
+  // Initialize slider to current year on first load; reset when unit changes
   useEffect(()=>{
     const n=allVolPeriods.length;
     if(!n){setSliderIdx([0,0]);return;}
+    const curYear=new Date().getFullYear().toString();
+    if(volUnit==="year"){
+      const idx=allVolPeriods.findIndex(p=>p.label===curYear);
+      if(idx>=0){setSliderIdx([0,n-1]);return;}
+    } else {
+      const inYear=allVolPeriods.map((p,i)=>({p,i})).filter(({p})=>p.label.startsWith(`${curYear}.`));
+      if(inYear.length>0){setSliderIdx([inYear[0].i,inYear[inYear.length-1].i]);return;}
+    }
+    // fallback if no data for current year
     const def=volUnit==="year"?Math.min(n,5):Math.min(n,12);
     setSliderIdx([Math.max(0,n-def),n-1]);
   },[allVolPeriods]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7145,47 +7526,48 @@ function DataCompare({revenues,storeSales=[]}){
   const hasData=revenueData.some(p=>p.total>0);
   const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1;
 
-  const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
+  const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  const LC=DC;
+  const sectionCard={background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16};
 
   return(
-    <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
-      <div style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
+    <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
+      <div style={{fontWeight:700,fontSize:22,color:"#111111",letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
 
-      {/* 전체 매출 볼륨 카드 — 개별 필터 */}
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
+      {/* ① 전체 매출 볼륨 — 다크 카드 */}
+      <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
+          <div style={{fontWeight:600,fontSize:16,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
             {[["year","연"],["month","월"]].map(([u,lbl])=>(
               <button key={u} onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
-                style={{background:volUnit===u?"#fff":"transparent",
-                  color:volUnit===u?"#000":DC.sub,
-                  border:`1px solid ${volUnit===u?"#fff":DC.border}`,
-                  borderRadius:6,padding:"4px 10px",fontSize:11,
+                style={{background:volUnit===u?DC.text:"transparent",
+                  color:volUnit===u?DC.card:DC.sub,
+                  border:`1px solid ${volUnit===u?DC.text:DC.border}`,
+                  borderRadius:6,padding:"4px 10px",fontSize:13,
                   cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
                 {lbl}
               </button>
             ))}
-            <span style={{color:DC.border,fontSize:14,margin:"0 4px"}}>|</span>
+            <span style={{color:DC.border,fontSize:16,margin:"0 4px"}}>|</span>
             <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+                padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
-            <span style={{color:DC.sub,fontSize:11}}>~</span>
+            <span style={{color:DC.text,fontSize:13}}>~</span>
             <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:11,color:DC.text,colorScheme:"dark",
+                padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             {(customStart||customEnd)&&(
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
-                style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:14,padding:"0 2px"}}>✕</button>
+                style={{background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,padding:"0 2px"}}>✕</button>
             )}
           </div>
         </div>
-        {/* 채널 범례 */}
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:12}}>
           {COMPARE_CHANNELS.map(ch=>(
-            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
+            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:DC.text}}>
               <span style={{width:8,height:8,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
               {ch}
             </span>
@@ -7194,25 +7576,46 @@ function DataCompare({revenues,storeSales=[]}){
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
           {hasData
             ?<RevenueSankeyChart periods={revenueData} svgW={svgW}/>
-            :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>
+            :<div style={{textAlign:"center",padding:"80px 0",color:DC.text,fontSize:15}}>
               매출 데이터를 업로드하면 그래프가 표시됩니다
             </div>
           }
         </div>
         {showSlider&&(
           <div style={{paddingTop:8,borderTop:`1px solid ${DC.border}`,marginTop:8}}>
-            <div style={{fontSize:10,color:DC.dim,marginBottom:2,textAlign:"right"}}>
+            <div style={{fontSize:12,color:DC.text,marginBottom:2,textAlign:"right"}}>
               {allVolPeriods[sliderIdx[0]]?.label} ~ {allVolPeriods[sliderIdx[1]]?.label}
-              <span style={{marginLeft:8,color:DC.border}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
+              <span style={{marginLeft:8,color:DC.text}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
             </div>
             <VolumeSlider total={allVolPeriods.length} range={sliderIdx} onChange={handleSlider} DC={DC}/>
           </div>
         )}
       </div>
 
-      <InventoryTrend DC={DC} onReorderRefresh={useCallback(()=>setReorderKey(k=>k+1),[])}/>
+      {/* Inventory Uploader — 라이트 카드 */}
+      <div style={{background:LC.card,border:`1px solid ${LC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
+        <div style={{fontWeight:600,fontSize:16,color:LC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
+        <InventoryUploader DC={LC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
+      </div>
 
-      <ReorderCalculator DC={DC} refreshKey={reorderKey}/>
+      {/* ② SKU Risk Bubble — 다크 카드 */}
+      <div style={sectionCard}>
+        <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
+      </div>
+
+      {/* ③ Aging Trend — 섹션 카드 */}
+      <div style={sectionCard}>
+        <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
+          {agingDate&&<span style={{fontSize:16,color:DC.text}}>· 기준일 {agingDate}</span>}
+          <span style={{fontSize:15,color:DC.text}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+        </div>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate}/>
+      </div>
+
+      {/* ④ 리오더 계산기 (자체 스타일 포함) */}
+      <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate}/>
     </div>
   );
 }
@@ -7348,20 +7751,19 @@ export default function App() {
       color:isDark?DK.text:D.text, fontSize:14,
       opacity:visible?1:0, transition:"opacity 0.35s ease, background 0.2s ease" }}>
 
-      {/* top bar */}
-      <div style={{ background:isDark?DK.surface:D.surface,
-        borderBottom:`1px solid ${isDark?DK.border:D.border}`,
-        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0,
-        transition:"background 0.2s ease" }}>
+      {/* top bar — always light */}
+      <div style={{ background:D.surface,
+        borderBottom:`1px solid ${D.border}`,
+        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0 }}>
         <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1, marginRight:8 }}>
-          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:isDark?"#fff":D.black }}>MERRYON</span>
-          <span style={{ fontSize:10, color:isDark?DK.sub:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
+          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:D.black }}>MERRYON</span>
+          <span style={{ fontSize:10, color:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
         </div>
         <nav style={{ display:"flex", gap:2, flex:1 }}>
           {nav.map(n=>(
             <button key={n.key} onClick={()=>setPage(n.key)}
-              style={{ background:page===n.key?(isDark?DK.active:D.surfaceAlt):"transparent",
-                color:page===n.key?(isDark?"#fff":D.black):(isDark?DK.sub:D.textSub),
+              style={{ background:page===n.key?D.surfaceAlt:"transparent",
+                color:page===n.key?D.black:D.textSub,
                 border:"none", borderRadius:6, padding:"6px 14px",
                 cursor:"pointer", fontSize:12,
                 fontWeight:page===n.key?600:400 }}>
@@ -7369,8 +7771,9 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div style={{ color:isDark?DK.sub:D.textMeta, fontSize:11, flexShrink:0 }}>
-          {new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}
+        <div style={{ color:D.textMeta, fontSize:11, flexShrink:0, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:1 }}>
+          <span>{new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}</span>
+          <span style={{fontSize:9,opacity:0.5}}>build {__BUILD_TIME__}</span>
         </div>
       </div>
 
