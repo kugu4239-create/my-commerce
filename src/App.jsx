@@ -67,8 +67,13 @@ const toDate = raw => {
     const d = new Date(Date.UTC(1899, 11, 30) + num * 86400000);
     return d.toISOString().slice(0, 10);
   }
-  const s = String(raw).trim();
-  // YYYY년 M월 D일 (한국어 날짜 포맷, 예: "2026년 5월 11일")
+  // 시간/AM/PM/오전/오후 suffix 제거 → 날짜 부분만 추출 후 파싱
+  // 예: "5/14/26 9:47" → "5/14/26", "2026-05-14T09:47:00" → "2026-05-14"
+  const s = String(raw).trim()
+    .replace(/T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/, '')
+    .replace(/\s+(오전|오후|AM|PM)?\s*\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM|오전|오후))?$/i, '')
+    .trim();
+  // YYYY년 M월 D일 (한국어 날짜 포맷)
   const mKr = s.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
   if (mKr) return `${mKr[1]}-${mKr[2].padStart(2,"0")}-${mKr[3].padStart(2,"0")}`;
   // YYYY. M. D (점+공백 포함, 예: "2025. 10. 16")
@@ -83,8 +88,8 @@ const toDate = raw => {
   // YYMMDD 6자리 (예: "241223" → 2024-12-23)
   const m4 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
   if (m4) { const yr=2000+parseInt(m4[1],10); return `${yr}-${m4[2]}-${m4[3]}`; }
-  // M/D/YY or M/D/YY H:MM (Excel 포맷, 예: "5/14/26 9:47" → 2026-05-14)
-  const m5 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})(?!\d)/);
+  // M/D/YY (Excel 포맷, 예: "5/14/26" → 2026-05-14)
+  const m5 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
   if (m5) { const yr=2000+parseInt(m5[3],10); return `${yr}-${m5[1].padStart(2,"0")}-${m5[2].padStart(2,"0")}`; }
   return null;
 };
