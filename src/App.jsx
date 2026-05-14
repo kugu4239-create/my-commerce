@@ -537,26 +537,29 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
     const reader=new FileReader();
     reader.onload=async e=>{
       try{
-        // First try: binary XLSX parse
-        const XLSX=await getXLSX();
+        // Detect HTML-disguised-as-XLS by peeking at first 100 bytes
+        const peek=new TextDecoder("utf-8").decode(new Uint8Array(e.target.result,0,Math.min(200,e.target.result.byteLength))).trimStart().toLowerCase();
+        const isHtml=peek.startsWith("<")||peek.includes("<html")||peek.includes("<meta")||peek.includes("<!doctype");
+
         let data=null;
-        try{
-          const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
-          const ws=wb.Sheets[wb.SheetNames[0]];
-          data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
-          if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
-        }catch(_){
-          // Second try: HTML table (이지어드민 등 HTML-as-XLS 포맷)
+        if(!isHtml){
+          // True binary Excel — use XLSX.js
+          try{
+            const XLSX=await getXLSX();
+            const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+            const ws=wb.Sheets[wb.SheetNames[0]];
+            data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
+            if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
+          }catch(_){}
+        }
+
+        if(!data||!data.length){
+          // HTML-as-XLS (이지어드민 등) — parse as HTML table
           const text=new TextDecoder("utf-8").decode(e.target.result);
           data=parseHtmlTable(text,opts);
         }
-        if(!data||!data.length){
-          // If XLSX returned empty rows, retry as HTML
-          const text=new TextDecoder("utf-8").decode(e.target.result);
-          const htmlData=parseHtmlTable(text,opts);
-          if(htmlData&&htmlData.length) data=htmlData;
-        }
-        if(!data) throw new Error("파일을 파싱할 수 없습니다");
+
+        if(!data||!data.length) throw new Error("파일을 파싱할 수 없습니다");
         completeCb({data});
       }catch(err){if(errorCb)errorCb(err);}
     };
@@ -1307,6 +1310,38 @@ function getPriorPeriod(period,customStart,customEnd){
   return null;
 }
 
+// CalDrop must be defined at module level (not inside Dashboard) so React
+// preserves its identity across re-renders — prevents CalendarPicker's internal
+// `picking` state from resetting between first and second date clicks.
+function CalDrop({id,period,setPeriod,presets,start,setStart,end,setEnd,calOpenFor,setCalOpenFor}){
+  const isOpen=calOpenFor===id;
+  const customLabel=period==="custom"&&start&&end?`${start.slice(5)}~${end.slice(5)}`:"직접 선택";
+  return(
+    <div style={{position:"relative",display:"inline-flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
+      {presets.map(([v,l])=>(
+        <button key={v} onClick={()=>{setPeriod(v);setCalOpenFor(null);}}
+          style={{background:period===v?D.black:"transparent",color:period===v?"#fff":D.textSub,
+            border:`1px solid ${period===v?D.black:D.border}`,borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:period===v?600:400}}>
+          {l}
+        </button>
+      ))}
+      <button onClick={()=>{setPeriod("custom");setCalOpenFor(isOpen?null:id);}}
+        style={{background:period==="custom"?D.black:"transparent",color:period==="custom"?"#fff":D.textSub,
+          border:`1px solid ${period==="custom"?D.black:D.border}`,borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:period==="custom"?600:400}}>
+        {customLabel}
+      </button>
+      {isOpen&&(
+        <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:300,
+          background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,padding:"14px 14px 10px",
+          boxShadow:"0 4px 24px rgba(0,0,0,0.4)"}}>
+          <CalendarPicker mode="range" rangeStart={start} rangeEnd={end}
+            onRangeChange={({start:s,end:e})=>{setStart(s);setEnd(e);if(s&&e)setCalOpenFor(null);}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
   const [period,setPeriod]=useState("1m");
@@ -1621,34 +1656,6 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     </button>
   );
 
-  const CalDrop=({id,period,setPeriod,presets,start,setStart,end,setEnd})=>{
-    const isOpen=calOpenFor===id;
-    const customLabel=period==="custom"&&start&&end?`${start.slice(5)}~${end.slice(5)}`:"직접 선택";
-    return(
-      <div style={{position:"relative",display:"inline-flex",gap:4,alignItems:"center"}}>
-        {presets.map(([v,l])=>(
-          <button key={v} onClick={()=>{setPeriod(v);setCalOpenFor(null);}}
-            style={{background:period===v?D.black:"transparent",color:period===v?"#fff":D.textSub,
-              border:`1px solid ${period===v?D.black:D.border}`,borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:period===v?600:400}}>
-            {l}
-          </button>
-        ))}
-        <button onClick={()=>{setPeriod("custom");setCalOpenFor(isOpen?null:id);}}
-          style={{background:period==="custom"?D.black:"transparent",color:period==="custom"?"#fff":D.textSub,
-            border:`1px solid ${period==="custom"?D.black:D.border}`,borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:period==="custom"?600:400}}>
-          {customLabel}
-        </button>
-        {isOpen&&(
-          <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:300,
-            background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,padding:"14px 14px 10px",
-            boxShadow:"0 4px 24px rgba(0,0,0,0.4)"}}>
-            <CalendarPicker mode="range" rangeStart={start} rangeEnd={end}
-              onRangeChange={({start:s,end:e})=>{setStart(s);setEnd(e);if(s&&e)setCalOpenFor(null);}}/>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
@@ -1907,7 +1914,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CalDrop id="shipping" period={shippingPeriod} setPeriod={setShippingPeriod}
               presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
               start={shippingCustomStart} setStart={setShippingCustomStart}
-              end={shippingCustomEnd} setEnd={setShippingCustomEnd}/>
+              end={shippingCustomEnd} setEnd={setShippingCustomEnd}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
           </div>
           <ResponsiveContainer width="100%" height={170}>
             <BarChart data={shippingChartData}>
@@ -1927,7 +1935,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CalDrop id="return" period={returnPeriod} setPeriod={setReturnPeriod}
               presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
               start={returnCustomStart} setStart={setReturnCustomStart}
-              end={returnCustomEnd} setEnd={setReturnCustomEnd}/>
+              end={returnCustomEnd} setEnd={setReturnCustomEnd}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
           </div>
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={returnChartData.data}>
@@ -1963,7 +1972,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           <CalDrop id="best" period={rankBestPeriod} setPeriod={setRankBestPeriod}
             presets={[["yd","어제"],["7d","최근 7일"],["14d","최근 14일"],["1m","최근 한달"],["3m","최근 3개월"]]}
             start={rankBestCustomStart} setStart={setRankBestCustomStart}
-            end={rankBestCustomEnd} setEnd={setRankBestCustomEnd}/>
+            end={rankBestCustomEnd} setEnd={setRankBestCustomEnd}
+            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -1997,7 +2007,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CalDrop id="option" period={optionPeriod} setPeriod={setOptionPeriod}
               presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
               start={optionCustomStart} setStart={setOptionCustomStart}
-              end={optionCustomEnd} setEnd={setOptionCustomEnd}/>
+              end={optionCustomEnd} setEnd={setOptionCustomEnd}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${optionStats.length},1fr)`,gap:16}}>
             {optionStats.map(({ch,colors,sizes})=>(
@@ -2074,7 +2085,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           <CalDrop id="worst" period={rankWorstPeriod} setPeriod={setRankWorstPeriod}
             presets={[["1m","최근 한달"],["3m","최근 3개월"]]}
             start={rankWorstCustomStart} setStart={setRankWorstCustomStart}
-            end={rankWorstCustomEnd} setEnd={setRankWorstCustomEnd}/>
+            end={rankWorstCustomEnd} setEnd={setRankWorstCustomEnd}
+            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -2111,7 +2123,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CalDrop id="returnOption" period={returnOptionPeriod} setPeriod={setReturnOptionPeriod}
               presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
               start={returnOptionCustomStart} setStart={setReturnOptionCustomStart}
-              end={returnOptionCustomEnd} setEnd={setReturnOptionCustomEnd}/>
+              end={returnOptionCustomEnd} setEnd={setReturnOptionCustomEnd}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
             {returnOptionStats.map(({ch,colors,sizes})=>(
