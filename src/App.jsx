@@ -1350,7 +1350,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [deleteAll,setDeleteAll]=useState(false);
   const [shippingPeriod,setShippingPeriod]=useState("1m");
   const [returnPeriod,setReturnPeriod]=useState("1m");
-  const [rankBestPeriod,setRankBestPeriod]=useState("yd");
+  const [rankBestPeriod,setRankBestPeriod]=useState("7d");
   const [rankBestChannel,setRankBestChannel]=useState("전체");
   const [rankInfoOpen,setRankInfoOpen]=useState(false);
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
@@ -5186,7 +5186,7 @@ function EasyAdminUploader({ onUpdate }) {
             for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
             return null;
           };
-          const dateCol = findCol("배송일","배송일시","배송날짜","delivery_date")
+          const dateCol = findCol("배송일","배송일시","배송날짜","배송완료일","발송일","출고일","출고일시","출고완료일","배송(예정)일","예정배송일","delivery_date")
                        || findCol("주문일","주문일시","주문날짜","order_date","날짜","date")
                        || f.date;
           const orderIdCol = findCol("주문번호","orderid") || findCol("관리번호","order_id") || f.orderId;
@@ -5227,7 +5227,9 @@ function EasyAdminUploader({ onUpdate }) {
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
-          setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
+          const sampleRaw=data[0]?.[dateCol]??"(없음)";
+          const sampleParsed=toDate(sampleRaw)??"파싱실패";
+          setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" · 첫 값: "${sampleRaw}" → ${sampleParsed} | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
