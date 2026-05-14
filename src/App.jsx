@@ -7017,11 +7017,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
           {[
             {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B",
-              sub:`SKU ${kpi.deadSkuPct}% · ${(kpi.qtyByKey["DEAD"]?.count||0).toLocaleString()}개`},
+              sub:`${(kpi.qtyByKey["DEAD"]?.count||0).toLocaleString()} SKU`},
             {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4",
-              sub:`SKU ${kpi.healthySkuPct}% · ${(kpi.qtyByKey["HEALTHY"]?.count||0).toLocaleString()}개`},
+              sub:`${(kpi.qtyByKey["HEALTHY"]?.count||0).toLocaleString()} SKU`},
             {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text,
-              sub:`SKU ${kpi.total.toLocaleString()}개`},
+              sub:`${kpi.total.toLocaleString()} SKU`},
             {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B",
               sub:`SKU 평균 ${fmtVal(kpi.total?Math.round(kpi.totalVal/kpi.total):0)}원`},
           ].map(c=>(
