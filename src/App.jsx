@@ -509,17 +509,54 @@ function CalendarPicker({ mode="single", value, onChange, rangeStart, rangeEnd, 
   );
 }
 
+const parseHtmlTable=(text,opts)=>{
+  // Parse HTML-disguised-as-XLS (common in Korean e-commerce exports)
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(text,"text/html");
+  const rows=Array.from(doc.querySelectorAll("tr"));
+  if(!rows.length) return null;
+  const toCell=td=>td.textContent.trim();
+  const headers=Array.from(rows[0].querySelectorAll("th,td")).map(toCell);
+  if(!headers.length) return null;
+  const th=opts?.transformHeader||(h=>h);
+  const mappedHeaders=headers.map(th);
+  const data=[];
+  for(let i=1;i<rows.length;i++){
+    const cells=Array.from(rows[i].querySelectorAll("td,th")).map(toCell);
+    if(cells.every(c=>!c)) continue;
+    const row={};
+    mappedHeaders.forEach((h,j)=>{row[h]=cells[j]??""});
+    data.push(row);
+  }
+  return data;
+};
+
 const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="xlsx"||ext==="xls"){
     const reader=new FileReader();
     reader.onload=async e=>{
       try{
+        // First try: binary XLSX parse
         const XLSX=await getXLSX();
-        const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        let data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
-        if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
+        let data=null;
+        try{
+          const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
+          if(opts.transformHeader) data=data.map(row=>{const nr={};Object.keys(row).forEach(k=>{nr[opts.transformHeader(k)]=row[k];});return nr;});
+        }catch(_){
+          // Second try: HTML table (이지어드민 등 HTML-as-XLS 포맷)
+          const text=new TextDecoder("utf-8").decode(e.target.result);
+          data=parseHtmlTable(text,opts);
+        }
+        if(!data||!data.length){
+          // If XLSX returned empty rows, retry as HTML
+          const text=new TextDecoder("utf-8").decode(e.target.result);
+          const htmlData=parseHtmlTable(text,opts);
+          if(htmlData&&htmlData.length) data=htmlData;
+        }
+        if(!data) throw new Error("파일을 파싱할 수 없습니다");
         completeCb({data});
       }catch(err){if(errorCb)errorCb(err);}
     };
