@@ -6959,9 +6959,12 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       const qty=d[k]?.qty||0;const val=d[k]?.value||0;const count=d[k]?.count||0;
       qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0",count};
     });
+    const deadCount=d["DEAD"]?.count||0;const healthyCount=d["HEALTHY"]?.count||0;
     return{total,totalQty,totalVal,
       deadPct:totalQty?((deadQty/totalQty)*100).toFixed(1):"0.0",
       healthyPct:totalQty?((healthyQty/totalQty)*100).toFixed(1):"0.0",
+      deadSkuPct:total?((deadCount/total)*100).toFixed(1):"0.0",
+      healthySkuPct:total?((healthyCount/total)*100).toFixed(1):"0.0",
       qtyByKey};
   },[latestDate,rawByDate]);
 
@@ -7013,15 +7016,19 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       {kpi&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
           {[
-            {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B",sub:`${(kpi.qtyByKey["DEAD"]?.count||0).toLocaleString()} SKU`},
-            {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4",sub:`${(kpi.qtyByKey["HEALTHY"]?.count||0).toLocaleString()} SKU`},
-            {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text,sub:`${kpi.total.toLocaleString()} SKU`},
-            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B",sub:null},
+            {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B",
+              sub:`SKU ${kpi.deadSkuPct}% · ${(kpi.qtyByKey["DEAD"]?.count||0).toLocaleString()}개`},
+            {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4",
+              sub:`SKU ${kpi.healthySkuPct}% · ${(kpi.qtyByKey["HEALTHY"]?.count||0).toLocaleString()}개`},
+            {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text,
+              sub:`SKU ${kpi.total.toLocaleString()}개`},
+            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B",
+              sub:`SKU 평균 ${fmtVal(kpi.total?Math.round(kpi.totalVal/kpi.total):0)}원`},
           ].map(c=>(
             <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
               <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
               <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
-              {c.sub&&<div style={{fontSize:11,color:DC.sub,marginTop:3}}>{c.sub}</div>}
+              <div style={{fontSize:10,color:DC.sub,marginTop:4,opacity:.75}}>{c.sub}</div>
             </div>
           ))}
         </div>
