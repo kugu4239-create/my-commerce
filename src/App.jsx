@@ -7771,8 +7771,9 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div style={{ color:D.textMeta, fontSize:11, flexShrink:0 }}>
-          {new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}
+        <div style={{ color:D.textMeta, fontSize:11, flexShrink:0, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:1 }}>
+          <span>{new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}</span>
+          <span style={{fontSize:9,opacity:0.5}}>build {__BUILD_TIME__}</span>
         </div>
       </div>
 
