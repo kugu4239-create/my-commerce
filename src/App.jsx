@@ -59,10 +59,22 @@ function UpdatedAt({ ts }) {
 
 const toNum = v => parseFloat(String(v||"0").replace(/[^0-9.-]/g,""))||0;
 
-// 필터 버튼 햅틱 피드백 — data-hf 속성 버튼 클릭 시 짧은 더블 진동 (Android)
+// 필터 버튼 햅틱 피드백 — data-hf 속성 버튼 클릭 시 짧은 더블 진동 (Android) / 클릭음 (iOS)
+function _hapticTap(){
+  if(navigator.vibrate){ navigator.vibrate([20,40,20]); return; }
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator(); const gain=ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value=800;
+    gain.gain.setValueAtTime(0.06,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.04);
+    osc.start(); osc.stop(ctx.currentTime+0.04);
+  }catch(_){}
+}
 if(typeof document!=="undefined"){
   document.addEventListener("click",e=>{
-    if(e.target.closest("[data-hf]")) navigator.vibrate?.([20,40,20]);
+    if(e.target.closest("[data-hf]")) _hapticTap();
   },{passive:true});
 }
 
@@ -7970,7 +7982,7 @@ function CaptureBtn({cardRef,filename,DC}){
             }
           }catch(e){if(e.name!=="AbortError") console.error(e);}
           const a=document.createElement("a");a.download=fname;a.href=URL.createObjectURL(blob);a.click();
-          navigator.vibrate?.(80);
+          feedback();
           setBusy(false);
         },"image/png");
         return;
@@ -7978,7 +7990,7 @@ function CaptureBtn({cardRef,filename,DC}){
       // Desktop fallback: direct download
       const a=document.createElement("a");
       a.download=fname;a.href=canvas.toDataURL("image/png");a.click();
-      navigator.vibrate?.(80);
+      feedback();
     }catch(e){btns.forEach(b=>{b.style.visibility=b._prevVis||"";});console.error(e);}
     setBusy(false);
   };
