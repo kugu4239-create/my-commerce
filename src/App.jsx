@@ -71,9 +71,12 @@ const toDate = raw => {
   if (m2) return `${m2[3]}-${m2[2].padStart(2,"0")}-${m2[1].padStart(2,"0")}`;
   const m3 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m3) return `${m3[1]}-${m3[2]}-${m3[3]}`;
+  // YYMMDD 6자리 (예: "241223" → 2024-12-23)
+  const m4 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (m4) { const yr=2000+parseInt(m4[1],10); return `${yr}-${m4[2]}-${m4[3]}`; }
   // M/D/YY (Excel 한국어 내보내기 포맷, 예: "12/23/24" → 2024-12-23)
-  const m4 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
-  if (m4) { const yr=2000+parseInt(m4[3],10); return `${yr}-${m4[1].padStart(2,"0")}-${m4[2].padStart(2,"0")}`; }
+  const m5 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  if (m5) { const yr=2000+parseInt(m5[3],10); return `${yr}-${m5[1].padStart(2,"0")}-${m5[2].padStart(2,"0")}`; }
   return null;
 };
 
