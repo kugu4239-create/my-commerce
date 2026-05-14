@@ -5806,28 +5806,28 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       >
         <div style={{fontSize:22,opacity:.45,marginBottom:6}}>⬆</div>
         <div style={{fontSize:13,fontWeight:600,color:DC.text,marginBottom:10}}>Excel / CSV 드래그 &amp; 드롭</div>
-        <div style={{fontSize:10.5,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
+        <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
           <div style={{marginBottom:6}}>
-            <span style={{color:"#7EC8A4",fontWeight:700,fontSize:11}}>인벤토리 트렌드</span>
+            <span style={{color:"#7EC8A4",fontWeight:700,fontSize:13}}>인벤토리 트렌드</span>
             <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
               {["상품명","옵션","판매가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
                 <span key={c} style={{background:"rgba(126,200,164,0.1)",border:"1px solid rgba(126,200,164,0.25)",
-                  borderRadius:4,padding:"1px 6px",fontSize:10,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
+                  borderRadius:4,padding:"1px 6px",fontSize:12,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
               ))}
             </div>
           </div>
           <div style={{marginBottom:8}}>
-            <span style={{color:"#7B9EC8",fontWeight:700,fontSize:11}}>리오더 계산기</span>
+            <span style={{color:"#7B9EC8",fontWeight:700,fontSize:13}}>리오더 계산기</span>
             <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
               {["가용재고","입고대기","1주발주합계","4주발주합계"].map(c=>(
                 <span key={c} style={{background:"rgba(123,158,200,0.1)",border:"1px solid rgba(123,158,200,0.25)",
-                  borderRadius:4,padding:"1px 6px",fontSize:10,color:"#7B9EC8",fontFamily:"monospace"}}>{c}</span>
+                  borderRadius:4,padding:"1px 6px",fontSize:12,color:"#7B9EC8",fontFamily:"monospace"}}>{c}</span>
               ))}
             </div>
           </div>
-          <div style={{color:DC.dim,fontSize:10}}>인벤토리 트렌드 / 리오더 계산기의 공통 데이터 소스가 됩니다.</div>
+          <div style={{color:DC.dim,fontSize:12}}>인벤토리 트렌드 / 리오더 계산기의 공통 데이터 소스가 됩니다.</div>
         </div>
-        {file&&<div style={{marginTop:6,fontSize:11,color:"#7EC8A4"}}>{file.name}</div>}
+        {file&&<div style={{marginTop:6,fontSize:13,color:"#7EC8A4"}}>{file.name}</div>}
       </div>
 
       {/* Status bar */}
@@ -5881,17 +5881,17 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       {/* History */}
       <div style={{marginTop:20}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-          <span style={{fontSize:11,fontWeight:600,color:DC.sub,letterSpacing:".04em"}}>업로드 이력</span>
+          <span style={{fontSize:13,fontWeight:600,color:DC.sub,letterSpacing:".04em"}}>업로드 이력</span>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <input type="date" value={histFilter} onChange={e=>setHistFilter(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,padding:"3px 8px",
-                fontSize:11,color:DC.text,colorScheme:"dark",fontFamily:"inherit"}}/>
+                fontSize:12,color:DC.text,colorScheme:"dark",fontFamily:"inherit"}}/>
             {histFilter&&<button onClick={()=>setHistFilter("")} style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:13,lineHeight:1}}>✕</button>}
             {selDates.size>0&&(
               delConfirm
-                ?<><button onClick={handleDelete} style={{background:"#C87B7B",color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:700}}>확인 삭제</button>
-                   <button onClick={()=>setDelConfirm(false)} style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>취소</button></>
-                :<button onClick={()=>setDelConfirm(true)} style={{background:"transparent",color:"#C87B7B",border:"1px solid #C87B7B",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>
+                ?<><button onClick={handleDelete} style={{background:"#C87B7B",color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:12,cursor:"pointer",fontWeight:700}}>확인 삭제</button>
+                   <button onClick={()=>setDelConfirm(false)} style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>취소</button></>
+                :<button onClick={()=>setDelConfirm(true)} style={{background:"transparent",color:"#C87B7B",border:"1px solid #C87B7B",borderRadius:5,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>
                   {selDates.size}개 삭제
                 </button>
             )}
@@ -5920,7 +5920,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
                     </td>
                     <td style={{padding:"5px 8px",color:DC.text,fontWeight:500}}>{h.snapshot_date}</td>
                     <td style={{padding:"5px 8px",textAlign:"right"}}>{h.row_count.toLocaleString()}</td>
-                    <td style={{padding:"5px 8px",textAlign:"right",fontSize:11,color:DC.sub}}>
+                    <td style={{padding:"5px 8px",textAlign:"right",fontSize:12,color:DC.sub}}>
                       {h.uploaded_at?new Date(h.uploaded_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):"—"}
                     </td>
                   </tr>
@@ -5999,18 +5999,25 @@ function InvBubblePlot({DC,snapshotDates}){
     if(!loadDate||!filtered.length) return[];
     const snapM=dayjs(loadDate).month();
     const inRange=m=>{const diff=Math.abs(m-snapM);return diff<=2||diff>=10;};
-    const candidates=filtered
+    const raw=filtered
       .filter(d=>d.noSalesDays>medX&&d.current_stock_qty>medY)
-      .filter(d=>d.latest_inbound_date&&inRange(dayjs(d.latest_inbound_date).month()))
+      .filter(d=>d.latest_inbound_date&&inRange(dayjs(d.latest_inbound_date).month()));
+    if(!raw.length) return[];
+    const sortedX=[...raw].sort((a,b)=>a.noSalesDays-b.noSalesDays);
+    const sortedY=[...raw].sort((a,b)=>a.current_stock_qty-b.current_stock_qty);
+    const p30idx=Math.floor(raw.length*0.3);
+    const p30X=Math.max(1,sortedX[p30idx]?.noSalesDays||medX);
+    const p30Y=Math.max(1,sortedY[p30idx]?.current_stock_qty||medY);
+    const candidates=raw
       .map(d=>{
-        const xN=(d.noSalesDays-medX)/Math.max(1,medX);
-        const yN=(d.current_stock_qty-medY)/Math.max(1,medY);
+        const xN=(d.noSalesDays-p30X)/p30X;
+        const yN=(d.current_stock_qty-p30Y)/p30Y;
         return{...d,_dist:Math.sqrt(xN*xN+yN*yN)};
       })
       .sort((a,b)=>b._dist-a._dist);
     return candidates.map((d,i)=>{
       const n=Math.max(1,candidates.length-1);
-      const rate=Math.min(70,Math.round((10+(i/n)*60)/10)*10);
+      const rate=Math.max(30,Math.min(70,Math.round((70-(i/n)*40)/10)*10));
       return{...d,recommendedDiscount:rate};
     });
   },[filtered,medX,medY,selDate]);
@@ -6041,8 +6048,8 @@ function InvBubblePlot({DC,snapshotDates}){
     const def=INV_AGING_DEFS[d.agingKey];
     return(
       <div style={{background:"#161616",border:"1px solid #2e2e2e",borderRadius:9,padding:"12px 14px",fontSize:12,minWidth:210,maxWidth:270,boxShadow:"0 4px 20px rgba(0,0,0,0.6)"}}>
-        <div style={{fontWeight:700,color:"#F0F0F0",marginBottom:3,fontSize:13}}>{d.product_name}</div>
-        {d.option_name&&<div style={{color:"#666",fontSize:11,marginBottom:8}}>{d.option_name}</div>}
+        <div style={{fontWeight:700,color:"#F0F0F0",marginBottom:3,fontSize:14}}>{d.product_name}</div>
+        {d.option_name&&<div style={{color:"#666",fontSize:12,marginBottom:8}}>{d.option_name}</div>}
         <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 10px",color:"#888"}}>
           {[
             ["판매가",`${(d.selling_price||0).toLocaleString()}원`],
@@ -6059,7 +6066,7 @@ function InvBubblePlot({DC,snapshotDates}){
         </div>
         <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #2a2a2a",display:"flex",alignItems:"center",gap:5}}>
           <span style={{width:7,height:7,borderRadius:2,background:def?.color,display:"inline-block",flexShrink:0}}/>
-          <span style={{color:def?.color,fontWeight:700,fontSize:11}}>{def?.label}</span>
+          <span style={{color:def?.color,fontWeight:700,fontSize:12}}>{def?.label}</span>
         </div>
       </div>
     );
@@ -6104,7 +6111,7 @@ function InvBubblePlot({DC,snapshotDates}){
                 style={{flex:1,background:dateMode===k?"#7EC8A4":"rgba(255,255,255,0.05)",
                   color:dateMode===k?"#0a1a12":DC.sub,
                   border:`1px solid ${dateMode===k?"#7EC8A4":DC.border}`,
-                  borderRadius:6,padding:"5px 0",fontSize:11,cursor:"pointer",fontWeight:dateMode===k?700:400}}>
+                  borderRadius:6,padding:"5px 0",fontSize:12,cursor:"pointer",fontWeight:dateMode===k?700:400}}>
                 {l}
               </button>
             ))}
@@ -6132,30 +6139,30 @@ function InvBubblePlot({DC,snapshotDates}){
             {/* 선정 기준 설명 토글 */}
             <button onClick={()=>setShowPromoInfo(p=>!p)}
               style={{width:"100%",marginTop:4,background:"transparent",border:"none",
-                color:showPromoInfo?"#7EC8A4":DC.dim,fontSize:10,cursor:"pointer",
+                color:showPromoInfo?"#7EC8A4":DC.dim,fontSize:12,cursor:"pointer",
                 textAlign:"left",padding:"4px 2px",lineHeight:1.4}}>
               {showPromoInfo?"▲ 선정 기준 닫기":"▼ 선정 기준 보기"}
             </button>
             {showPromoInfo&&(
               <div style={{marginTop:4,padding:"10px 11px",background:"rgba(255,255,255,0.03)",
-                border:`1px solid ${DC.border}`,borderRadius:7,fontSize:10,color:DC.sub,lineHeight:1.75}}>
-                <div style={{color:"#C87B7B",fontWeight:700,marginBottom:5,fontSize:11}}>프로모션 제안 선정 기준</div>
+                border:`1px solid ${DC.border}`,borderRadius:7,fontSize:12,color:DC.sub,lineHeight:1.75}}>
+                <div style={{color:"#C87B7B",fontWeight:700,marginBottom:5,fontSize:13}}>프로모션 제안 선정 기준</div>
                 <div style={{marginBottom:4}}>
                   <span style={{color:DC.text,fontWeight:600}}>① 위치 조건</span><br/>
                   미판매 일수 &gt; 전체 중앙값 <span style={{color:"#7B9EC8"}}>AND</span><br/>
                   현재고 &gt; 전체 중앙값<br/>
-                  <span style={{color:DC.dim,fontSize:9}}>(차트 우상단 사분면 SKU)</span>
+                  <span style={{color:DC.dim,fontSize:12}}>(차트 우상단 사분면 SKU)</span>
                 </div>
                 <div style={{marginBottom:4}}>
                   <span style={{color:DC.text,fontWeight:600}}>② 최근 입고 조건</span><br/>
                   최근 입고일이 스냅샷 기준 ±2개월 이내<br/>
-                  <span style={{color:DC.dim,fontSize:9}}>(오래된 재고보다 최근 발주 재고 우선)</span>
+                  <span style={{color:DC.dim,fontSize:12}}>(오래된 재고보다 최근 발주 재고 우선)</span>
                 </div>
                 <div>
                   <span style={{color:DC.text,fontWeight:600}}>③ 할인율 산정</span><br/>
-                  중앙값 대비 거리(미판매+재고) 기준 정렬<br/>
+                  30번째 백분위수 대비 거리(미판매+재고) 기준 정렬<br/>
                   → 거리 클수록 <span style={{color:"#C87B7B"}}>최대 70%</span> 할인 권장<br/>
-                  <span style={{color:DC.dim,fontSize:9}}>(최소 10%, 10% 단위)</span>
+                  <span style={{color:DC.dim,fontSize:12}}>(최소 30%, 10% 단위)</span>
                 </div>
               </div>
             )}
@@ -6166,32 +6173,37 @@ function InvBubblePlot({DC,snapshotDates}){
       {/* Right: Filters + Chart + Note */}
       <div style={{flex:1,minWidth:0}}>
         {/* Filters */}
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
-          <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>Aging 필터</span>
-          {INV_AGING_KEYS.map(k=>{
-            const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
-            return(
-              <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
-                style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
-                  border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
-                {def.label}
-              </button>
-            );
-          })}
+        <div style={{border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 12px",marginBottom:10}}>
+          <div style={{fontSize:12,color:DC.sub,fontWeight:600,marginBottom:7,display:"flex",alignItems:"center",gap:6}}>
+            <span>Aging 필터</span>
+            <span style={{fontWeight:400,color:DC.dim,fontSize:12}}>· 항목을 클릭해 해제/선택하면 구간별로 집중 분석할 수 있습니다</span>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            {INV_AGING_KEYS.map(k=>{
+              const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
+              return(
+                <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
+                  style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
+                    border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
+                  {def.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
-          <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
+          <span style={{fontSize:13,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
           <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
             style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-              padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
-          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:DC.sub,flexShrink:0}}>
+              padding:"5px 10px",fontSize:13,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:DC.sub,flexShrink:0}}>
             <span>최소재고</span>
             <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
               style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
           </div>
         </div>
-        {selDate&&<div style={{fontSize:11,color:DC.sub,marginBottom:8}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
+        {selDate&&<div style={{fontSize:12,color:DC.sub,marginBottom:8}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
 
         {/* Chart */}
         {!selDate
@@ -6212,7 +6224,7 @@ function InvBubblePlot({DC,snapshotDates}){
                       tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
                       label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:DC.text,fontSize:11}}/>
                     <ZAxis dataKey="currentInventoryValue" range={[16,1600]} name="재고금액"/>
-                    <Tooltip content={<BubbleTooltip/>} cursor={false}/>
+                    <Tooltip content={<BubbleTooltip/>} cursor={false} wrapperStyle={{transition:"none"}}/>
                     <Scatter data={filtered} shape={<CustomDot/>}/>
                   </ScatterChart>
                 </ResponsiveContainer>
@@ -6235,7 +6247,7 @@ function InvBubblePlot({DC,snapshotDates}){
               <span style={{fontSize:13,fontWeight:700,color:"#C87B7B"}}>프로모션 제안 SKU ({saleRecs.length})</span>
               <button onClick={downloadSaleRecs}
                 style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",
-                  borderRadius:6,padding:"4px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                  borderRadius:6,padding:"4px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                 ↓ 엑셀 다운로드
               </button>
             </div>
@@ -6245,7 +6257,7 @@ function InvBubblePlot({DC,snapshotDates}){
                   <tr style={{borderBottom:`1px solid ${DC.border}`}}>
                     {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율"].map(h=>(
                       <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
-                        fontWeight:600,color:DC.text,fontSize:11,whiteSpace:"nowrap"}}>
+                        fontWeight:600,color:DC.text,fontSize:12,whiteSpace:"nowrap"}}>
                         {h}
                       </th>
                     ))}
@@ -6272,7 +6284,7 @@ function InvBubblePlot({DC,snapshotDates}){
                         }원</td>
                         <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>{d.noSalesDays}일</td>
                         <td style={{padding:"6px 8px",textAlign:"center"}}>
-                          <span style={{fontSize:11,fontWeight:600,color:def?.color||"#888"}}>{def?.label||"—"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:def?.color||"#888"}}>{def?.label||"—"}</span>
                         </td>
                         <td style={{padding:"6px 8px",textAlign:"center"}}>
                           <span style={{fontWeight:800,fontSize:13,color:"#C87B7B"}}>{d.recommendedDiscount}%</span>
@@ -6304,11 +6316,11 @@ function InvBubblePlot({DC,snapshotDates}){
             <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",
               background:`${def?.color}20`,border:`1px solid ${def?.color}55`,borderRadius:14,marginBottom:16}}>
               <span style={{width:6,height:6,borderRadius:"50%",background:def?.color,display:"inline-block"}}/>
-              <span style={{fontSize:11,fontWeight:700,color:def?.color}}>{def?.label}</span>
+              <span style={{fontSize:13,fontWeight:700,color:def?.color}}>{def?.label}</span>
             </div>
             {saleRec&&showSaleRec&&(
               <div style={{background:"rgba(200,123,123,0.1)",border:"1px solid rgba(200,123,123,0.35)",borderRadius:8,padding:"9px 12px",marginBottom:14}}>
-                <div style={{fontSize:10,fontWeight:700,color:"#C87B7B",marginBottom:3}}>세일 추천</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#C87B7B",marginBottom:3}}>세일 추천</div>
                 <div style={{fontSize:14,color:"#F0F0F0",fontWeight:700}}>{saleRec.recommendedDiscount}% 할인 권장</div>
               </div>
             )}
@@ -6317,17 +6329,17 @@ function InvBubblePlot({DC,snapshotDates}){
                 ["재고 금액",`${(d.currentInventoryValue||0).toLocaleString()}원`],["미판매",`${d.noSalesDays}일`],
                 ["SKU 기간",`${d.skuAge}일`],["입고 후",`${d.postRestockDays}일`]].map(([l,v])=>(
                 <div key={l} style={{background:"#1e1e1e",borderRadius:7,padding:"9px 11px"}}>
-                  <div style={{fontSize:10,color:"#555",marginBottom:3}}>{l}</div>
+                  <div style={{fontSize:12,color:"#555",marginBottom:3}}>{l}</div>
                   <div style={{fontSize:13,fontWeight:600,color:"#F0F0F0"}}>{v}</div>
                 </div>
               ))}
             </div>
             <div style={{borderTop:"1px solid #242424",paddingTop:13,marginBottom:12,fontSize:12,color:"#666"}}>
-              <div style={{fontSize:10,color:"#555",marginBottom:6,fontWeight:600}}>스냅샷</div>
+              <div style={{fontSize:12,color:"#555",marginBottom:6,fontWeight:600}}>스냅샷</div>
               데이터 날짜: <span style={{color:"#F0F0F0"}}>{d.snapshot_date}</span>
             </div>
             <div style={{borderTop:"1px solid #242424",paddingTop:13}}>
-              <div style={{fontSize:10,color:"#555",marginBottom:8,fontWeight:600}}>판매/재고 요약</div>
+              <div style={{fontSize:12,color:"#555",marginBottom:8,fontWeight:600}}>판매/재고 요약</div>
               {[["처음입고일",d.first_inbound_date||"—"],["처음입고수량",`${(d.first_inbound_qty||0).toLocaleString()}개`],
                 ["누적입고",`${(d.cumulative_inbound_qty||0).toLocaleString()}개`],["마지막입고일",d.latest_inbound_date||"—"],
                 ["마지막배송일",d.last_delivery_date||"—"],["누적배송",`${(d.cumulative_delivery_qty||0).toLocaleString()}개`],
@@ -6523,33 +6535,36 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
       )}
 
       {/* Controls */}
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
-        {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setDateRange(v)}
-            style={{background:dateRange===v?DC.text:"transparent",color:dateRange===v?DC.card:DC.sub,
-              border:`1px solid ${dateRange===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
-            {l}
-          </button>
-        ))}
-        <span style={{color:DC.border,margin:"0 3px",fontSize:16}}>|</span>
-        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
-        {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setAggUnit(v)}
-            style={{background:aggUnit===v?DC.text:"transparent",color:aggUnit===v?DC.card:DC.sub,
-              border:`1px solid ${aggUnit===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
-            {l}
-          </button>
-        ))}
-        <span style={{color:DC.border,margin:"0 3px",fontSize:16}}>|</span>
-        <span style={{fontSize:13,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
-        {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setYMode(v)}
-            style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
-              border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
-            {l}
-          </button>
-        ))}
+      <div style={{border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+        <div style={{fontSize:12,color:DC.sub,fontWeight:600,marginBottom:8}}>필터 <span style={{fontWeight:400,color:DC.dim}}>· 항목을 클릭해 기간·집계 단위·지표를 전환할 수 있습니다</span></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
+          {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setDateRange(v)}
+              style={{background:dateRange===v?DC.text:"transparent",color:dateRange===v?DC.card:DC.sub,
+                border:`1px solid ${dateRange===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
+              {l}
+            </button>
+          ))}
+          <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
+          <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
+          {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setAggUnit(v)}
+              style={{background:aggUnit===v?DC.text:"transparent",color:aggUnit===v?DC.card:DC.sub,
+                border:`1px solid ${aggUnit===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
+              {l}
+            </button>
+          ))}
+          <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
+          <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
+          {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setYMode(v)}
+              style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
+                border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
@@ -6580,17 +6595,17 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
         </div>
 
         {/* Legend panel */}
-        <div style={{width:148,flexShrink:0,paddingTop:8}}>
+        <div style={{width:160,flexShrink:0,border:`1px solid ${DC.border}`,borderRadius:8,padding:"12px 14px"}}>
           <div style={{fontSize:12,fontWeight:700,color:DC.sub,marginBottom:12,letterSpacing:".06em"}}>AGING STATUS</div>
           {INV_AGING_KEYS.map(k=>{
             const def=INV_AGING_DEFS[k];
             return(
-              <div key={k} style={{marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+              <div key={k} style={{marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                   <span style={{width:9,height:9,borderRadius:2,background:def.color,display:"inline-block",flexShrink:0}}/>
-                  <span style={{fontSize:14,fontWeight:600,color:def.color}}>{def.label}</span>
+                  <span style={{fontSize:13,fontWeight:600,color:def.color}}>{def.label}</span>
                 </div>
-                <div style={{fontSize:13,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
+                <div style={{fontSize:12,color:DC.text,paddingLeft:15,lineHeight:1.5}}>{def.desc}</div>
               </div>
             );
           })}
@@ -6629,7 +6644,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
                     <tr style={{borderBottom:`1px solid ${DC.border}`}}>
                       {["상품명","옵션","재고 수","미판매 일수","재고 금액"].map(h=>(
                         <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
-                          fontWeight:600,color:DC.text,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
+                          fontWeight:600,color:DC.text,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -6849,9 +6864,9 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
         <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
-        {latestDataDate&&<span style={{fontSize:14,color:DC.text,marginLeft:4}}>· 기준일 {latestDataDate}</span>}
+        {latestDataDate&&<span style={{fontSize:12,color:DC.sub,marginLeft:4}}>· 기준일 {latestDataDate}</span>}
       </div>
-      <div style={{fontSize:15,color:DC.text,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+      <div style={{fontSize:13,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
 
       {/* Calculation flow card */}
       <div style={{marginBottom:20,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
@@ -7608,8 +7623,8 @@ function DataCompare({revenues,storeSales=[]}){
       <div style={sectionCard}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
-          {agingDate&&<span style={{fontSize:16,color:DC.text}}>· 기준일 {agingDate}</span>}
-          <span style={{fontSize:15,color:DC.text}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+          {agingDate&&<span style={{fontSize:12,color:DC.sub}}>· 기준일 {agingDate}</span>}
+          <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate}/>
       </div>
