@@ -6270,10 +6270,10 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     text:DC.text,sub:DC.sub,dim:DC.dim,green:"#7EC8A4",greenBg:"rgba(126,200,164,0.15)"};
   const availSet=useMemo(()=>new Set(snapshotDates),[snapshotDates]);
 
-  // Axis domains — add ~15% headroom so max-radius bubbles don't clip
+  // X-axis right edge = longest unsold days; Y-axis keeps headroom for bubble radius
   const xMax=useMemo(()=>filtered.length?Math.max(...filtered.map(d=>d.noSalesDays),1):100,[filtered]);
   const yMax=useMemo(()=>filtered.length?Math.max(...filtered.map(d=>d.current_stock_qty),1):100,[filtered]);
-  const xDomain=useMemo(()=>[0,Math.ceil(xMax*1.18)],[xMax]);
+  const xDomain=useMemo(()=>[0,xMax],[xMax]);
   const yDomain=useMemo(()=>[0,Math.ceil(yMax*1.18)],[yMax]);
 
   const [showPromoInfo,setShowPromoInfo]=useState(false);
