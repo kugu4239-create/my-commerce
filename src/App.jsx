@@ -7801,10 +7801,12 @@ function CaptureBtn({cardRef,filename,DC}){
           try{
             if(navigator.canShare&&navigator.canShare({files:[file]})){
               await navigator.share({files:[file],title:fname});
+              navigator.vibrate?.(80);
               setBusy(false);return;
             }
           }catch(e){if(e.name!=="AbortError") console.error(e);}
           const a=document.createElement("a");a.download=fname;a.href=URL.createObjectURL(blob);a.click();
+          navigator.vibrate?.(80);
           setBusy(false);
         },"image/png");
         return;
@@ -7812,6 +7814,7 @@ function CaptureBtn({cardRef,filename,DC}){
       // Desktop fallback: direct download
       const a=document.createElement("a");
       a.download=fname;a.href=canvas.toDataURL("image/png");a.click();
+      navigator.vibrate?.(80);
     }catch(e){btns.forEach(b=>{b.style.visibility=b._prevVis||"";});console.error(e);}
     setBusy(false);
   };
