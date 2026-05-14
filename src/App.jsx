@@ -6625,21 +6625,21 @@ function ReorderCalculator({DC,refreshKey}){
   ,[data]);
 
   const topSales=useMemo(()=>
-    [...data].sort((a,b)=>(b.reorder_expected_daily_sales||0)-(a.reorder_expected_daily_sales||0)).slice(0,10).map(r=>({
+    [...data].sort((a,b)=>(b.reorder_expected_daily_sales||0)-(a.reorder_expected_daily_sales||0)).slice(0,5).map(r=>({
       name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
       value:r.reorder_expected_daily_sales||0,
     }))
   ,[data]);
 
   const topReorder=useMemo(()=>
-    [...data].sort((a,b)=>(b.reorder_recommended_qty||0)-(a.reorder_recommended_qty||0)).slice(0,10).map(r=>({
+    [...data].sort((a,b)=>(b.reorder_recommended_qty||0)-(a.reorder_recommended_qty||0)).slice(0,5).map(r=>({
       name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
       value:r.reorder_recommended_qty||0,
     }))
   ,[data]);
 
   const rising=useMemo(()=>
-    [...data].filter(r=>(r.reorder_trend_ratio||0)>=1.2).sort((a,b)=>(b.reorder_trend_ratio||0)-(a.reorder_trend_ratio||0)).slice(0,10).map(r=>({
+    [...data].filter(r=>(r.reorder_trend_ratio||0)>=1.2).sort((a,b)=>(b.reorder_trend_ratio||0)-(a.reorder_trend_ratio||0)).slice(0,5).map(r=>({
       name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
       value:Math.round((r.reorder_trend_ratio||0)*100)/100,
     }))
@@ -6728,21 +6728,9 @@ function ReorderCalculator({DC,refreshKey}){
           )}
 
           {/* Charts */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>재고잔여일 분포</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={daysDistData} margin={{top:4,right:8,bottom:4,left:0}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c"/>
-                  <XAxis dataKey="label" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <Tooltip {...ttStyle}/>
-                  <Bar dataKey="count" name="SKU 수" fill="#C87B7B" radius={[3,3,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top10 (추세비율)</div>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top5 (추세비율)</div>
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={rising} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
@@ -6754,7 +6742,7 @@ function ReorderCalculator({DC,refreshKey}){
               </ResponsiveContainer>
             </div>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top SKU (예상 일판매량)</div>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top5 (예상 일판매량)</div>
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={topSales} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
@@ -6766,7 +6754,7 @@ function ReorderCalculator({DC,refreshKey}){
               </ResponsiveContainer>
             </div>
             <div style={chartStyle}>
-              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top SKU</div>
+              <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top5</div>
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={topReorder} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
