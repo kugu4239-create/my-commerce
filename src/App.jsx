@@ -7314,10 +7314,19 @@ function DataCompare({revenues,storeSales=[]}){
     return res;
   },[volUnit,revenues,storeSales]);
 
-  // Reset slider to show last N periods when allVolPeriods changes
+  // Initialize slider to current year on first load; reset when unit changes
   useEffect(()=>{
     const n=allVolPeriods.length;
     if(!n){setSliderIdx([0,0]);return;}
+    const curYear=new Date().getFullYear().toString();
+    if(volUnit==="year"){
+      const idx=allVolPeriods.findIndex(p=>p.label===curYear);
+      if(idx>=0){setSliderIdx([0,n-1]);return;}
+    } else {
+      const inYear=allVolPeriods.map((p,i)=>({p,i})).filter(({p})=>p.label.startsWith(`${curYear}.`));
+      if(inYear.length>0){setSliderIdx([inYear[0].i,inYear[inYear.length-1].i]);return;}
+    }
+    // fallback if no data for current year
     const def=volUnit==="year"?Math.min(n,5):Math.min(n,12);
     setSliderIdx([Math.max(0,n-def),n-1]);
   },[allVolPeriods]); // eslint-disable-line react-hooks/exhaustive-deps
