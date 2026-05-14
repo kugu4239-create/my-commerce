@@ -6987,17 +6987,16 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           const val=dp[`${p.dataKey}_val`]||0;
           const qty=dp[`${p.dataKey}_qty`]||0;
           const cnt=dp[`${p.dataKey}_count`]||0;
-          const totalQtyAll=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0)||1;
           return(
             <div key={p.dataKey} style={{marginBottom:6,paddingBottom:6,borderBottom:`1px solid ${DC.border}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
                 <span style={{color:p.fill||p.stroke,fontWeight:600}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
-                <span style={{fontSize:11,color:DC.sub}}>{cnt.toLocaleString()} SKU</span>
+                <span style={{fontSize:10,color:DC.sub}}>{cnt.toLocaleString()} SKU</span>
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                <span style={{color:DC.text,fontWeight:600}}>{qty.toLocaleString()}개<span style={{color:DC.sub,fontWeight:400,marginLeft:3}}>({(qty/totalQtyAll*100).toFixed(1)}%)</span></span>
+                <span style={{color:DC.text,fontWeight:600}}>{qty.toLocaleString()}개</span>
                 <span style={{color:DC.sub}}>·</span>
-                <span style={{color:DC.text}}>{fmtVal(val)}원{totalVal>0&&<span style={{color:DC.sub,marginLeft:3}}>({(val/totalVal*100).toFixed(1)}%)</span>}</span>
+                <span style={{color:DC.text}}>{fmtVal(val)}원</span>
               </div>
             </div>
           );
@@ -7016,19 +7015,14 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       {kpi&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
           {[
-            {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B",
-              sub:`${(kpi.qtyByKey["DEAD"]?.count||0).toLocaleString()} SKU`},
-            {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4",
-              sub:`${(kpi.qtyByKey["HEALTHY"]?.count||0).toLocaleString()} SKU`},
-            {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text,
-              sub:`${kpi.total.toLocaleString()} SKU`},
-            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B",
-              sub:`SKU 평균 ${fmtVal(kpi.total?Math.round(kpi.totalVal/kpi.total):0)}원`},
+            {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B"},
+            {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4"},
+            {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
+            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B"},
           ].map(c=>(
             <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
               <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
               <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
-              <div style={{fontSize:10,color:DC.sub,marginTop:4,opacity:.75}}>{c.sub}</div>
             </div>
           ))}
         </div>
@@ -7142,11 +7136,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                   <div style={{paddingLeft:14,display:"flex",flexDirection:"column",gap:2}}>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub}}>수량</span>
-                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{q.qty.toLocaleString()}개 <span style={{color:DC.sub,fontWeight:400}}>({q.pct}%)</span></span>
+                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{q.qty.toLocaleString()}개</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub}}>금액</span>
-                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{fmtVal(q.val)}원 <span style={{color:DC.sub,fontWeight:400}}>({q.valPct}%)</span></span>
+                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{fmtVal(q.val)}원</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub,opacity:.7}}>SKU</span>
