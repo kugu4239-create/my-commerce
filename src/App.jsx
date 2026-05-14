@@ -6637,21 +6637,21 @@ function ReorderCalculator({DC,refreshKey}){
 
   const topSales=useMemo(()=>
     [...data].sort((a,b)=>(b.reorder_expected_daily_sales||0)-(a.reorder_expected_daily_sales||0)).slice(0,5).map(r=>({
-      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,18),
       value:r.reorder_expected_daily_sales||0,
     }))
   ,[data]);
 
   const topReorder=useMemo(()=>
     [...data].sort((a,b)=>(b.reorder_recommended_qty||0)-(a.reorder_recommended_qty||0)).slice(0,5).map(r=>({
-      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,18),
       value:r.reorder_recommended_qty||0,
     }))
   ,[data]);
 
   const rising=useMemo(()=>
     [...data].filter(r=>(r.reorder_trend_ratio||0)>=1.2).sort((a,b)=>(b.reorder_trend_ratio||0)-(a.reorder_trend_ratio||0)).slice(0,5).map(r=>({
-      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,22),
+      name:`${r.reorder_product_name||""}${r.reorder_option_name?` / ${r.reorder_option_name}`:""}`.slice(0,18),
       value:Math.round((r.reorder_trend_ratio||0)*100)/100,
     }))
   ,[data]);
@@ -6742,11 +6742,11 @@ function ReorderCalculator({DC,refreshKey}){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
             <div style={chartStyle}>
               <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top5 (추세비율)</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={rising} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={rising} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
                   <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추세비율" fill="#7EC8A4" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -6754,11 +6754,11 @@ function ReorderCalculator({DC,refreshKey}){
             </div>
             <div style={chartStyle}>
               <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>판매속도 Top5 (예상 일판매량)</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={topSales} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={topSales} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
                   <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle} formatter={v=>[v.toFixed(2),"일판매량"]}/>
                   <Bar dataKey="value" name="일판매량" fill="#7B9EC8" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -6766,11 +6766,11 @@ function ReorderCalculator({DC,refreshKey}){
             </div>
             <div style={chartStyle}>
               <div style={{fontSize:12,fontWeight:600,color:DC.text,marginBottom:12}}>추천 리오더 수량 Top5</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={topReorder} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={topReorder} layout="vertical" margin={{top:0,right:8,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
                   <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추천리오더" fill="#C8A87B" radius={[0,3,3,0]}/>
                 </BarChart>
