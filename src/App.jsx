@@ -4280,10 +4280,17 @@ function RevenueForm({ onUpdate }) {
 
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
-    const {data}=await db.from("revenues").select("*").order("date",{ascending:false});
+    let all=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data,error}=await db.from("revenues").select("*").order("date",{ascending:false}).range(from,from+PAGE-1);
+      if(error||!data||data.length===0) break;
+      all=all.concat(data);
+      if(data.length<PAGE) break;
+      from+=PAGE;
+    }
     // 대시보드와 동일하게 dedup (date+channel 기준 최신 id만)
     const revMap={};
-    (data||[]).forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
+    all.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
     setHistory(Object.values(revMap).sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:0));
     setHistTs(nowStr());
   },[]);
@@ -4669,8 +4676,15 @@ function StockUploader({ onUpdate }) {
 
   const loadHistory=useCallback(async()=>{
     const db=await getSupabase();
-    const {data}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).order("product_name");
-    setHistory(data||[]); setHistTs(nowStr()); setSelected(new Set()); setDeleteConfirm(false);
+    let all=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data,error}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).order("product_name").range(from,from+PAGE-1);
+      if(error||!data||data.length===0) break;
+      all=all.concat(data);
+      if(data.length<PAGE) break;
+      from+=PAGE;
+    }
+    setHistory(all); setHistTs(nowStr()); setSelected(new Set()); setDeleteConfirm(false);
   },[]);
 
   const toggleSelect=id=>setSelected(prev=>{const s=new Set(prev);s.has(id)?s.delete(id):s.add(id);return s;});
@@ -4881,10 +4895,12 @@ function StockUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
+const HIST_PAGE=200;
 function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색" }) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
+  const [page,setPage]=useState(0);
   const [selected,setSelected]=useState(new Set());
   const [editCell,setEditCell]=useState(null);
   const [editVal,setEditVal]=useState("");
@@ -4912,10 +4928,13 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
   const filtered=filter
     ?rows.filter(r=>[...searchFields,dateField].some(f=>String(r[f]||"").includes(filter)))
     :rows;
+  const totalPages=Math.max(1,Math.ceil(filtered.length/HIST_PAGE));
+  const safePage=Math.min(page,totalPages-1);
+  const pageRows=filtered.slice(safePage*HIST_PAGE,(safePage+1)*HIST_PAGE);
 
   const toggleSelect=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const toggleAll=()=>{
-    const ids=filtered.map(r=>r.id);
+    const ids=pageRows.map(r=>r.id);
     const allSel=ids.every(id=>selected.has(id));
     setSelected(s=>{const n=new Set(s);ids.forEach(id=>allSel?n.delete(id):n.add(id));return n;});
   };
@@ -4947,7 +4966,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
         <span style={{fontWeight:600,fontSize:13}}>업로드 내역</span>
         <div style={{display:"flex",gap:8,alignItems:"center",flex:1,justifyContent:"flex-end"}}>
-          <input placeholder={placeholder} value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);}}
+          <input placeholder={placeholder} value={filter} onChange={e=>{setFilter(e.target.value);setDeleteConfirm(false);setPage(0);}}
             style={{...inp2,minWidth:180,maxWidth:280}}/>
           <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
             {loading?"로딩 중…":`${filtered.length}건`}
@@ -4978,7 +4997,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
             <thead style={{position:"sticky",top:0,background:D.surface,zIndex:1}}>
               <tr style={{borderBottom:`1px solid ${D.border}`}}>
                 <th style={{padding:"5px 7px",width:28}}>
-                  <input type="checkbox" checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))} onChange={toggleAll}/>
+                  <input type="checkbox" checked={pageRows.length>0&&pageRows.every(r=>selected.has(r.id))} onChange={toggleAll}/>
                 </th>
                 {cols.map(c=>(
                   <th key={c.key} style={{padding:"5px 7px",textAlign:"left",color:D.textMeta,fontWeight:400,whiteSpace:"nowrap"}}>{c.label}</th>
@@ -4986,7 +5005,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0,500).map(r=>(
+              {pageRows.map(r=>(
                 <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,background:selected.has(r.id)?"#f5f5f5":"transparent"}}>
                   <td style={{padding:"4px 7px"}}><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td>
                   {cols.map(c=>{
@@ -5010,6 +5029,19 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {totalPages>1&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:8,fontSize:11,color:D.textMeta}}>
+          <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={safePage===0}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 10px",cursor:safePage===0?"default":"pointer",color:safePage===0?D.textMeta:D.text}}>
+            이전
+          </button>
+          <span>{safePage+1} / {totalPages}</span>
+          <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={safePage===totalPages-1}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 10px",cursor:safePage===totalPages-1?"default":"pointer",color:safePage===totalPages-1?D.textMeta:D.text}}>
+            다음
+          </button>
         </div>
       )}
       {result&&<Alert type={result.type} msg={result.msg}/>}
@@ -5667,11 +5699,18 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   const loadHistory=useCallback(async()=>{
     setHistLoading(true);
     const db=await getSupabase();
-    const{data,error}=await db.from("inventory_snapshot")
-      .select("snapshot_date,created_at")
-      .order("snapshot_date",{ascending:false})
-      .limit(2000);
-    if(error||!data){setHistLoading(false);return;}
+    let data=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data:chunk,error}=await db.from("inventory_snapshot")
+        .select("snapshot_date,created_at")
+        .order("snapshot_date",{ascending:false})
+        .range(from,from+PAGE-1);
+      if(error||!chunk||chunk.length===0) break;
+      data=data.concat(chunk);
+      if(chunk.length<PAGE) break;
+      from+=PAGE;
+    }
+    if(!data.length){setHistLoading(false);return;}
     const map={};
     data.forEach(r=>{
       if(!map[r.snapshot_date]) map[r.snapshot_date]={snapshot_date:r.snapshot_date,row_count:0,uploaded_at:r.created_at};
