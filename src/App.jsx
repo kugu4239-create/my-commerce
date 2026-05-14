@@ -6877,7 +6877,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
 
       {/* Drill-down table */}
       {clickedBar&&(
-        <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+        <div ref={drillTableRef} style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
             <span style={{fontSize:13,fontWeight:700,color:INV_AGING_DEFS[clickedBar.agingKey]?.color}}>
               {clickedBar.label} · {INV_AGING_DEFS[clickedBar.agingKey]?.label}
@@ -6901,7 +6901,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
                     </tr>
                   </thead>
                   <tbody>
-                    {[...drillRows].sort((a,b)=>b.noSalesDays-a.noSalesDays).map((r,i)=>(
+                    {[...drillRows].sort((a,b)=>b.noSalesDays-a.noSalesDays).slice(drillPage*50,(drillPage+1)*50).map((r,i)=>(
                       <tr key={r.id||i} style={{borderBottom:`1px solid ${DC.border}`,
                         background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
                         <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:160,
@@ -6914,7 +6914,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
                           {(r.current_stock_qty||0).toLocaleString()}</td>
                         <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,
                           color:INV_AGING_DEFS[r.agingKey]?.color||DC.text}}>
-                          {r.noSalesDays}일</td>
+                          {fmtDays(r.noSalesDays)}</td>
                         <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>
                           {(r.currentInventoryValue||0)>=10000
                             ?`${Math.round((r.currentInventoryValue||0)/10000)}만`
@@ -6923,8 +6923,34 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
                     ))}
                   </tbody>
                 </table>
+                {Math.ceil(drillRows.length/50)>1&&(
+                  <div style={{display:"flex",justifyContent:"center",gap:4,marginTop:10,flexWrap:"wrap"}}>
+                    {Array.from({length:Math.ceil(drillRows.length/50)}).map((_,i)=>(
+                      <button key={i} onClick={()=>{setDrillPage(i);drillTableRef.current?.scrollIntoView({behavior:"smooth",block:"start"});}}
+                        style={{background:drillPage===i?INV_AGING_DEFS[clickedBar.agingKey]?.color||DC.text:"transparent",
+                          color:drillPage===i?"#fff":DC.sub,
+                          border:`1px solid ${drillPage===i?(INV_AGING_DEFS[clickedBar.agingKey]?.color||DC.text):DC.border}`,
+                          borderRadius:5,padding:"3px 10px",fontSize:12,cursor:"pointer"}}>
+                        {i+1}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
           }
+        </div>
+      )}
+
+      {/* Sticky close button — appears when drill table is in viewport */}
+      {clickedBar&&drillTableVisible&&(
+        <div style={{position:"fixed",bottom:"20vh",left:"50%",transform:"translateX(-50%)",zIndex:800,pointerEvents:"none"}}>
+          <button onClick={()=>{setClickedBar(null);setDrillRows([]);}}
+            style={{pointerEvents:"auto",background:"rgba(30,30,30,0.92)",color:"#fff",
+              border:"1px solid #444",borderRadius:20,padding:"8px 22px",
+              fontSize:13,fontWeight:600,cursor:"pointer",backdropFilter:"blur(8px)",
+              boxShadow:"0 4px 16px rgba(0,0,0,0.4)"}}>
+            ✕ 표 닫기
+          </button>
         </div>
       )}
     </div>
