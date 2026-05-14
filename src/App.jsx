@@ -6495,6 +6495,17 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
           })}
         </div>
       </div>
+
+      {/* Footnote */}
+      <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid #1e1e1e",fontSize:10,color:"#555",lineHeight:1.7}}>
+        <span style={{color:"#666",fontWeight:600,marginRight:6}}>계산 방식</span>
+        마지막 판매일 기준 경과일수로 에이징을 분류합니다.&nbsp;
+        <span style={{color:INV_AGING_DEFS.HEALTHY.color}}>Healthy</span> 0~30일 ·&nbsp;
+        <span style={{color:INV_AGING_DEFS.SLOW.color}}>Slow-moving</span> 31~90일 ·&nbsp;
+        <span style={{color:INV_AGING_DEFS.AGING.color}}>Aging</span> 91~180일 ·&nbsp;
+        <span style={{color:INV_AGING_DEFS.DEAD.color}}>Dead Stock</span> 180일 초과.&nbsp;
+        스택 높이는 선택된 지표(SKU 수 / 재고 수량 / 재고 금액)를 기간별로 집계한 값입니다.
+      </div>
     </div>
   );
 }
@@ -6868,7 +6879,10 @@ function InventoryTrend({DC,onReorderRefresh}){
 
       {/* Aging Trend */}
       <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
-        <div style={{fontWeight:600,fontSize:13,color:DC.text,marginBottom:16,letterSpacing:"-0.1px"}}>Aging Trend</div>
+        <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <span style={{fontWeight:600,fontSize:13,color:DC.text,letterSpacing:"-0.1px"}}>Aging Trend</span>
+          <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+        </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={refreshKey}/>
       </div>
     </div>
@@ -7415,7 +7429,10 @@ function DataCompare({revenues,storeSales=[]}){
 
       {/* ③ Aging Trend — 다크 카드 */}
       <div style={darkCard}>
-        <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Aging Trend</div>
+        <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <span style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
+          <span style={{fontSize:14,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
+        </div>
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey}/>
       </div>
 
