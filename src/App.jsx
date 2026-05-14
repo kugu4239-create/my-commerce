@@ -6726,7 +6726,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
         const def=INV_AGING_DEFS[d.agingKey];
         const saleRec=saleRecs.find(s=>s.id===d.id);
         return(
-          <div style={{position:"fixed",top:0,right:0,height:"100vh",width:300,background:"#141414",
+          <div style={{position:"fixed",top:0,right:0,height:"50vh",width:300,background:"#141414",
             borderLeft:"1px solid #242424",zIndex:600,overflowY:"auto",padding:22,boxShadow:"-4px 0 20px rgba(0,0,0,0.5)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
               <span style={{fontWeight:700,fontSize:13,color:"#F0F0F0"}}>SKU 상세</span>
@@ -6784,6 +6784,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("week");
+  const [yMode,setYMode]=useState("qty");
   const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
@@ -6872,7 +6873,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       INV_AGING_KEYS.forEach(k=>{
         const v=rawByDate[d][k];
         if(v){
-          groups[key][k]+=v.qty;
+          groups[key][k]+=yMode==="count"?v.count:v.qty;
           groups[key][`${k}_qty`]+=v.qty;
           groups[key][`${k}_val`]+=v.value;
           groups[key][`${k}_count`]+=v.count;
@@ -6890,7 +6891,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       });
       return r;
     });
-  },[rawByDate,aggUnit]);
+  },[rawByDate,aggUnit,yMode]);
 
   const latestDate=useMemo(()=>{const d=Object.keys(rawByDate).sort();return d[d.length-1]||null;},[rawByDate]);
 
@@ -7058,7 +7059,14 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
             </button>
           ))}
           <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-          <span style={{fontSize:12,color:DC.sub,flexShrink:0}}>재고 수량 기준 · SKU 수 보조</span>
+          <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
+          {[["qty","재고 수량"],["count","SKU 수"]].map(([v,l])=>(
+            <button key={v} data-hf onClick={()=>setYMode(v)}
+              style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
+                border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
+              {l}
+            </button>
+          ))}
         </div>
       </div>
       {showCal&&(
