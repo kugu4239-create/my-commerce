@@ -6079,7 +6079,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 // ─────────────────────────────────────────────
 // INV BUBBLE SCATTER PLOT
 // ─────────────────────────────────────────────
-function InvBubblePlot({DC,snapshotDates}){
+function InvBubblePlot({DC,snapshotDates,stopRef}){
   const [dateMode,setDateMode]=useState("single"); // "single"|"range"
   const [selDate,setSelDate]=useState(null);
   const [selDateEnd,setSelDateEnd]=useState(null);
@@ -6093,7 +6093,14 @@ function InvBubblePlot({DC,snapshotDates}){
   const [promoPage,setPromoPage]=useState(0);
   const [promoTableVisible,setPromoTableVisible]=useState(false);
   const promoTableRef=useRef(null);
-  const showPromoSticky=useStickyTable("promoTable",showSaleRec&&promoTableVisible);
+  const [nextSecVisible,setNextSecVisible]=useState(false);
+  useEffect(()=>{
+    if(!stopRef?.current) return;
+    const obs=new IntersectionObserver(([e])=>setNextSecVisible(e.isIntersecting),{threshold:0});
+    obs.observe(stopRef.current);
+    return()=>obs.disconnect();
+  },[stopRef]);
+  const showPromoSticky=useStickyTable("promoTable",showSaleRec&&promoTableVisible)&&!nextSecVisible;
 
   useEffect(()=>{ setSelDate(null); setSelDateEnd(null); setData([]); },[dateMode]);
 
@@ -6206,7 +6213,7 @@ function InvBubblePlot({DC,snapshotDates}){
     const isSR=showSaleRec&&saleRecIds.has(payload.id);
     return(
       <circle cx={cx} cy={cy} r={r} fill={col} fillOpacity={0.62}
-        stroke={isSR?"#fff":col} strokeWidth={isSR?2:0.8}
+        stroke={isSR?"#fff":"none"} strokeWidth={isSR?2:0}
         style={{cursor:"pointer"}}
         onClick={()=>setSelectedSku(payload)}/>
     );
@@ -6298,6 +6305,24 @@ function InvBubblePlot({DC,snapshotDates}){
             availableDates={availSet}
             DC={dcTheme}
           />
+          {/* 에이징 스테이터스 필터 */}
+          <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
+            <div style={{fontSize:11,color:DC.sub,fontWeight:600,marginBottom:6}}>에이징 스테이터스</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {INV_AGING_KEYS.map(k=>{
+                const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
+                return(
+                  <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
+                    style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
+                      border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 8px",
+                      fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span>{def.label}</span>
+                    <span style={{fontSize:10,opacity:.7}}>{def.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {/* 프로모션 제안 버튼 */}
           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
             <button onClick={()=>setShowSaleRec(p=>!p)}
@@ -6578,7 +6603,7 @@ function InvBubblePlot({DC,snapshotDates}){
 // ─────────────────────────────────────────────
 // INV AGING TREND (STACKED AREA)
 // ─────────────────────────────────────────────
-function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
+function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("week");
@@ -6592,7 +6617,14 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [drillTableVisible,setDrillTableVisible]=useState(false);
   const drillTableRef=useRef(null);
   const [clickedBar,setClickedBar]=useState(null); // {label, agingKey}
-  const showDrillSticky=useStickyTable("drillTable",!!clickedBar&&drillTableVisible);
+  const [nextSecVisible,setNextSecVisible]=useState(false);
+  useEffect(()=>{
+    if(!stopRef?.current) return;
+    const obs=new IntersectionObserver(([e])=>setNextSecVisible(e.isIntersecting),{threshold:0});
+    obs.observe(stopRef.current);
+    return()=>obs.disconnect();
+  },[stopRef]);
+  const showDrillSticky=useStickyTable("drillTable",!!clickedBar&&drillTableVisible)&&!nextSecVisible;
   const [drillRows,setDrillRows]=useState([]);
   const [drillLoading,setDrillLoading]=useState(false);
 
@@ -7358,6 +7390,7 @@ function InventoryTrend({DC,onReorderRefresh}){
 
   const onUploaded=useCallback(()=>{loadDates();setRefreshKey(k=>k+1);},[loadDates]);
   const onReorderDone=useCallback(()=>{if(onReorderRefresh) onReorderRefresh();},[onReorderRefresh]);
+  const agingTrendSecRef=useRef(null);
 
   return(
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
@@ -7368,11 +7401,11 @@ function InventoryTrend({DC,onReorderRefresh}){
       {/* SKU Risk Bubble */}
       <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
         <div style={{fontWeight:600,fontSize:13,color:DC.text,marginBottom:16,letterSpacing:"-0.1px"}}>SKU Risk Bubble</div>
-        <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef}/>
       </div>
 
       {/* Aging Trend */}
-      <div style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
+      <div ref={agingTrendSecRef} style={{marginTop:32,paddingTop:24,borderTop:`1px solid ${DC.border}`}}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:13,color:DC.text,letterSpacing:"-0.1px"}}>Aging Trend</span>
           {agingDate&&<span style={{fontSize:13,color:DC.text}}>· 기준일 {agingDate}</span>}
@@ -7753,6 +7786,8 @@ function DataCompare({revenues,storeSales=[]}){
   const [customEnd,setCustomEnd]=useState("");
   const [sliderIdx,setSliderIdx]=useState([0,0]);
   const containerRef=useRef(null);
+  const agingTrendSecRef=useRef(null);
+  const reorderSecRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
   const [reorderKey,setReorderKey]=useState(0);
   const [snapshotDates,setSnapshotDates]=useState([]);
@@ -7929,21 +7964,23 @@ function DataCompare({revenues,storeSales=[]}){
       {/* ② SKU Risk Bubble — 다크 카드 */}
       <div style={sectionCard}>
         <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
-        <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef}/>
       </div>
 
       {/* ③ Aging Trend — 섹션 카드 */}
-      <div style={sectionCard}>
+      <div ref={agingTrendSecRef} style={sectionCard}>
         <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:16,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>Aging Trend</span>
           {agingDate&&<span style={{fontSize:12,color:DC.sub}}>· 기준일 {agingDate}</span>}
           <span style={{fontSize:13,color:DC.sub}}>재고 에이징은 마지막 판매일 이후 경과일을 기준으로 재고 건강도를 구간별로 추적하는 지표입니다.</span>
         </div>
-        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate}/>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate} stopRef={reorderSecRef}/>
       </div>
 
       {/* ④ 리오더 계산기 (자체 스타일 포함) */}
-      <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate}/>
+      <div ref={reorderSecRef}>
+        <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate}/>
+      </div>
     </div>
   );
 }
