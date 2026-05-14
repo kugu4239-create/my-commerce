@@ -6958,7 +6958,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     const qtyByKey={};
     INV_AGING_KEYS.forEach(k=>{
       const qty=d[k]?.qty||0;const val=d[k]?.value||0;const count=d[k]?.count||0;
-      qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0",count};
+      qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0",count,skuPct:total?(count/total*100).toFixed(1):"0.0"};
     });
     const deadCount=d["DEAD"]?.count||0;const healthyCount=d["HEALTHY"]?.count||0;
     return{total,totalQty,totalVal,
@@ -6989,11 +6989,12 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           const qty=dp[`${p.dataKey}_qty`]||0;
           const cnt=dp[`${p.dataKey}_count`]||0;
           const totalQtyAll=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0)||1;
+          const totalCntAll=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_count`]||0),0)||1;
           return(
             <div key={p.dataKey} style={{marginBottom:6,paddingBottom:6,borderBottom:`1px solid ${DC.border}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
                 <span style={{color:p.fill||p.stroke,fontWeight:600}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
-                <span style={{fontSize:10,color:DC.sub}}>{cnt.toLocaleString()} SKU</span>
+                <span style={{fontSize:10,color:DC.sub}}>{cnt.toLocaleString()} SKU <span style={{fontWeight:400}}>({(cnt/totalCntAll*100).toFixed(1)}%)</span></span>
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                 <span style={{color:DC.text,fontWeight:600}}>{qty.toLocaleString()}개<span style={{color:DC.sub,fontWeight:400,marginLeft:3}}>({(qty/totalQtyAll*100).toFixed(1)}%)</span></span>
@@ -7153,7 +7154,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub,opacity:.7}}>SKU</span>
-                      <span style={{fontSize:10,color:DC.sub}}>{q.count.toLocaleString()}개</span>
+                      <span style={{fontSize:10,color:DC.sub}}>{q.count.toLocaleString()}개 <span style={{fontWeight:400}}>({q.skuPct}%)</span></span>
                     </div>
                   </div>
                 )}
