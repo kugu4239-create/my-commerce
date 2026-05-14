@@ -6711,8 +6711,8 @@ function ReorderCalculator({DC,refreshKey}){
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={daysDistData} margin={{top:4,right:8,bottom:4,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c"/>
-                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <XAxis dataKey="label" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="count" name="SKU 수" fill="#C87B7B" radius={[3,3,0,0]}/>
                 </BarChart>
@@ -6723,8 +6723,8 @@ function ReorderCalculator({DC,refreshKey}){
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={rising} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={76}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추세비율" fill="#7EC8A4" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -6735,8 +6735,8 @@ function ReorderCalculator({DC,refreshKey}){
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={topSales} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false} tickFormatter={v=>v.toFixed(1)}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={76}/>
                   <Tooltip {...ttStyle} formatter={v=>[v.toFixed(2),"일판매량"]}/>
                   <Bar dataKey="value" name="일판매량" fill="#7B9EC8" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -6747,8 +6747,8 @@ function ReorderCalculator({DC,refreshKey}){
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={topReorder} layout="vertical" margin={{top:0,right:16,bottom:0,left:0}}>
                   <CartesianGrid strokeDasharray="2 4" stroke="#1c1c1c" horizontal={false}/>
-                  <XAxis type="number" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
-                  <YAxis dataKey="name" type="category" tick={{fill:DC.sub,fontSize:9}} axisLine={false} tickLine={false} width={76}/>
+                  <XAxis type="number" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}/>
+                  <YAxis dataKey="name" type="category" tick={{fill:"#ffffff",fontSize:9}} axisLine={false} tickLine={false} width={76}/>
                   <Tooltip {...ttStyle}/>
                   <Bar dataKey="value" name="추천리오더" fill="#C8A87B" radius={[0,3,3,0]}/>
                 </BarChart>
@@ -7235,6 +7235,15 @@ function DataCompare({revenues,storeSales=[]}){
   const containerRef=useRef(null);
   const [svgW,setSvgW]=useState(760);
   const [reorderKey,setReorderKey]=useState(0);
+  const [snapshotDates,setSnapshotDates]=useState([]);
+  const [invRefreshKey,setInvRefreshKey]=useState(0);
+
+  const loadSnapshotDates=useCallback(async()=>{
+    const db=await getSupabase();
+    const{data}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false});
+    if(data) setSnapshotDates([...new Set(data.map(r=>r.snapshot_date))]);
+  },[]);
+  useEffect(()=>{loadSnapshotDates();},[loadSnapshotDates]);
 
   useEffect(()=>{
     const obs=new ResizeObserver(es=>setSvgW(Math.max(380,es[0].contentRect.width-48)));
@@ -7315,13 +7324,16 @@ function DataCompare({revenues,storeSales=[]}){
   const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1;
 
   const DC={bg:"#0A0A0A",card:"#141414",border:"#242424",text:"#F0F0F0",sub:"#888",dim:"#444"};
+  // 업로더 카드용 라이트 테마
+  const LC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  const darkCard={background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16};
 
   return(
-    <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
-      <div style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
+    <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
+      <div style={{fontWeight:700,fontSize:20,color:"#111111",letterSpacing:"-0.3px",marginBottom:24}}>데이터 컴페어</div>
 
-      {/* 전체 매출 볼륨 카드 — 개별 필터 */}
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 16px"}}>
+      {/* ① 전체 매출 볼륨 — 다크 카드 */}
+      <div style={darkCard}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:600,fontSize:14,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
@@ -7351,7 +7363,6 @@ function DataCompare({revenues,storeSales=[]}){
             )}
           </div>
         </div>
-        {/* 채널 범례 */}
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:12}}>
           {COMPARE_CHANNELS.map(ch=>(
             <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
@@ -7379,8 +7390,25 @@ function DataCompare({revenues,storeSales=[]}){
         )}
       </div>
 
-      <InventoryTrend DC={DC} onReorderRefresh={useCallback(()=>setReorderKey(k=>k+1),[])}/>
+      {/* Inventory Uploader — 라이트 카드 */}
+      <div style={{background:LC.card,border:`1px solid ${LC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
+        <div style={{fontWeight:600,fontSize:14,color:LC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
+        <InventoryUploader DC={LC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
+      </div>
 
+      {/* ② SKU Risk Bubble — 다크 카드 */}
+      <div style={darkCard}>
+        <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>SKU Risk Bubble</div>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates}/>
+      </div>
+
+      {/* ③ Aging Trend — 다크 카드 */}
+      <div style={darkCard}>
+        <div style={{fontWeight:600,fontSize:14,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Aging Trend</div>
+        <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey}/>
+      </div>
+
+      {/* ④ 리오더 계산기 — 다크 카드 (자체 스타일 포함) */}
       <ReorderCalculator DC={DC} refreshKey={reorderKey}/>
     </div>
   );
