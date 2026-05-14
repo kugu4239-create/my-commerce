@@ -6,7 +6,7 @@ const getPapa = () => import("papaparse").then(m => m.default);
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
-  ScatterChart, Scatter, ZAxis, AreaChart, Area,
+  ScatterChart, Scatter, ZAxis, AreaChart, Area, ReferenceLine,
 } from "recharts";
 
 // ─────────────────────────────────────────────
@@ -7662,6 +7662,423 @@ function InventoryTrend({DC,onReorderRefresh}){
 // ─────────────────────────────────────────────
 // DATA COMPARE
 // ─────────────────────────────────────────────
+
+const SKU_VOL_PASTEL={
+  "자사몰":"#A8D8B8",
+  "29CM":"#F5C8A0",
+  "무신사":"#C4B8E8",
+  "오프라인 스토어":"#A8C8E0",
+  common:"#D2D2CC",
+  cross:"#B8C8D8",
+};
+
+function ActiveSkuVolume({orders=[],storeSales=[],DC}){
+  const cardRef=useRef(null);
+  const [aggUnit,setAggUnit]=useState("month");
+  const [period,setPeriod]=useState("all");
+  const [customStart,setCustomStart]=useState("");
+  const [customEnd,setCustomEnd]=useState("");
+  const [calOpenFor,setCalOpenFor]=useState(null);
+  const [show4Jeolgi,setShow4Jeolgi]=useState(false);
+  const [skuModal,setSkuModal]=useState(null);
+  const [modalTab,setModalTab]=useState("common");
+
+  // 입절기 근사 날짜 (±1일 오차 허용)
+  const SOLAR_TERMS=[
+    {name:"입춘",mmdd:"02-04"},
+    {name:"입하",mmdd:"05-06"},
+    {name:"입추",mmdd:"08-07"},
+    {name:"입동",mmdd:"11-07"},
+  ];
+
+  const {chartRows,channelOrder,jeolgiLines}=useMemo(()=>{
+    const ONLINE_CHS=["자사몰","29CM","무신사"];
+    const OFFLINE_CH="오프라인 스토어";
+    const ALL_CHS=[...ONLINE_CHS,OFFLINE_CH];
+
+    // Date range for current period setting
+    let filterStart=null,filterEnd=null;
+    if(period==="custom"&&customStart&&customEnd){
+      filterStart=customStart;filterEnd=customEnd;
+    } else if(period!=="all"){
+      const d=new Date();
+      if(period==="3m") d.setMonth(d.getMonth()-3);
+      else if(period==="6m") d.setMonth(d.getMonth()-6);
+      else if(period==="1y") d.setFullYear(d.getFullYear()-1);
+      filterStart=[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
+      filterEnd=new Date().toISOString().slice(0,10);
+    }
+
+    const inRange=(dateStr)=>{
+      if(!dateStr) return false;
+      if(!filterStart) return true;
+      return dateStr>=filterStart&&dateStr<=filterEnd;
+    };
+
+    const getPK=(dateStr)=>{
+      if(!dateStr) return null;
+      const d=new Date(dateStr);
+      if(aggUnit==="week"){
+        const jan1=new Date(d.getFullYear(),0,1);
+        const dow=jan1.getDay();
+        const weekNum=Math.ceil((Math.floor((d-jan1)/86400000)+dow+1)/7);
+        return `${d.getFullYear()}-W${String(weekNum).padStart(2,"0")}`;
+      }
+      if(aggUnit==="quarter"){
+        const q=Math.ceil((d.getMonth()+1)/3);
+        return `${d.getFullYear()}-Q${q}`;
+      }
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    };
+
+    const getLbl=(pk)=>{
+      if(aggUnit==="week"){const[y,w]=pk.split("-W");return `${y} W${w}`;}
+      if(aggUnit==="quarter"){const[y,q]=pk.split("-Q");return `${y} Q${q}`;}
+      const[y,m]=pk.split("-");return `${y}.${parseInt(m)}`;
+    };
+
+    const periodMap={};
+    const addSku=(pk,ch,name)=>{
+      if(!pk||!name) return;
+      if(!periodMap[pk]) periodMap[pk]={};
+      if(!periodMap[pk][ch]) periodMap[pk][ch]=new Set();
+      periodMap[pk][ch].add(name);
+    };
+
+    orders.forEach(o=>{
+      if(!ONLINE_CHS.includes(o.channel)||o.status!=="배송") return;
+      if(!inRange(o.order_date)) return;
+      addSku(getPK(o.order_date),o.channel,o.product_name);
+    });
+    storeSales.forEach(s=>{
+      if(!inRange(s.sale_date)) return;
+      addSku(getPK(s.sale_date),OFFLINE_CH,s.product_name);
+    });
+
+    const sortedPKs=Object.keys(periodMap).sort();
+    if(!sortedPKs.length) return{chartRows:[],channelOrder:ALL_CHS,solarTermRef:null};
+
+    const gEx={};
+    ALL_CHS.forEach(ch=>{gEx[ch]={only:0,total:0};});
+
+    const processed=sortedPKs.map(pk=>{
+      const chSets=periodMap[pk];
+      const activeChs=ALL_CHS.filter(ch=>chSets[ch]?.size>0);
+      const allSkus=new Set();
+      activeChs.forEach(ch=>chSets[ch].forEach(s=>allSkus.add(s)));
+
+      const commonSkus=new Set();  // 모든 활성 채널에 공통
+      const crossSkus=new Set();   // 2~(n-1) 채널 교차
+      const onlySkus={};
+      activeChs.forEach(ch=>{onlySkus[ch]=new Set();});
+
+      allSkus.forEach(sku=>{
+        const inChs=activeChs.filter(ch=>chSets[ch].has(sku));
+        if(inChs.length===activeChs.length&&activeChs.length>=2) commonSkus.add(sku);
+        else if(inChs.length>=2) crossSkus.add(sku);
+        else onlySkus[inChs[0]].add(sku);
+      });
+
+      activeChs.forEach(ch=>{
+        gEx[ch].only+=(onlySkus[ch]?.size||0);
+        gEx[ch].total+=(chSets[ch]?.size||0);
+      });
+      return{pk,label:getLbl(pk),chSets,commonSkus,crossSkus,onlySkus,allSkus,activeChs};
+    });
+
+    const channelOrder=[...ALL_CHS].sort((a,b)=>{
+      const exA=gEx[a].total?gEx[a].only/gEx[a].total:0;
+      const exB=gEx[b].total?gEx[b].only/gEx[b].total:0;
+      return exA-exB;
+    });
+
+    const chartRows=processed.map(p=>({
+      label:p.label,
+      common:p.commonSkus.size,
+      cross:p.crossSkus.size,
+      _allCnt:p.allSkus.size,
+      _commonSkus:[...p.commonSkus].sort(),
+      _crossSkus:[...p.crossSkus].sort(),
+      _chSets:Object.fromEntries(Object.entries(p.chSets).map(([k,v])=>[k,[...v].sort()])),
+      _onlySkus:Object.fromEntries(Object.entries(p.onlySkus).map(([k,v])=>[k,[...v].sort()])),
+      _activeChs:p.activeChs,
+      ...Object.fromEntries(ALL_CHS.map(ch=>[`${ch}_only`,p.onlySkus[ch]?.size||0])),
+    }));
+
+    // 4절기 기준선 — 차트 데이터 연도 범위 내 모든 입절기 날짜
+    let jeolgiLines=[];
+    if(show4Jeolgi&&chartRows.length){
+      const years=new Set();
+      chartRows.forEach(r=>{
+        const y=r.label.match(/^(\d{4})/)?.[1];
+        if(y){years.add(parseInt(y));}
+      });
+      years.forEach(y=>{
+        SOLAR_TERMS.forEach(({name,mmdd})=>{
+          const date=`${y}-${mmdd}`;
+          const pk=getPK(date);
+          const lbl=getLbl(pk);
+          if(chartRows.some(r=>r.label===lbl)){
+            jeolgiLines.push({name,date,label:lbl});
+          }
+        });
+      });
+      jeolgiLines.sort((a,b)=>a.date.localeCompare(b.date));
+    }
+
+    return{chartRows,channelOrder,jeolgiLines};
+  },[orders,storeSales,aggUnit,period,customStart,customEnd,show4Jeolgi]);
+
+  const SkuTooltip=useCallback(({active,payload,label})=>{
+    if(!active||!payload?.length) return null;
+    const dp=payload[0]?.payload||{};
+    const total=dp._allCnt||0;
+    const pct=(n,d)=>d?(n/d*100).toFixed(1):"0.0";
+    return(
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",minWidth:220,boxShadow:"0 4px 16px rgba(0,0,0,.08)",fontSize:12}}>
+        <div style={{fontWeight:700,marginBottom:2,color:DC.text}}>{label}</div>
+        <div style={{color:DC.sub,marginBottom:8,fontSize:11,borderBottom:`1px solid ${DC.border}`,paddingBottom:6}}>
+          Active SKU: <b style={{color:DC.text}}>{total}개</b>
+          <span style={{marginLeft:6,fontWeight:400}}>(공통 {dp.common||0} · 교차 {dp.cross||0} · only 합계 {total-(dp.common||0)-(dp.cross||0)})</span>
+        </div>
+        {dp.common>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
+            <span style={{width:10,height:10,borderRadius:2,background:SKU_VOL_PASTEL.common,display:"inline-block",flexShrink:0}}/>
+            <span style={{color:DC.text}}>공통 (전 채널)</span>
+            <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{dp.common}개</span>
+            <span style={{color:DC.sub,fontSize:11}}>({pct(dp.common,total)}%)</span>
+          </div>
+        )}
+        {dp.cross>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
+            <span style={{width:10,height:10,borderRadius:2,background:SKU_VOL_PASTEL.cross,display:"inline-block",flexShrink:0}}/>
+            <span style={{color:DC.text}}>교차 (2–3채널)</span>
+            <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{dp.cross}개</span>
+            <span style={{color:DC.sub,fontSize:11}}>({pct(dp.cross,total)}%)</span>
+          </div>
+        )}
+        {channelOrder.map(ch=>{
+          const only=dp[`${ch}_only`]||0;
+          const chActive=(dp._chSets?.[ch]?.length||0);
+          if(!chActive) return null;
+          return(
+            <div key={ch} style={{marginBottom:5}}>
+              <div style={{display:"flex",alignItems:"center",gap:5}}>
+                <span style={{width:10,height:10,borderRadius:2,background:SKU_VOL_PASTEL[ch],display:"inline-block",flexShrink:0}}/>
+                <span style={{color:DC.text}}>{ch} only</span>
+                <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{only}개</span>
+                <span style={{color:DC.sub,fontSize:11}}>({pct(only,chActive)}%)</span>
+              </div>
+              <div style={{marginLeft:15,fontSize:10,color:DC.dim,marginTop:1}}>
+                {ch} 활성 {chActive}개 중 단독 판매
+              </div>
+            </div>
+          );
+        })}
+        <div style={{borderTop:`1px solid ${DC.border}`,marginTop:4,paddingTop:5,fontSize:10,color:DC.dim}}>클릭하면 SKU 목록을 볼 수 있습니다</div>
+      </div>
+    );
+  },[channelOrder,DC]);
+
+  const stackKeys=["common","cross",...channelOrder.map(ch=>`${ch}_only`)];
+  const stackColors={common:SKU_VOL_PASTEL.common,cross:SKU_VOL_PASTEL.cross,...Object.fromEntries(channelOrder.map(ch=>[`${ch}_only`,SKU_VOL_PASTEL[ch]]))};
+  const stackLabels={common:"공통 (전 채널)",cross:"교차 (2–3채널)",...Object.fromEntries(channelOrder.map(ch=>[`${ch}_only`,`${ch} only`]))};
+
+  const openModal=(dp)=>{
+    if(!dp) return;
+    const firstTab=dp.common>0?"common":dp.cross>0?"cross":((dp._activeChs||[])[0]||"common");
+    setModalTab(firstTab);
+    setSkuModal(dp);
+  };
+
+  const modalTabs=skuModal?[
+    ...(skuModal.common>0?[{key:"common",label:`공통 (${skuModal.common})`}]:[]),
+    ...(skuModal.cross>0?[{key:"cross",label:`교차 (${skuModal.cross})`}]:[]),
+    ...channelOrder
+      .filter(ch=>(skuModal._onlySkus?.[ch]?.length||0)>0)
+      .map(ch=>({key:ch,label:`${ch} only (${skuModal._onlySkus?.[ch]?.length||0})`})),
+  ]:[];
+
+  const modalOnlySkus=skuModal&&!["common","cross"].includes(modalTab)?(skuModal._onlySkus?.[modalTab]||[]):[];
+
+  const PERIOD_PRESETS=[["all","전체"],["3m","3개월"],["6m","6개월"],["1y","1년"]];
+
+  return(
+    <div ref={cardRef} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
+      {/* 헤더 */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",flex:1}}>
+          <span style={{fontWeight:600,fontSize:16,color:DC.text}}>Active SKU 볼륨</span>
+          <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 교집합 / 단독 구성</span>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          {/* 집계 단위 */}
+          <div style={{display:"flex",gap:3}}>
+            {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
+              <button key={u} data-hf onClick={()=>setAggUnit(u)}
+                style={{background:aggUnit===u?DC.text:"transparent",color:aggUnit===u?"#fff":DC.sub,
+                  border:`1px solid ${aggUnit===u?DC.text:DC.border}`,
+                  borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+          <span style={{color:DC.border}}>|</span>
+          {/* 기간 필터 — CalDrop */}
+          <CalDrop id="skuVol" period={period}
+            setPeriod={v=>{setPeriod(v);if(v!=="custom"){setCustomStart("");setCustomEnd("");}}}
+            presets={PERIOD_PRESETS}
+            start={customStart} setStart={setCustomStart}
+            end={customEnd} setEnd={setCustomEnd}
+            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}
+            dark={false}/>
+          <span style={{color:DC.border}}>|</span>
+          {/* 4절기 토글 */}
+          <button data-hf onClick={()=>setShow4Jeolgi(v=>!v)}
+            style={{background:show4Jeolgi?DC.text:"transparent",color:show4Jeolgi?"#fff":DC.sub,
+              border:`1px solid ${show4Jeolgi?DC.text:DC.border}`,
+              borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s",
+              whiteSpace:"nowrap"}}>
+            4절기
+          </button>
+          <span style={{color:DC.border}}>|</span>
+          <CaptureBtn cardRef={cardRef} filename="Active_SKU_볼륨" DC={DC}/>
+        </div>
+      </div>
+
+      {/* 가이드 */}
+      <div style={{background:"#f5f5f3",borderRadius:6,padding:"10px 14px",marginBottom:14,fontSize:11,color:DC.sub,lineHeight:2,display:"flex",flexDirection:"column",gap:1}}>
+        <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>SKU 기준</span>상품명 단위로 집계합니다. 옵션(색상·사이즈)이 다르더라도 같은 상품명이면 1 SKU로 계산합니다.</div>
+        <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>Active SKU 정의</span>온라인(자사몰·29CM·무신사)은 해당 기간 내 배송 완료 건이 1건 이상인 SKU, 오프라인 스토어는 매장 판매 데이터에 등록된 SKU(반품 포함)를 기준으로 합니다.</div>
+        <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>공통 SKU</span>모든 활성 채널에서 동시에 판매된 SKU입니다. 2–3개 채널에만 걸친 SKU는 <b>교차</b>로 분리되며, 1개 채널에서만 판매된 SKU는 해당 채널의 <b>단독(only)</b>으로 분류됩니다. 스택 순서는 채널 간 단독 비율을 기준으로 자동 정렬됩니다.</div>
+      </div>
+
+      {/* 범례 */}
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:14}}>
+        <span style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text}}>
+          <span style={{width:22,height:8,borderRadius:2,background:SKU_VOL_PASTEL.common,display:"inline-block"}}/>
+          공통 (전 채널)
+        </span>
+        <span style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text}}>
+          <span style={{width:22,height:8,borderRadius:2,background:SKU_VOL_PASTEL.cross,display:"inline-block"}}/>
+          교차 (2–3채널)
+        </span>
+        {channelOrder.map(ch=>(
+          <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text}}>
+            <span style={{width:22,height:8,borderRadius:2,background:SKU_VOL_PASTEL[ch],display:"inline-block"}}/>
+            {ch} only
+          </span>
+        ))}
+      </div>
+
+      {/* 차트 */}
+      {!chartRows.length?(
+        <div style={{textAlign:"center",padding:"60px 0",color:DC.sub,fontSize:14}}>
+          해당 기간에 데이터가 없습니다
+        </div>
+      ):(
+        <ResponsiveContainer width="100%" height={320}>
+          <BarChart data={chartRows} margin={{top:8,right:8,bottom:8,left:0}} barCategoryGap="28%"
+            onClick={({activePayload})=>{if(activePayload?.length) openModal(activePayload[0].payload);}}>
+            <CartesianGrid strokeDasharray="3 3" stroke={DC.border} vertical={false}/>
+            <XAxis dataKey="label" tick={{fontSize:11,fill:DC.sub}} tickLine={false} axisLine={false}/>
+            <YAxis tick={{fontSize:11,fill:DC.sub}} tickLine={false} axisLine={false} width={36}/>
+            <Tooltip content={<SkuTooltip/>} cursor={{fill:"rgba(0,0,0,.04)"}}/>
+            {stackKeys.map(k=>(
+              <Bar key={k} dataKey={k} stackId="1"
+                fill={stackColors[k]} name={stackLabels[k]}
+                radius={k===stackKeys[stackKeys.length-1]?[3,3,0,0]:[0,0,0,0]}/>
+            ))}
+            {jeolgiLines.map(jl=>(
+              <ReferenceLine key={jl.date} x={jl.label} stroke="#8899AA" strokeDasharray="4 3" strokeWidth={1.5}
+                label={{value:`${jl.name} ${jl.date.slice(5).replace("-","/")}`,
+                  position:"top",fontSize:9,fill:"#8899AA",fontWeight:700}}/>
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+
+      {/* SKU 목록 모달 */}
+      {skuModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}}
+          onClick={()=>setSkuModal(null)}>
+          <div style={{background:"#fff",borderRadius:14,padding:"24px 28px",maxWidth:520,width:"92%",maxHeight:"75vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,.18)"}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:4,color:"#111"}}>{skuModal.label} — SKU 목록</div>
+            <div style={{fontSize:11,color:"#888",marginBottom:14}}>전체 고유 SKU: {skuModal._allCnt}개 · 탭 선택 후 확인</div>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>
+              {modalTabs.map(t=>(
+                <button key={t.key} onClick={()=>setModalTab(t.key)}
+                  style={{background:modalTab===t.key?"#111":"transparent",color:modalTab===t.key?"#fff":"#555",
+                    border:"1.5px solid",borderColor:modalTab===t.key?"#111":"#ddd",
+                    borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s"}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {modalTab==="cross"&&(
+              <div style={{fontSize:11,color:"#888",marginBottom:8}}>2~3개 채널에서 판매됐으나 전 채널 공통은 아닌 SKU</div>
+            )}
+            {!["common","cross"].includes(modalTab)&&(
+              <div style={{fontSize:11,color:"#888",marginBottom:8}}>
+                {modalTab}에서만 판매된 단독 SKU {modalOnlySkus.length}개
+              </div>
+            )}
+            <div style={{overflowY:"auto",flex:1,borderTop:"1px solid #f0f0f0",paddingTop:8}}>
+              {modalTab==="common"&&(skuModal._commonSkus||[]).map((s,i)=>(
+                <div key={i} style={{padding:"5px 4px",borderBottom:"1px solid #f5f5f5",fontSize:13,color:"#222"}}>{s}</div>
+              ))}
+              {modalTab==="cross"&&(skuModal._crossSkus||[]).map((s,i)=>(
+                <div key={i} style={{padding:"5px 4px",borderBottom:"1px solid #f5f5f5",fontSize:13,color:"#222"}}>{s}</div>
+              ))}
+              {!["common","cross"].includes(modalTab)&&(
+                <>
+                  {modalOnlySkus.length>0&&(
+                    <>
+                      <div style={{fontSize:11,fontWeight:600,color:"#555",marginBottom:4,marginTop:4}}>단독 SKU ({modalOnlySkus.length}개)</div>
+                      {modalOnlySkus.map((s,i)=>(
+                        <div key={i} style={{padding:"5px 4px",borderBottom:"1px solid #f5f5f5",fontSize:13,color:"#222"}}>{s}</div>
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <button onClick={()=>setSkuModal(null)}
+              style={{marginTop:16,padding:"8px 20px",background:"#111",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:600,alignSelf:"flex-end"}}>
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 해석 가이드 + 각주 */}
+      <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+        <div style={{fontSize:11,fontWeight:700,color:DC.text,marginBottom:6}}>그래프 해석 방법</div>
+        <div style={{fontSize:11,color:DC.sub,lineHeight:1.9,display:"flex",flexDirection:"column",gap:2}}>
+          <div><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:SKU_VOL_PASTEL.common,marginRight:5,verticalAlign:"middle"}}/>
+            <b style={{color:DC.text}}>공통 (전 채널) 바가 두껍다</b> — 브랜드 핵심 상품이 모든 채널에서 고르게 판매 중. 채널 간 SKU 전략이 일관적임.
+          </div>
+          <div><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:SKU_VOL_PASTEL.cross,marginRight:5,verticalAlign:"middle"}}/>
+            <b style={{color:DC.text}}>교차 바가 크다</b> — 일부 채널에서만 공유되는 SKU가 많음. 채널별 기획 상품 운영 또는 단계적 채널 확장이 진행 중일 가능성.
+          </div>
+          <div><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:SKU_VOL_PASTEL["자사몰"],marginRight:5,verticalAlign:"middle"}}/>
+            <b style={{color:DC.text}}>특정 채널 only 바가 크다</b> — 해당 채널 전용 기획이 활발하거나, 다른 채널에 미도입된 신상품이 집중된 상태.
+          </div>
+          <div style={{marginTop:2}}>
+            <b style={{color:DC.text}}>바 전체 높이</b>가 기간 내 전체 고유 Active SKU 수입니다. 높이 증가는 라인 확대, 감소는 단종·시즌 오프를 의미합니다.
+            시간 흐름에 따라 <b style={{color:DC.text}}>공통 비율이 높아지면</b> 채널 간 SKU 정합성이 향상되는 추세이며,
+            <b style={{color:DC.text}}> only 비율이 커지면</b> 채널별 차별화 전략이 강화되고 있음을 나타냅니다.
+          </div>
+        </div>
+        <div style={{marginTop:12,fontSize:11,color:DC.dim,lineHeight:1.8}}>
+          시간의 흐름에 따라 판매되는 실제 SKU 수 파악을 통해 다음 시즌 상품 기획에 참고 데이터로 활용될 수 있으며, 각 판매처 간 실효 SKU량을 가늠할 수 있습니다.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const COMPARE_CH_COLOR={
   "자사몰":"#9be1de",
   "29CM":"#f99260",
@@ -8103,7 +8520,7 @@ function CaptureBtn({cardRef,filename,DC}){
   );
 }
 
-function DataCompare({revenues,storeSales=[]}){
+function DataCompare({revenues,storeSales=[],orders=[]}){
   const [volUnit,setVolUnit]=useState("month");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
@@ -8307,7 +8724,10 @@ function DataCompare({revenues,storeSales=[]}){
         <InvAgingTrend DC={DC} snapshotDates={snapshotDates} refreshKey={invRefreshKey} onDateReady={setAgingDate} stopRef={reorderSecRef}/>
       </div>
 
-      {/* ④ 리오더 계산기 (자체 스타일 포함) */}
+      {/* ④ Active SKU 볼륨 */}
+      <ActiveSkuVolume orders={orders} storeSales={storeSales} DC={DC}/>
+
+      {/* ⑤ 리오더 계산기 (자체 스타일 포함) */}
       <div ref={reorderSecRef} style={{position:"relative"}}>
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
           <CaptureBtn cardRef={reorderCardRef} filename="리오더_계산기" DC={DC}/>
@@ -8343,49 +8763,34 @@ export default function App() {
   });
 
   const loadData=useCallback(async()=>{
-    const t0=Date.now();
     const db=await getSupabase();
-    // 전체 orders 페이지네이션 (Supabase 기본 1000행 제한 우회)
-    let allOrders=[];
-    let from=0;
     const PAGE=1000;
-    while(true){
-      const {data,error}=await db.from("orders").select("*").order("order_date",{ascending:true}).range(from,from+PAGE-1);
-      if(error||!data||data.length===0) break;
-      allOrders=allOrders.concat(data);
-      if(data.length<PAGE) break;
-      from+=PAGE;
+
+    async function fetchAll(table,orderCol,asc=true){
+      let rows=[],offset=0;
+      while(true){
+        const {data,error}=await db.from(table).select("*").order(orderCol,{ascending:asc}).range(offset,offset+PAGE-1);
+        if(error||!data||data.length===0) break;
+        rows=rows.concat(data);
+        if(data.length<PAGE) break;
+        offset+=PAGE;
+      }
+      return rows;
     }
-    let allStocks=[];
-    let sf=0;
-    while(true){
-      const {data:sd,error:se}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).range(sf,sf+PAGE-1);
-      if(se||!sd||sd.length===0) break;
-      allStocks=allStocks.concat(sd);
-      if(sd.length<PAGE) break;
-      sf+=PAGE;
-    }
-    let allRevenues=[]; let rf=0;
-    while(true){
-      const {data:rd}=await db.from("revenues").select("*").order("date",{ascending:false}).range(rf,rf+PAGE-1);
-      if(!rd||rd.length===0) break;
-      allRevenues=allRevenues.concat(rd);
-      if(rd.length<PAGE) break;
-      rf+=PAGE;
-    }
+
+    const [allOrders,allStocks,allRevRaw,allStoreSales,tsRes]=await Promise.all([
+      fetchAll("orders","order_date",true),
+      fetchAll("stock_uploads","upload_date",false),
+      fetchAll("revenues","date",false),
+      fetchAll("store_sales","sale_date",true),
+      db.from("upload_ts").select("*").order("id",{ascending:true}).limit(1),
+    ]);
+
     // 중복 제거: 같은 date+channel은 id 가장 큰 것(최신)만 유지
-    {const revMap={};
-    allRevenues.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
-    allRevenues=Object.values(revMap);}
-    let allStoreSales=[];
-    let ssf=0;
-    while(true){
-      const {data:ssd}=await db.from("store_sales").select("*").order("sale_date",{ascending:true}).range(ssf,ssf+PAGE-1);
-      if(!ssd||ssd.length===0) break;
-      allStoreSales=allStoreSales.concat(ssd);
-      if(ssd.length<PAGE) break;
-      ssf+=PAGE;
-    }
+    const revMap={};
+    allRevRaw.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
+    const allRevenues=Object.values(revMap);
+
     // store_sales → 주문 호환 rows (채널은 "오프라인 스토어"로 정규화)
     const storeOrderRows=allStoreSales.map(r=>({
       order_date:r.sale_date,
@@ -8400,15 +8805,13 @@ export default function App() {
     setStocks(allStocks);
     setRevenues(allRevenues);
     setStoreSales(allStoreSales);
-    const{data:tsData}=await db.from("upload_ts").select("*").order("id",{ascending:true}).limit(1);
+    const tsData=tsRes?.data;
     if(tsData&&tsData.length>0){
       const t=tsData[0];
       const next={orders:t.orders||null,stock:t.stock||null,revenue:t.revenue||null,store:t.store||null};
       setTs(next);try{localStorage.setItem("merryon_ts",JSON.stringify(next));}catch{}
     }
     if(firstLoad.current){
-      const elapsed=Date.now()-t0;
-      if(elapsed<3000) await new Promise(res=>setTimeout(res,3000-elapsed));
       setAppLoading(false);
       firstLoad.current=false;
     }
@@ -8484,7 +8887,7 @@ export default function App() {
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales}/>}
-        {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales}/>}
+        {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
