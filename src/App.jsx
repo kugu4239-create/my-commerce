@@ -1923,11 +1923,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,padding:"8px 12px",fontSize:11,boxShadow:"0 2px 8px #0001"}}>
                     <div style={{color:D.textMeta,marginBottom:3}}>{label}</div>
                     {isOffline&&entries.length>1&&(
-                      <div style={{color:D.text,marginBottom:2}}>합계: <strong>{fmtWon(total)}</strong></div>
+                      <div style={{color:D.text,marginBottom:2}}>합계: <strong>{fmtWonShort(total)}</strong></div>
                     )}
                     {entries.map((p,i)=>(
                       <div key={i} style={{color:p.color||D.text}}>
-                        {p.name}: <strong>{fmtWon(p.value||0)}</strong>
+                        {p.name}: <strong>{fmtWonShort(p.value||0)}</strong>
                       </div>
                     ))}
                   </div>
@@ -2463,16 +2463,16 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     {chRows.map(([ch,d])=>(
                       <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(d.revenue)}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{d.refund>0?fmtWon(d.refund):"—"}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700}}>{fmtWon(d.revenue-d.refund)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWonShort(d.revenue)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{d.refund>0?fmtWonShort(d.refund):"—"}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700}}>{fmtWonShort(d.revenue-d.refund)}</td>
                       </tr>
                     ))}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
-                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(chRows.reduce((s,[,d])=>s+d.revenue,0))}</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{fmtWon(chRows.reduce((s,[,d])=>s+d.refund,0))}</td>
-                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(stats.totalRevenue)}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWonShort(chRows.reduce((s,[,d])=>s+d.revenue,0))}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{fmtWonShort(chRows.reduce((s,[,d])=>s+d.refund,0))}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWonShort(stats.totalRevenue)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -2491,9 +2491,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     {dateRows.map(([d,v])=>(
                       <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWon(v.revenue)}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{v.refund>0?fmtWon(v.refund):"—"}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600}}>{fmtWon(v.revenue-v.refund)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px"}}>{fmtWonShort(v.revenue)}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{v.refund>0?fmtWonShort(v.refund):"—"}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600}}>{fmtWonShort(v.revenue-v.refund)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -7633,7 +7633,11 @@ function RevenueSankeyChart({periods,svgW}){
   },[cols]);
 
   const fmtAmt=a=>{
-    if(a>=1e8) return fmtEokMan(a);
+    if(a>=1e8){
+      const eok=Math.floor(a/1e8);
+      const cheon=Math.floor((a%1e8)/1e7);
+      return eok+"억"+(cheon>0?cheon+"천만":"");
+    }
     if(a>=1e4) return Math.round(a/1e4)+"만";
     return a.toLocaleString();
   };
@@ -7816,7 +7820,7 @@ function RevenueSankeyChart({periods,svgW}){
                   fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>{i+1}</span>
                 <div>
                   <div style={{fontSize:10,color:"#444"}}>{nd.label} · {nd.ch}</div>
-                  <div style={{fontSize:13,color:"#111",fontWeight:700}}>{fmtWon(nd.amt)}</div>
+                  <div style={{fontSize:13,color:"#111",fontWeight:700}}>{fmtWonShort(nd.amt)}</div>
                 </div>
               </div>
             ))}
@@ -7825,7 +7829,7 @@ function RevenueSankeyChart({periods,svgW}){
                 {up?"▲":"▼"} {pct!==null?`${Math.abs(pct).toFixed(1)}%`:"—"}
               </span>
               <span style={{fontSize:11,color:"#111"}}>
-                ({up?"+":""}{fmtWon(Math.abs(diff))})
+                ({up?"+":""}{fmtWonShort(Math.abs(diff))})
               </span>
             </div>
           </div>
