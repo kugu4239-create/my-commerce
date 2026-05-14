@@ -6987,6 +6987,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           const val=dp[`${p.dataKey}_val`]||0;
           const qty=dp[`${p.dataKey}_qty`]||0;
           const cnt=dp[`${p.dataKey}_count`]||0;
+          const totalQtyAll=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0)||1;
           return(
             <div key={p.dataKey} style={{marginBottom:6,paddingBottom:6,borderBottom:`1px solid ${DC.border}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
@@ -6994,9 +6995,9 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                 <span style={{fontSize:10,color:DC.sub}}>{cnt.toLocaleString()} SKU</span>
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                <span style={{color:DC.text,fontWeight:600}}>{qty.toLocaleString()}개</span>
+                <span style={{color:DC.text,fontWeight:600}}>{qty.toLocaleString()}개<span style={{color:DC.sub,fontWeight:400,marginLeft:3}}>({(qty/totalQtyAll*100).toFixed(1)}%)</span></span>
                 <span style={{color:DC.sub}}>·</span>
-                <span style={{color:DC.text}}>{fmtVal(val)}원</span>
+                <span style={{color:DC.text}}>{fmtVal(val)}원{totalVal>0&&<span style={{color:DC.sub,marginLeft:3}}>({(val/totalVal*100).toFixed(1)}%)</span>}</span>
               </div>
             </div>
           );
@@ -7136,11 +7137,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                   <div style={{paddingLeft:14,display:"flex",flexDirection:"column",gap:2}}>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub}}>수량</span>
-                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{q.qty.toLocaleString()}개</span>
+                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{q.qty.toLocaleString()}개 <span style={{color:DC.sub,fontWeight:400}}>({q.pct}%)</span></span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub}}>금액</span>
-                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{fmtVal(q.val)}원</span>
+                      <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{fmtVal(q.val)}원 <span style={{color:DC.sub,fontWeight:400}}>({q.valPct}%)</span></span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub,opacity:.7}}>SKU</span>
