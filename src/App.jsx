@@ -8128,7 +8128,7 @@ function RevenueSankeyChart({periods,svgW}){
   const links=useMemo(()=>{
     const res=[];
     for(let pi=0;pi<cols.length-1;pi++){
-      COMPARE_CHANNELS.forEach(ch=>{
+      COMPARE_CHANNELS.forEach((ch,ci)=>{
         const ln=cols[pi].nodes.find(n=>n.ch===ch);
         const rn=cols[pi+1].nodes.find(n=>n.ch===ch);
         if(!ln||!rn||ln.h<1||rn.h<1) return;
@@ -8137,7 +8137,7 @@ function RevenueSankeyChart({periods,svgW}){
           `M${x1} ${ln.y}C${mx} ${ln.y},${mx} ${rn.y},${x2} ${rn.y}`,
           `L${x2} ${rn.y+rn.h}C${mx} ${rn.y+rn.h},${mx} ${ln.y+ln.h},${x1} ${ln.y+ln.h}Z`,
         ].join(" ");
-        res.push({ch,path,color:COMPARE_CH_COLOR[ch]});
+        res.push({ch,ci,path,color:COMPARE_CH_COLOR[ch]});
       });
     }
     return res;
@@ -8195,8 +8195,8 @@ function RevenueSankeyChart({periods,svgW}){
         onClick={()=>{setSelNodes([]);setModal(null);setOrderWarn(false);}}>
         <rect x={0} y={0} width={svgW} height={SVG_H} fill="transparent"/>
         <defs>
-          {COMPARE_CHANNELS.map(ch=>{
-            const id=`cg2_${ch.replace(/[^a-z0-9]/gi,"_")}`;
+          {COMPARE_CHANNELS.map((ch,ci)=>{
+            const id=`cg2_${ci}`;
             const c=COMPARE_CH_COLOR[ch];
             return(
               <linearGradient key={ch} id={id} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -8211,7 +8211,7 @@ function RevenueSankeyChart({periods,svgW}){
         {/* 직각 리본 */}
         {links.map((l,i)=>(
           <path key={i} d={l.path}
-            fill={`url(#cg2_${l.ch.replace(/[^a-z0-9]/gi,"_")})`}
+            fill={`url(#cg2_${l.ci})`}
             opacity={hoveredCh===null?0.65:hoveredCh===l.ch?0.9:0.04}
             style={{transition:"opacity .15s",cursor:"default"}}
             onMouseEnter={()=>setHoveredCh(l.ch)}
