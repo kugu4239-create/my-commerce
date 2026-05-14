@@ -143,9 +143,24 @@ const normCS = raw => {
   return "배송";
 };
 
+function fmtEokMan(n){
+  const eok=Math.floor(n/1e8);
+  const man=Math.round((n%1e8)/1e4);
+  if(man===0) return eok+"억";
+  const cheon=Math.floor(man/1000);
+  const baek=Math.floor((man%1000)/100);
+  const sip=Math.floor((man%100)/10);
+  const il=man%10;
+  let s="";
+  if(cheon) s+=cheon+"천";
+  if(baek) s+=baek+"백";
+  if(sip) s+=sip+"십";
+  if(il) s+=il;
+  return eok+"억"+s+"만";
+}
 const fmtWon = n => {
   if (!n) return "—";
-  if (n>=1e8) return "₩"+(n/1e8).toFixed(1)+"억";
+  if (n>=1e8) return "₩"+fmtEokMan(n);
   if (n>=1e4) return "₩"+(n/1e4).toFixed(0)+"만";
   return "₩"+n.toLocaleString();
 };
@@ -242,16 +257,17 @@ function localDate(offsetDays=0){
   return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
 }
 
-function filterByDate(rows, dateField, period, customStart, customEnd) {
+function filterByDate(rows, dateField, period, customStart, customEnd, upToYesterday=false) {
   if (period === "all") return rows;
   const today = localDate(0);
+  const ceiling = upToYesterday ? localDate(-1) : today;
   if (period === "week") {
     const now = new Date();
     const dow = now.getDay() || 7;
     const monday = new Date(now);
     monday.setDate(now.getDate() - dow + 1);
     const cutStr = [monday.getFullYear(),String(monday.getMonth()+1).padStart(2,'0'),String(monday.getDate()).padStart(2,'0')].join('-');
-    return rows.filter(r => r[dateField] >= cutStr && r[dateField] <= today);
+    return rows.filter(r => r[dateField] >= cutStr && r[dateField] <= ceiling);
   }
   if (period === "yd") {
     const yStr = localDate(-1);
@@ -259,26 +275,26 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
   }
   if (period === "7d") {
     const c = new Date(); c.setDate(c.getDate()-7);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10) && r[dateField] <= ceiling);
   }
   if (period === "14d") {
     const c = new Date(); c.setDate(c.getDate()-14);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10));
+    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10) && r[dateField] <= ceiling);
   }
   if (period === "1m") {
     const d=new Date(); d.setMonth(d.getMonth()-1);
     const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
-    return rows.filter(r => r[dateField] >= cut);
+    return rows.filter(r => r[dateField] >= cut && r[dateField] <= ceiling);
   }
   if (period === "3m") {
     const d=new Date(); d.setMonth(d.getMonth()-3);
     const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
-    return rows.filter(r => r[dateField] >= cut);
+    return rows.filter(r => r[dateField] >= cut && r[dateField] <= ceiling);
   }
   if (period === "6m") {
     const d=new Date(); d.setMonth(d.getMonth()-6);
     const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
-    return rows.filter(r => r[dateField] >= cut);
+    return rows.filter(r => r[dateField] >= cut && r[dateField] <= ceiling);
   }
   if (period === "custom" && customStart && customEnd) {
     return rows.filter(r => r[dateField] >= customStart && r[dateField] <= customEnd);
@@ -1375,6 +1391,39 @@ function getPriorPeriod(period,customStart,customEnd){
   return null;
 }
 
+// Compact calendar range dropdown — used in PromoFlow, DataCompare, CSData
+function CalRangeDrop({id,start,end,onRange,openId,setOpenId,surface,borderColor,textActive,textInactive}){
+  const isOpen=openId===id;
+  const label=start&&end?`${start.slice(5)}~${end.slice(5)}`:"기간 선택";
+  const active=!!(start&&end);
+  const bg=surface||D.surface;
+  const bc=borderColor||D.border;
+  const ta=textActive||D.black;
+  const ti=textInactive||D.textSub;
+  return(
+    <div style={{position:"relative",display:"inline-flex",gap:4,alignItems:"center"}}>
+      <button onClick={()=>setOpenId(isOpen?null:id)}
+        style={{background:active?ta:"transparent",color:active?"#fff":ti,
+          border:`1px solid ${active?ta:bc}`,borderRadius:5,
+          padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:active?600:400}}>
+        {label}
+      </button>
+      {active&&(
+        <button onClick={()=>onRange("","")}
+          style={{background:"none",border:"none",color:ti,cursor:"pointer",fontSize:12,padding:"0 2px",lineHeight:1}}>✕</button>
+      )}
+      {isOpen&&(
+        <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:300,
+          background:bg,border:`1px solid ${bc}`,borderRadius:10,
+          padding:"14px 14px 10px",boxShadow:"0 4px 24px rgba(0,0,0,0.25)"}}>
+          <CalendarPicker mode="range" rangeStart={start} rangeEnd={end}
+            onRangeChange={({start:s,end:e})=>{onRange(s,e||"");if(s&&e)setOpenId(null);}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // CalDrop must be defined at module level (not inside Dashboard) so React
 // preserves its identity across re-renders — prevents CalendarPicker's internal
 // `picking` state from resetting between first and second date clicks.
@@ -1543,7 +1592,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
   // 판매 Top 랭킹
   const bestFilteredOrders=useMemo(()=>
-    filterByDate(orders,"order_date",rankBestPeriod,rankBestCustomStart,rankBestCustomEnd),
+    filterByDate(orders,"order_date",rankBestPeriod,rankBestCustomStart,rankBestCustomEnd,true),
     [rankBestPeriod,orders,rankBestCustomStart,rankBestCustomEnd]);
 
   const bestRows=useMemo(()=>{
@@ -1564,7 +1613,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
   // 반품 Top 랭킹
   const worstFilteredOrders=useMemo(()=>
-    filterByDate(orders,"order_date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd),
+    filterByDate(orders,"order_date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,true),
     [rankWorstPeriod,orders,rankWorstCustomStart,rankWorstCustomEnd]);
 
   const worstRows=useMemo(()=>{
@@ -1597,7 +1646,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
   // 월별 배송량 차트 데이터
   const shippingChartData=useMemo(()=>{
-    const today=localDate(0);
+    const today=localDate(-1);
     if(shippingPeriod==="yd"){
       const yStr=localDate(-1);
       const byDay={};
@@ -1645,7 +1694,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
   // 일별 반품 by 채널 차트
   const returnChartData=useMemo(()=>{
-    let start,end=localDate(0);
+    let start,end=localDate(-1);
     if(returnPeriod==="custom"&&returnCustomStart&&returnCustomEnd){
       start=returnCustomStart; end=returnCustomEnd;
     } else if(returnPeriod==="yd"){
@@ -1861,7 +1910,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               );
             })()}
           </ResponsiveContainer>
-          {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>조회 기간: {getPeriodStr(period,customStart,customEnd)}</div>}
+          {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(period,customStart,customEnd)}</div>}
         </Card>
       </div>
 
@@ -1982,7 +2031,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             </div>
           );
         })()}
-        {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:8}}>조회 기간: {getPeriodStr(period,customStart,customEnd)}</div>}
+        {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:8}}>{getPeriodStr(period,customStart,customEnd)}</div>}
       </Card>
 
       {/* 월별 배송량 (독립 기간) */}
@@ -2008,7 +2057,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <Bar dataKey="shipped" name="배송" fill="#7EADD4" radius={[3,3,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
-          {getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>조회 기간: {getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)}</div>}
+          {getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)}</div>}
         </Card>
 
         {/* 판매처별 일자 반품 */}
@@ -2038,7 +2087,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
             </LineChart>
           </ResponsiveContainer>
-          {getPeriodStr(returnPeriod,returnCustomStart,returnCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>조회 기간: {getPeriodStr(returnPeriod,returnCustomStart,returnCustomEnd)}</div>}
+          {getPeriodStr(returnPeriod,returnCustomStart,returnCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(returnPeriod,returnCustomStart,returnCustomEnd)}</div>}
         </Card>
       </div>
 
@@ -2087,6 +2136,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)}</div>}
       </Card>
 
       {/* 플랫폼별 선호 옵션 */}
@@ -2209,6 +2259,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)}</div>}
       </Card>
 
       {/* 플랫폼별 반품률 높은 옵션 */}
@@ -3270,6 +3321,7 @@ function PromoFlow({ revenues, storeSales=[] }) {
     dragRef.current={startX:e.clientX,startVS:viewStart,startVE:viewEnd,width};
     setIsDragging(true);
   },[viewStart,viewEnd]);
+  const [promoCalOpen,setPromoCalOpen]=useState(null);
   const [editingPromoId,setEditingPromoId]=useState(null);
   const [editPromoForm,setEditPromoForm]=useState({});
   const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||""});};
@@ -3447,11 +3499,9 @@ function PromoFlow({ revenues, storeSales=[] }) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div style={{fontWeight:600,fontSize:17,color:D.black}}>프로모션 플로우</div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          <input type="date" value={viewStart} onChange={e=>setViewStart(e.target.value)}
-            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:13,color:D.text}}/>
-          <span style={{color:D.textMeta}}>—</span>
-          <input type="date" value={viewEnd} onChange={e=>setViewEnd(e.target.value)}
-            style={{border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:13,color:D.text}}/>
+          <CalRangeDrop id="promoView" start={viewStart} end={viewEnd}
+            onRange={(s,e)=>{if(s)setViewStart(s);if(e)setViewEnd(e);}}
+            openId={promoCalOpen} setOpenId={setPromoCalOpen}/>
           <button onClick={()=>setShowForm(v=>!v)}
             style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
               padding:"6px 14px",fontSize:13,cursor:"pointer",fontWeight:600}}>
@@ -4179,15 +4229,15 @@ function CSDataInput() {
   const [csData,setCSData]=useState(getCSData);
   const today=new Date().toISOString().slice(0,10);
   const [date,setDate]=useState(today);
-  const [product,setProduct]=useState("");
-  const [reason,setReason]=useState("");
-  const [channel,setChannel]=useState("자사몰");
   const [filterProd,setFilterProd]=useState("");
   const [csvResult,setCsvResult]=useState(null);
   const [editCell,setEditCell]=useState(null);
   const [editVal,setEditVal]=useState("");
   const [selected,setSelected]=useState(new Set());
   const [delConfirm,setDelConfirm]=useState(false);
+  const [csFilterStart,setCsFilterStart]=useState("");
+  const [csFilterEnd,setCsFilterEnd]=useState("");
+  const [csCalOpen,setCsCalOpen]=useState(null);
 
   useEffect(()=>{
     (async()=>{
@@ -4200,19 +4250,6 @@ function CSDataInput() {
       }
     })();
   },[]);
-
-  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-    padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
-
-  const save=async()=>{
-    if(!product.trim()||!reason.trim())return;
-    const newR={id:Date.now(),date,product_name:product.trim(),return_reason:reason.trim(),channel};
-    const next=[newR,...csData];
-    saveCSData(next);setCSData(next);
-    setProduct("");setReason("");
-    const db=await getSupabase();
-    await db.from("cs_data").insert(newR);
-  };
 
   const handleCSVFile=useCallback(file=>{
     if(!file)return;
@@ -4309,47 +4346,22 @@ function CSDataInput() {
     setEditCell(null);
   };
 
-  const filtered=csData.filter(r=>!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd));
+  const filtered=csData.filter(r=>
+    (!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd)||(r.channel||"").includes(filterProd)||(r.return_reason||"").includes(filterProd))&&
+    (!csFilterStart||r.date>=csFilterStart)&&
+    (!csFilterEnd||r.date<=csFilterEnd)
+  );
 
   return (
-    <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:14}}>
       <Card>
-        <div style={{fontWeight:600,marginBottom:14,fontSize:13}}>CS 반품 사유 입력</div>
-        <div style={{marginBottom:10}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>날짜</div>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>판매처</div>
-          <div style={{display:"flex",gap:4}}>
-            {["자사몰","29CM","무신사"].map(c=>(
-              <button key={c} onClick={()=>setChannel(c)}
-                style={{flex:1,background:channel===c?D.black:"transparent",
-                  color:channel===c?"#fff":D.textSub,
-                  border:`1px solid ${channel===c?D.black:D.border}`,
-                  borderRadius:5,padding:"6px 4px",fontSize:11,cursor:"pointer"}}>
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>상품명</div>
-          <input value={product} onChange={e=>setProduct(e.target.value)} style={inp} placeholder="상품명 입력"/>
-        </div>
-        <div style={{marginBottom:14}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>반품 사유</div>
-          <input value={reason} onChange={e=>setReason(e.target.value)} style={inp} placeholder="예: 사이즈 불일치, 불량, 단순 변심"/>
-        </div>
-        <button onClick={save}
-          style={{width:"100%",background:D.black,color:"#fff",border:"none",borderRadius:6,
-            padding:"10px",fontSize:12,cursor:"pointer",fontWeight:600}}>
-          저장
-        </button>
-        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 일괄 업로드</div>
+        <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>CS 반품 데이터 업로드</div>
+        <div style={{fontSize:10,color:D.textMeta,marginBottom:8}}>날짜 없는 행의 기준일</div>
+        <CalendarPicker mode="single" value={date} onChange={setDate}/>
+        <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 업로드</div>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:8,lineHeight:1.6}}>
-            필수 컬럼: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
+            필수: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
             선택: [날짜] [판매처]
           </div>
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
@@ -4359,10 +4371,15 @@ function CSDataInput() {
         </div>
       </Card>
       <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
           <div style={{fontWeight:600,fontSize:13}}>반품 사유 내역</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <CalRangeDrop id="csFilter" start={csFilterStart} end={csFilterEnd}
+              onRange={(s,e)=>{setCsFilterStart(s);setCsFilterEnd(e);setDelConfirm(false);}}
+              openId={csCalOpen} setOpenId={setCsCalOpen}/>
           <input value={filterProd} onChange={e=>{setFilterProd(e.target.value);setDelConfirm(false);}}
             style={{...inp,width:200,fontSize:11,padding:"5px 8px"}} placeholder="날짜·상품명·판매처 검색"/>
+          </div>
         </div>
         {selected.size>0&&(
           <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
@@ -5047,7 +5064,7 @@ function StockUploader({ onUpdate }) {
                           <input type="text" placeholder="상품명 · 업로드일 검색" value={histFilter}
                             onChange={e=>{setHistFilter(e.target.value);setDeleteConfirm(false);}}
                             style={{flex:1,border:`1px solid ${D.border}`,borderRadius:6,padding:"5px 8px",
-                              fontSize:11,background:"transparent",color:D.text}}/>
+                              fontSize:12,background:"transparent",color:D.text}}/>
                           <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>{filtered.length}건</span>
                         </div>
                         <div style={{overflowY:"auto",maxHeight:520}}>
@@ -5157,7 +5174,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
     setEditCell(null);
   };
 
-  const inp2={border:`1px solid ${D.border}`,borderRadius:6,padding:"5px 10px",fontSize:11,background:"transparent",color:D.text};
+  const inp2={border:`1px solid ${D.border}`,borderRadius:6,padding:"5px 10px",fontSize:12,background:"transparent",color:D.text};
 
   return (
     <Card style={{marginTop:14}}>
@@ -6473,7 +6490,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
           <span style={{fontSize:13,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
           <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
             style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-              padding:"5px 10px",fontSize:13,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
+              padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
           <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:DC.sub,flexShrink:0}}>
             <span>최소재고</span>
             <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
@@ -6651,8 +6668,8 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
             )}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
               {[["판매가",`${(d.selling_price||0).toLocaleString()}원`],["현재고",`${(d.current_stock_qty||0).toLocaleString()}개`],
-                ["재고 금액",`${(d.currentInventoryValue||0).toLocaleString()}원`],["미판매",`${d.noSalesDays}일`],
-                ["SKU 기간",`${d.skuAge}일`],["입고 후",`${d.postRestockDays}일`]].map(([l,v])=>(
+                ["재고 금액",`${(d.currentInventoryValue||0).toLocaleString()}원`],["미판매",fmtDays(d.noSalesDays)],
+                ["SKU 기간",fmtDays(d.skuAge)],["입고 후",fmtDays(d.postRestockDays)]].map(([l,v])=>(
                 <div key={l} style={{background:"#1e1e1e",borderRadius:7,padding:"9px 11px"}}>
                   <div style={{fontSize:12,color:"#555",marginBottom:3}}>{l}</div>
                   <div style={{fontSize:13,fontWeight:600,color:"#F0F0F0"}}>{v}</div>
@@ -7299,16 +7316,16 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
         <div style={{fontSize:12,fontWeight:700,color:DC.text,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
           {[
-            {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
-            {title:"실질 가용재고",body:"가용재고\n+입고대기"},
-            {title:"예상 재고잔여일",body:"실질가용재고\n÷예상일판매량"},
-            {title:"14일 미만→\n리오더 추천",body:"days_left\n< 14일"},
-            {title:"추천 리오더 수량",body:"(일판매량×14)\n−실질가용재고"},
+            {title:"판매속도",body:"(1주판매÷7)×70% + (4주판매÷28)×30%"},
+            {title:"실질 가용재고",body:"가용재고 + 입고대기"},
+            {title:"예상 재고잔여일",body:"실질가용재고 ÷ 예상일판매량"},
+            {title:"14일 미만 → 리오더",body:"days_left < 14일"},
+            {title:"추천 리오더 수량",body:"(일판매량×14) − 실질가용재고"},
           ].map((s,i,a)=>(
             <React.Fragment key={s.title}>
-              <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
-                <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
-                <div style={{fontSize:13,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
+              <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:120}}>
+                <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600}}>{s.title}</div>
+                <div style={{fontSize:12,color:DC.sub,lineHeight:1.6}}>{s.body}</div>
               </div>
               {i<a.length-1&&<div style={{color:DC.text,fontSize:18,padding:"0 6px",flexShrink:0}}>→</div>}
             </React.Fragment>
@@ -7388,7 +7405,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"5px 10px",fontSize:14,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
+                padding:"5px 10px",fontSize:13,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <span style={{fontSize:13,color:DC.text}}>{filtered.length.toLocaleString()}개 SKU</span>
               <button onClick={downloadCSV}
@@ -7566,7 +7583,7 @@ function RevenueSankeyChart({periods,svgW}){
   },[cols]);
 
   const fmtAmt=a=>{
-    if(a>=1e8) return `${(a/1e8).toFixed(1)}억`;
+    if(a>=1e8) return fmtEokMan(a);
     if(a>=1e4) return `${Math.round(a/1e4)}만`;
     return a.toLocaleString();
   };
@@ -7899,8 +7916,8 @@ function CaptureBtn({cardRef,filename,DC}){
   };
   return(
     <button ref={btnRef} data-capture-hide onClick={capture} disabled={busy} title="카드 이미지 저장"
-      style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,
-        padding:"4px 8px",fontSize:12,color:DC.sub,cursor:busy?"wait":"pointer",
+      style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+        padding:"3px 8px",fontSize:10,color:DC.sub,cursor:busy?"wait":"pointer",
         display:"flex",alignItems:"center",gap:4,opacity:busy?0.5:1,transition:"opacity .15s",flexShrink:0}}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -7915,6 +7932,7 @@ function DataCompare({revenues,storeSales=[]}){
   const [volUnit,setVolUnit]=useState("month");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
+  const [volCalOpen,setVolCalOpen]=useState(null);
   const [sliderIdx,setSliderIdx]=useState([0,0]);
   const containerRef=useRef(null);
   const agingTrendSecRef=useRef(null);
@@ -8048,19 +8066,10 @@ function DataCompare({revenues,storeSales=[]}){
               </button>
             ))}
             <span style={{color:DC.border,fontSize:16,margin:"0 4px"}}>|</span>
-            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
-                fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
-            <span style={{color:DC.text,fontSize:13}}>~</span>
-            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
-                fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
-            {(customStart||customEnd)&&(
-              <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
-                style={{background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,padding:"0 2px"}}>✕</button>
-            )}
+            <CalRangeDrop id="vol" start={customStart} end={customEnd}
+              onRange={(s,e)=>{setCustomStart(s);setCustomEnd(e);}}
+              openId={volCalOpen} setOpenId={setVolCalOpen}
+              surface={DC.card} borderColor={DC.border} textActive={DC.text} textInactive={DC.sub}/>
             <span style={{color:DC.border,margin:"0 2px"}}>|</span>
             <CaptureBtn cardRef={volCardRef} filename="매출볼륨" DC={DC}/>
           </div>
