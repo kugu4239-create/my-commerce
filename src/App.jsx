@@ -1885,11 +1885,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,padding:"8px 12px",fontSize:11,boxShadow:"0 2px 8px #0001"}}>
                     <div style={{color:D.textMeta,marginBottom:3}}>{label}</div>
                     {isOffline&&entries.length>1&&(
-                      <div style={{color:D.text,marginBottom:2}}>합계: <strong>{total.toLocaleString()}원</strong></div>
+                      <div style={{color:D.text,marginBottom:2}}>합계: <strong>{fmtWon(total)}</strong></div>
                     )}
                     {entries.map((p,i)=>(
                       <div key={i} style={{color:p.color||D.text}}>
-                        {p.name}: <strong>{(p.value||0).toLocaleString()}원</strong>
+                        {p.name}: <strong>{fmtWon(p.value||0)}</strong>
                       </div>
                     ))}
                   </div>
@@ -1898,7 +1898,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               return(
                 <BarChart data={chartData} layout="vertical" barCategoryGap="28%">
                   <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
-                  <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
+                  <XAxis type="number" tick={axTick} tickFormatter={v=>v>=1e8?fmtEokMan(v):v>=1e4?(v/1e4).toFixed(0)+"만":v}/>
                   <YAxis type="category" dataKey="name" width={76} tick={axTick}/>
                   <Tooltip content={<ChTip/>}/>
                   <Bar dataKey="revenue" name="매출" stackId="a" radius={[0,3,3,0]}>
@@ -7584,7 +7584,7 @@ function RevenueSankeyChart({periods,svgW}){
 
   const fmtAmt=a=>{
     if(a>=1e8) return fmtEokMan(a);
-    if(a>=1e4) return `${Math.round(a/1e4)}만`;
+    if(a>=1e4) return Math.round(a/1e4)+"만";
     return a.toLocaleString();
   };
 
@@ -7766,7 +7766,7 @@ function RevenueSankeyChart({periods,svgW}){
                   fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>{i+1}</span>
                 <div>
                   <div style={{fontSize:10,color:"#444"}}>{nd.label} · {nd.ch}</div>
-                  <div style={{fontSize:13,color:"#111",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
+                  <div style={{fontSize:13,color:"#111",fontWeight:700}}>{fmtWon(nd.amt)}</div>
                 </div>
               </div>
             ))}
@@ -7775,7 +7775,7 @@ function RevenueSankeyChart({periods,svgW}){
                 {up?"▲":"▼"} {pct!==null?`${Math.abs(pct).toFixed(1)}%`:"—"}
               </span>
               <span style={{fontSize:11,color:"#111"}}>
-                ({up?"+":""}{diff.toLocaleString()}원)
+                ({up?"+":""}{fmtWon(Math.abs(diff))})
               </span>
             </div>
           </div>
