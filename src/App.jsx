@@ -7982,12 +7982,8 @@ function CaptureBtn({cardRef,filename,DC}){
               }catch(_){}
             }
           }
-          // 최종 폴백
-          if(isIOS){
-            const a=document.createElement("a");a.download=fname;a.href=blobUrl;a.click();
-          } else {
-            const a=document.createElement("a");a.download=fname;a.href=blobUrl;a.click();
-          }
+          // 최종 폴백: 다운로드
+          const a=document.createElement("a");a.download=fname;a.href=blobUrl;a.click();
           feedback(); setBusy(false);
         },"image/png");
         return;
