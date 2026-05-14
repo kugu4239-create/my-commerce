@@ -7962,25 +7962,33 @@ function CaptureBtn({cardRef,filename,DC}){
       const canvas=await html2canvas(cardRef.current,{scale:2,useCORS:true,backgroundColor:null,logging:false});
       btns.forEach(b=>{b.style.visibility=b._prevVis||"";});
       const fname=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
-      const onMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      // Web Share API: mobile only (PC Chrome도 share 지원하지만 갤러리 연동 불필요)
-      if(onMobile&&navigator.share){
+      const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isAndroid=/Android/i.test(navigator.userAgent);
+      if(isIOS||isAndroid){
         canvas.toBlob(async blob=>{
           const file=new File([blob],fname,{type:"image/png"});
-          try{
-            if(navigator.canShare&&navigator.canShare({files:[file]})){
+          const blobUrl=URL.createObjectURL(blob);
+          // Web Share API: iOS 사진첩 공유 / Android 갤러리 공유
+          if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+            try{
               await navigator.share({files:[file],title:fname});
-              feedback();
-              setBusy(false);return;
+              feedback(); setBusy(false); return;
+            }catch(e){
+              if(e.name==="AbortError"){ setBusy(false); return; }
             }
-          }catch(e){if(e.name!=="AbortError") console.error(e);}
-          const a=document.createElement("a");a.download=fname;a.href=URL.createObjectURL(blob);a.click();
-          feedback();
-          setBusy(false);
+          }
+          if(isIOS){
+            // iOS 폴백: 새 탭에서 이미지 열기 → 꾹 눌러서 사진에 저장
+            window.open(blobUrl,"_blank");
+          } else {
+            // Android 폴백: Downloads 저장 → 갤러리 자동 인덱싱
+            const a=document.createElement("a");a.download=fname;a.href=blobUrl;a.click();
+          }
+          feedback(); setBusy(false);
         },"image/png");
         return;
       }
-      // Desktop fallback: direct download
+      // PC: 로컬 다운로드
       const a=document.createElement("a");
       a.download=fname;a.href=canvas.toDataURL("image/png");a.click();
       feedback();
