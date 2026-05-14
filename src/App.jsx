@@ -8755,7 +8755,7 @@ export default function App() {
   const [stocks,setStocks]=useState([]);
   const [revenues,setRevenues]=useState([]);
   const [storeSales,setStoreSales]=useState([]);
-  const [appLoading,setAppLoading]=useState(false);
+  const [appLoading,setAppLoading]=useState(true);
   const firstLoad=useRef(true);
   const [ts,setTs]=useState(()=>{
     try{return JSON.parse(localStorage.getItem("merryon_ts")||"null")||{orders:null,stock:null,revenue:null,store:null};}
