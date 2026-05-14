@@ -6477,21 +6477,18 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                     style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
                       border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"5px 8px",
                       fontSize:12,cursor:"pointer",textAlign:"left"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:stat.qty>0?2:0}}>
-                      <span style={{fontWeight:600}}>{def.label}</span>
-                      {stat.qty>0&&<span style={{fontSize:10,opacity:.8,fontWeight:700}}>{stat.qty.toLocaleString()}개</span>}
-                    </div>
+                    <div style={{fontWeight:600,marginBottom:2}}>{def.label}</div>
+                    <div style={{fontSize:10,opacity:.55,marginBottom:stat.qty>0?3:0}}>{def.desc}</div>
                     {stat.qty>0&&(
                       <div style={{display:"flex",flexDirection:"column",gap:1,fontSize:10,opacity:.75}}>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
-                          <span>수량</span><span style={{fontWeight:600}}>{stat.pct}%</span>
+                          <span>수량 {stat.qty.toLocaleString()}개</span><span style={{fontWeight:600}}>{stat.pct}%</span>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
                           <span>금액</span><span style={{fontWeight:600}}>{stat.valPct}%</span>
                         </div>
                       </div>
                     )}
-                    {stat.qty===0&&<div style={{fontSize:10,opacity:.5}}>{def.desc}</div>}
                   </button>
                 );
               })}
