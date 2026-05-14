@@ -158,6 +158,17 @@ function fmtEokMan(n){
   if(il) s+=il;
   return eok+"억"+s+"만";
 }
+// 억 이상: 천만 단위까지만 표시 (테이블 셀용)
+const fmtWonShort = n => {
+  if (!n) return "—";
+  if (n >= 1e8) {
+    const eok = Math.floor(n / 1e8);
+    const cheon = Math.floor((n % 1e8) / 1e7);
+    return "₩" + eok + "억" + (cheon > 0 ? cheon + "천만" : "");
+  }
+  if (n >= 1e4) return "₩" + Math.round(n / 1e4) + "만";
+  return "₩" + n.toLocaleString();
+};
 const fmtWon = n => {
   if (!n) return "—";
   if (n>=1e8) return "₩"+fmtEokMan(n);
@@ -1837,7 +1848,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
-        <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
+        <KPI label="총 매출" value={fmtWonShort(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
@@ -2030,7 +2041,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         )}
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>{c.share||"—"}%</td>
-                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.revenue>0?fmtWon(c.revenue):"—"}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.revenue>0?fmtWonShort(c.revenue):"—"}</td>
                       <td style={{textAlign:"right",padding:"7px 9px"}}>
                         {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
@@ -2039,7 +2050,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
                         {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.avgOrderValue>0?fmtWon(c.avgOrderValue):"—"}</td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.avgOrderValue>0?fmtWonShort(c.avgOrderValue):"—"}</td>
                     </tr>
                   );
                 })}
