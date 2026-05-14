@@ -6068,11 +6068,19 @@ function InvBubblePlot({DC,snapshotDates}){
     text:DC.text,sub:DC.sub,dim:DC.dim,green:"#7EC8A4",greenBg:"rgba(126,200,164,0.15)"};
   const availSet=useMemo(()=>new Set(snapshotDates),[snapshotDates]);
 
+  // Axis domains — add ~15% headroom so max-radius bubbles don't clip
+  const xMax=useMemo(()=>filtered.length?Math.max(...filtered.map(d=>d.noSalesDays),1):100,[filtered]);
+  const yMax=useMemo(()=>filtered.length?Math.max(...filtered.map(d=>d.current_stock_qty),1):100,[filtered]);
+  const xDomain=useMemo(()=>[0,Math.ceil(xMax*1.18)],[xMax]);
+  const yDomain=useMemo(()=>[0,Math.ceil(yMax*1.18)],[yMax]);
+
+  const [showPromoInfo,setShowPromoInfo]=useState(false);
+
   return(
-    <div>
-      <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-start",marginBottom:16}}>
-        {/* Calendar + mode toggle */}
-        <div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:14,flexShrink:0}}>
+    <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+      {/* Left: Calendar + mode toggle + promo button */}
+      <div style={{flexShrink:0}}>
+        <div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:14}}>
           {/* Single / Range toggle */}
           <div style={{display:"flex",gap:4,marginBottom:10}}>
             {[["single","단일"],["range","기간"]].map(([k,l])=>(
@@ -6095,7 +6103,7 @@ function InvBubblePlot({DC,snapshotDates}){
             availableDates={availSet}
             DC={dcTheme}
           />
-          {/* 프로모션 제안 버튼 — 달력 하단 */}
+          {/* 프로모션 제안 버튼 */}
           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
             <button onClick={()=>setShowSaleRec(p=>!p)}
               style={{width:"100%",background:showSaleRec?"rgba(200,123,123,0.18)":"rgba(255,255,255,0.04)",
@@ -6105,6 +6113,36 @@ function InvBubblePlot({DC,snapshotDates}){
                 letterSpacing:"-0.2px",transition:"all .12s"}}>
               {"프로모션 제안"}{showSaleRec&&saleRecs.length>0?` (${saleRecs.length})`:""}
             </button>
+            {/* 선정 기준 설명 토글 */}
+            <button onClick={()=>setShowPromoInfo(p=>!p)}
+              style={{width:"100%",marginTop:4,background:"transparent",border:"none",
+                color:showPromoInfo?"#7EC8A4":DC.dim,fontSize:10,cursor:"pointer",
+                textAlign:"left",padding:"4px 2px",lineHeight:1.4}}>
+              {showPromoInfo?"▲ 선정 기준 닫기":"▼ 선정 기준 보기"}
+            </button>
+            {showPromoInfo&&(
+              <div style={{marginTop:4,padding:"10px 11px",background:"rgba(255,255,255,0.03)",
+                border:`1px solid ${DC.border}`,borderRadius:7,fontSize:10,color:DC.sub,lineHeight:1.75}}>
+                <div style={{color:"#C87B7B",fontWeight:700,marginBottom:5,fontSize:11}}>프로모션 제안 선정 기준</div>
+                <div style={{marginBottom:4}}>
+                  <span style={{color:DC.text,fontWeight:600}}>① 위치 조건</span><br/>
+                  미판매 일수 &gt; 전체 중앙값 <span style={{color:"#7B9EC8"}}>AND</span><br/>
+                  현재고 &gt; 전체 중앙값<br/>
+                  <span style={{color:DC.dim,fontSize:9}}>(차트 우상단 사분면 SKU)</span>
+                </div>
+                <div style={{marginBottom:4}}>
+                  <span style={{color:DC.text,fontWeight:600}}>② 최근 입고 조건</span><br/>
+                  최근 입고일이 스냅샷 기준 ±2개월 이내<br/>
+                  <span style={{color:DC.dim,fontSize:9}}>(오래된 재고보다 최근 발주 재고 우선)</span>
+                </div>
+                <div>
+                  <span style={{color:DC.text,fontWeight:600}}>③ 할인율 산정</span><br/>
+                  중앙값 대비 거리(미판매+재고) 기준 정렬<br/>
+                  → 거리 클수록 <span style={{color:"#C87B7B"}}>최대 70%</span> 할인 권장<br/>
+                  <span style={{color:DC.dim,fontSize:9}}>(최소 10%, 10% 단위)</span>
+                </div>
+              </div>
+            )}
             {showSaleRec&&saleRecs.length>0&&(
               <button onClick={downloadSaleRecs}
                 style={{width:"100%",marginTop:6,background:"transparent",color:"#7EC8A4",
@@ -6115,73 +6153,74 @@ function InvBubblePlot({DC,snapshotDates}){
             )}
           </div>
         </div>
-
-        {/* Filters */}
-        <div style={{flex:1,minWidth:200}}>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
-            <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>Aging 필터</span>
-            {INV_AGING_KEYS.map(k=>{
-              const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
-              return(
-                <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
-                  style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
-                    border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
-                  {def.label}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
-            <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
-            <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
-            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:DC.sub,flexShrink:0}}>
-              <span>최소재고</span>
-              <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
-                style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
-                  padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
-            </div>
-          </div>
-          {selDate&&<div style={{fontSize:11,color:DC.sub}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
-        </div>
       </div>
 
-      {/* Chart */}
-      {!selDate
-        ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>날짜를 선택하면 버블 차트가 표시됩니다</div>
-        :loading
-          ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
-          :filtered.length===0
-            ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>해당 조건의 데이터 없음</div>
-            :<div style={{width:"100%",height:460}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{top:20,right:24,bottom:44,left:16}}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
-                  <XAxis dataKey="noSalesDays" type="number" name="미판매 일수"
-                    tick={{fill:DC.sub,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                    label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:DC.sub,fontSize:11}}/>
-                  <YAxis dataKey="current_stock_qty" type="number" name="현재고"
-                    tick={{fill:DC.sub,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                    label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:DC.sub,fontSize:11}}/>
-                  <ZAxis dataKey="currentInventoryValue" range={[16,1600]} name="재고금액"/>
-                  <Tooltip content={<BubbleTooltip/>} cursor={false}/>
-                  <Scatter data={filtered} shape={<CustomDot/>}/>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-      }
-
-      {/* Note */}
-      {selDate&&filtered.length>0&&(
-        <div style={{marginTop:10,padding:"9px 14px",background:"rgba(255,255,255,0.03)",borderRadius:7,
-          border:`1px solid ${DC.border}`,fontSize:11,color:DC.sub,lineHeight:1.8}}>
-          <span style={{color:DC.text,fontWeight:600}}>해석:</span>
-          {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
+      {/* Right: Filters + Chart + Note */}
+      <div style={{flex:1,minWidth:0}}>
+        {/* Filters */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+          <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0,marginRight:2}}>Aging 필터</span>
+          {INV_AGING_KEYS.map(k=>{
+            const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
+            return(
+              <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
+                style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
+                  border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>
+                {def.label}
+              </button>
+            );
+          })}
         </div>
-      )}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+          <span style={{fontSize:11,color:DC.sub,fontWeight:600,flexShrink:0}}>검색</span>
+          <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>setSearch(e.target.value)}
+            style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+              padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:DC.sub,flexShrink:0}}>
+            <span>최소재고</span>
+            <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
+              style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
+          </div>
+        </div>
+        {selDate&&<div style={{fontSize:11,color:DC.sub,marginBottom:8}}>{selDate} 기준 · {filtered.length.toLocaleString()}개 SKU{showSaleRec?` · 프로모션 제안 ${saleRecs.length}개`:""}</div>}
 
-      {/* Side panel */}
+        {/* Chart */}
+        {!selDate
+          ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>날짜를 선택하면 버블 차트가 표시됩니다</div>
+          :loading
+            ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
+            :filtered.length===0
+              ?<div style={{textAlign:"center",padding:"64px 0",color:DC.dim,fontSize:13}}>해당 조건의 데이터 없음</div>
+              :<div style={{width:"100%",height:460}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{top:24,right:32,bottom:44,left:16}}>
+                    <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
+                    <XAxis dataKey="noSalesDays" type="number" name="미판매 일수" domain={xDomain}
+                      tick={{fill:"#E0E0E0",fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
+                      label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:"#E0E0E0",fontSize:11}}/>
+                    <YAxis dataKey="current_stock_qty" type="number" name="현재고" domain={yDomain}
+                      tick={{fill:"#E0E0E0",fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
+                      label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:"#E0E0E0",fontSize:11}}/>
+                    <ZAxis dataKey="currentInventoryValue" range={[16,1600]} name="재고금액"/>
+                    <Tooltip content={<BubbleTooltip/>} cursor={false}/>
+                    <Scatter data={filtered} shape={<CustomDot/>}/>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+        }
+
+        {/* Note */}
+        {selDate&&filtered.length>0&&(
+          <div style={{marginTop:10,padding:"9px 14px",background:"rgba(255,255,255,0.03)",borderRadius:7,
+            border:`1px solid ${DC.border}`,fontSize:11,color:DC.sub,lineHeight:1.8}}>
+            <span style={{color:DC.text,fontWeight:600}}>해석:</span>
+            {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
+          </div>
+        )}
+      </div>
+
+      {/* Side panel — position:fixed, 레이아웃 무관 */}
       {selectedSku&&(()=>{
         const d=selectedSku;
         const def=INV_AGING_DEFS[d.agingKey];
@@ -6400,34 +6439,25 @@ function InvAgingTrend({DC,snapshotDates,refreshKey}){
       </div>
 
       <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
-        {/* Area chart */}
+        {/* Stacked bar chart */}
         <div style={{flex:1,height:340}}>
           {loading
             ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>데이터 로딩 중...</div>
             :chartData.length===0
               ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:13}}>해당 기간 데이터 없음</div>
               :<ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}}>
-                  <defs>
-                    {INV_AGING_KEYS.map(k=>(
-                      <linearGradient key={k} id={`igt_${k}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={INV_AGING_DEFS[k].color} stopOpacity={0.55}/>
-                        <stop offset="95%" stopColor={INV_AGING_DEFS[k].color} stopOpacity={0.04}/>
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="2 5" stroke="#1c1c1c"/>
-                  <XAxis dataKey="label" tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
+                <BarChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}} barCategoryGap="22%">
+                  <CartesianGrid strokeDasharray="2 5" stroke="#1c1c1c" vertical={false}/>
+                  <XAxis dataKey="label" tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
                     angle={-20} textAnchor="end" interval="preserveStartEnd" dy={6}/>
-                  <YAxis tick={{fill:DC.sub,fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
+                  <YAxis tick={{fill:"#E0E0E0",fontSize:10}} axisLine={{stroke:DC.border}} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
                   <Tooltip content={<AreaTooltip/>}/>
                   {INV_AGING_KEYS.map(k=>(
-                    <Area key={k} type="monotone" dataKey={k} stackId="1"
-                      stroke={INV_AGING_DEFS[k].color} strokeWidth={1.5}
-                      fill={`url(#igt_${k})`} fillOpacity={1}/>
+                    <Bar key={k} dataKey={k} stackId="1"
+                      fill={INV_AGING_DEFS[k].color} fillOpacity={0.85} radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}/>
                   ))}
-                </AreaChart>
+                </BarChart>
               </ResponsiveContainer>
           }
         </div>
