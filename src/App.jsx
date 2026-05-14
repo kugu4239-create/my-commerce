@@ -8200,9 +8200,9 @@ function RevenueSankeyChart({periods,svgW}){
             const c=COMPARE_CH_COLOR[ch];
             return(
               <linearGradient key={ch} id={id} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor={c} stopOpacity={0.55}/>
-                <stop offset="50%" stopColor={c} stopOpacity={0.2}/>
-                <stop offset="100%" stopColor={c} stopOpacity={0.55}/>
+                <stop offset="0%" stopColor={c} stopOpacity={0.75}/>
+                <stop offset="50%" stopColor={c} stopOpacity={0.45}/>
+                <stop offset="100%" stopColor={c} stopOpacity={0.75}/>
               </linearGradient>
             );
           })}
