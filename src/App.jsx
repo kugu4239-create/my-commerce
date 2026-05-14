@@ -7833,32 +7833,33 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     if(!active||!payload?.length) return null;
     const dp=payload[0]?.payload||{};
     const total=dp._allCnt||0;
-    const row=(color,name,count,sub)=>(
-      <div key={name} style={{marginBottom:4}}>
-        <div style={{display:"flex",justifyContent:"space-between",gap:16}}>
-          <span style={{display:"flex",alignItems:"center",gap:5}}>
-            <span style={{width:10,height:10,borderRadius:2,background:color,display:"inline-block",flexShrink:0}}/>
-            <span style={{color:DC.text}}>{name}</span>
-          </span>
-          <span style={{fontWeight:600,color:DC.text}}>{count}개 <span style={{fontWeight:400,color:DC.sub}}>({total?(count/total*100).toFixed(1):0}%)</span></span>
+    const pct=(n,d)=>d?(n/d*100).toFixed(1):"0.0";
+    const ChRow=({color,name,count,chTotal})=>(
+      <div style={{marginBottom:6}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+          <span style={{width:10,height:10,borderRadius:2,background:color,display:"inline-block",flexShrink:0}}/>
+          <span style={{fontWeight:600,color:DC.text}}>{name}</span>
+          <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{count}개</span>
         </div>
-        {sub&&<div style={{fontSize:10,color:DC.dim,marginLeft:15,marginTop:1}}>{sub}</div>}
+        <div style={{marginLeft:15,display:"flex",flexDirection:"column",gap:1,fontSize:10,color:DC.sub}}>
+          <span>전체 고유 SKU {total}개 중 <b style={{color:DC.text}}>{pct(count,total)}%</b></span>
+          {chTotal!=null&&<span>{name.replace(" only","")} 활성 {chTotal}개 중 <b style={{color:DC.text}}>{pct(count,chTotal)}%</b>가 이 채널 단독</span>}
+        </div>
       </div>
     );
     return(
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",minWidth:230,boxShadow:"0 4px 16px rgba(0,0,0,.08)",fontSize:12}}>
-        <div style={{fontWeight:700,marginBottom:6,color:DC.text}}>{label}</div>
-        <div style={{color:DC.sub,marginBottom:8,fontSize:11}}>전체 고유 Active SKU: {total}개</div>
-        {dp.common>0&&row(SKU_VOL_PASTEL.common,"공통 (전 채널)",dp.common)}
-        {dp.cross>0&&row(SKU_VOL_PASTEL.cross,"교차 (2–3채널)",dp.cross)}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",minWidth:240,boxShadow:"0 4px 16px rgba(0,0,0,.08)",fontSize:12}}>
+        <div style={{fontWeight:700,marginBottom:2,color:DC.text}}>{label}</div>
+        <div style={{color:DC.sub,marginBottom:8,fontSize:11,borderBottom:`1px solid ${DC.border}`,paddingBottom:6}}>전체 고유 Active SKU: <b style={{color:DC.text}}>{total}개</b></div>
+        {dp.common>0&&<ChRow color={SKU_VOL_PASTEL.common} name="공통 (전 채널)" count={dp.common} chTotal={null}/>}
+        {dp.cross>0&&<ChRow color={SKU_VOL_PASTEL.cross} name="교차 (2–3채널)" count={dp.cross} chTotal={null}/>}
         {channelOrder.map(ch=>{
           const only=dp[`${ch}_only`]||0;
           const chTotal=(dp._chSets?.[ch]?.length||0);
           if(!chTotal) return null;
-          const onlyPct=chTotal?(only/chTotal*100).toFixed(1):"0.0";
-          return row(SKU_VOL_PASTEL[ch],`${ch} only`,only,`${ch} 전체 활성 ${chTotal}개 · 단독 ${onlyPct}%`);
+          return <ChRow key={ch} color={SKU_VOL_PASTEL[ch]} name={`${ch} only`} count={only} chTotal={chTotal}/>;
         })}
-        <div style={{borderTop:`1px solid ${DC.border}`,marginTop:6,paddingTop:5,fontSize:10,color:DC.dim}}>클릭하면 SKU 목록을 볼 수 있습니다</div>
+        <div style={{borderTop:`1px solid ${DC.border}`,marginTop:4,paddingTop:5,fontSize:10,color:DC.dim}}>클릭하면 SKU 목록을 볼 수 있습니다</div>
       </div>
     );
   },[channelOrder,DC]);
