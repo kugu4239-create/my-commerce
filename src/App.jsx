@@ -5951,16 +5951,32 @@ function InvBubblePlot({DC,snapshotDates}){
 
   useEffect(()=>{ setSelDate(null); setSelDateEnd(null); setData([]); },[dateMode]);
 
+  // Auto-select latest available date on first load
+  useEffect(()=>{
+    if(snapshotDates&&snapshotDates.length>0&&!selDate){
+      const latest=[...snapshotDates].sort().pop();
+      setSelDate(latest);
+    }
+  },[snapshotDates]);
+
   const loadDate=dateMode==="range"?(selDateEnd||selDate):selDate;
   useEffect(()=>{
     if(!loadDate){setData([]);return;}
     setLoading(true);
-    getSupabase().then(db=>
-      db.from("inventory_snapshot").select("*").eq("snapshot_date",loadDate)
-    ).then(({data:rows,error})=>{
-      setData(error||!rows?[]:rows.map(calcInvRow));
+    (async()=>{
+      const db=await getSupabase();
+      let all=[];let from=0;const PAGE=1000;
+      while(true){
+        const{data:rows,error}=await db.from("inventory_snapshot").select("*")
+          .eq("snapshot_date",loadDate).range(from,from+PAGE-1);
+        if(error||!rows||rows.length===0) break;
+        all=all.concat(rows);
+        if(rows.length<PAGE) break;
+        from+=PAGE;
+      }
+      setData(all.map(calcInvRow));
       setLoading(false);
-    });
+    })();
   },[loadDate]);
 
   const filtered=useMemo(()=>
@@ -6564,9 +6580,16 @@ function ReorderCalculator({DC,refreshKey}){
   const load=useCallback(async()=>{
     setLoading(true);
     const db=await getSupabase();
-    const{data:rows}=await db.from("reorder_recommendations")
-      .select("*").order("reorder_days_left",{ascending:true});
-    setData(rows||[]);
+    let all=[];let from=0;const PAGE=1000;
+    while(true){
+      const{data:rows,error}=await db.from("reorder_recommendations")
+        .select("*").order("reorder_days_left",{ascending:true}).range(from,from+PAGE-1);
+      if(error||!rows||rows.length===0) break;
+      all=all.concat(rows);
+      if(rows.length<PAGE) break;
+      from+=PAGE;
+    }
+    setData(all);
     setLoading(false);
   },[]);
 
@@ -7545,20 +7568,19 @@ export default function App() {
       color:isDark?DK.text:D.text, fontSize:14,
       opacity:visible?1:0, transition:"opacity 0.35s ease, background 0.2s ease" }}>
 
-      {/* top bar */}
-      <div style={{ background:isDark?DK.surface:D.surface,
-        borderBottom:`1px solid ${isDark?DK.border:D.border}`,
-        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0,
-        transition:"background 0.2s ease" }}>
+      {/* top bar — always light */}
+      <div style={{ background:D.surface,
+        borderBottom:`1px solid ${D.border}`,
+        padding:"0 24px", display:"flex", alignItems:"center", gap:24, height:48, flexShrink:0 }}>
         <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1, marginRight:8 }}>
-          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:isDark?"#fff":D.black }}>MERRYON</span>
-          <span style={{ fontSize:10, color:isDark?DK.sub:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
+          <span style={{ fontWeight:800, fontSize:13, letterSpacing:"0.08em", color:D.black }}>MERRYON</span>
+          <span style={{ fontSize:10, color:D.textMeta, letterSpacing:"0.06em" }}>COMMERCE · Made by Jihoon</span>
         </div>
         <nav style={{ display:"flex", gap:2, flex:1 }}>
           {nav.map(n=>(
             <button key={n.key} onClick={()=>setPage(n.key)}
-              style={{ background:page===n.key?(isDark?DK.active:D.surfaceAlt):"transparent",
-                color:page===n.key?(isDark?"#fff":D.black):(isDark?DK.sub:D.textSub),
+              style={{ background:page===n.key?D.surfaceAlt:"transparent",
+                color:page===n.key?D.black:D.textSub,
                 border:"none", borderRadius:6, padding:"6px 14px",
                 cursor:"pointer", fontSize:12,
                 fontWeight:page===n.key?600:400 }}>
@@ -7566,7 +7588,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div style={{ color:isDark?DK.sub:D.textMeta, fontSize:11, flexShrink:0 }}>
+        <div style={{ color:D.textMeta, fontSize:11, flexShrink:0 }}>
           {new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}
         </div>
       </div>
