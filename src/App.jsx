@@ -59,6 +59,13 @@ function UpdatedAt({ ts }) {
 
 const toNum = v => parseFloat(String(v||"0").replace(/[^0-9.-]/g,""))||0;
 
+// 필터 버튼 햅틱 피드백 — data-hf 속성 버튼 클릭 시 짧은 더블 진동 (Android)
+if(typeof document!=="undefined"){
+  document.addEventListener("click",e=>{
+    if(e.target.closest("[data-hf]")) navigator.vibrate?.([20,40,20]);
+  },{passive:true});
+}
+
 // 스티키 닫기 버튼 상호 배제: 한 표만 스티키 표시
 let _stickyActiveId = null;
 const _stickyListeners = new Set();
@@ -6286,7 +6293,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
           {/* Single / Range toggle */}
           <div style={{display:"flex",gap:4,marginBottom:10}}>
             {[["single","단일"],["range","기간"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setDateMode(k)}
+              <button key={k} data-hf onClick={()=>setDateMode(k)}
                 style={{flex:1,background:dateMode===k?"#7EC8A4":"rgba(255,255,255,0.05)",
                   color:dateMode===k?"#0a1a12":DC.sub,
                   border:`1px solid ${dateMode===k?"#7EC8A4":DC.border}`,
@@ -6312,7 +6319,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
               {INV_AGING_KEYS.map(k=>{
                 const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
                 return(
-                  <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
+                  <button key={k} data-hf onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
                     style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
                       border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 8px",
                       fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -6379,7 +6386,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
             {INV_AGING_KEYS.map(k=>{
               const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
               return(
-                <button key={k} onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
+                <button key={k} data-hf onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
                   style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
                     border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
                   {def.label}
@@ -6816,13 +6823,13 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>기간</span>
           {[["7d","7일"],["14d","2주"],["30d","30일"],["90d","90일"],["1y","1년"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setDateRange(v)}
+            <button key={v} data-hf onClick={()=>setDateRange(v)}
               style={{background:dateRange===v?DC.text:"transparent",color:dateRange===v?DC.card:DC.sub,
                 border:`1px solid ${dateRange===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:dateRange===v?600:400}}>
               {l}
             </button>
           ))}
-          <button onClick={()=>{setDateRange("custom");setShowCal(p=>!p);}}
+          <button data-hf onClick={()=>{setDateRange("custom");setShowCal(p=>!p);}}
             style={{background:dateRange==="custom"?DC.text:"transparent",
               color:dateRange==="custom"?DC.card:DC.sub,
               border:`1px solid ${dateRange==="custom"?DC.text:DC.border}`,
@@ -6833,7 +6840,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
           <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
           {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setAggUnit(v)}
+            <button key={v} data-hf onClick={()=>setAggUnit(v)}
               style={{background:aggUnit===v?DC.text:"transparent",color:aggUnit===v?DC.card:DC.sub,
                 border:`1px solid ${aggUnit===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
               {l}
@@ -6842,7 +6849,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
           <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
           {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setYMode(v)}
+            <button key={v} data-hf onClick={()=>setYMode(v)}
               style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
                 border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
               {l}
@@ -6855,7 +6862,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           display:"inline-flex",flexDirection:"column",gap:8}}>
           <div style={{display:"flex",gap:4,marginBottom:4}}>
             {[["single","단일"],["range","기간"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setCalPickMode(k)}
+              <button key={k} data-hf onClick={()=>setCalPickMode(k)}
                 style={{flex:1,background:calPickMode===k?DC.text:"transparent",
                   color:calPickMode===k?DC.card:DC.sub,
                   border:`1px solid ${calPickMode===k?DC.text:DC.border}`,
@@ -7956,7 +7963,7 @@ function DataCompare({revenues,storeSales=[]}){
           <div style={{fontWeight:600,fontSize:16,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
             {[["year","연"],["month","월"]].map(([u,lbl])=>(
-              <button key={u} onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
+              <button key={u} data-hf onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
                 style={{background:volUnit===u?DC.text:"transparent",
                   color:volUnit===u?DC.card:DC.sub,
                   border:`1px solid ${volUnit===u?DC.text:DC.border}`,
