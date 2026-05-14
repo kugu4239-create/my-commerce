@@ -4541,7 +4541,9 @@ function RevenueForm({ onUpdate }) {
       if(error){setResult({type:"error",msg:error.message});return;}
     }
     const ts2=nowStr();
-    setResult({type:"success",msg:`${toUpload.length}건 저장 완료`,ts:ts2});
+    const overlapCount=choice==="new"?csvPreview.overlaps?.length||0:0;
+    const replaceNote=overlapCount>0?` (기존 ${overlapCount}건 대체됨)`:"";
+    setResult({type:"success",msg:`${toUpload.length}건 저장 완료${replaceNote}`,ts:ts2});
     setCsvPreview(null);setCsvConflictChoice(null);
     onUpdate(ts2);loadHistory();
   };
@@ -5289,6 +5291,7 @@ function EasyAdminUploader({ onUpdate }) {
     if(!inRange.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
+    const {count:prevCount}=await db.from("orders").select("*",{count:"exact",head:true}).gte("order_date",startDate).lte("order_date",endDate);
     const {error:delErr}=await db.from("orders").delete().gte("order_date",startDate).lte("order_date",endDate);
     if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
     for(let i=0;i<inRange.length;i+=500){
@@ -5303,7 +5306,8 @@ function EasyAdminUploader({ onUpdate }) {
       skipped:outRows.length,date_start:startDate,date_end:endDate,
     });
     setStep(3);
-    setResult({type:"success",msg:`기간 내 ${inRange.length}건 등록 / 기간 외 ${outRows.length}건 제외`,ts:ts2});
+    const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
+    setResult({type:"success",msg:`기간 내 ${inRange.length}건 등록 / 기간 외 ${outRows.length}건 제외${replaceNote}`,ts:ts2});
     onUpdate(ts2); setLoading(false);
   };
 
@@ -5463,7 +5467,10 @@ function StoreUploader({ onUpdate }) {
     if(!preview?.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
+    let prevCount=0;
     if(dateRange.start&&dateRange.end){
+      const {count}=await db.from("store_sales").select("*",{count:"exact",head:true}).gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
+      prevCount=count||0;
       await db.from("store_sales").delete().gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
     }
     for(let i=0;i<preview.length;i+=500){
@@ -5471,7 +5478,8 @@ function StoreUploader({ onUpdate }) {
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료`,ts:ts2});
+    const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
+    setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료${replaceNote}`,ts:ts2});
     onUpdate(ts2);setLoading(false);
   };
 
@@ -6573,7 +6581,7 @@ function InvBubblePlot({DC,snapshotDates}){
 function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
-  const [aggUnit,setAggUnit]=useState("month");
+  const [aggUnit,setAggUnit]=useState("week");
   const [yMode,setYMode]=useState("count");
   const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
   const [customStart,setCustomStart]=useState("");
@@ -6671,12 +6679,12 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const datesByLabel=useMemo(()=>{
     const map={};
     Object.keys(rawByDate).sort().forEach(d=>{
-      let key;
-      if(aggUnit==="week"){const dd=dayjs(d);key=dd.subtract(dd.day(),"day").format("YYYY-MM-DD");}
-      else if(aggUnit==="quarter"){const dd=dayjs(d);key=`${dd.year()}-Q${Math.floor(dd.month()/3)+1}`;}
-      else{key=d.slice(0,7);}
-      if(!map[key]) map[key]=[];
-      map[key].push(d);
+      let label;
+      if(aggUnit==="week"){const dd=dayjs(d);label=dd.subtract(dd.day(),"day").format("M/D");}
+      else if(aggUnit==="quarter"){const dd=dayjs(d);label=`${dd.year()}-Q${Math.floor(dd.month()/3)+1}`;}
+      else{label=d.slice(0,7);}
+      if(!map[label]) map[label]=[];
+      map[label].push(d);
     });
     return map;
   },[rawByDate,aggUnit]);
@@ -6688,11 +6696,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
     if(clickedBar&&clickedBar.label===label&&clickedBar.agingKey===agingKey){
       setClickedBar(null);setDrillRows([]);return;
     }
-    setClickedBar({label,agingKey});
-    setDrillLoading(true);
     const dates=datesByLabel[label]||[];
+    const targetDate=dates[dates.length-1]||null;
+    setClickedBar({label,agingKey,targetDate});
+    setDrillLoading(true);
     if(!dates.length){setDrillLoading(false);return;}
-    const targetDate=dates[dates.length-1]; // most recent in group
     (async()=>{
       const db=await getSupabase();
       let all=[];let from=0;const PAGE=1000;
@@ -6905,6 +6913,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
               {clickedBar.label} · {INV_AGING_DEFS[clickedBar.agingKey]?.label}
             </span>
             {!drillLoading&&<span style={{fontSize:12,color:DC.text}}>{drillRows.length.toLocaleString()}개 SKU</span>}
+            {clickedBar.targetDate&&clickedBar.targetDate!==latestDate&&(
+              <span style={{fontSize:11,color:"#e07b00",background:"#fff3e0",borderRadius:4,padding:"2px 7px",border:"1px solid #e07b00"}}>
+                분석일 {clickedBar.targetDate} 기준 · 현재와 다를 수 있습니다
+              </span>
+            )}
             <button onClick={()=>{setClickedBar(null);setDrillRows([]);}}
               style={{marginLeft:"auto",background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>
           </div>
