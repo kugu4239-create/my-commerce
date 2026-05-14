@@ -286,6 +286,26 @@ function filterByDate(rows, dateField, period, customStart, customEnd) {
   return rows;
 }
 
+function getPeriodStr(period, customStart, customEnd) {
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=d=>`${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}`;
+  const today=new Date();
+  const todayStr=fmt(today);
+  if(period==="custom"&&customStart&&customEnd)
+    return `${customStart.replace(/-/g,'.')} ~ ${customEnd.replace(/-/g,'.')}`;
+  if(period==="all") return "전체";
+  if(period==="yd"){const d=new Date(today);d.setDate(d.getDate()-1);return fmt(d);}
+  const s=new Date(today);
+  if(period==="7d") s.setDate(s.getDate()-7);
+  else if(period==="14d") s.setDate(s.getDate()-14);
+  else if(period==="1m") s.setMonth(s.getMonth()-1);
+  else if(period==="3m") s.setMonth(s.getMonth()-3);
+  else if(period==="6m") s.setMonth(s.getMonth()-6);
+  else if(period==="week"){const dow=s.getDay()||7;s.setDate(s.getDate()-dow+1);}
+  else return "";
+  return `${fmt(s)} ~ ${todayStr}`;
+}
+
 // ─────────────────────────────────────────────
 // SHARED UI
 function InfoTip({ text, children }) {
@@ -309,14 +329,14 @@ function InfoTip({ text, children }) {
 }
 
 // ─────────────────────────────────────────────
-function Card({ children, style={} }) {
+const Card=React.forwardRef(function Card({ children, style={} },ref) {
   return (
-    <div style={{ background:D.surface, border:`1px solid ${D.border}`,
+    <div ref={ref} style={{ background:D.surface, border:`1px solid ${D.border}`,
       borderRadius:10, padding:"16px 18px", ...style }}>
       {children}
     </div>
   );
-}
+});
 function SecTitle({ children, ts }) {
   return (
     <div style={{ display:"flex", alignItems:"baseline", gap:6, marginBottom:12 }}>
@@ -1418,6 +1438,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [calOpenFor,setCalOpenFor]=useState(null);
   const [offlineExpanded,setOfflineExpanded]=useState(false);
   const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
+  const salesByChCardRef=useRef(null);
+  const chDetailCardRef=useRef(null);
+  const shippingCardRef=useRef(null);
+  const returnTrendCardRef=useRef(null);
+  const salesTopCardRef=useRef(null);
+  const optionPrefCardRef=useRef(null);
+  const returnTopCardRef=useRef(null);
+  const returnOptCardRef=useRef(null);
 
   const axTick={fill:D.textMeta,fontSize:10};
   const NoWrapTick=({x,y,payload})=>(
@@ -1777,8 +1805,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             );
           })()}
         </Card>
-        <Card>
-          <SecTitle ts={ts.orders}>판매처별 매출</SecTitle>
+        <Card ref={salesByChCardRef}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+            <SecTitle ts={ts.orders}>판매처별 매출</SecTitle>
+            <CaptureBtn cardRef={salesByChCardRef} filename="판매처별매출" DC={{border:D.border,sub:D.textMeta}}/>
+          </div>
           <ResponsiveContainer width="100%" height={160}>
             {(()=>{
               // 오프라인 스토어 → 판교점/일산점 분리 스택
@@ -1830,14 +1861,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               );
             })()}
           </ResponsiveContainer>
+          {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>조회 기간: {getPeriodStr(period,customStart,customEnd)}</div>}
         </Card>
       </div>
 
       {/* 판매처 상세 */}
-      <Card style={{marginBottom:20,minHeight:380}}>
+      <Card ref={chDetailCardRef} style={{marginBottom:20,minHeight:380}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
             {[["revenue","매출"],["share","점유율"],["shipped","배송"],...(!["yd","7d"].includes(period)?[["returned","반품"],["rate","반품률"]]:[]),["aov","객단가"]].map(([k,l])=>(
               <button key={k} onClick={()=>setChSort({key:k,dir:"desc"})}
                 style={{background:chSort.key===k?D.black:"transparent",
@@ -1848,6 +1880,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 {l}
               </button>
             ))}
+            <CaptureBtn cardRef={chDetailCardRef} filename="판매처상세" DC={{border:D.border,sub:D.textMeta}}/>
           </div>
         </div>
         {(()=>{
@@ -1949,18 +1982,22 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             </div>
           );
         })()}
+        {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:8}}>조회 기간: {getPeriodStr(period,customStart,customEnd)}</div>}
       </Card>
 
       {/* 월별 배송량 (독립 기간) */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:20}}>
-        <Card>
+        <Card ref={shippingCardRef}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>배송량</SecTitle>
-            <CalDrop id="shipping" period={shippingPeriod} setPeriod={setShippingPeriod}
-              presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
-              start={shippingCustomStart} setStart={setShippingCustomStart}
-              end={shippingCustomEnd} setEnd={setShippingCustomEnd}
-              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <CalDrop id="shipping" period={shippingPeriod} setPeriod={setShippingPeriod}
+                presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
+                start={shippingCustomStart} setStart={setShippingCustomStart}
+                end={shippingCustomEnd} setEnd={setShippingCustomEnd}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+              <CaptureBtn cardRef={shippingCardRef} filename="배송량" DC={{border:D.border,sub:D.textMeta}}/>
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={170}>
             <BarChart data={shippingChartData}>
@@ -1971,17 +2008,21 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <Bar dataKey="shipped" name="배송" fill="#7EADD4" radius={[3,3,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
+          {getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>조회 기간: {getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)}</div>}
         </Card>
 
         {/* 판매처별 일자 반품 */}
-        <Card>
+        <Card ref={returnTrendCardRef}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>판매처별 반품 추이</SecTitle>
-            <CalDrop id="return" period={returnPeriod} setPeriod={setReturnPeriod}
-              presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
-              start={returnCustomStart} setStart={setReturnCustomStart}
-              end={returnCustomEnd} setEnd={setReturnCustomEnd}
-              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <CalDrop id="return" period={returnPeriod} setPeriod={setReturnPeriod}
+                presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
+                start={returnCustomStart} setStart={setReturnCustomStart}
+                end={returnCustomEnd} setEnd={setReturnCustomEnd}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+              <CaptureBtn cardRef={returnTrendCardRef} filename="반품추이" DC={{border:D.border,sub:D.textMeta}}/>
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={returnChartData.data}>
@@ -1997,11 +2038,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
             </LineChart>
           </ResponsiveContainer>
+          {getPeriodStr(returnPeriod,returnCustomStart,returnCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>조회 기간: {getPeriodStr(returnPeriod,returnCustomStart,returnCustomEnd)}</div>}
         </Card>
       </div>
 
       {/* 판매 Top */}
-      <Card style={{marginBottom:20,minHeight:660}}>
+      <Card ref={salesTopCardRef} style={{marginBottom:20,minHeight:660}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>판매 Top</SecTitle>
@@ -2014,11 +2056,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
           </div>
-          <CalDrop id="best" period={rankBestPeriod} setPeriod={setRankBestPeriod}
-            presets={[["yd","어제"],["7d","최근 7일"],["14d","최근 14일"],["1m","최근 한달"],["3m","최근 3개월"]]}
-            start={rankBestCustomStart} setStart={setRankBestCustomStart}
-            end={rankBestCustomEnd} setEnd={setRankBestCustomEnd}
-            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <CalDrop id="best" period={rankBestPeriod} setPeriod={setRankBestPeriod}
+              presets={[["yd","어제"],["7d","최근 7일"],["14d","최근 14일"],["1m","최근 한달"],["3m","최근 3개월"]]}
+              start={rankBestCustomStart} setStart={setRankBestCustomStart}
+              end={rankBestCustomEnd} setEnd={setRankBestCustomEnd}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+            <CaptureBtn cardRef={salesTopCardRef} filename="판매Top" DC={{border:D.border,sub:D.textMeta}}/>
+          </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -2046,14 +2091,17 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
       {/* 플랫폼별 선호 옵션 */}
       {optionStats.length>0&&(
-        <Card style={{marginBottom:20}}>
+        <Card ref={optionPrefCardRef} style={{marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
-            <CalDrop id="option" period={optionPeriod} setPeriod={setOptionPeriod}
-              presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
-              start={optionCustomStart} setStart={setOptionCustomStart}
-              end={optionCustomEnd} setEnd={setOptionCustomEnd}
-              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <CalDrop id="option" period={optionPeriod} setPeriod={setOptionPeriod}
+                presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
+                start={optionCustomStart} setStart={setOptionCustomStart}
+                end={optionCustomEnd} setEnd={setOptionCustomEnd}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+              <CaptureBtn cardRef={optionPrefCardRef} filename="선호옵션" DC={{border:D.border,sub:D.textMeta}}/>
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${optionStats.length},1fr)`,gap:16}}>
             {optionStats.map(({ch,colors,sizes})=>(
@@ -2115,7 +2163,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         </div>
       )}
       {/* 반품 탑 */}
-      <Card style={{marginBottom:20,minHeight:660}}>
+      <Card ref={returnTopCardRef} style={{marginBottom:20,minHeight:660}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>반품 Top</SecTitle>
@@ -2127,11 +2175,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
           </div>
-          <CalDrop id="worst" period={rankWorstPeriod} setPeriod={setRankWorstPeriod}
-            presets={[["1m","최근 한달"],["3m","최근 3개월"]]}
-            start={rankWorstCustomStart} setStart={setRankWorstCustomStart}
-            end={rankWorstCustomEnd} setEnd={setRankWorstCustomEnd}
-            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <CalDrop id="worst" period={rankWorstPeriod} setPeriod={setRankWorstPeriod}
+              presets={[["1m","최근 한달"],["3m","최근 3개월"]]}
+              start={rankWorstCustomStart} setStart={setRankWorstCustomStart}
+              end={rankWorstCustomEnd} setEnd={setRankWorstCustomEnd}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+            <CaptureBtn cardRef={returnTopCardRef} filename="반품Top" DC={{border:D.border,sub:D.textMeta}}/>
+          </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -2162,14 +2213,17 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
       {/* 플랫폼별 반품률 높은 옵션 */}
       {returnOptionStats.length>0&&(
-        <Card style={{marginBottom:20}}>
+        <Card ref={returnOptCardRef} style={{marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
-            <CalDrop id="returnOption" period={returnOptionPeriod} setPeriod={setReturnOptionPeriod}
-              presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
-              start={returnOptionCustomStart} setStart={setReturnOptionCustomStart}
-              end={returnOptionCustomEnd} setEnd={setReturnOptionCustomEnd}
-              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <CalDrop id="returnOption" period={returnOptionPeriod} setPeriod={setReturnOptionPeriod}
+                presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
+                start={returnOptionCustomStart} setStart={setReturnOptionCustomStart}
+                end={returnOptionCustomEnd} setEnd={setReturnOptionCustomEnd}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+              <CaptureBtn cardRef={returnOptCardRef} filename="반품률높은옵션" DC={{border:D.border,sub:D.textMeta}}/>
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
             {returnOptionStats.map(({ch,colors,sizes})=>(
