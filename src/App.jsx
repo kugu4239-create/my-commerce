@@ -7968,22 +7968,22 @@ function CaptureBtn({cardRef,filename,DC}){
         canvas.toBlob(async blob=>{
           const file=new File([blob],fname,{type:"image/png"});
           const blobUrl=URL.createObjectURL(blob);
-          // Web Share API: iOS 사진첩 공유 / Android 갤러리 공유
-          if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+          // Web Share API: canShare 가드 없이 직접 시도 — iOS 공유 시트 "이미지 저장" → 사진앱
+          if(navigator.share){
             try{
               await navigator.share({files:[file],title:fname});
               feedback(); setBusy(false); return;
             }catch(e){
               if(e.name==="AbortError"){ setBusy(false); return; }
+              // files 미지원 시 url-only 로 재시도
+              try{
+                await navigator.share({title:fname,url:blobUrl});
+                feedback(); setBusy(false); return;
+              }catch(_){}
             }
           }
-          if(isIOS){
-            // iOS 폴백: 새 탭에서 이미지 열기 → 꾹 눌러서 사진에 저장
-            window.open(blobUrl,"_blank");
-          } else {
-            // Android 폴백: Downloads 저장 → 갤러리 자동 인덱싱
-            const a=document.createElement("a");a.download=fname;a.href=blobUrl;a.click();
-          }
+          // 최종 폴백: 다운로드
+          const a=document.createElement("a");a.download=fname;a.href=blobUrl;a.click();
           feedback(); setBusy(false);
         },"image/png");
         return;
