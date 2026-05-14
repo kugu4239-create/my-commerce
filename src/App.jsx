@@ -1290,6 +1290,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
   const [optionPeriod,setOptionPeriod]=useState("1m");
   const [returnOptionPeriod,setReturnOptionPeriod]=useState("1m");
+  const [shippingCustomStart,setShippingCustomStart]=useState("");
+  const [shippingCustomEnd,setShippingCustomEnd]=useState("");
+  const [returnCustomStart,setReturnCustomStart]=useState("");
+  const [returnCustomEnd,setReturnCustomEnd]=useState("");
+  const [optionCustomStart,setOptionCustomStart]=useState("");
+  const [optionCustomEnd,setOptionCustomEnd]=useState("");
+  const [returnOptionCustomStart,setReturnOptionCustomStart]=useState("");
+  const [returnOptionCustomEnd,setReturnOptionCustomEnd]=useState("");
+  const [calOpenFor,setCalOpenFor]=useState(null);
   const [offlineExpanded,setOfflineExpanded]=useState(false);
   const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
 
@@ -1333,7 +1342,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   },[revenues,storeSales,prevPeriod]);
 
   // 플랫폼별 선호 옵션 (컬러/사이즈) — 독립 기간 필터
-  const optionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",optionPeriod,"",""),[orders,optionPeriod]);
+  const optionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",optionPeriod,optionCustomStart,optionCustomEnd),[orders,optionPeriod,optionCustomStart,optionCustomEnd]);
   const optionStats=useMemo(()=>{
     const map={};
     optionFilteredOrders.filter(r=>r.status==="배송").forEach(r=>{
@@ -1351,7 +1360,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   },[optionFilteredOrders,chRank]);
 
   // 플랫폼별 반품률 높은 옵션 — 독립 기간 필터
-  const returnOptionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",returnOptionPeriod,"",""),[orders,returnOptionPeriod]);
+  const returnOptionFilteredOrders=useMemo(()=>filterByDate(orders,"order_date",returnOptionPeriod,returnOptionCustomStart,returnOptionCustomEnd),[orders,returnOptionPeriod,returnOptionCustomStart,returnOptionCustomEnd]);
   const returnOptionStats=useMemo(()=>{
     const map={};
     returnOptionFilteredOrders.forEach(r=>{
@@ -1466,6 +1475,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       });
       return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
     }
+    if(shippingPeriod==="custom"&&shippingCustomStart&&shippingCustomEnd){
+      const diff=(new Date(shippingCustomEnd)-new Date(shippingCustomStart))/86400000;
+      const src=orders.filter(r=>r.order_date>=shippingCustomStart&&r.order_date<=shippingCustomEnd);
+      if(diff<=60){
+        const byDay={};
+        src.forEach(r=>{const d=r.order_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(r.status==="배송")byDay[d].shipped++;});
+        return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
+      }
+      const byMonth={};
+      src.forEach(r=>{const ym=r.order_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(r.status==="배송")byMonth[ym].shipped++;});
+      return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
+    }
     const c=new Date(); c.setMonth(c.getMonth()-3);
     const cut=c.toISOString().slice(0,10);
     const byMonth={};
@@ -1475,13 +1496,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       if(r.status==="배송") byMonth[ym].shipped++;
     });
     return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
-  },[orders,shippingPeriod]);
+  },[orders,shippingPeriod,shippingCustomStart,shippingCustomEnd]);
 
   // 일별 반품 by 채널 차트
   const returnChartData=useMemo(()=>{
-    let start;
-    if(returnPeriod==="yd"){
-      start=localDate(-1);
+    let start,end=localDate(0);
+    if(returnPeriod==="custom"&&returnCustomStart&&returnCustomEnd){
+      start=returnCustomStart; end=returnCustomEnd;
+    } else if(returnPeriod==="yd"){
+      start=localDate(-1); end=start;
     } else if(returnPeriod==="7d"){
       const d=new Date(); d.setDate(d.getDate()-7);
       start=d.toISOString().slice(0,10);
@@ -1489,7 +1512,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
     }
-    const filteredRet=orders.filter(r=>r.order_date>=start&&r.channel!=="오프라인 스토어");
+    const filteredRet=orders.filter(r=>r.order_date>=start&&r.order_date<=end&&r.channel!=="오프라인 스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
       if(r.status==="반품"){
@@ -1507,7 +1530,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       if(r.status==="반품") byDate[d][ch]=(byDate[d][ch]||0)+1;
     });
     return {data:Object.values(byDate).sort((a,b)=>a.date>b.date?1:-1),channels:chs};
-  },[orders,returnPeriod]);
+  },[orders,returnPeriod,returnCustomStart,returnCustomEnd]);
 
   function RankTable({data,cols}){
     return(
@@ -1560,6 +1583,35 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       {label}
     </button>
   );
+
+  const CalDrop=({id,period,setPeriod,presets,start,setStart,end,setEnd})=>{
+    const isOpen=calOpenFor===id;
+    const customLabel=period==="custom"&&start&&end?`${start.slice(5)}~${end.slice(5)}`:"직접 선택";
+    return(
+      <div style={{position:"relative",display:"inline-flex",gap:4,alignItems:"center"}}>
+        {presets.map(([v,l])=>(
+          <button key={v} onClick={()=>{setPeriod(v);setCalOpenFor(null);}}
+            style={{background:period===v?D.black:"transparent",color:period===v?"#fff":D.textSub,
+              border:`1px solid ${period===v?D.black:D.border}`,borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:period===v?600:400}}>
+            {l}
+          </button>
+        ))}
+        <button onClick={()=>{setPeriod("custom");setCalOpenFor(isOpen?null:id);}}
+          style={{background:period==="custom"?D.black:"transparent",color:period==="custom"?"#fff":D.textSub,
+            border:`1px solid ${period==="custom"?D.black:D.border}`,borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer",fontWeight:period==="custom"?600:400}}>
+          {customLabel}
+        </button>
+        {isOpen&&(
+          <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:300,
+            background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,padding:"14px 14px 10px",
+            boxShadow:"0 4px 24px rgba(0,0,0,0.4)"}}>
+            <CalendarPicker mode="range" rangeStart={start} rangeEnd={end}
+              onRangeChange={({start:s,end:e})=>{setStart(s);setEnd(e);if(s&&e)setCalOpenFor(null);}}/>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
@@ -1815,11 +1867,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>배송량</SecTitle>
-            <div style={{display:"flex",gap:4}}>
-              {[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
-                <SmPeriodBtn key={v} val={v} cur={shippingPeriod} onChange={setShippingPeriod} label={l}/>
-              ))}
-            </div>
+            <CalDrop id="shipping" period={shippingPeriod} setPeriod={setShippingPeriod}
+              presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
+              start={shippingCustomStart} setStart={setShippingCustomStart}
+              end={shippingCustomEnd} setEnd={setShippingCustomEnd}/>
           </div>
           <ResponsiveContainer width="100%" height={170}>
             <BarChart data={shippingChartData}>
@@ -1836,11 +1887,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SecTitle ts={ts.orders}>판매처별 반품 추이</SecTitle>
-            <div style={{display:"flex",gap:4}}>
-              {[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([v,l])=>(
-                <SmPeriodBtn key={v} val={v} cur={returnPeriod} onChange={setReturnPeriod} label={l}/>
-              ))}
-            </div>
+            <CalDrop id="return" period={returnPeriod} setPeriod={setReturnPeriod}
+              presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"]]}
+              start={returnCustomStart} setStart={setReturnCustomStart}
+              end={returnCustomEnd} setEnd={setReturnCustomEnd}/>
           </div>
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={returnChartData.data}>
@@ -1873,15 +1923,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
           </div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {[["yd","어제"],["7d","최근 7일"],["14d","최근 14일"],["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setRankBestPeriod(k)}
-                style={{background:rankBestPeriod===k?D.black:"transparent",
-                  color:rankBestPeriod===k?"#fff":D.textSub,
-                  border:`1px solid ${rankBestPeriod===k?D.black:D.border}`,
-                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{l}</button>
-            ))}
-          </div>
+          <CalDrop id="best" period={rankBestPeriod} setPeriod={setRankBestPeriod}
+            presets={[["yd","어제"],["7d","최근 7일"],["14d","최근 14일"],["1m","최근 한달"],["3m","최근 3개월"]]}
+            start={rankBestCustomStart} setStart={setRankBestCustomStart}
+            end={rankBestCustomEnd} setEnd={setRankBestCustomEnd}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -1912,14 +1957,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <Card style={{marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <SecTitle ts={ts.orders}>플랫폼별 선호 옵션</SecTitle>
-            <div style={{display:"flex",gap:4}}>
-              {[["1m","1달"],["3m","3달"],["6m","6달"]].map(([k,l])=>(
-                <button key={k} onClick={()=>setOptionPeriod(k)}
-                  style={{background:optionPeriod===k?D.black:"transparent",color:optionPeriod===k?"#fff":D.textSub,
-                    border:`1px solid ${optionPeriod===k?D.black:D.border}`,borderRadius:5,
-                    padding:"3px 9px",fontSize:10,cursor:"pointer",fontWeight:optionPeriod===k?600:400}}>{l}</button>
-              ))}
-            </div>
+            <CalDrop id="option" period={optionPeriod} setPeriod={setOptionPeriod}
+              presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
+              start={optionCustomStart} setStart={setOptionCustomStart}
+              end={optionCustomEnd} setEnd={setOptionCustomEnd}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${optionStats.length},1fr)`,gap:16}}>
             {optionStats.map(({ch,colors,sizes})=>(
@@ -1993,15 +2034,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{ch}</button>
             ))}
           </div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {[["1m","최근 한달"],["3m","최근 3개월"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setRankWorstPeriod(k)}
-                style={{background:rankWorstPeriod===k?D.black:"transparent",
-                  color:rankWorstPeriod===k?"#fff":D.textSub,
-                  border:`1px solid ${rankWorstPeriod===k?D.black:D.border}`,
-                  borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer"}}>{l}</button>
-            ))}
-          </div>
+          <CalDrop id="worst" period={rankWorstPeriod} setPeriod={setRankWorstPeriod}
+            presets={[["1m","최근 한달"],["3m","최근 3개월"]]}
+            start={rankWorstCustomStart} setStart={setRankWorstCustomStart}
+            end={rankWorstCustomEnd} setEnd={setRankWorstCustomEnd}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -2035,14 +2071,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <Card style={{marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <SecTitle ts={ts.orders}>플랫폼별 반품률 높은 옵션</SecTitle>
-            <div style={{display:"flex",gap:4}}>
-              {[["1m","1달"],["3m","3달"],["6m","6달"]].map(([k,l])=>(
-                <button key={k} onClick={()=>setReturnOptionPeriod(k)}
-                  style={{background:returnOptionPeriod===k?D.black:"transparent",color:returnOptionPeriod===k?"#fff":D.textSub,
-                    border:`1px solid ${returnOptionPeriod===k?D.black:D.border}`,borderRadius:5,
-                    padding:"3px 9px",fontSize:10,cursor:"pointer",fontWeight:returnOptionPeriod===k?600:400}}>{l}</button>
-              ))}
-            </div>
+            <CalDrop id="returnOption" period={returnOptionPeriod} setPeriod={setReturnOptionPeriod}
+              presets={[["1m","1달"],["3m","3달"],["6m","6달"]]}
+              start={returnOptionCustomStart} setStart={setReturnOptionCustomStart}
+              end={returnOptionCustomEnd} setEnd={setReturnOptionCustomEnd}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${returnOptionStats.length},1fr)`,gap:16}}>
             {returnOptionStats.map(({ch,colors,sizes})=>(
@@ -4518,9 +4550,24 @@ function RevenueForm({ onUpdate }) {
           </div>
         ))}
 
-        {amt&&<div style={{color:D.textSub,fontSize:11,marginBottom:10}}>
-          ₩{Number(amt.replace(/,/g,"")||0).toLocaleString()}
-        </div>}
+        {(amt||refundAmt)&&(()=>{
+          const gross=Number(amt.replace(/,/g,"")||0);
+          const refundNum=Number(refundAmt.replace(/,/g,"")||0);
+          const net=gross-refundNum;
+          return(
+            <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:7,padding:"8px 12px",marginBottom:10,fontSize:11,color:D.textSub}}>
+              {gross>0&&<div style={{display:"flex",justifyContent:"space-between"}}>
+                <span>매출</span><span>₩{gross.toLocaleString()}</span>
+              </div>}
+              {refundNum>0&&<div style={{display:"flex",justifyContent:"space-between",color:D.red,marginTop:2}}>
+                <span>환불</span><span>-₩{refundNum.toLocaleString()}</span>
+              </div>}
+              <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,color:D.text,marginTop:4,paddingTop:4,borderTop:`1px solid ${D.border}`}}>
+                <span>순매출</span><span>₩{net.toLocaleString()}</span>
+              </div>
+            </div>
+          );
+        })()}
         <Btn onClick={handleSave} disabled={loading} style={{width:"100%"}}>
           {loading?"저장 중...":"저장"}
         </Btn>
