@@ -8080,7 +8080,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
 }
 
 const COMPARE_CH_COLOR={
-  "자사몰":"#A8D8B8",
+  "자사몰":"#6EBF99",
   "29CM":"#F5C8A0",
   "오프라인 스토어":"#A8C8E0",
   "무신사":"#C4B8E8",
