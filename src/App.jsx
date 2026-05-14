@@ -6352,6 +6352,9 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const [aggUnit,setAggUnit]=useState("month");
   const [yMode,setYMode]=useState("count");
   const [dateRange,setDateRange]=useState("90d");
+  const [clickedBar,setClickedBar]=useState(null); // {label, agingKey}
+  const [drillRows,setDrillRows]=useState([]);
+  const [drillLoading,setDrillLoading]=useState(false);
 
   const rangeStart=useMemo(()=>{
     const d=dayjs();
@@ -6424,6 +6427,48 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
   const latestDate=useMemo(()=>{const d=Object.keys(rawByDate).sort();return d[d.length-1]||null;},[rawByDate]);
 
   useEffect(()=>{if(onDateReady) onDateReady(latestDate);},[latestDate,onDateReady]);
+
+  // label → snapshot dates mapping (for drill-down)
+  const datesByLabel=useMemo(()=>{
+    const map={};
+    Object.keys(rawByDate).sort().forEach(d=>{
+      let key;
+      if(aggUnit==="week"){const dd=dayjs(d);key=dd.subtract(dd.day(),"day").format("YYYY-MM-DD");}
+      else if(aggUnit==="quarter"){const dd=dayjs(d);key=`${dd.year()}-Q${Math.floor(dd.month()/3)+1}`;}
+      else{key=d.slice(0,7);}
+      if(!map[key]) map[key]=[];
+      map[key].push(d);
+    });
+    return map;
+  },[rawByDate,aggUnit]);
+
+  const handleBarClick=useCallback((agingKey,data)=>{
+    if(!data||!data.label) return;
+    const label=data.label;
+    // toggle off
+    if(clickedBar&&clickedBar.label===label&&clickedBar.agingKey===agingKey){
+      setClickedBar(null);setDrillRows([]);return;
+    }
+    setClickedBar({label,agingKey});
+    setDrillLoading(true);
+    const dates=datesByLabel[label]||[];
+    if(!dates.length){setDrillLoading(false);return;}
+    const targetDate=dates[dates.length-1]; // most recent in group
+    (async()=>{
+      const db=await getSupabase();
+      let all=[];let from=0;const PAGE=1000;
+      while(true){
+        const{data:rows,error}=await db.from("inventory_snapshot").select("*")
+          .eq("snapshot_date",targetDate).range(from,from+PAGE-1);
+        if(error||!rows||!rows.length) break;
+        all=all.concat(rows);
+        if(rows.length<PAGE) break;
+        from+=PAGE;
+      }
+      setDrillRows(all.map(calcInvRow).filter(r=>r.agingKey===agingKey));
+      setDrillLoading(false);
+    })();
+  },[datesByLabel,clickedBar]);
 
   const kpi=useMemo(()=>{
     if(!latestDate||!rawByDate[latestDate]) return null;
@@ -6522,8 +6567,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
                   <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(0,0,0,0.04)"}}/>
                   {INV_AGING_KEYS.map(k=>(
-                    <Bar key={k} dataKey={k} stackId="1"
-                      fill={INV_AGING_DEFS[k].color} fillOpacity={0.85} radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}/>
+                    <Bar key={k} dataKey={k} stackId="1" style={{cursor:"pointer"}}
+                      fill={INV_AGING_DEFS[k].color}
+                      fillOpacity={clickedBar&&clickedBar.agingKey!==k?0.3:0.85}
+                      radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}
+                      onClick={(data)=>handleBarClick(k,data)}/>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
@@ -6558,6 +6606,59 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady}){
         <span style={{color:INV_AGING_DEFS.DEAD.color}}>Dead Stock</span> 180일 초과.&nbsp;
         스택 높이는 선택된 지표(SKU 수 / 재고 수량 / 재고 금액)를 기간별로 집계한 값입니다.
       </div>
+
+      {/* Drill-down table */}
+      {clickedBar&&(
+        <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:13,fontWeight:700,color:INV_AGING_DEFS[clickedBar.agingKey]?.color}}>
+              {clickedBar.label} · {INV_AGING_DEFS[clickedBar.agingKey]?.label}
+            </span>
+            {!drillLoading&&<span style={{fontSize:12,color:DC.text}}>{drillRows.length.toLocaleString()}개 SKU</span>}
+            <button onClick={()=>{setClickedBar(null);setDrillRows([]);}}
+              style={{marginLeft:"auto",background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>
+          </div>
+          {drillLoading
+            ?<div style={{textAlign:"center",padding:"30px 0",color:DC.text,fontSize:13}}>로딩 중...</div>
+            :drillRows.length===0
+              ?<div style={{textAlign:"center",padding:"20px 0",color:DC.text,fontSize:13}}>데이터 없음</div>
+              :<div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:`1px solid ${DC.border}`}}>
+                      {["상품명","옵션","재고 수","미판매 일수","재고 금액"].map(h=>(
+                        <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                          fontWeight:600,color:DC.text,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...drillRows].sort((a,b)=>b.noSalesDays-a.noSalesDays).map((r,i)=>(
+                      <tr key={r.id||i} style={{borderBottom:`1px solid ${DC.border}`,
+                        background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
+                        <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:160,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={r.product_name}>{r.product_name}</td>
+                        <td style={{padding:"6px 8px",color:DC.text,maxWidth:100,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={r.option_name}>{r.option_name||"—"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text,fontWeight:600}}>
+                          {(r.current_stock_qty||0).toLocaleString()}</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,
+                          color:INV_AGING_DEFS[r.agingKey]?.color||DC.text}}>
+                          {r.noSalesDays}일</td>
+                        <td style={{padding:"6px 8px",textAlign:"center",color:DC.text}}>
+                          {(r.currentInventoryValue||0)>=10000
+                            ?`${Math.round((r.currentInventoryValue||0)/10000)}만`
+                            :(r.currentInventoryValue||0).toLocaleString()}원</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          }
+        </div>
+      )}
     </div>
   );
 }
