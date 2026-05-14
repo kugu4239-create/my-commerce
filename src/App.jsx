@@ -6479,12 +6479,16 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                       fontSize:12,cursor:"pointer",textAlign:"left"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:stat.qty>0?2:0}}>
                       <span style={{fontWeight:600}}>{def.label}</span>
-                      {stat.qty>0&&<span style={{fontSize:10,opacity:.8,fontWeight:700}}>{stat.pct}%</span>}
+                      {stat.qty>0&&<span style={{fontSize:10,opacity:.8,fontWeight:700}}>{stat.qty.toLocaleString()}개</span>}
                     </div>
                     {stat.qty>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,opacity:.7}}>
-                        <span>{stat.qty.toLocaleString()}개</span>
-                        <span>{stat.valPct}%</span>
+                      <div style={{display:"flex",flexDirection:"column",gap:1,fontSize:10,opacity:.75}}>
+                        <div style={{display:"flex",justifyContent:"space-between"}}>
+                          <span>수량</span><span style={{fontWeight:600}}>{stat.pct}%</span>
+                        </div>
+                        <div style={{display:"flex",justifyContent:"space-between"}}>
+                          <span>금액</span><span style={{fontWeight:600}}>{stat.valPct}%</span>
+                        </div>
                       </div>
                     )}
                     {stat.qty===0&&<div style={{fontSize:10,opacity:.5}}>{def.desc}</div>}
