@@ -7881,6 +7881,22 @@ function VolumeSlider({total,range,onChange,DC}){
 function CaptureBtn({cardRef,filename,DC}){
   const [busy,setBusy]=useState(false);
   const btnRef=useRef(null);
+  const feedback=()=>{
+    // Android: vibration API
+    if(navigator.vibrate) { navigator.vibrate(80); return; }
+    // iOS: short click via AudioContext + button pulse
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value=1000;
+      gain.gain.setValueAtTime(0.08,ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.05);
+      osc.start(); osc.stop(ctx.currentTime+0.05);
+    }catch(_){}
+    btnRef.current?.animate([{transform:"scale(1)"},{transform:"scale(1.18)"},{transform:"scale(1)"}],{duration:180,easing:"ease-out"});
+  };
   const capture=async()=>{
     if(!cardRef?.current||busy) return;
     setBusy(true);
@@ -7900,7 +7916,7 @@ function CaptureBtn({cardRef,filename,DC}){
           try{
             if(navigator.canShare&&navigator.canShare({files:[file]})){
               await navigator.share({files:[file],title:fname});
-              navigator.vibrate?.(80);
+              feedback();
               setBusy(false);return;
             }
           }catch(e){if(e.name!=="AbortError") console.error(e);}
