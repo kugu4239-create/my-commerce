@@ -71,6 +71,9 @@ const toDate = raw => {
   if (m2) return `${m2[3]}-${m2[2].padStart(2,"0")}-${m2[1].padStart(2,"0")}`;
   const m3 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m3) return `${m3[1]}-${m3[2]}-${m3[3]}`;
+  // M/D/YY (Excel 한국어 내보내기 포맷, 예: "12/23/24" → 2024-12-23)
+  const m4 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  if (m4) { const yr=2000+parseInt(m4[3],10); return `${yr}-${m4[1].padStart(2,"0")}-${m4[2].padStart(2,"0")}`; }
   return null;
 };
 
@@ -401,6 +404,108 @@ function DateRange({ start, end, onStart, onEnd }) {
     </div>
   );
 }
+
+// CalendarPicker — inline calendar for single or range date selection (light D theme)
+// single mode: value + onChange(dateStr)
+// range mode:  rangeStart + rangeEnd + onRangeChange({start,end})
+// availableDates (optional Set<string>): only these dates are clickable
+function CalendarPicker({ mode="single", value, onChange, rangeStart, rangeEnd, onRangeChange, availableDates, DC:dc }) {
+  const C = dc || { bg:"transparent", surface:D.surface, border:D.border, text:D.text, sub:D.textSub, dim:D.textMeta, green:"#1a7a4f", greenBg:"rgba(26,122,79,0.12)" };
+  const today = new Date().toISOString().slice(0,10);
+  const initMonth = () => {
+    const base = mode==="range" ? (rangeStart||value||today) : (value||today);
+    const d = new Date(base||today);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  };
+  const [cal, setCal] = useState(initMonth);
+  // range picking state: "start" = waiting for start click, "end" = waiting for end click
+  const [picking, setPicking] = useState("start");
+
+  const firstDay = new Date(cal.y, cal.m, 1).getDay();
+  const totalDays = new Date(cal.y, cal.m+1, 0).getDate();
+  const monthStr = `${cal.y}.${String(cal.m+1).padStart(2,"0")}`;
+  const prevMonth = () => setCal(p => { let {y,m}=p; m--; if(m<0){m=11;y--;} return{y,m}; });
+  const nextMonth = () => setCal(p => { let {y,m}=p; m++; if(m>11){m=0;y++;} return{y,m}; });
+  const ds = (d) => `${cal.y}-${String(cal.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
+  const handleClick = (dateStr) => {
+    if(availableDates && !availableDates.has(dateStr)) return;
+    if(mode==="single") { onChange&&onChange(dateStr); return; }
+    // range mode
+    if(picking==="start" || !rangeStart) {
+      onRangeChange&&onRangeChange({start:dateStr,end:""});
+      setPicking("end");
+    } else {
+      if(dateStr < rangeStart) {
+        onRangeChange&&onRangeChange({start:dateStr,end:rangeStart});
+      } else {
+        onRangeChange&&onRangeChange({start:rangeStart,end:dateStr});
+      }
+      setPicking("start");
+    }
+  };
+
+  const inRange = (dateStr) => rangeStart && rangeEnd && dateStr > rangeStart && dateStr < rangeEnd;
+  const isStart = (dateStr) => dateStr === rangeStart;
+  const isEnd   = (dateStr) => dateStr === rangeEnd;
+  const isSelected = (dateStr) => mode==="single" ? dateStr===value : isStart(dateStr)||isEnd(dateStr);
+
+  const diff = mode==="range" && rangeStart && rangeEnd && rangeStart<=rangeEnd
+    ? Math.round((new Date(rangeEnd)-new Date(rangeStart))/86400000)+1 : null;
+
+  const btnBase = { border:"none", borderRadius:5, padding:"5px 0", fontSize:11,
+    textAlign:"center", cursor:"pointer", width:28, height:26, lineHeight:"16px" };
+
+  return (
+    <div style={{ display:"inline-block" }}>
+      {/* Month nav */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, gap:4 }}>
+        <button onClick={prevMonth} style={{ background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:16, padding:"0 4px", lineHeight:1 }}>‹</button>
+        <span style={{ fontSize:12, fontWeight:600, color:C.text }}>{monthStr}</span>
+        <button onClick={nextMonth} style={{ background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:16, padding:"0 4px", lineHeight:1 }}>›</button>
+      </div>
+      {/* Weekday headers */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,28px)", gap:2, fontSize:10, color:C.sub, marginBottom:3, textAlign:"center" }}>
+        {["일","월","화","수","목","금","토"].map(d=><span key={d}>{d}</span>)}
+      </div>
+      {/* Days grid */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,28px)", gap:2 }}>
+        {Array.from({length:firstDay}).map((_,i)=><span key={`e${i}`}/>)}
+        {Array.from({length:totalDays}).map((_,i)=>{
+          const day=i+1; const dateStr=ds(day);
+          const avail = !availableDates || availableDates.has(dateStr);
+          const sel = isSelected(dateStr);
+          const rng = inRange(dateStr);
+          const bg = sel ? C.green : rng ? C.greenBg : "transparent";
+          const col = sel ? "#fff" : avail ? C.text : C.dim;
+          return (
+            <button key={day} onClick={()=>handleClick(dateStr)} disabled={!avail}
+              style={{ ...btnBase, background:bg, color:col,
+                fontWeight:sel?700:avail?500:400,
+                cursor:avail?"pointer":"default",
+                outline: (isStart(dateStr)||isEnd(dateStr)) ? `2px solid ${C.green}` : "none",
+                outlineOffset: -1,
+              }}>
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      {/* Status line */}
+      {mode==="range" && (
+        <div style={{ marginTop:6, fontSize:10, color:C.sub, textAlign:"center", minHeight:14 }}>
+          {!rangeStart ? "시작일을 선택하세요"
+            : !rangeEnd ? <span style={{color:C.green}}>{rangeStart} 선택됨 · 종료일을 선택하세요</span>
+            : <span>{rangeStart} ~ {rangeEnd} · {diff}일</span>}
+        </div>
+      )}
+      {mode==="single" && value && (
+        <div style={{ marginTop:6, fontSize:10, color:C.sub, textAlign:"center" }}>{value}</div>
+      )}
+    </div>
+  );
+}
+
 const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="xlsx"||ext==="xls"){
@@ -4356,7 +4461,7 @@ function RevenueForm({ onUpdate }) {
 
         <div style={{marginBottom:10}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>날짜</div>
-          <div style={{display:"flex",gap:4,marginBottom:6}}>
+          <div style={{display:"flex",gap:4,marginBottom:8}}>
             {[["single","단일"],["range","기간"]].map(([k,l])=>(
               <button key={k} onClick={()=>setDateMode(k)}
                 style={{flex:1,background:dateMode===k?D.black:"transparent",
@@ -4368,12 +4473,9 @@ function RevenueForm({ onUpdate }) {
             ))}
           </div>
           {dateMode==="single"
-            ? <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
-            : <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,width:"50%"}}/>
-                <span style={{color:D.textMeta,flexShrink:0}}>~</span>
-                <input type="date" value={dateEnd} onChange={e=>setDateEnd(e.target.value)} style={{...inp,width:"50%"}}/>
-              </div>
+            ? <CalendarPicker mode="single" value={date} onChange={setDate}/>
+            : <CalendarPicker mode="range" rangeStart={date} rangeEnd={dateEnd}
+                onRangeChange={({start,end})=>{setDate(start);setDateEnd(end||start);}}/>
           }
         </div>
 
@@ -4636,7 +4738,8 @@ function StockUploader({ onUpdate }) {
         <Card>
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>입고 기간 선택</div>
-            <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
+            <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
+              onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
             <div style={{color:D.red,fontSize:10,marginBottom:20}}>⚠ 확정 시 해당 기간 DB 데이터 전체 교체</div>
             <Btn onClick={confirmDate} disabled={!dateValid||loading} style={{width:"100%"}}>
               {loading?"조회 중...":"기간 확정"}
@@ -5041,7 +5144,8 @@ function EasyAdminUploader({ onUpdate }) {
         <Card>
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>배송일 기간 선택</div>
-            <DateRange start={startDate} end={endDate} onStart={setStartDate} onEnd={setEndDate}/>
+            <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
+              onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
             <div style={{color:D.blue,fontSize:10,marginBottom:12,lineHeight:1.7}}>
               배송일 기준 · 관리번호 기준 upsert<br/>신규→추가 / 기존→상태업데이트
             </div>
@@ -5792,7 +5896,9 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 // INV BUBBLE SCATTER PLOT
 // ─────────────────────────────────────────────
 function InvBubblePlot({DC,snapshotDates}){
+  const [dateMode,setDateMode]=useState("single"); // "single"|"range"
   const [selDate,setSelDate]=useState(null);
+  const [selDateEnd,setSelDateEnd]=useState(null);
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
@@ -5800,18 +5906,20 @@ function InvBubblePlot({DC,snapshotDates}){
   const [minStock,setMinStock]=useState(1);
   const [selectedSku,setSelectedSku]=useState(null);
   const [showSaleRec,setShowSaleRec]=useState(false);
-  const [calMonth,setCalMonth]=useState(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()};});
 
+  useEffect(()=>{ setSelDate(null); setSelDateEnd(null); setData([]); },[dateMode]);
+
+  const loadDate=dateMode==="range"?(selDateEnd||selDate):selDate;
   useEffect(()=>{
-    if(!selDate){setData([]);return;}
+    if(!loadDate){setData([]);return;}
     setLoading(true);
     getSupabase().then(db=>
-      db.from("inventory_snapshot").select("*").eq("snapshot_date",selDate)
+      db.from("inventory_snapshot").select("*").eq("snapshot_date",loadDate)
     ).then(({data:rows,error})=>{
       setData(error||!rows?[]:rows.map(calcInvRow));
       setLoading(false);
     });
-  },[selDate]);
+  },[loadDate]);
 
   const filtered=useMemo(()=>
     data.filter(d=>
@@ -5830,8 +5938,8 @@ function InvBubblePlot({DC,snapshotDates}){
   },[filtered]);
 
   const saleRecs=useMemo(()=>{
-    if(!selDate||!filtered.length) return[];
-    const snapM=dayjs(selDate).month();
+    if(!loadDate||!filtered.length) return[];
+    const snapM=dayjs(loadDate).month();
     const inRange=m=>{const diff=Math.abs(m-snapM);return diff<=2||diff>=10;};
     const candidates=filtered
       .filter(d=>d.noSalesDays>medX&&d.current_stock_qty>medY)
@@ -5911,52 +6019,40 @@ function InvBubblePlot({DC,snapshotDates}){
       권장할인율:`${d.recommendedDiscount}%`,
     })));
     XLSX.utils.book_append_sheet(wb,ws,"세일추천");
-    XLSX.writeFile(wb,`sale_rec_${selDate||"unknown"}.xlsx`);
+    XLSX.writeFile(wb,`sale_rec_${loadDate||"unknown"}.xlsx`);
   };
 
-  // Month calendar
-  const calDays=useMemo(()=>({
-    firstDay:new Date(calMonth.y,calMonth.m,1).getDay(),
-    total:new Date(calMonth.y,calMonth.m+1,0).getDate(),
-  }),[calMonth]);
-  const datesInMonth=useMemo(()=>new Set(
-    snapshotDates.filter(d=>{const dd=dayjs(d);return dd.year()===calMonth.y&&dd.month()===calMonth.m;})
-  ),[snapshotDates,calMonth]);
+  const dcTheme={bg:"transparent",surface:"rgba(255,255,255,0.03)",border:DC.border,
+    text:DC.text,sub:DC.sub,dim:DC.dim,green:"#7EC8A4",greenBg:"rgba(126,200,164,0.15)"};
+  const availSet=useMemo(()=>new Set(snapshotDates),[snapshotDates]);
 
   return(
     <div>
       <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-start",marginBottom:16}}>
-        {/* Calendar */}
+        {/* Calendar + mode toggle */}
         <div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${DC.border}`,borderRadius:10,padding:14,flexShrink:0}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8}}>
-            <button onClick={()=>setCalMonth(p=>{let{y,m}=p;m--;if(m<0){m=11;y--;}return{y,m};})}
-              style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>‹</button>
-            <span style={{fontSize:12,fontWeight:600,color:DC.text}}>{calMonth.y}.{String(calMonth.m+1).padStart(2,"0")}</span>
-            <button onClick={()=>setCalMonth(p=>{let{y,m}=p;m++;if(m>11){m=0;y++;}return{y,m};})}
-              style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>›</button>
+          {/* Single / Range toggle */}
+          <div style={{display:"flex",gap:4,marginBottom:10}}>
+            {[["single","단일"],["range","기간"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setDateMode(k)}
+                style={{flex:1,background:dateMode===k?"#7EC8A4":"rgba(255,255,255,0.05)",
+                  color:dateMode===k?"#0a1a12":DC.sub,
+                  border:`1px solid ${dateMode===k?"#7EC8A4":DC.border}`,
+                  borderRadius:6,padding:"5px 0",fontSize:11,cursor:"pointer",fontWeight:dateMode===k?700:400}}>
+                {l}
+              </button>
+            ))}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,28px)",gap:2,fontSize:10,color:DC.sub,marginBottom:3,textAlign:"center"}}>
-            {["일","월","화","수","목","금","토"].map(d=><span key={d}>{d}</span>)}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,28px)",gap:2}}>
-            {Array.from({length:calDays.firstDay}).map((_,i)=><span key={`e${i}`}/>)}
-            {Array.from({length:calDays.total}).map((_,i)=>{
-              const day=i+1;
-              const ds=`${calMonth.y}-${String(calMonth.m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-              const has=datesInMonth.has(ds);
-              const sel=selDate===ds;
-              return(
-                <button key={day} onClick={()=>has&&setSelDate(ds)} disabled={!has}
-                  style={{background:sel?"#7EC8A4":has?"rgba(126,200,164,0.15)":"transparent",
-                    color:sel?"#0a1a12":has?DC.text:DC.dim,
-                    border:"none",borderRadius:4,padding:"5px 0",fontSize:11,
-                    cursor:has?"pointer":"default",fontWeight:sel?700:has?500:400,
-                    textAlign:"center",width:28,height:26}}>
-                  {day}
-                </button>
-              );
-            })}
-          </div>
+          <CalendarPicker
+            mode={dateMode}
+            value={selDate}
+            onChange={setSelDate}
+            rangeStart={selDate}
+            rangeEnd={selDateEnd}
+            onRangeChange={({start,end})=>{setSelDate(start);setSelDateEnd(end||"");}}
+            availableDates={availSet}
+            DC={dcTheme}
+          />
           {/* 프로모션 제안 버튼 — 달력 하단 */}
           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
             <button onClick={()=>setShowSaleRec(p=>!p)}
