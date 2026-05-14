@@ -7179,7 +7179,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   ,[data]);
 
   const downloadCSV=()=>{
-    const hdr=["상품명","옵션","현재고","입고대기","실질가용재고","1주판매","4주판매","예상일판매량","판매추세","재고잔여일","추천리오더수량"];
+    const hdr=["상품명","옵션","가용재고","입고대기","실질가용재고","1주판매","4주판매","예상일판매량","판매추세","재고잔여일","추천리오더수량"];
     const rows=filtered.map(r=>[
       r.reorder_product_name,r.reorder_option_name,r.reorder_available_stock,r.reorder_incoming_stock,
       r.reorder_effective_stock,r.reorder_weekly_sales,r.reorder_monthly_sales,
@@ -7219,7 +7219,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
           {[
             {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
-            {title:"실질 가용재고",body:"현재고\n+입고대기"},
+            {title:"실질 가용재고",body:"가용재고\n+입고대기"},
             {title:"예상 재고잔여일",body:"실질가용재고\n÷예상일판매량"},
             {title:"14일 미만→\n리오더 추천",body:"days_left\n< 14일"},
             {title:"추천 리오더 수량",body:"(일판매량×14)\n−실질가용재고"},
@@ -7321,7 +7321,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                 <tr>
                   <SortTh k="reorder_product_name" label="상품명"/>
                   <SortTh k="reorder_option_name" label="옵션"/>
-                  <SortTh k="reorder_available_stock" label="현재고"/>
+                  <SortTh k="reorder_available_stock" label="가용재고"/>
                   <SortTh k="reorder_incoming_stock" label="입고대기"/>
                   <SortTh k="reorder_effective_stock" label="실질 가용재고"/>
                   <SortTh k="reorder_weekly_sales" label="1주 판매"/>
