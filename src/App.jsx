@@ -8343,49 +8343,34 @@ export default function App() {
   });
 
   const loadData=useCallback(async()=>{
-    const t0=Date.now();
     const db=await getSupabase();
-    // 전체 orders 페이지네이션 (Supabase 기본 1000행 제한 우회)
-    let allOrders=[];
-    let from=0;
     const PAGE=1000;
-    while(true){
-      const {data,error}=await db.from("orders").select("*").order("order_date",{ascending:true}).range(from,from+PAGE-1);
-      if(error||!data||data.length===0) break;
-      allOrders=allOrders.concat(data);
-      if(data.length<PAGE) break;
-      from+=PAGE;
+
+    async function fetchAll(table,orderCol,asc=true){
+      let rows=[],offset=0;
+      while(true){
+        const {data,error}=await db.from(table).select("*").order(orderCol,{ascending:asc}).range(offset,offset+PAGE-1);
+        if(error||!data||data.length===0) break;
+        rows=rows.concat(data);
+        if(data.length<PAGE) break;
+        offset+=PAGE;
+      }
+      return rows;
     }
-    let allStocks=[];
-    let sf=0;
-    while(true){
-      const {data:sd,error:se}=await db.from("stock_uploads").select("*").order("upload_date",{ascending:false}).range(sf,sf+PAGE-1);
-      if(se||!sd||sd.length===0) break;
-      allStocks=allStocks.concat(sd);
-      if(sd.length<PAGE) break;
-      sf+=PAGE;
-    }
-    let allRevenues=[]; let rf=0;
-    while(true){
-      const {data:rd}=await db.from("revenues").select("*").order("date",{ascending:false}).range(rf,rf+PAGE-1);
-      if(!rd||rd.length===0) break;
-      allRevenues=allRevenues.concat(rd);
-      if(rd.length<PAGE) break;
-      rf+=PAGE;
-    }
+
+    const [allOrders,allStocks,allRevRaw,allStoreSales,tsRes]=await Promise.all([
+      fetchAll("orders","order_date",true),
+      fetchAll("stock_uploads","upload_date",false),
+      fetchAll("revenues","date",false),
+      fetchAll("store_sales","sale_date",true),
+      db.from("upload_ts").select("*").order("id",{ascending:true}).limit(1),
+    ]);
+
     // 중복 제거: 같은 date+channel은 id 가장 큰 것(최신)만 유지
-    {const revMap={};
-    allRevenues.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
-    allRevenues=Object.values(revMap);}
-    let allStoreSales=[];
-    let ssf=0;
-    while(true){
-      const {data:ssd}=await db.from("store_sales").select("*").order("sale_date",{ascending:true}).range(ssf,ssf+PAGE-1);
-      if(!ssd||ssd.length===0) break;
-      allStoreSales=allStoreSales.concat(ssd);
-      if(ssd.length<PAGE) break;
-      ssf+=PAGE;
-    }
+    const revMap={};
+    allRevRaw.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
+    const allRevenues=Object.values(revMap);
+
     // store_sales → 주문 호환 rows (채널은 "오프라인 스토어"로 정규화)
     const storeOrderRows=allStoreSales.map(r=>({
       order_date:r.sale_date,
@@ -8400,15 +8385,13 @@ export default function App() {
     setStocks(allStocks);
     setRevenues(allRevenues);
     setStoreSales(allStoreSales);
-    const{data:tsData}=await db.from("upload_ts").select("*").order("id",{ascending:true}).limit(1);
+    const tsData=tsRes?.data;
     if(tsData&&tsData.length>0){
       const t=tsData[0];
       const next={orders:t.orders||null,stock:t.stock||null,revenue:t.revenue||null,store:t.store||null};
       setTs(next);try{localStorage.setItem("merryon_ts",JSON.stringify(next));}catch{}
     }
     if(firstLoad.current){
-      const elapsed=Date.now()-t0;
-      if(elapsed<3000) await new Promise(res=>setTimeout(res,3000-elapsed));
       setAppLoading(false);
       firstLoad.current=false;
     }
