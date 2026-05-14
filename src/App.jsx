@@ -7834,30 +7834,46 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     const dp=payload[0]?.payload||{};
     const total=dp._allCnt||0;
     const pct=(n,d)=>d?(n/d*100).toFixed(1):"0.0";
-    const ChRow=({color,name,count,chTotal})=>(
-      <div style={{marginBottom:6}}>
-        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
-          <span style={{width:10,height:10,borderRadius:2,background:color,display:"inline-block",flexShrink:0}}/>
-          <span style={{fontWeight:600,color:DC.text}}>{name}</span>
-          <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{count}개</span>
-        </div>
-        <div style={{marginLeft:15,display:"flex",flexDirection:"column",gap:1,fontSize:10,color:DC.sub}}>
-          <span>전체 고유 SKU {total}개 중 <b style={{color:DC.text}}>{pct(count,total)}%</b></span>
-          {chTotal!=null&&<span>{name.replace(" only","")} 활성 {chTotal}개 중 <b style={{color:DC.text}}>{pct(count,chTotal)}%</b>가 이 채널 단독</span>}
-        </div>
-      </div>
-    );
     return(
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",minWidth:240,boxShadow:"0 4px 16px rgba(0,0,0,.08)",fontSize:12}}>
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 14px",minWidth:220,boxShadow:"0 4px 16px rgba(0,0,0,.08)",fontSize:12}}>
         <div style={{fontWeight:700,marginBottom:2,color:DC.text}}>{label}</div>
-        <div style={{color:DC.sub,marginBottom:8,fontSize:11,borderBottom:`1px solid ${DC.border}`,paddingBottom:6}}>전체 고유 Active SKU: <b style={{color:DC.text}}>{total}개</b></div>
-        {dp.common>0&&<ChRow color={SKU_VOL_PASTEL.common} name="공통 (전 채널)" count={dp.common} chTotal={null}/>}
-        {dp.cross>0&&<ChRow color={SKU_VOL_PASTEL.cross} name="교차 (2–3채널)" count={dp.cross} chTotal={null}/>}
+        <div style={{color:DC.sub,marginBottom:8,fontSize:11,borderBottom:`1px solid ${DC.border}`,paddingBottom:6}}>
+          Active SKU: <b style={{color:DC.text}}>{total}개</b>
+          <span style={{marginLeft:6,fontWeight:400}}>(공통 {dp.common||0} · 교차 {dp.cross||0} · only 합계 {total-(dp.common||0)-(dp.cross||0)})</span>
+        </div>
+        {dp.common>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
+            <span style={{width:10,height:10,borderRadius:2,background:SKU_VOL_PASTEL.common,display:"inline-block",flexShrink:0}}/>
+            <span style={{color:DC.text}}>공통 (전 채널)</span>
+            <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{dp.common}개</span>
+            <span style={{color:DC.sub,fontSize:11}}>({pct(dp.common,total)}%)</span>
+          </div>
+        )}
+        {dp.cross>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
+            <span style={{width:10,height:10,borderRadius:2,background:SKU_VOL_PASTEL.cross,display:"inline-block",flexShrink:0}}/>
+            <span style={{color:DC.text}}>교차 (2–3채널)</span>
+            <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{dp.cross}개</span>
+            <span style={{color:DC.sub,fontSize:11}}>({pct(dp.cross,total)}%)</span>
+          </div>
+        )}
         {channelOrder.map(ch=>{
           const only=dp[`${ch}_only`]||0;
-          const chTotal=(dp._chSets?.[ch]?.length||0);
-          if(!chTotal) return null;
-          return <ChRow key={ch} color={SKU_VOL_PASTEL[ch]} name={`${ch} only`} count={only} chTotal={chTotal}/>;
+          const chActive=(dp._chSets?.[ch]?.length||0);
+          if(!chActive) return null;
+          return(
+            <div key={ch} style={{marginBottom:5}}>
+              <div style={{display:"flex",alignItems:"center",gap:5}}>
+                <span style={{width:10,height:10,borderRadius:2,background:SKU_VOL_PASTEL[ch],display:"inline-block",flexShrink:0}}/>
+                <span style={{color:DC.text}}>{ch} only</span>
+                <span style={{marginLeft:"auto",fontWeight:700,color:DC.text}}>{only}개</span>
+                <span style={{color:DC.sub,fontSize:11}}>({pct(only,chActive)}%)</span>
+              </div>
+              <div style={{marginLeft:15,fontSize:10,color:DC.dim,marginTop:1}}>
+                {ch} 활성 {chActive}개 중 단독 판매
+              </div>
+            </div>
+          );
         })}
         <div style={{borderTop:`1px solid ${DC.border}`,marginTop:4,paddingTop:5,fontSize:10,color:DC.dim}}>클릭하면 SKU 목록을 볼 수 있습니다</div>
       </div>
