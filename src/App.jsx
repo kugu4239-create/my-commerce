@@ -6213,11 +6213,11 @@ function InvBubblePlot({DC,snapshotDates}){
                   <ScatterChart margin={{top:24,right:32,bottom:44,left:16}}>
                     <CartesianGrid strokeDasharray="2 4" stroke="#1e1e1e"/>
                     <XAxis dataKey="noSalesDays" type="number" name="미판매 일수" domain={xDomain}
-                      tick={{fill:"#E0E0E0",fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                      label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:"#E0E0E0",fontSize:11}}/>
+                      tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
+                      label={{value:"미판매 일수 →",position:"insideBottom",offset:-28,fill:DC.text,fontSize:11}}/>
                     <YAxis dataKey="current_stock_qty" type="number" name="현재고" domain={yDomain}
-                      tick={{fill:"#E0E0E0",fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
-                      label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:"#E0E0E0",fontSize:11}}/>
+                      tick={{fill:DC.text,fontSize:11}} axisLine={{stroke:DC.border}} tickLine={false}
+                      label={{value:"현재고",angle:-90,position:"insideLeft",offset:14,fill:DC.text,fontSize:11}}/>
                     <ZAxis dataKey="currentInventoryValue" range={[16,1600]} name="재고금액"/>
                     <Tooltip content={<BubbleTooltip/>} cursor={false}/>
                     <Scatter data={filtered} shape={<CustomDot/>}/>
@@ -6228,8 +6228,8 @@ function InvBubblePlot({DC,snapshotDates}){
 
         {/* Note */}
         {selDate&&filtered.length>0&&(
-          <div style={{marginTop:10,padding:"9px 14px",background:"rgba(255,255,255,0.03)",borderRadius:7,
-            border:`1px solid ${DC.border}`,fontSize:11,color:DC.sub,lineHeight:1.8}}>
+          <div style={{marginTop:10,padding:"9px 14px",background:"rgba(0,0,0,0.03)",borderRadius:7,
+            border:`1px solid ${DC.border}`,fontSize:11,color:DC.text,lineHeight:1.8}}>
             <span style={{color:DC.text,fontWeight:600}}>해석:</span>
             {" "}오른쪽 위 = 장기 미판매 + 과재고 위험 SKU · 버블이 클수록 재고 금액 부담이 큼 · 버블 클릭 시 SKU 상세 확인
           </div>
