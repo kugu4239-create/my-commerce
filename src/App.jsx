@@ -7090,12 +7090,12 @@ function RevenueSankeyChart({periods,svgW}){
                 )}
               </g>
             ))}
-            {/* 일정 라벨 — 흰색 */}
+            {/* 기간 라벨 */}
             <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+18}
-              textAnchor="middle" fontSize={10} fill="#fff" style={{pointerEvents:"none"}}>
+              textAnchor="middle" fontSize={10} fill="#111111" style={{pointerEvents:"none"}}>
               {col.label}
             </text>
-            {/* 매출 합계 라벨 — 노드 스택 상단 가로 */}
+            {/* 매출 합계 라벨 — 노드 스택 상단 */}
             {col.total>0&&(()=>{
               const vis=col.nodes.filter(n=>n.h>0);
               if(!vis.length) return null;
@@ -7103,7 +7103,7 @@ function RevenueSankeyChart({periods,svgW}){
               return(
                 <text x={col.colX+NODE_W/2} y={top-7}
                   textAnchor="middle" dominantBaseline="auto"
-                  fontSize={13} fontWeight={700} fill="#fff"
+                  fontSize={13} fontWeight={700} fill="#111111"
                   style={{pointerEvents:"none",userSelect:"none"}}>
                   {fmtAmt(col.total)}
                 </text>
@@ -7141,29 +7141,29 @@ function RevenueSankeyChart({periods,svgW}){
         return(
           <div onClick={e=>e.stopPropagation()}
             style={{position:"absolute",left:x,top:y,
-              background:"#0e0e0e",border:"1px solid #2a2a2a",borderRadius:10,
+              background:"#ffffff",border:"1px solid #d8d8d0",borderRadius:10,
               padding:"14px 16px 12px",minWidth:192,
-              boxShadow:"0 8px 32px #000c",zIndex:20,pointerEvents:"auto"}}>
+              boxShadow:"0 4px 20px rgba(0,0,0,0.12)",zIndex:20,pointerEvents:"auto"}}>
             <button onClick={()=>{setSelNodes([]);setModal(null);}}
               style={{position:"absolute",top:7,right:9,background:"none",border:"none",
-                color:"#fff",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
-            <div style={{fontSize:10,color:"#fff",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
+                color:"#111",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+            <div style={{fontSize:10,color:"#111",marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>매출 비교</div>
             {[a,b].map((nd,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                 <span style={{width:18,height:18,borderRadius:3,background:COMPARE_CH_COLOR[nd.ch]||"#444",
                   display:"inline-flex",alignItems:"center",justifyContent:"center",
                   fontSize:10,fontWeight:800,color:"#fff",flexShrink:0}}>{i+1}</span>
                 <div>
-                  <div style={{fontSize:10,color:"#fff",opacity:0.7}}>{nd.label} · {nd.ch}</div>
-                  <div style={{fontSize:13,color:"#fff",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
+                  <div style={{fontSize:10,color:"#444"}}>{nd.label} · {nd.ch}</div>
+                  <div style={{fontSize:13,color:"#111",fontWeight:700}}>₩{nd.amt.toLocaleString()}</div>
                 </div>
               </div>
             ))}
-            <div style={{borderTop:"1px solid #222",marginTop:8,paddingTop:8,display:"flex",alignItems:"baseline",gap:8}}>
-              <span style={{fontSize:15,fontWeight:800,color:up?"#4ade80":"#f87171"}}>
+            <div style={{borderTop:"1px solid #e8e8e0",marginTop:8,paddingTop:8,display:"flex",alignItems:"baseline",gap:8}}>
+              <span style={{fontSize:15,fontWeight:800,color:up?"#2a9a60":"#c0392b"}}>
                 {up?"▲":"▼"} {pct!==null?`${Math.abs(pct).toFixed(1)}%`:"—"}
               </span>
-              <span style={{fontSize:11,color:"#fff"}}>
+              <span style={{fontSize:11,color:"#111"}}>
                 ({up?"+":""}{diff.toLocaleString()}원)
               </span>
             </div>
@@ -7182,7 +7182,7 @@ function RevenueSankeyChart({periods,svgW}){
       )}
 
       {/* 사용 안내 */}
-      <div style={{marginTop:orderWarn?4:14,textAlign:"center",fontSize:15,color:"#fff",letterSpacing:"0.02em",userSelect:"none"}}>
+      <div style={{marginTop:orderWarn?4:14,textAlign:"center",fontSize:15,color:"#111111",letterSpacing:"0.02em",userSelect:"none"}}>
         노드 매출 지점을 왼쪽에서 오른쪽 순으로 두번 클릭하면 해당 기간의 매출 증감률을 볼 수 있습니다
       </div>
     </div>
@@ -7393,20 +7393,20 @@ function DataCompare({revenues,storeSales=[]}){
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
-            <span style={{color:DC.sub,fontSize:13}}>~</span>
+            <span style={{color:DC.text,fontSize:13}}>~</span>
             <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"4px 10px",fontSize:13,color:DC.text,colorScheme:"light",
                 fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}/>
             {(customStart||customEnd)&&(
               <button onClick={()=>{setCustomStart("");setCustomEnd("");}}
-                style={{background:"none",border:"none",color:DC.sub,cursor:"pointer",fontSize:16,padding:"0 2px"}}>✕</button>
+                style={{background:"none",border:"none",color:DC.text,cursor:"pointer",fontSize:16,padding:"0 2px"}}>✕</button>
             )}
           </div>
         </div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:12}}>
           {COMPARE_CHANNELS.map(ch=>(
-            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:DC.sub}}>
+            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:DC.text}}>
               <span style={{width:8,height:8,background:COMPARE_CH_COLOR[ch],display:"inline-block",flexShrink:0}}/>
               {ch}
             </span>
@@ -7415,16 +7415,16 @@ function DataCompare({revenues,storeSales=[]}){
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
           {hasData
             ?<RevenueSankeyChart periods={revenueData} svgW={svgW}/>
-            :<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>
+            :<div style={{textAlign:"center",padding:"80px 0",color:DC.text,fontSize:15}}>
               매출 데이터를 업로드하면 그래프가 표시됩니다
             </div>
           }
         </div>
         {showSlider&&(
           <div style={{paddingTop:8,borderTop:`1px solid ${DC.border}`,marginTop:8}}>
-            <div style={{fontSize:12,color:DC.dim,marginBottom:2,textAlign:"right"}}>
+            <div style={{fontSize:12,color:DC.text,marginBottom:2,textAlign:"right"}}>
               {allVolPeriods[sliderIdx[0]]?.label} ~ {allVolPeriods[sliderIdx[1]]?.label}
-              <span style={{marginLeft:8,color:DC.dim}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
+              <span style={{marginLeft:8,color:DC.text}}>핸들 드래그로 기간 조정 · 가운데 드래그로 이동</span>
             </div>
             <VolumeSlider total={allVolPeriods.length} range={sliderIdx} onChange={handleSlider} DC={DC}/>
           </div>
