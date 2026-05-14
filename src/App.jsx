@@ -7782,12 +7782,17 @@ function VolumeSlider({total,range,onChange,DC}){
 
 function CaptureBtn({cardRef,filename,DC}){
   const [busy,setBusy]=useState(false);
+  const btnRef=useRef(null);
   const capture=async()=>{
     if(!cardRef?.current||busy) return;
     setBusy(true);
+    // Hide all capture buttons inside the card before snapshot
+    const btns=cardRef.current.querySelectorAll("[data-capture-hide]");
+    btns.forEach(b=>{b._prevVis=b.style.visibility;b.style.visibility="hidden";});
     try{
       const {default:html2canvas}=await import("html2canvas");
       const canvas=await html2canvas(cardRef.current,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+      btns.forEach(b=>{b.style.visibility=b._prevVis||"";});
       const fname=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
       // Try Web Share API first (iOS Photos / Android Gallery)
       if(navigator.share){
@@ -7799,7 +7804,6 @@ function CaptureBtn({cardRef,filename,DC}){
               setBusy(false);return;
             }
           }catch(e){if(e.name!=="AbortError") console.error(e);}
-          // share failed — fall through to download
           const a=document.createElement("a");a.download=fname;a.href=URL.createObjectURL(blob);a.click();
           setBusy(false);
         },"image/png");
@@ -7808,11 +7812,11 @@ function CaptureBtn({cardRef,filename,DC}){
       // Desktop fallback: direct download
       const a=document.createElement("a");
       a.download=fname;a.href=canvas.toDataURL("image/png");a.click();
-    }catch(e){console.error(e);}
+    }catch(e){btns.forEach(b=>{b.style.visibility=b._prevVis||"";});console.error(e);}
     setBusy(false);
   };
   return(
-    <button onClick={capture} disabled={busy} title="카드 이미지 저장"
+    <button ref={btnRef} data-capture-hide onClick={capture} disabled={busy} title="카드 이미지 저장"
       style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,
         padding:"4px 8px",fontSize:12,color:DC.sub,cursor:busy?"wait":"pointer",
         display:"flex",alignItems:"center",gap:4,opacity:busy?0.5:1,transition:"opacity .15s",flexShrink:0}}>
