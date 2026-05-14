@@ -8033,9 +8033,28 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
         </div>
       )}
 
-      {/* 각주 */}
-      <div style={{marginTop:16,fontSize:11,color:DC.dim,lineHeight:1.8,borderTop:`1px solid ${DC.border}`,paddingTop:12}}>
-        시간의 흐름에 따라 판매되는 실제 SKU 수 파악을 통해 다음 시즌 상품 기획에 참고 데이터로 활용될 수 있으며, 각 판매처 간 실효 SKU량을 가늠할 수 있습니다.
+      {/* 해석 가이드 + 각주 */}
+      <div style={{marginTop:16,borderTop:`1px solid ${DC.border}`,paddingTop:14}}>
+        <div style={{fontSize:11,fontWeight:700,color:DC.text,marginBottom:6}}>그래프 해석 방법</div>
+        <div style={{fontSize:11,color:DC.sub,lineHeight:1.9,display:"flex",flexDirection:"column",gap:2}}>
+          <div><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:SKU_VOL_PASTEL.common,marginRight:5,verticalAlign:"middle"}}/>
+            <b style={{color:DC.text}}>공통 (전 채널) 바가 두껍다</b> — 브랜드 핵심 상품이 모든 채널에서 고르게 판매 중. 채널 간 SKU 전략이 일관적임.
+          </div>
+          <div><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:SKU_VOL_PASTEL.cross,marginRight:5,verticalAlign:"middle"}}/>
+            <b style={{color:DC.text}}>교차 바가 크다</b> — 일부 채널에서만 공유되는 SKU가 많음. 채널별 기획 상품 운영 또는 단계적 채널 확장이 진행 중일 가능성.
+          </div>
+          <div><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:SKU_VOL_PASTEL["자사몰"],marginRight:5,verticalAlign:"middle"}}/>
+            <b style={{color:DC.text}}>특정 채널 only 바가 크다</b> — 해당 채널 전용 기획이 활발하거나, 다른 채널에 미도입된 신상품이 집중된 상태.
+          </div>
+          <div style={{marginTop:2}}>
+            <b style={{color:DC.text}}>바 전체 높이</b>가 기간 내 전체 고유 Active SKU 수입니다. 높이 증가는 라인 확대, 감소는 단종·시즌 오프를 의미합니다.
+            시간 흐름에 따라 <b style={{color:DC.text}}>공통 비율이 높아지면</b> 채널 간 SKU 정합성이 향상되는 추세이며,
+            <b style={{color:DC.text}}> only 비율이 커지면</b> 채널별 차별화 전략이 강화되고 있음을 나타냅니다.
+          </div>
+        </div>
+        <div style={{marginTop:12,fontSize:11,color:DC.dim,lineHeight:1.8}}>
+          시간의 흐름에 따라 판매되는 실제 SKU 수 파악을 통해 다음 시즌 상품 기획에 참고 데이터로 활용될 수 있으며, 각 판매처 간 실효 SKU량을 가늠할 수 있습니다.
+        </div>
       </div>
     </div>
   );
