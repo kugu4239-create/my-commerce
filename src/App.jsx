@@ -7679,44 +7679,27 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [calOpenFor,setCalOpenFor]=useState(null);
+  const [show4Jeolgi,setShow4Jeolgi]=useState(false);
   const [skuModal,setSkuModal]=useState(null);
   const [modalTab,setModalTab]=useState("common");
 
-  // 입절기 날짜 (연도 → {입춘,입하,입추,입동} YYYY-MM-DD)
-  const solarTermDate=useCallback((termName,y)=>{
-    // 24절기 근사값 — 실제 날짜는 연도별로 ±1일 오차 있음
-    const MAP={입춘:`${y}-02-04`,입하:`${y}-05-06`,입추:`${y}-08-07`,입동:`${y}-11-07`};
-    return MAP[termName]||null;
-  },[]);
+  // 입절기 근사 날짜 (±1일 오차 허용)
+  const SOLAR_TERMS=[
+    {name:"입춘",mmdd:"02-04"},
+    {name:"입하",mmdd:"05-06"},
+    {name:"입추",mmdd:"08-07"},
+    {name:"입동",mmdd:"11-07"},
+  ];
 
-  // season → { start, end, termName, termDate }
-  const seasonRange=useCallback((s)=>{
-    const y=new Date().getFullYear();
-    const m=new Date().getMonth()+1;
-    if(s==="봄") return{start:`${y}-02-04`,end:`${y}-05-05`,termName:"입춘",termDate:solarTermDate("입춘",y)};
-    if(s==="여름") return{start:`${y}-05-06`,end:`${y}-08-06`,termName:"입하",termDate:solarTermDate("입하",y)};
-    if(s==="가을") return{start:`${y}-08-07`,end:`${y}-11-06`,termName:"입추",termDate:solarTermDate("입추",y)};
-    if(s==="겨울"){
-      const wy=m<=2?y-1:y;
-      return{start:`${wy}-11-07`,end:`${wy+1}-02-03`,termName:"입동",termDate:solarTermDate("입동",wy)};
-    }
-    return{start:null,end:null,termName:null,termDate:null};
-  },[solarTermDate]);
-
-  const {chartRows,channelOrder,solarTermRef}=useMemo(()=>{
+  const {chartRows,channelOrder,jeolgiLines}=useMemo(()=>{
     const ONLINE_CHS=["자사몰","29CM","무신사"];
     const OFFLINE_CH="오프라인 스토어";
     const ALL_CHS=[...ONLINE_CHS,OFFLINE_CH];
-    const SEASONS=["봄","여름","가을","겨울"];
 
     // Date range for current period setting
-    let filterStart=null,filterEnd=null,solarTerm=null;
+    let filterStart=null,filterEnd=null;
     if(period==="custom"&&customStart&&customEnd){
       filterStart=customStart;filterEnd=customEnd;
-    } else if(SEASONS.includes(period)){
-      const sr=seasonRange(period);
-      filterStart=sr.start;filterEnd=sr.end;
-      solarTerm={name:sr.termName,date:sr.termDate};
     } else if(period!=="all"){
       const d=new Date();
       if(period==="3m") d.setMonth(d.getMonth()-3);
@@ -7822,18 +7805,29 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       ...Object.fromEntries(ALL_CHS.map(ch=>[`${ch}_only`,p.onlySkus[ch]?.size||0])),
     }));
 
-    // Solar term reference line: find the label of the period containing the term date
-    let solarTermRef=null;
-    if(solarTerm?.date&&chartRows.length){
-      const termPK=getPK(solarTerm.date);
-      const termLbl=getLbl(termPK);
-      const exists=chartRows.some(r=>r.label===termLbl);
-      // Show at first period if not in range (close to range start)
-      solarTermRef={name:solarTerm.name,date:solarTerm.date,label:exists?termLbl:chartRows[0].label};
+    // 4절기 기준선 — 차트 데이터 연도 범위 내 모든 입절기 날짜
+    let jeolgiLines=[];
+    if(show4Jeolgi&&chartRows.length){
+      const years=new Set();
+      chartRows.forEach(r=>{
+        const y=r.label.match(/^(\d{4})/)?.[1];
+        if(y){years.add(parseInt(y));}
+      });
+      years.forEach(y=>{
+        SOLAR_TERMS.forEach(({name,mmdd})=>{
+          const date=`${y}-${mmdd}`;
+          const pk=getPK(date);
+          const lbl=getLbl(pk);
+          if(chartRows.some(r=>r.label===lbl)){
+            jeolgiLines.push({name,date,label:lbl});
+          }
+        });
+      });
+      jeolgiLines.sort((a,b)=>a.date.localeCompare(b.date));
     }
 
-    return{chartRows,channelOrder,solarTermRef};
-  },[orders,storeSales,aggUnit,period,customStart,customEnd,seasonRange]);
+    return{chartRows,channelOrder,jeolgiLines};
+  },[orders,storeSales,aggUnit,period,customStart,customEnd,show4Jeolgi]);
 
   const SkuTooltip=useCallback(({active,payload,label})=>{
     if(!active||!payload?.length) return null;
@@ -7890,8 +7884,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
 
   const modalOnlySkus=skuModal&&!["common","cross"].includes(modalTab)?(skuModal._onlySkus?.[modalTab]||[]):[];
 
-  const SEASON_PRESETS=[["봄","봄 (3–5월)"],["여름","여름 (6–8월)"],["가을","가을 (9–11월)"],["겨울","겨울 (12–2월)"]];
-  const PERIOD_PRESETS=[["all","전체"],["3m","3개월"],["6m","6개월"],["1y","1년"],...SEASON_PRESETS];
+  const PERIOD_PRESETS=[["all","전체"],["3m","3개월"],["6m","6개월"],["1y","1년"]];
 
   return(
     <div ref={cardRef} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
@@ -7922,6 +7915,15 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
             end={customEnd} setEnd={setCustomEnd}
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}
             dark={false}/>
+          <span style={{color:DC.border}}>|</span>
+          {/* 4절기 토글 */}
+          <button data-hf onClick={()=>setShow4Jeolgi(v=>!v)}
+            style={{background:show4Jeolgi?DC.text:"transparent",color:show4Jeolgi?"#fff":DC.sub,
+              border:`1px solid ${show4Jeolgi?DC.text:DC.border}`,
+              borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s",
+              whiteSpace:"nowrap"}}>
+            4절기
+          </button>
           <span style={{color:DC.border}}>|</span>
           <CaptureBtn cardRef={cardRef} filename="Active_SKU_볼륨" DC={DC}/>
         </div>
@@ -7970,11 +7972,11 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
                 fill={stackColors[k]} name={stackLabels[k]}
                 radius={k===stackKeys[stackKeys.length-1]?[3,3,0,0]:[0,0,0,0]}/>
             ))}
-            {solarTermRef&&(
-              <ReferenceLine x={solarTermRef.label} stroke="#888" strokeDasharray="4 3"
-                label={{value:`${solarTermRef.name} (${solarTermRef.date?.slice(5).replace("-",".")})`,
-                  position:"insideTopLeft",fontSize:10,fill:"#666",fontWeight:600}}/>
-            )}
+            {jeolgiLines.map(jl=>(
+              <ReferenceLine key={jl.date} x={jl.label} stroke="#8899AA" strokeDasharray="4 3" strokeWidth={1.5}
+                label={{value:`${jl.name} ${jl.date.slice(5).replace("-","/")}`,
+                  position:"top",fontSize:9,fill:"#8899AA",fontWeight:700}}/>
+            ))}
           </BarChart>
         </ResponsiveContainer>
       )}
