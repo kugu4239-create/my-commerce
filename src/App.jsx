@@ -1821,7 +1821,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
 
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
-        <KPI label="총 매출" value={fmtWon(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
+        <KPI label="총 매출" value={fmtWonShort(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
         <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
