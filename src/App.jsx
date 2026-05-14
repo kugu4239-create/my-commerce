@@ -6,7 +6,7 @@ const getPapa = () => import("papaparse").then(m => m.default);
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend,
-  ScatterChart, Scatter, ZAxis, AreaChart, Area,
+  ScatterChart, Scatter, ZAxis, AreaChart, Area, ReferenceLine,
 } from "recharts";
 
 // ─────────────────────────────────────────────
@@ -7681,32 +7681,41 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
   const [skuModal,setSkuModal]=useState(null);
   const [modalTab,setModalTab]=useState("common");
 
-  // season → [start, end] in YYYY-MM-DD
+  // 입절기 날짜 (연도 → {입춘,입하,입추,입동} YYYY-MM-DD)
+  const solarTermDate=useCallback((termName,y)=>{
+    // 24절기 근사값 — 실제 날짜는 연도별로 ±1일 오차 있음
+    const MAP={입춘:`${y}-02-04`,입하:`${y}-05-06`,입추:`${y}-08-07`,입동:`${y}-11-07`};
+    return MAP[termName]||null;
+  },[]);
+
+  // season → { start, end, termName, termDate }
   const seasonRange=useCallback((s)=>{
     const y=new Date().getFullYear();
     const m=new Date().getMonth()+1;
-    if(s==="봄") return[`${y}-03-01`,`${y}-05-31`];
-    if(s==="여름") return[`${y}-06-01`,`${y}-08-31`];
-    if(s==="가을") return[`${y}-09-01`,`${y}-11-30`];
+    if(s==="봄") return{start:`${y}-02-04`,end:`${y}-05-05`,termName:"입춘",termDate:solarTermDate("입춘",y)};
+    if(s==="여름") return{start:`${y}-05-06`,end:`${y}-08-06`,termName:"입하",termDate:solarTermDate("입하",y)};
+    if(s==="가을") return{start:`${y}-08-07`,end:`${y}-11-06`,termName:"입추",termDate:solarTermDate("입추",y)};
     if(s==="겨울"){
       const wy=m<=2?y-1:y;
-      return[`${wy}-12-01`,`${wy+1}-02-28`];
+      return{start:`${wy}-11-07`,end:`${wy+1}-02-03`,termName:"입동",termDate:solarTermDate("입동",wy)};
     }
-    return[null,null];
-  },[]);
+    return{start:null,end:null,termName:null,termDate:null};
+  },[solarTermDate]);
 
-  const {chartRows,channelOrder}=useMemo(()=>{
+  const {chartRows,channelOrder,solarTermRef}=useMemo(()=>{
     const ONLINE_CHS=["자사몰","29CM","무신사"];
     const OFFLINE_CH="오프라인 스토어";
     const ALL_CHS=[...ONLINE_CHS,OFFLINE_CH];
     const SEASONS=["봄","여름","가을","겨울"];
 
     // Date range for current period setting
-    let filterStart=null,filterEnd=null;
+    let filterStart=null,filterEnd=null,solarTerm=null;
     if(period==="custom"&&customStart&&customEnd){
       filterStart=customStart;filterEnd=customEnd;
     } else if(SEASONS.includes(period)){
-      [filterStart,filterEnd]=seasonRange(period);
+      const sr=seasonRange(period);
+      filterStart=sr.start;filterEnd=sr.end;
+      solarTerm={name:sr.termName,date:sr.termDate};
     } else if(period!=="all"){
       const d=new Date();
       if(period==="3m") d.setMonth(d.getMonth()-3);
@@ -7805,7 +7814,17 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       ...Object.fromEntries(ALL_CHS.map(ch=>[`${ch}_only`,p.onlySkus[ch]?.size||0])),
     }));
 
-    return{chartRows,channelOrder};
+    // Solar term reference line: find the label of the period containing the term date
+    let solarTermRef=null;
+    if(solarTerm?.date&&chartRows.length){
+      const termPK=getPK(solarTerm.date);
+      const termLbl=getLbl(termPK);
+      const exists=chartRows.some(r=>r.label===termLbl);
+      // Show at first period if not in range (close to range start)
+      solarTermRef={name:solarTerm.name,date:solarTerm.date,label:exists?termLbl:chartRows[0].label};
+    }
+
+    return{chartRows,channelOrder,solarTermRef};
   },[orders,storeSales,aggUnit,period,customStart,customEnd,seasonRange]);
 
   const SkuTooltip=useCallback(({active,payload,label})=>{
@@ -7910,10 +7929,10 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       </div>
 
       {/* 가이드 */}
-      <div style={{background:"#f5f5f3",borderRadius:6,padding:"8px 12px",marginBottom:14,fontSize:11,color:DC.sub,lineHeight:1.8}}>
-        <span style={{fontWeight:600,color:DC.text}}>SKU 기준:</span> 상품명 기준 (옵션 미포함, 동일 상품명의 여러 옵션은 1 SKU로 집계).&ensp;
-        <span style={{fontWeight:600,color:DC.text}}>활성 기준:</span> 온라인(자사몰·29CM·무신사) — 배송 완료 건, 오프라인 스토어 — 구매 전체(반품 포함).&ensp;
-        <span style={{fontWeight:600,color:DC.text}}>공통 SKU:</span> 해당 기간 2개 이상 채널에서 판매된 SKU. 스택 순서는 채널 간 교집합 비율에 따라 자동 정렬됩니다.
+      <div style={{background:"#f5f5f3",borderRadius:6,padding:"10px 14px",marginBottom:14,fontSize:11,color:DC.sub,lineHeight:2,display:"flex",flexDirection:"column",gap:1}}>
+        <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>SKU 기준</span>상품명 단위로 집계합니다. 옵션(색상·사이즈)이 다르더라도 같은 상품명이면 1 SKU로 계산합니다.</div>
+        <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>Active SKU 정의</span>온라인(자사몰·29CM·무신사)은 해당 기간 내 배송 완료 건이 1건 이상인 SKU, 오프라인 스토어는 매장 판매 데이터에 등록된 SKU(반품 포함)를 기준으로 합니다.</div>
+        <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>공통 SKU</span>2개 이상의 채널에서 동시에 판매된 SKU입니다. 1개 채널에서만 판매된 SKU는 해당 채널의 단독(only) 영역으로 분류되며, 스택 순서는 채널 간 교집합 비율을 기준으로 자동 정렬됩니다.</div>
       </div>
 
       {/* 범례 */}
@@ -7948,6 +7967,11 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
                 stroke={stackColors[k]} fill={stackColors[k]} fillOpacity={0.82}
                 strokeWidth={1} name={stackLabels[k]}/>
             ))}
+            {solarTermRef&&(
+              <ReferenceLine x={solarTermRef.label} stroke="#888" strokeDasharray="4 3"
+                label={{value:`${solarTermRef.name} (${solarTermRef.date?.slice(5).replace("-",".")})`,
+                  position:"insideTopLeft",fontSize:10,fill:"#666",fontWeight:600,offset:4}}/>
+            )}
           </AreaChart>
         </ResponsiveContainer>
       )}
