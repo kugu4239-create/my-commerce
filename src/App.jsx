@@ -2052,7 +2052,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                   <td style={{padding:"7px 9px"}}>합계</td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
-                  <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWon(stats.totalRevenue)}</td>
+                  <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWonShort(stats.totalRevenue)}</td>
                   <td/>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
                   {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalReturned.toLocaleString()}</td>}
