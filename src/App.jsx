@@ -143,9 +143,24 @@ const normCS = raw => {
   return "배송";
 };
 
+function fmtEokMan(n){
+  const eok=Math.floor(n/1e8);
+  const man=Math.round((n%1e8)/1e4);
+  if(man===0) return eok+"억";
+  const cheon=Math.floor(man/1000);
+  const baek=Math.floor((man%1000)/100);
+  const sip=Math.floor((man%100)/10);
+  const il=man%10;
+  let s="";
+  if(cheon) s+=cheon+"천";
+  if(baek) s+=baek+"백";
+  if(sip) s+=sip+"십";
+  if(il) s+=il;
+  return eok+"억"+s+"만";
+}
 const fmtWon = n => {
   if (!n) return "—";
-  if (n>=1e8) return "₩"+parseFloat((n/1e8).toFixed(2))+"억";
+  if (n>=1e8) return "₩"+fmtEokMan(n);
   if (n>=1e4) return "₩"+(n/1e4).toFixed(0)+"만";
   return "₩"+n.toLocaleString();
 };
@@ -4214,9 +4229,6 @@ function CSDataInput() {
   const [csData,setCSData]=useState(getCSData);
   const today=new Date().toISOString().slice(0,10);
   const [date,setDate]=useState(today);
-  const [product,setProduct]=useState("");
-  const [reason,setReason]=useState("");
-  const [channel,setChannel]=useState("자사몰");
   const [filterProd,setFilterProd]=useState("");
   const [csvResult,setCsvResult]=useState(null);
   const [editCell,setEditCell]=useState(null);
@@ -4238,19 +4250,6 @@ function CSDataInput() {
       }
     })();
   },[]);
-
-  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-    padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
-
-  const save=async()=>{
-    if(!product.trim()||!reason.trim())return;
-    const newR={id:Date.now(),date,product_name:product.trim(),return_reason:reason.trim(),channel};
-    const next=[newR,...csData];
-    saveCSData(next);setCSData(next);
-    setProduct("");setReason("");
-    const db=await getSupabase();
-    await db.from("cs_data").insert(newR);
-  };
 
   const handleCSVFile=useCallback(file=>{
     if(!file)return;
@@ -4354,44 +4353,15 @@ function CSDataInput() {
   );
 
   return (
-    <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:14}}>
       <Card>
-        <div style={{fontWeight:600,marginBottom:14,fontSize:13}}>CS 반품 사유 입력</div>
-        <div style={{marginBottom:10}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>날짜</div>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>판매처</div>
-          <div style={{display:"flex",gap:4}}>
-            {["자사몰","29CM","무신사"].map(c=>(
-              <button key={c} onClick={()=>setChannel(c)}
-                style={{flex:1,background:channel===c?D.black:"transparent",
-                  color:channel===c?"#fff":D.textSub,
-                  border:`1px solid ${channel===c?D.black:D.border}`,
-                  borderRadius:5,padding:"6px 4px",fontSize:11,cursor:"pointer"}}>
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>상품명</div>
-          <input value={product} onChange={e=>setProduct(e.target.value)} style={inp} placeholder="상품명 입력"/>
-        </div>
-        <div style={{marginBottom:14}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:4}}>반품 사유</div>
-          <input value={reason} onChange={e=>setReason(e.target.value)} style={inp} placeholder="예: 사이즈 불일치, 불량, 단순 변심"/>
-        </div>
-        <button onClick={save}
-          style={{width:"100%",background:D.black,color:"#fff",border:"none",borderRadius:6,
-            padding:"10px",fontSize:12,cursor:"pointer",fontWeight:600}}>
-          저장
-        </button>
-        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
-          <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 일괄 업로드</div>
+        <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>CS 반품 데이터 업로드</div>
+        <div style={{fontSize:10,color:D.textMeta,marginBottom:8}}>날짜 없는 행의 기준일</div>
+        <CalendarPicker mode="single" value={date} onChange={setDate}/>
+        <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 업로드</div>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:8,lineHeight:1.6}}>
-            필수 컬럼: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
+            필수: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
             선택: [날짜] [판매처]
           </div>
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
@@ -6698,8 +6668,8 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
             )}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
               {[["판매가",`${(d.selling_price||0).toLocaleString()}원`],["현재고",`${(d.current_stock_qty||0).toLocaleString()}개`],
-                ["재고 금액",`${(d.currentInventoryValue||0).toLocaleString()}원`],["미판매",`${d.noSalesDays}일`],
-                ["SKU 기간",`${d.skuAge}일`],["입고 후",`${d.postRestockDays}일`]].map(([l,v])=>(
+                ["재고 금액",`${(d.currentInventoryValue||0).toLocaleString()}원`],["미판매",fmtDays(d.noSalesDays)],
+                ["SKU 기간",fmtDays(d.skuAge)],["입고 후",fmtDays(d.postRestockDays)]].map(([l,v])=>(
                 <div key={l} style={{background:"#1e1e1e",borderRadius:7,padding:"9px 11px"}}>
                   <div style={{fontSize:12,color:"#555",marginBottom:3}}>{l}</div>
                   <div style={{fontSize:13,fontWeight:600,color:"#F0F0F0"}}>{v}</div>
@@ -7346,16 +7316,16 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
         <div style={{fontSize:12,fontWeight:700,color:DC.text,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
           {[
-            {title:"판매속도",body:"(1주판매÷7)×70%\n+(4주판매÷28)×30%"},
-            {title:"실질 가용재고",body:"가용재고\n+입고대기"},
-            {title:"예상 재고잔여일",body:"실질가용재고\n÷예상일판매량"},
-            {title:"14일 미만→\n리오더 추천",body:"days_left\n< 14일"},
-            {title:"추천 리오더 수량",body:"(일판매량×14)\n−실질가용재고"},
+            {title:"판매속도",body:"(1주판매÷7)×70% + (4주판매÷28)×30%"},
+            {title:"실질 가용재고",body:"가용재고 + 입고대기"},
+            {title:"예상 재고잔여일",body:"실질가용재고 ÷ 예상일판매량"},
+            {title:"14일 미만 → 리오더",body:"days_left < 14일"},
+            {title:"추천 리오더 수량",body:"(일판매량×14) − 실질가용재고"},
           ].map((s,i,a)=>(
             <React.Fragment key={s.title}>
-              <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:108}}>
-                <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600,whiteSpace:"pre-line"}}>{s.title}</div>
-                <div style={{fontSize:13,color:DC.text,whiteSpace:"pre-line",lineHeight:1.8}}>{s.body}</div>
+              <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:120}}>
+                <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600}}>{s.title}</div>
+                <div style={{fontSize:12,color:DC.sub,lineHeight:1.6}}>{s.body}</div>
               </div>
               {i<a.length-1&&<div style={{color:DC.text,fontSize:18,padding:"0 6px",flexShrink:0}}>→</div>}
             </React.Fragment>
@@ -7613,7 +7583,7 @@ function RevenueSankeyChart({periods,svgW}){
   },[cols]);
 
   const fmtAmt=a=>{
-    if(a>=1e8) return `${parseFloat((a/1e8).toFixed(2))}억`;
+    if(a>=1e8) return fmtEokMan(a);
     if(a>=1e4) return `${Math.round(a/1e4)}만`;
     return a.toLocaleString();
   };
