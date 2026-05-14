@@ -7788,10 +7788,26 @@ function CaptureBtn({cardRef,filename,DC}){
     try{
       const {default:html2canvas}=await import("html2canvas");
       const canvas=await html2canvas(cardRef.current,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+      const fname=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
+      // Try Web Share API first (iOS Photos / Android Gallery)
+      if(navigator.share){
+        canvas.toBlob(async blob=>{
+          const file=new File([blob],fname,{type:"image/png"});
+          try{
+            if(navigator.canShare&&navigator.canShare({files:[file]})){
+              await navigator.share({files:[file],title:fname});
+              setBusy(false);return;
+            }
+          }catch(e){if(e.name!=="AbortError") console.error(e);}
+          // share failed — fall through to download
+          const a=document.createElement("a");a.download=fname;a.href=URL.createObjectURL(blob);a.click();
+          setBusy(false);
+        },"image/png");
+        return;
+      }
+      // Desktop fallback: direct download
       const a=document.createElement("a");
-      a.download=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
-      a.href=canvas.toDataURL("image/png");
-      a.click();
+      a.download=fname;a.href=canvas.toDataURL("image/png");a.click();
     }catch(e){console.error(e);}
     setBusy(false);
   };
