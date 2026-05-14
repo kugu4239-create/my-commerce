@@ -6784,7 +6784,6 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
   const [aggUnit,setAggUnit]=useState("week");
-  const [yMode,setYMode]=useState("qty");
   const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
@@ -6868,14 +6867,15 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       }
       if(!groups[key]){
         groups[key]={label,HEALTHY:0,SLOW:0,AGING:0,DEAD:0,_n:0};
-        INV_AGING_KEYS.forEach(k=>{groups[key][`${k}_qty`]=0;groups[key][`${k}_val`]=0;});
+        INV_AGING_KEYS.forEach(k=>{groups[key][`${k}_qty`]=0;groups[key][`${k}_val`]=0;groups[key][`${k}_count`]=0;});
       }
       INV_AGING_KEYS.forEach(k=>{
         const v=rawByDate[d][k];
         if(v){
-          groups[key][k]+=yMode==="count"?v.count:yMode==="qty"?v.qty:v.value;
+          groups[key][k]+=v.qty;
           groups[key][`${k}_qty`]+=v.qty;
           groups[key][`${k}_val`]+=v.value;
+          groups[key][`${k}_count`]+=v.count;
         }
       });
       groups[key]._n++;
@@ -6886,10 +6886,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
         r[k]=Math.round(g[k]/g._n);
         r[`${k}_qty`]=Math.round((g[`${k}_qty`]||0)/g._n);
         r[`${k}_val`]=Math.round((g[`${k}_val`]||0)/g._n);
+        r[`${k}_count`]=Math.round((g[`${k}_count`]||0)/g._n);
       });
       return r;
     });
-  },[rawByDate,aggUnit,yMode]);
+  },[rawByDate,aggUnit]);
 
   const latestDate=useMemo(()=>{const d=Object.keys(rawByDate).sort();return d[d.length-1]||null;},[rawByDate]);
 
@@ -6955,8 +6956,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     const deadQty=d["DEAD"]?.qty||0;const healthyQty=d["HEALTHY"]?.qty||0;
     const qtyByKey={};
     INV_AGING_KEYS.forEach(k=>{
-      const qty=d[k]?.qty||0;const val=d[k]?.value||0;
-      qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0"};
+      const qty=d[k]?.qty||0;const val=d[k]?.value||0;const count=d[k]?.count||0;
+      qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0",count};
     });
     return{total,totalQty,totalVal,
       deadPct:totalQty?((deadQty/totalQty)*100).toFixed(1):"0.0",
@@ -6973,7 +6974,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const AreaTooltip=({active,payload,label})=>{
     if(!active||!payload?.length) return null;
     const total=payload.reduce((s,p)=>s+(p.value||0),0);
-    const unit=yMode==="count"?" SKU":yMode==="qty"?"개":"";
+    const unit="개";
     const dp=payload[0]?.payload||{};
     const totalVal=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_val`]||0),0);
     return(
@@ -6982,11 +6983,16 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
         {[...payload].reverse().map(p=>{
           const val=dp[`${p.dataKey}_val`]||0;
           const qty=dp[`${p.dataKey}_qty`]||0;
+          const cnt=dp[`${p.dataKey}_count`]||0;
+          const totalQtyAll=INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0)||1;
           return(
             <div key={p.dataKey} style={{marginBottom:6,paddingBottom:6,borderBottom:`1px solid ${DC.border}`}}>
-              <div style={{color:p.fill||p.stroke,fontWeight:600,marginBottom:3}}>{INV_AGING_DEFS[p.dataKey]?.label}</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                <span style={{color:p.fill||p.stroke,fontWeight:600}}>{INV_AGING_DEFS[p.dataKey]?.label}</span>
+                <span style={{fontSize:11,color:DC.sub}}>{cnt.toLocaleString()} SKU</span>
+              </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                <span style={{color:DC.text}}>{qty.toLocaleString()}개{total>0&&<span style={{color:DC.sub,marginLeft:3}}>({(qty/(INV_AGING_KEYS.reduce((s,k)=>s+(dp[`${k}_qty`]||0),0)||1)*100).toFixed(1)}%)</span>}</span>
+                <span style={{color:DC.text,fontWeight:600}}>{qty.toLocaleString()}개<span style={{color:DC.sub,fontWeight:400,marginLeft:3}}>({(qty/totalQtyAll*100).toFixed(1)}%)</span></span>
                 <span style={{color:DC.sub}}>·</span>
                 <span style={{color:DC.text}}>{fmtVal(val)}원{totalVal>0&&<span style={{color:DC.sub,marginLeft:3}}>({(val/totalVal*100).toFixed(1)}%)</span>}</span>
               </div>
@@ -7007,14 +7013,15 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       {kpi&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
           {[
-            {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B"},
-            {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4"},
-            {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
-            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B"},
+            {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B",sub:`${(kpi.qtyByKey["DEAD"]?.count||0).toLocaleString()} SKU`},
+            {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4",sub:`${(kpi.qtyByKey["HEALTHY"]?.count||0).toLocaleString()} SKU`},
+            {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text,sub:`${kpi.total.toLocaleString()} SKU`},
+            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B",sub:null},
           ].map(c=>(
             <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
               <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
               <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+              {c.sub&&<div style={{fontSize:11,color:DC.sub,marginTop:3}}>{c.sub}</div>}
             </div>
           ))}
         </div>
@@ -7050,14 +7057,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
             </button>
           ))}
           <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
-          <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>단위</span>
-          {[["count","SKU 수"],["qty","재고 수량"]].map(([v,l])=>(
-            <button key={v} data-hf onClick={()=>setYMode(v)}
-              style={{background:yMode===v?"rgba(126,200,164,0.15)":"transparent",color:yMode===v?"#7EC8A4":DC.sub,
-                border:`1px solid ${yMode===v?"#7EC8A4":DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
-              {l}
-            </button>
-          ))}
+          <span style={{fontSize:12,color:DC.sub,flexShrink:0}}>재고 수량 기준 · SKU 수 보조</span>
         </div>
       </div>
       {showCal&&(
@@ -7140,6 +7140,10 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                     <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
                       <span style={{fontSize:10,color:DC.sub}}>금액</span>
                       <span style={{fontSize:10,color:DC.text,fontWeight:600}}>{fmtVal(q.val)}원 <span style={{color:DC.sub,fontWeight:400}}>({q.valPct}%)</span></span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
+                      <span style={{fontSize:10,color:DC.sub,opacity:.7}}>SKU</span>
+                      <span style={{fontSize:10,color:DC.sub}}>{q.count.toLocaleString()}개</span>
                     </div>
                   </div>
                 )}
