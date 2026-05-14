@@ -6350,6 +6350,18 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
 
   useEffect(()=>{setPromoPage(0);},[showSaleRec]);
 
+  const agingQtyStat=useMemo(()=>{
+    const map={};INV_AGING_KEYS.forEach(k=>{map[k]={qty:0,val:0};});
+    filtered.forEach(d=>{map[d.agingKey].qty+=(d.current_stock_qty||0);map[d.agingKey].val+=(d.currentInventoryValue||0);});
+    const totalQty=INV_AGING_KEYS.reduce((s,k)=>s+map[k].qty,0);
+    const totalVal=INV_AGING_KEYS.reduce((s,k)=>s+map[k].val,0);
+    INV_AGING_KEYS.forEach(k=>{
+      map[k].pct=totalQty?(map[k].qty/totalQty*100).toFixed(1):"0.0";
+      map[k].valPct=totalVal?(map[k].val/totalVal*100).toFixed(1):"0.0";
+    });
+    return{map,totalQty,totalVal};
+  },[filtered]);
+
   const maxZ=useMemo(()=>Math.max(...filtered.map(d=>d.currentInventoryValue),1),[filtered]);
   const minZ=useMemo(()=>Math.min(...filtered.filter(d=>d.currentInventoryValue>0).map(d=>d.currentInventoryValue),0),[filtered]);
   const getR=z=>{const n=maxZ===minZ?0.5:Math.max(0,(z-minZ)/(maxZ-minZ));return Math.max(5,Math.min(38,5+n*33));};
@@ -6459,17 +6471,34 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               {INV_AGING_KEYS.map(k=>{
                 const def=INV_AGING_DEFS[k];const on=agingFilter.has(k);
+                const stat=agingQtyStat.map[k];
                 return(
                   <button key={k} data-hf onClick={()=>{const s=new Set(agingFilter);on?s.delete(k):s.add(k);setAgingFilter(s);}}
                     style={{background:on?`${def.color}22`:"transparent",color:on?def.color:DC.dim,
-                      border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"4px 8px",
-                      fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span>{def.label}</span>
-                    <span style={{fontSize:10,opacity:.7}}>{def.desc}</span>
+                      border:`1px solid ${on?def.color:DC.border}`,borderRadius:5,padding:"5px 8px",
+                      fontSize:12,cursor:"pointer",textAlign:"left"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:stat.qty>0?2:0}}>
+                      <span style={{fontWeight:600}}>{def.label}</span>
+                      {stat.qty>0&&<span style={{fontSize:10,opacity:.8,fontWeight:700}}>{stat.pct}%</span>}
+                    </div>
+                    {stat.qty>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,opacity:.7}}>
+                        <span>{stat.qty.toLocaleString()}개</span>
+                        <span>{stat.valPct}%</span>
+                      </div>
+                    )}
+                    {stat.qty===0&&<div style={{fontSize:10,opacity:.5}}>{def.desc}</div>}
                   </button>
                 );
               })}
             </div>
+            {agingQtyStat.totalQty>0&&(
+              <div style={{marginTop:6,padding:"5px 6px",background:"rgba(255,255,255,0.03)",borderRadius:5,
+                display:"flex",justifyContent:"space-between",fontSize:10,color:DC.sub}}>
+                <span>총 재고</span>
+                <span style={{color:DC.text,fontWeight:600}}>{agingQtyStat.totalQty.toLocaleString()}개</span>
+              </div>
+            )}
           </div>
           {/* 프로모션 제안 버튼 */}
           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${DC.border}`}}>
