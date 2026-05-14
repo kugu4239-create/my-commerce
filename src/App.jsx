@@ -6637,9 +6637,10 @@ function ReorderCalculator({DC,refreshKey}){
 
   const trendTag=r=>{const t=r.reorder_trend_ratio||0;return t>=1.2?{label:"↑ 상승",color:"#7EC8A4"}:t>=0.8?{label:"→ 안정",color:"#7B9EC8"}:{label:"↓ 감소",color:"#C87B7B"};};
 
+  const textCols=new Set(["reorder_product_name","reorder_option_name"]);
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
-      style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,
+      style={{padding:"6px 8px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,
         fontSize:11,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
       {label}{sortKey===k?(sortDir==="asc"?" ↑":" ↓"):""}
     </th>
@@ -6792,15 +6793,15 @@ function ReorderCalculator({DC,refreshKey}){
                     <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`}}>
                       <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
                       <td style={{padding:"6px 8px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"right",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"right"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
                       <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:11,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
-                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
-                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
+                      <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
                     </tr>
                   );
                 })}
