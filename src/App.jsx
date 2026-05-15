@@ -8065,7 +8065,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
           <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 비중·교집합·단독 구성</span>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          {/* 집계 단위 */}
+          {/* 분석 단위 (주/월/분기/4절기) */}
           <div style={{display:"flex",gap:3}}>
             {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
               <button key={u} data-hf onClick={()=>setAggUnit(u)}
@@ -8075,6 +8075,13 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
                 {lbl}
               </button>
             ))}
+            <button data-hf onClick={()=>setShow4Jeolgi(v=>!v)}
+              style={{background:show4Jeolgi?DC.text:"transparent",color:show4Jeolgi?"#fff":DC.sub,
+                border:`1px solid ${show4Jeolgi?DC.text:DC.border}`,
+                borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s",
+                whiteSpace:"nowrap"}}>
+              4절기
+            </button>
           </div>
           <span style={{color:DC.border}}>|</span>
           {/* 기간 필터 — CalDrop */}
@@ -8085,15 +8092,6 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
             end={customEnd} setEnd={setCustomEnd}
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}
             dark={false}/>
-          <span style={{color:DC.border}}>|</span>
-          {/* 4절기 토글 */}
-          <button data-hf onClick={()=>setShow4Jeolgi(v=>!v)}
-            style={{background:show4Jeolgi?DC.text:"transparent",color:show4Jeolgi?"#fff":DC.sub,
-              border:`1px solid ${show4Jeolgi?DC.text:DC.border}`,
-              borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s",
-              whiteSpace:"nowrap"}}>
-            4절기
-          </button>
           <span style={{color:DC.border}}>|</span>
           <CaptureBtn cardRef={cardRef} filename="Active_SKU_볼륨" DC={DC}/>
         </div>
