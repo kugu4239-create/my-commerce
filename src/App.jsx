@@ -8107,12 +8107,17 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       {/* 채널 요약 카드 (선택 월 기준) */}
       {activeRow&&(
         <div style={{marginBottom:14}}>
-          <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:8}}>
-            <span style={{fontSize:11,fontWeight:600,color:DC.sub,letterSpacing:".06em"}}>선택 월</span>
-            <span style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:14,fontWeight:700,color:DC.text}}>{activeRow.label}</span>
-            {selectedPK&&<button data-hf onClick={()=>setSelectedPK(null)}
-              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px",fontSize:10,cursor:"pointer",color:DC.sub}}>최신으로</button>}
-            <span style={{marginLeft:"auto",fontSize:10,color:DC.dim}}>차트 바를 클릭해 다른 월 선택</span>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,fontWeight:600,color:DC.sub,letterSpacing:".06em"}}>요약 기준</span>
+            <select value={activeRow.pk} onChange={e=>setSelectedPK(e.target.value)}
+              style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:6,padding:"4px 10px",
+                fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:13,fontWeight:700,color:DC.text,
+                cursor:"pointer",outline:"none",minWidth:110}}>
+              {chartRows.map(r=>(<option key={r.pk} value={r.pk}>{r.label}</option>))}
+            </select>
+            {selectedPK&&selectedPK!==chartRows[chartRows.length-1]?.pk&&
+              <button data-hf onClick={()=>setSelectedPK(null)}
+                style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,padding:"3px 9px",fontSize:11,cursor:"pointer",color:DC.sub}}>최신으로</button>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:`repeat(${summaryCards.length},minmax(0,1fr))`,gap:8}}>
             {summaryCards.map(c=>(
@@ -8162,7 +8167,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       ):(
         <>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartRows} margin={{top:8,right:8,bottom:8,left:0}} barCategoryGap="22%" stackOffset="expand"
+          <BarChart data={chartRows} margin={{top:32,right:8,bottom:8,left:0}} barCategoryGap="22%" stackOffset="expand"
             onClick={({activePayload})=>{
               if(!activePayload?.length) return;
               const pk=activePayload[0].payload?.pk;
