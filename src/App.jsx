@@ -6494,7 +6494,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                           <span>수량 {stat.qty.toLocaleString()}개</span><span style={{fontWeight:600}}>{stat.pct}%</span>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
-                          <span>금액</span><span style={{fontWeight:600}}>{stat.valPct}%</span>
+                          <span>금액 {fmtWonShort(stat.val)}</span><span style={{fontWeight:600}}>{stat.valPct}%</span>
                         </div>
                       </div>
                     )}
@@ -6504,9 +6504,15 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
             </div>
             {agingQtyStat.totalQty>0&&(
               <div style={{marginTop:6,padding:"5px 6px",background:"rgba(255,255,255,0.03)",borderRadius:5,
-                display:"flex",justifyContent:"space-between",fontSize:10,color:DC.sub}}>
-                <span>총 재고</span>
-                <span style={{color:DC.text,fontWeight:600}}>{agingQtyStat.totalQty.toLocaleString()}개</span>
+                display:"flex",flexDirection:"column",gap:2,fontSize:10,color:DC.sub}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span>총 재고</span>
+                  <span style={{color:DC.text,fontWeight:600}}>{agingQtyStat.totalQty.toLocaleString()}개</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span>총 금액</span>
+                  <span style={{color:DC.text,fontWeight:600}}>{fmtWonShort(agingQtyStat.totalVal)}</span>
+                </div>
               </div>
             )}
           </div>
