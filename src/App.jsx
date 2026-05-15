@@ -6802,6 +6802,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const [aggUnit,setAggUnit]=useState("week");
   const [yMode,setYMode]=useState("qty");
   const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
+  useEffect(()=>{
+    if(dateRange==="7d"||dateRange==="14d") setAggUnit("day");
+    else if(dateRange==="30d"||dateRange==="90d") setAggUnit(p=>p==="day"?"week":p);
+    else if(dateRange==="1y") setAggUnit(p=>(p==="day"||p==="week")?"month":p);
+  },[dateRange]);
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
   const [calPickMode,setCalPickMode]=useState("single"); // "single"|"range"
@@ -6873,7 +6878,9 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     const groups={};
     dates.forEach(d=>{
       let key,label;
-      if(aggUnit==="week"){
+      if(aggUnit==="day"){
+        key=d;label=dayjs(d).format("M/D");
+      } else if(aggUnit==="week"){
         const dd=dayjs(d);const sw=dd.subtract(dd.day(),"day");
         key=sw.format("YYYY-MM-DD");label=sw.format("M/D");
       } else if(aggUnit==="quarter"){
@@ -6918,7 +6925,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     const map={};
     Object.keys(rawByDate).sort().forEach(d=>{
       let label;
-      if(aggUnit==="week"){const dd=dayjs(d);label=dd.subtract(dd.day(),"day").format("M/D");}
+      if(aggUnit==="day"){label=dayjs(d).format("M/D");}
+      else if(aggUnit==="week"){const dd=dayjs(d);label=dd.subtract(dd.day(),"day").format("M/D");}
       else if(aggUnit==="quarter"){const dd=dayjs(d);label=`${dd.year()}-Q${Math.floor(dd.month()/3)+1}`;}
       else{label=d.slice(0,7);}
       if(!map[label]) map[label]=[];
@@ -7069,7 +7077,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           </button>
           <span style={{color:DC.border,margin:"0 3px",fontSize:14}}>|</span>
           <span style={{fontSize:12,color:DC.text,fontWeight:600,flexShrink:0,marginRight:2}}>집계</span>
-          {[["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
+          {[["day","일간"],["week","주간"],["month","월간"],["quarter","분기"]].map(([v,l])=>(
             <button key={v} data-hf onClick={()=>setAggUnit(v)}
               style={{background:aggUnit===v?DC.text:"transparent",color:aggUnit===v?DC.card:DC.sub,
                 border:`1px solid ${aggUnit===v?DC.text:DC.border}`,borderRadius:5,padding:"4px 10px",fontSize:13,cursor:"pointer"}}>
@@ -7921,6 +7929,9 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",flex:1}}>
           <span style={{fontWeight:600,fontSize:16,color:DC.text}}>Active SKU 볼륨</span>
+          <span style={{display:"inline-flex",alignItems:"center",fontSize:10,fontWeight:600,color:"#C8923D",
+            background:"rgba(200,146,61,0.12)",border:"1px solid rgba(200,146,61,0.4)",
+            borderRadius:4,padding:"2px 6px",letterSpacing:"-0.2px"}}>시각화 개발 중</span>
           <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 교집합 / 단독 구성</span>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
