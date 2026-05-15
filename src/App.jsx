@@ -5289,7 +5289,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
                       <td key={c.key} style={{padding:"4px 7px",color:c.color||D.black,fontWeight:c.bold?600:400,
                         maxWidth:c.maxW||200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                         cursor:editable?"pointer":"default",userSelect:editable?"none":"auto"}}
-                        title={editable?"더블클릭하여 수정":undefined}
+                        title={String(r[c.key]??"")+(editable?" (더블클릭하여 수정)":"")}
                         onDoubleClick={editable?()=>startEdit(r[idField],c.key,r[c.key]):undefined}>
                         {isEditing
                           ?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)}
