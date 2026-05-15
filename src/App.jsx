@@ -6799,9 +6799,9 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
 function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const [rawByDate,setRawByDate]=useState({});
   const [loading,setLoading]=useState(false);
-  const [aggUnit,setAggUnit]=useState("week");
+  const [aggUnit,setAggUnit]=useState("day");
   const [yMode,setYMode]=useState("qty");
-  const [dateRange,setDateRange]=useState("90d"); // preset or "custom"
+  const [dateRange,setDateRange]=useState("14d"); // preset or "custom"
   useEffect(()=>{
     if(dateRange==="7d"||dateRange==="14d") setAggUnit("day");
     else if(dateRange==="30d"||dateRange==="90d") setAggUnit(p=>p==="day"?"week":p);
@@ -7134,21 +7134,23 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
             :chartData.length===0
               ?<div style={{textAlign:"center",padding:"80px 0",color:DC.dim,fontSize:15}}>해당 기간 데이터 없음</div>
               :<ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}} barCategoryGap="22%">
+                <AreaChart data={chartData} margin={{top:10,right:8,bottom:28,left:8}}>
                   <CartesianGrid strokeDasharray="2 5" stroke={DC.border} vertical={false}/>
                   <XAxis dataKey="label" tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     angle={-20} textAnchor="end" interval="preserveStartEnd" dy={6}/>
                   <YAxis tick={{fill:DC.text,fontSize:12}} axisLine={{stroke:DC.border}} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(1)}k`:String(v)}/>
-                  <Tooltip content={<AreaTooltip/>} cursor={{fill:"rgba(0,0,0,0.04)"}}/>
+                  <Tooltip content={<AreaTooltip/>} cursor={{stroke:DC.border,strokeDasharray:"3 3"}}/>
                   {INV_AGING_KEYS.map(k=>(
-                    <Bar key={k} dataKey={k} stackId="1" style={{cursor:"pointer"}}
+                    <Area key={k} type="monotone" dataKey={k} stackId="1"
+                      stroke={INV_AGING_DEFS[k].color} strokeWidth={1.5}
                       fill={INV_AGING_DEFS[k].color}
-                      fillOpacity={clickedBar&&clickedBar.agingKey!==k?0.3:0.85}
-                      radius={k===INV_AGING_KEYS[INV_AGING_KEYS.length-1]?[3,3,0,0]:[0,0,0,0]}
-                      onClick={(data)=>handleBarClick(k,data)}/>
+                      fillOpacity={clickedBar&&clickedBar.agingKey!==k?0.25:0.7}
+                      activeDot={{r:4,style:{cursor:"pointer"},onClick:(_,e)=>{const p=e?.payload;if(p)handleBarClick(k,p);}}}
+                      style={{cursor:"pointer"}}
+                      onClick={(data)=>handleBarClick(k,data?.payload||data)}/>
                   ))}
-                </BarChart>
+                </AreaChart>
               </ResponsiveContainer>
           }
         </div>
