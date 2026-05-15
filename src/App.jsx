@@ -1837,7 +1837,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",flexDirection:"column",gap:5}}>
           <CalDrop id="kpi" period={period} setPeriod={setPeriod}
-            presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["tm","이번 한달"],["3m","최근 3개월"],["all","전체"]]}
+            presets={[["yd","어제"],["7d","최근 7일"],["tm","이번 한달"],["1m","최근 한달"],["3m","최근 3개월"],["all","전체"]]}
             start={customStart} setStart={setCustomStart}
             end={customEnd} setEnd={setCustomEnd}
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
