@@ -5709,7 +5709,7 @@ function StoreUploader({ onUpdate }) {
       </div>
       <DataHistoryPanel
         table="store_sales" dateField="sale_date"
-        searchFields={["product_name","store_name","option_name"]}
+        searchFields={["product_name","store_name"]}
         placeholder="날짜·상품명·매장 검색"
         editableCols={["store_name","product_name","option_name","amount","status"]}
         cols={[
