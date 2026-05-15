@@ -7748,9 +7748,9 @@ const SKU_VOL_PASTEL={
   "자사몰":"#A8D8B8",
   "29CM":"#F5C8A0",
   "무신사":"#C4B8E8",
-  "오프라인 스토어":"#A8C8E0",
-  common:"#D2D2CC",
-  cross:"#B8C8D8",
+  "오프라인 스토어":"#7AA8C8",
+  common:"#E0CDB6",
+  cross:"#C8AC8E",
 };
 
 function ActiveSkuVolume({orders=[],storeSales=[],DC}){
@@ -7763,6 +7763,8 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
   const [show4Jeolgi,setShow4Jeolgi]=useState(false);
   const [skuModal,setSkuModal]=useState(null);
   const [modalTab,setModalTab]=useState("common");
+  const [selectedPK,setSelectedPK]=useState(null); // 요약 카드/인사이트 기준 월
+  const [highlightKey,setHighlightKey]=useState(null); // 범례 클릭 하이라이트
 
   // 입절기 근사 날짜 (±1일 오차 허용)
   const SOLAR_TERMS=[
@@ -7874,6 +7876,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     });
 
     const chartRows=processed.map(p=>({
+      pk:p.pk,
       label:p.label,
       common:p.commonSkus.size,
       cross:p.crossSkus.size,
@@ -7984,16 +7987,80 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
 
   const PERIOD_PRESETS=[["all","전체"],["3m","3개월"],["6m","6개월"],["1y","1년"]];
 
+  // 선택된 월(없으면 마지막) — 요약 카드/인사이트 기준
+  const activeRow=useMemo(()=>{
+    if(!chartRows.length) return null;
+    if(selectedPK){
+      const f=chartRows.find(r=>r.pk===selectedPK);
+      if(f) return f;
+    }
+    return chartRows[chartRows.length-1];
+  },[chartRows,selectedPK]);
+
+  // 직전 월 (MoM 비교)
+  const prevRow=useMemo(()=>{
+    if(!activeRow||!chartRows.length) return null;
+    const idx=chartRows.findIndex(r=>r.pk===activeRow.pk);
+    return idx>0?chartRows[idx-1]:null;
+  },[chartRows,activeRow]);
+
+  // 총 SKU 라인 차트용 데이터 (전월 대비 증감 포함)
+  const totalLineData=useMemo(()=>chartRows.map((r,i)=>({
+    pk:r.pk,label:r.label,total:r._allCnt,
+    delta:i>0?r._allCnt-chartRows[i-1]._allCnt:null,
+  })),[chartRows]);
+
+  // 인사이트 자동 생성
+  const insightText=useMemo(()=>{
+    if(!activeRow) return "";
+    const total=activeRow._allCnt||0;
+    if(!total) return "";
+    const buckets=[
+      {key:"common",label:"공통",val:activeRow.common||0},
+      {key:"cross",label:"교차",val:activeRow.cross||0},
+      ...channelOrder.map(ch=>({key:`${ch}_only`,label:`${ch} only`,val:activeRow[`${ch}_only`]||0})),
+    ];
+    const top=buckets.filter(b=>b.val>0).sort((a,b)=>b.val-a.val)[0];
+    let s=`${activeRow.label} 기준, ${top.label} SKU가 ${(top.val/total*100).toFixed(1)}%로 가장 높습니다.`;
+    if(prevRow){
+      const changes=channelOrder.map(ch=>{
+        const k=`${ch}_only`;
+        return{ch,d:(activeRow[k]||0)-(prevRow[k]||0)};
+      }).filter(c=>c.d!==0).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
+      if(changes.length){
+        const c=changes[0];
+        const arrow=c.d>0?"▲":"▼";
+        s+=` ${c.ch} 단독 SKU는 전월 대비 ${arrow}${Math.abs(c.d)}개 ${c.d>0?"증가":"감소"}했습니다.`;
+      }
+    }
+    return s;
+  },[activeRow,prevRow,channelOrder]);
+
+  // 채널 카드용 전체 채널(공통/교차 + 4채널 only)
+  const summaryCards=useMemo(()=>{
+    if(!activeRow) return [];
+    const total=activeRow._allCnt||1;
+    const pct=v=>(v/total*100).toFixed(1)+"%";
+    return [
+      {label:"전체",val:total,pct:"",color:"#1a1a1a",bg:"#fafaf7"},
+      {label:"공통",val:activeRow.common||0,pct:pct(activeRow.common||0),color:SKU_VOL_PASTEL.common,bg:SKU_VOL_PASTEL.common+"22"},
+      {label:"교차",val:activeRow.cross||0,pct:pct(activeRow.cross||0),color:SKU_VOL_PASTEL.cross,bg:SKU_VOL_PASTEL.cross+"22"},
+      ...channelOrder.map(ch=>({
+        label:`${ch} only`,
+        val:activeRow[`${ch}_only`]||0,
+        pct:pct(activeRow[`${ch}_only`]||0),
+        color:SKU_VOL_PASTEL[ch],bg:SKU_VOL_PASTEL[ch]+"22",
+      })),
+    ];
+  },[activeRow,channelOrder]);
+
   return(
     <div ref={cardRef} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
       {/* 헤더 */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",flex:1}}>
-          <span style={{fontWeight:600,fontSize:16,color:DC.text}}>Active SKU 볼륨</span>
-          <span style={{display:"inline-flex",alignItems:"center",fontSize:10,fontWeight:600,color:"#C8923D",
-            background:"rgba(200,146,61,0.12)",border:"1px solid rgba(200,146,61,0.4)",
-            borderRadius:4,padding:"2px 6px",letterSpacing:"-0.2px"}}>시각화 개발 중</span>
-          <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 교집합 / 단독 구성</span>
+          <span style={{fontWeight:600,fontSize:16,color:DC.text}}>Active SKU 분석</span>
+          <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 비중·교집합·단독 구성</span>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           {/* 집계 단위 */}
@@ -8037,42 +8104,81 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
         <div><span style={{fontWeight:700,color:DC.text,marginRight:6}}>공통 SKU</span>모든 활성 채널에서 동시에 판매된 SKU입니다. 2–3개 채널에만 걸친 SKU는 <b>교차</b>로 분리되며, 1개 채널에서만 판매된 SKU는 해당 채널의 <b>단독(only)</b>으로 분류됩니다. 스택 순서는 채널 간 단독 비율을 기준으로 자동 정렬됩니다.</div>
       </div>
 
-      {/* 범례 */}
-      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:14}}>
-        <span style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text}}>
-          <span style={{width:22,height:8,borderRadius:2,background:SKU_VOL_PASTEL.common,display:"inline-block"}}/>
-          공통 (전 채널)
-        </span>
-        <span style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text}}>
-          <span style={{width:22,height:8,borderRadius:2,background:SKU_VOL_PASTEL.cross,display:"inline-block"}}/>
-          교차 (2–3채널)
-        </span>
-        {channelOrder.map(ch=>(
-          <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text}}>
-            <span style={{width:22,height:8,borderRadius:2,background:SKU_VOL_PASTEL[ch],display:"inline-block"}}/>
-            {ch} only
-          </span>
-        ))}
+      {/* 채널 요약 카드 (선택 월 기준) */}
+      {activeRow&&(
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:600,color:DC.sub,letterSpacing:".06em"}}>선택 월</span>
+            <span style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:14,fontWeight:700,color:DC.text}}>{activeRow.label}</span>
+            {selectedPK&&<button data-hf onClick={()=>setSelectedPK(null)}
+              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,padding:"2px 8px",fontSize:10,cursor:"pointer",color:DC.sub}}>최신으로</button>}
+            <span style={{marginLeft:"auto",fontSize:10,color:DC.dim}}>차트 바를 클릭해 다른 월 선택</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${summaryCards.length},minmax(0,1fr))`,gap:8}}>
+            {summaryCards.map(c=>(
+              <div key={c.label} style={{background:c.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:DC.sub,marginBottom:4,letterSpacing:".04em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.label}</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:5}}>
+                  <span style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontWeight:700,fontSize:18,color:c.color}}>{c.val.toLocaleString()}</span>
+                  {c.pct&&<span style={{fontSize:10,color:DC.sub}}>{c.pct}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 범례 (클릭 시 하이라이트) */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+        {[
+          {key:"common",label:"공통 (전 채널)",color:SKU_VOL_PASTEL.common,icon:"●"},
+          {key:"cross",label:"교차 (2–3채널)",color:SKU_VOL_PASTEL.cross,icon:"◆"},
+          ...channelOrder.map((ch,i)=>({key:`${ch}_only`,label:`${ch} only`,color:SKU_VOL_PASTEL[ch],icon:["▲","■","▼","◀"][i%4]})),
+        ].map(item=>{
+          const dimmed=highlightKey&&highlightKey!==item.key;
+          return(
+            <button key={item.key} data-hf
+              onClick={()=>setHighlightKey(highlightKey===item.key?null:item.key)}
+              style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:DC.text,
+                background:highlightKey===item.key?item.color+"33":"transparent",
+                border:`1px solid ${highlightKey===item.key?item.color:DC.border}`,
+                borderRadius:5,padding:"3px 8px",cursor:"pointer",
+                opacity:dimmed?0.4:1,transition:"all .12s"}}>
+              <span style={{color:item.color,fontSize:11,fontWeight:700}}>{item.icon}</span>
+              <span style={{width:16,height:7,borderRadius:2,background:item.color,display:"inline-block"}}/>
+              {item.label}
+            </button>
+          );
+        })}
+        {highlightKey&&<button data-hf onClick={()=>setHighlightKey(null)}
+          style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:DC.sub}}>해제</button>}
       </div>
 
-      {/* 차트 */}
+      {/* 메인 차트: 100% 스택 (비중) */}
       {!chartRows.length?(
         <div style={{textAlign:"center",padding:"60px 0",color:DC.sub,fontSize:14}}>
           해당 기간에 데이터가 없습니다
         </div>
       ):(
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={chartRows} margin={{top:8,right:8,bottom:8,left:0}} barCategoryGap="28%"
-            onClick={({activePayload})=>{if(activePayload?.length) openModal(activePayload[0].payload);}}>
+        <>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartRows} margin={{top:8,right:8,bottom:8,left:0}} barCategoryGap="22%" stackOffset="expand"
+            onClick={({activePayload})=>{
+              if(!activePayload?.length) return;
+              const pk=activePayload[0].payload?.pk;
+              if(pk) setSelectedPK(pk);
+            }}>
             <CartesianGrid strokeDasharray="3 3" stroke={DC.border} vertical={false}/>
             <XAxis dataKey="label" tick={{fontSize:11,fill:DC.sub}} tickLine={false} axisLine={false}/>
-            <YAxis tick={{fontSize:11,fill:DC.sub}} tickLine={false} axisLine={false} width={36}/>
+            <YAxis tickFormatter={v=>`${Math.round(v*100)}%`} tick={{fontSize:11,fill:DC.sub}} tickLine={false} axisLine={false} width={42}/>
             <Tooltip content={<SkuTooltip/>} cursor={{fill:"rgba(0,0,0,.04)"}}/>
             {stackKeys.map(k=>(
               <Bar key={k} dataKey={k} stackId="1"
                 fill={stackColors[k]} name={stackLabels[k]}
+                fillOpacity={highlightKey&&highlightKey!==k?0.18:1}
                 radius={k===stackKeys[stackKeys.length-1]?[3,3,0,0]:[0,0,0,0]}/>
             ))}
+            {activeRow&&<ReferenceLine x={activeRow.label} stroke="#C8927B" strokeWidth={1.5} strokeDasharray="2 4"/>}
             {jeolgiLines.map(jl=>(
               <ReferenceLine key={jl.date} x={jl.label} stroke="#8899AA" strokeDasharray="4 3" strokeWidth={1.5}
                 label={{value:`${jl.name} ${jl.date.slice(5).replace("-","/")}`,
@@ -8080,6 +8186,47 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
             ))}
           </BarChart>
         </ResponsiveContainer>
+
+        {/* 보조 라인 차트: 총 Active SKU 추이 */}
+        <div style={{marginTop:18,paddingTop:14,borderTop:`1px solid ${DC.border}`}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:6}}>
+            <span style={{fontSize:11,fontWeight:600,color:DC.sub,letterSpacing:".06em"}}>총 Active SKU 추이</span>
+            {prevRow&&activeRow&&(
+              <span style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:11,color:DC.sub}}>
+                {activeRow.label}: <b style={{color:DC.text}}>{activeRow._allCnt}</b>
+                {(()=>{const d=activeRow._allCnt-prevRow._allCnt;return d===0?<span style={{marginLeft:5,color:DC.dim}}>(±0)</span>:
+                  <span style={{marginLeft:5,color:d>0?"#7EC8A4":"#C87B7B"}}>({d>0?"▲":"▼"}{Math.abs(d)})</span>;})()}
+              </span>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <LineChart data={totalLineData} margin={{top:8,right:8,bottom:0,left:0}}
+              onClick={({activePayload})=>{
+                if(!activePayload?.length) return;
+                const pk=activePayload[0].payload?.pk;
+                if(pk) setSelectedPK(pk);
+              }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={DC.border} vertical={false}/>
+              <XAxis dataKey="label" tick={{fontSize:10,fill:DC.sub}} tickLine={false} axisLine={false}/>
+              <YAxis tick={{fontSize:10,fill:DC.sub}} tickLine={false} axisLine={false} width={36}/>
+              <Tooltip contentStyle={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:6,fontSize:12}}
+                formatter={(v,_n,p)=>{const d=p?.payload?.delta;return[`${v}개${d!=null?` (${d>=0?"▲":"▼"}${Math.abs(d)})`:""}`,"총 SKU"];}}/>
+              <Line type="monotone" dataKey="total" stroke="#C8927B" strokeWidth={2}
+                dot={{r:3,fill:"#fff",stroke:"#C8927B",strokeWidth:1.5}}
+                activeDot={{r:5,style:{cursor:"pointer"}}}/>
+              {activeRow&&<ReferenceLine x={activeRow.label} stroke="#C8927B" strokeWidth={1} strokeDasharray="2 4"/>}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 자동 인사이트 */}
+        {insightText&&(
+          <div style={{marginTop:14,padding:"12px 14px",background:"#fafaf7",border:`1px solid ${DC.border}`,borderRadius:8,fontSize:12,color:DC.text,lineHeight:1.7}}>
+            <span style={{fontSize:10,fontWeight:700,color:"#C8927B",letterSpacing:".08em",marginRight:6}}>INSIGHT</span>
+            {insightText}
+          </div>
+        )}
+        </>
       )}
 
       {/* SKU 목록 모달 */}
