@@ -5170,7 +5170,7 @@ function StockUploader({ onUpdate }) {
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
 const HIST_PAGE=200;
-function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색" }) {
+function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색", idField="id" }) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
@@ -5208,7 +5208,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
 
   const toggleSelect=id=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const toggleAll=()=>{
-    const ids=pageRows.map(r=>r.id);
+    const ids=pageRows.map(r=>r[idField]);
     const allSel=ids.every(id=>selected.has(id));
     setSelected(s=>{const n=new Set(s);ids.forEach(id=>allSel?n.delete(id):n.add(id));return n;});
   };
@@ -5216,9 +5216,9 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
   const handleDelete=async()=>{
     const db=await getSupabase();
     const cnt=selected.size;
-    const {error}=await db.from(table).delete().in("id",[...selected]);
+    const {error}=await db.from(table).delete().in(idField,[...selected]);
     if(error){setResult({type:"error",msg:error.message});return;}
-    setRows(r=>r.filter(row=>!selected.has(row.id)));
+    setRows(r=>r.filter(row=>!selected.has(row[idField])));
     setSelected(new Set()); setDeleteConfirm(false);
     setResult({type:"success",msg:`${cnt}건 삭제 완료`});
     onChanged?.();
@@ -5228,8 +5228,8 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
   const saveEdit=async()=>{
     if(!editCell) return;
     const db=await getSupabase();
-    const {error}=await db.from(table).update({[editCell.field]:editVal}).eq("id",editCell.id);
-    if(!error) setRows(rows=>rows.map(r=>r.id===editCell.id?{...r,[editCell.field]:editVal}:r));
+    const {error}=await db.from(table).update({[editCell.field]:editVal}).eq(idField,editCell.id);
+    if(!error) setRows(rows=>rows.map(r=>r[idField]===editCell.id?{...r,[editCell.field]:editVal}:r));
     setEditCell(null);
   };
 
@@ -5271,7 +5271,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
             <thead style={{position:"sticky",top:0,background:D.surface,zIndex:1}}>
               <tr style={{borderBottom:`1px solid ${D.border}`}}>
                 <th style={{padding:"5px 7px",width:28}}>
-                  <input type="checkbox" checked={pageRows.length>0&&pageRows.every(r=>selected.has(r.id))} onChange={toggleAll}/>
+                  <input type="checkbox" checked={pageRows.length>0&&pageRows.every(r=>selected.has(r[idField]))} onChange={toggleAll}/>
                 </th>
                 {cols.map(c=>(
                   <th key={c.key} style={{padding:"5px 7px",textAlign:"left",color:D.textMeta,fontWeight:400,whiteSpace:"nowrap"}}>{c.label}</th>
@@ -5280,17 +5280,17 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
             </thead>
             <tbody>
               {pageRows.map(r=>(
-                <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,background:selected.has(r.id)?"#f5f5f5":"transparent"}}>
-                  <td style={{padding:"4px 7px"}}><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td>
+                <tr key={r[idField]} style={{borderBottom:`1px solid ${D.border}`,background:selected.has(r[idField])?"#f5f5f5":"transparent"}}>
+                  <td style={{padding:"4px 7px"}}><input type="checkbox" checked={selected.has(r[idField])} onChange={()=>toggleSelect(r[idField])}/></td>
                   {cols.map(c=>{
-                    const isEditing=editCell?.id===r.id&&editCell?.field===c.key;
+                    const isEditing=editCell?.id===r[idField]&&editCell?.field===c.key;
                     const editable=editableCols.includes(c.key);
                     return(
                       <td key={c.key} style={{padding:"4px 7px",color:c.color||D.black,fontWeight:c.bold?600:400,
                         maxWidth:c.maxW||200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                         cursor:editable?"pointer":"default",userSelect:editable?"none":"auto"}}
                         title={editable?"더블클릭하여 수정":undefined}
-                        onDoubleClick={editable?()=>startEdit(r.id,c.key,r[c.key]):undefined}>
+                        onDoubleClick={editable?()=>startEdit(r[idField],c.key,r[c.key]):undefined}>
                         {isEditing
                           ?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)}
                               onBlur={saveEdit} onKeyDown={e=>{if(e.key==="Enter")saveEdit();if(e.key==="Escape")setEditCell(null);}}
@@ -5542,7 +5542,7 @@ function EasyAdminUploader({ onUpdate }) {
         </Card>
       </div>
       <DataHistoryPanel
-        table="orders" dateField="order_date"
+        table="orders" dateField="order_date" idField="order_id"
         searchFields={["product_name","channel","order_id","option_name"]}
         placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
