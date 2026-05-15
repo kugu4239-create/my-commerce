@@ -7362,6 +7362,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   const [sortKey,setSortKey]=useState("reorder_days_left");
   const [sortDir,setSortDir]=useState("asc");
   const [pg,setPg]=useState(0);
+  const [selected,setSelected]=useState(()=>new Set());
   const PG=20;
 
   const load=useCallback(async()=>{
@@ -7440,9 +7441,10 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
     }))
   ,[data]);
 
-  const downloadCSV=()=>{
+  const downloadCSV=(source)=>{
     const hdr=["상품명","옵션","가용재고","입고대기","실질가용재고","1주판매","4주판매","예상일판매량","판매추세","재고잔여일","추천리오더수량"];
-    const rows=filtered.map(r=>[
+    const target=source||filtered;
+    const rows=target.map(r=>[
       r.reorder_product_name,r.reorder_option_name,r.reorder_available_stock,r.reorder_incoming_stock,
       r.reorder_effective_stock,r.reorder_weekly_sales,r.reorder_monthly_sales,
       r.reorder_expected_daily_sales,r.reorder_trend_ratio,r.reorder_days_left,r.reorder_recommended_qty,
@@ -7452,6 +7454,19 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
     const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${new Date().toISOString().slice(0,10)}.csv`});
     a.click();URL.revokeObjectURL(a.href);
   };
+
+  const rowKey=r=>r.reorder_id||`${r.reorder_product_name||""}__${r.reorder_option_name||""}`;
+  const filteredKeys=useMemo(()=>filtered.map(rowKey),[filtered]);
+  const allFilteredSelected=filteredKeys.length>0&&filteredKeys.every(k=>selected.has(k));
+  const someFilteredSelected=filteredKeys.some(k=>selected.has(k));
+  const toggleRow=k=>setSelected(p=>{const s=new Set(p);s.has(k)?s.delete(k):s.add(k);return s;});
+  const toggleAllFiltered=()=>setSelected(p=>{
+    const s=new Set(p);
+    if(allFilteredSelected) filteredKeys.forEach(k=>s.delete(k));
+    else filteredKeys.forEach(k=>s.add(k));
+    return s;
+  });
+  const downloadSelected=()=>downloadCSV(filtered.filter(r=>selected.has(rowKey(r))));
 
   const trendTag=r=>{const t=r.reorder_trend_ratio||0;return t>=1.2?{label:"↑ 상승",color:"#7EC8A4"}:t>=0.8?{label:"→ 안정",color:"#7B9EC8"}:{label:"↓ 감소",color:"#C87B7B"};};
 
@@ -7572,15 +7587,31 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                 padding:"5px 10px",fontSize:13,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <span style={{fontSize:13,color:DC.text}}>{filtered.length.toLocaleString()}개 SKU</span>
-              <button onClick={downloadCSV}
+              {selected.size>0&&(
+                <>
+                  <span style={{fontSize:12,color:DC.sub}}>선택 {selected.size}</span>
+                  <button onClick={()=>setSelected(new Set())}
+                    style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,
+                      padding:"4px 10px",fontSize:13,cursor:"pointer"}}>선택 해제</button>
+                  <button onClick={downloadSelected}
+                    style={{background:"#7EC8A4",color:"#fff",border:"1px solid #7EC8A4",borderRadius:5,
+                      padding:"4px 12px",fontSize:13,cursor:"pointer",fontWeight:600}}>↓ 선택 다운로드</button>
+                </>
+              )}
+              <button onClick={()=>downloadCSV()}
                 style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,
-                  padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ CSV</button>
+                  padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ 전체 CSV</button>
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
               <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                 <tr>
+                  <th style={{padding:"4px 6px",borderBottom:`1px solid ${DC.border}`,width:28}}>
+                    <input type="checkbox" checked={allFilteredSelected}
+                      ref={el=>{if(el) el.indeterminate=!allFilteredSelected&&someFilteredSelected;}}
+                      onChange={toggleAllFiltered} style={{cursor:"pointer"}}/>
+                  </th>
                   <SortTh k="reorder_product_name" label="상품명"/>
                   <SortTh k="reorder_option_name" label="옵션"/>
                   <SortTh k="reorder_available_stock" label="가용재고"/>
@@ -7598,8 +7629,13 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
                 {paged.map((r,i)=>{
                   const trend=trendTag(r);
                   const urgent=(r.reorder_days_left||0)<7;
+                  const k=rowKey(r);
+                  const isSel=selected.has(k);
                   return(
-                    <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`}}>
+                    <tr key={r.reorder_id||i} style={{borderBottom:`1px solid ${DC.border}`,background:isSel?"rgba(126,200,164,0.08)":"transparent"}}>
+                      <td style={{padding:"4px 6px",textAlign:"center"}}>
+                        <input type="checkbox" checked={isSel} onChange={()=>toggleRow(k)} style={{cursor:"pointer"}}/>
+                      </td>
                       <td style={{padding:"4px 6px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
                       <td style={{padding:"4px 6px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
                       <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
