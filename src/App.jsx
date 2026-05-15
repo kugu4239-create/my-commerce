@@ -7746,7 +7746,7 @@ function InventoryTrend({DC,onReorderRefresh}){
 
 const SKU_VOL_PASTEL={
   "자사몰":"#A8D8B8",
-  "29CM":"#F5C8A0",
+  "29CM":"#C87878",
   "무신사":"#C4B8E8",
   "오프라인 스토어":"#7AA8C8",
   common:"#E0CDB6",
