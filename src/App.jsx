@@ -7748,9 +7748,9 @@ const SKU_VOL_PASTEL={
   "자사몰":"#A8D8B8",
   "29CM":"#F5C8A0",
   "무신사":"#C4B8E8",
-  "오프라인 스토어":"#A8C8E0",
-  common:"#D2D2CC",
-  cross:"#B8C8D8",
+  "오프라인 스토어":"#7AA8C8",
+  common:"#E0CDB6",
+  cross:"#C8AC8E",
 };
 
 function ActiveSkuVolume({orders=[],storeSales=[],DC}){
