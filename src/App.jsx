@@ -8862,7 +8862,12 @@ export default function App() {
       status:r.status,
       order_id:r.order_id,
     }));
-    setOrders([...allOrders.map(o=>({...o,channel:normChannel(o.channel)})),...storeOrderRows]);
+    // 예약거래는 매장 CSV(store_sales)로 별도 집계 — store_sales가 있으면 orders의 예약거래 행 제외 (이중 합산 방지)
+    const hasStoreSales=allStoreSales.length>0;
+    const baseOrders=hasStoreSales
+      ?allOrders.filter(o=>String(o.channel||"").trim()!=="예약거래")
+      :allOrders;
+    setOrders([...baseOrders.map(o=>({...o,channel:normChannel(o.channel)})),...storeOrderRows]);
     setStocks(allStocks);
     setRevenues(allRevenues);
     setStoreSales(allStoreSales);
