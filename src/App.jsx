@@ -8862,13 +8862,7 @@ export default function App() {
       status:r.status,
       order_id:r.order_id,
     }));
-    // store_sales가 있으면 오프라인 스토어 소스로 사용, orders의 예약거래/오프라인 채널은 제외 (이중 합산 방지)
-    const hasStoreSales=allStoreSales.length>0;
-    const normalizedOrders=allOrders.map(o=>({...o,channel:normChannel(o.channel)}));
-    const onlineOrders=hasStoreSales
-      ?normalizedOrders.filter(o=>o.channel!=="오프라인 스토어")
-      :normalizedOrders;
-    setOrders([...onlineOrders,...storeOrderRows]);
+    setOrders([...allOrders.map(o=>({...o,channel:normChannel(o.channel)})),...storeOrderRows]);
     setStocks(allStocks);
     setRevenues(allRevenues);
     setStoreSales(allStoreSales);
