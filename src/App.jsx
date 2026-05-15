@@ -7798,6 +7798,8 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       return dateStr>=filterStart&&dateStr<=filterEnd;
     };
 
+    const SEASONS=["봄","여름","가을","겨울"];
+
     const getPK=(dateStr)=>{
       if(!dateStr) return null;
       const d=new Date(dateStr);
@@ -7811,12 +7813,23 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
         const q=Math.ceil((d.getMonth()+1)/3);
         return `${d.getFullYear()}-Q${q}`;
       }
+      if(aggUnit==="jeolgi"){
+        // 입춘 2/4 · 입하 5/6 · 입추 8/7 · 입동 11/7 기준 4계절 분기
+        const m=d.getMonth()+1, day=d.getDate();
+        let s, y=d.getFullYear();
+        if((m===2&&day>=4)||m===3||m===4||(m===5&&day<=5)) s=1;
+        else if((m===5&&day>=6)||m===6||m===7||(m===8&&day<=6)) s=2;
+        else if((m===8&&day>=7)||m===9||m===10||(m===11&&day<=6)) s=3;
+        else { s=4; if(m===1||(m===2&&day<=3)) y=y-1; }
+        return `${y}-S${s}`;
+      }
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
     };
 
     const getLbl=(pk)=>{
       if(aggUnit==="week"){const[y,w]=pk.split("-W");return `${y} W${w}`;}
       if(aggUnit==="quarter"){const[y,q]=pk.split("-Q");return `${y} Q${q}`;}
+      if(aggUnit==="jeolgi"){const[y,s]=pk.split("-S");return `${y} ${SEASONS[parseInt(s)-1]}`;}
       const[y,m]=pk.split("-");return `${y}.${parseInt(m)}`;
     };
 
@@ -8014,7 +8027,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
   const insightText=useMemo(()=>{
     if(!activeRow) return "";
     if(!(activeRow._allCnt>0)) return "";
-    const prevUnit=aggUnit==="week"?"전주":aggUnit==="quarter"?"전분기":"전월";
+    const prevUnit=aggUnit==="week"?"전주":aggUnit==="quarter"?"전분기":aggUnit==="jeolgi"?"전 절기":"전월";
     // 채널별 활성 SKU 수 (해당 채널에서 판매된 모든 SKU)
     const chTotals=channelOrder.map(ch=>({ch,n:activeRow._chSets?.[ch]?.length||0}));
     const topCh=chTotals.filter(c=>c.n>0).sort((a,b)=>b.n-a.n)[0];
@@ -8065,9 +8078,9 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
           <span style={{fontSize:12,color:DC.sub}}>채널별 실효 SKU 분포 · 비중·교집합·단독 구성</span>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          {/* 분석 단위 (주/월/분기/4절기) */}
+          {/* 분석 단위 (주/월/분기/절기) */}
           <div style={{display:"flex",gap:3}}>
-            {[["week","주"],["month","월"],["quarter","분기"]].map(([u,lbl])=>(
+            {[["week","주"],["month","월"],["quarter","분기"],["jeolgi","절기"]].map(([u,lbl])=>(
               <button key={u} data-hf onClick={()=>setAggUnit(u)}
                 style={{background:aggUnit===u?DC.text:"transparent",color:aggUnit===u?"#fff":DC.sub,
                   border:`1px solid ${aggUnit===u?DC.text:DC.border}`,
@@ -8075,13 +8088,6 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
                 {lbl}
               </button>
             ))}
-            <button data-hf onClick={()=>setShow4Jeolgi(v=>!v)}
-              style={{background:show4Jeolgi?DC.text:"transparent",color:show4Jeolgi?"#fff":DC.sub,
-                border:`1px solid ${show4Jeolgi?DC.text:DC.border}`,
-                borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600,transition:"all .12s",
-                whiteSpace:"nowrap"}}>
-              4절기
-            </button>
           </div>
           <span style={{color:DC.border}}>|</span>
           {/* 기간 필터 — CalDrop */}
