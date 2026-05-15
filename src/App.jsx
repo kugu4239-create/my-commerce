@@ -7834,11 +7834,15 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
     };
 
     const periodMap={};
+    // 상품명 끝의 [컬러] 토큰은 제거하여 컬러 옵션은 1 SKU로 합산
+    const normName=name=>String(name||"").replace(/\s*\[[^\]]*\]\s*$/,"").trim();
+
     const addSku=(pk,ch,name)=>{
-      if(!pk||!name) return;
+      const n=normName(name);
+      if(!pk||!n) return;
       if(!periodMap[pk]) periodMap[pk]={};
       if(!periodMap[pk][ch]) periodMap[pk][ch]=new Set();
-      periodMap[pk][ch].add(name);
+      periodMap[pk][ch].add(n);
     };
 
     orders.forEach(o=>{
