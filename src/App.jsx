@@ -7450,16 +7450,33 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   ,[data]);
 
   const downloadCSV=(source)=>{
-    const hdr=["상품명","옵션","가용재고","입고대기","실질가용재고","1주판매","4주판매","예상일판매량","판매추세","재고잔여일","추천리오더수량"];
     const target=source||filtered;
-    const rows=target.map(r=>[
-      r.reorder_product_name,r.reorder_option_name,r.reorder_available_stock,r.reorder_incoming_stock,
-      r.reorder_effective_stock,r.reorder_weekly_sales,r.reorder_monthly_sales,
-      r.reorder_expected_daily_sales,r.reorder_trend_ratio,r.reorder_days_left,r.reorder_recommended_qty,
-    ]);
-    const csv=[hdr,...rows].map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
-    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${new Date().toISOString().slice(0,10)}.csv`});
+    const cols=[
+      {label:"상품명",get:r=>r.reorder_product_name,align:"left"},
+      {label:"옵션",get:r=>r.reorder_option_name,align:"left"},
+      {label:"가용재고",get:r=>(r.reorder_available_stock||0).toLocaleString(),align:"center"},
+      {label:"입고대기",get:r=>(r.reorder_incoming_stock||0).toLocaleString(),align:"center"},
+      {label:"실질 가용재고",get:r=>(r.reorder_effective_stock||0).toLocaleString(),align:"center",bold:true},
+      {label:"1주 판매",get:r=>(r.reorder_weekly_sales||0).toLocaleString(),align:"center"},
+      {label:"4주 판매",get:r=>(r.reorder_monthly_sales||0).toLocaleString(),align:"center"},
+      {label:"예상 일판매",get:r=>(r.reorder_expected_daily_sales||0).toFixed(2),align:"center"},
+      {label:"판매 추세",get:r=>trendTag(r).label,align:"center",colorBy:r=>trendTag(r).color},
+      {label:"재고잔여일",get:r=>(r.reorder_days_left||0).toFixed(1)+"일",align:"center",bold:true,colorBy:r=>(r.reorder_days_left||0)<7?"#C87B7B":"#C8A87B"},
+      {label:"추천 리오더",get:r=>(r.reorder_recommended_qty||0).toLocaleString(),align:"center",bold:true},
+    ];
+    const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const headerHtml=cols.map(c=>
+      `<th style="background:#D4F0E1;color:#1a1a1a;border:1px solid #c0d6cb;padding:6px 10px;font-weight:600;text-align:${c.align};font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;font-size:13px;">${esc(c.label)}</th>`
+    ).join("");
+    const bodyHtml=target.map(r=>"<tr>"+cols.map(c=>{
+      const v=c.get(r);
+      const color=c.colorBy?c.colorBy(r):"#1a1a1a";
+      const fw=c.bold?700:400;
+      return `<td style="border:1px solid #e0e0da;padding:5px 10px;text-align:${c.align};color:${color};font-weight:${fw};font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;font-size:13px;">${esc(v)}</td>`;
+    }).join("")+"</tr>").join("");
+    const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></body></html>`;
+    const blob=new Blob(["﻿"+html],{type:"application/vnd.ms-excel;charset=utf-8;"});
+    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${new Date().toISOString().slice(0,10)}.xls`});
     a.click();URL.revokeObjectURL(a.href);
   };
 
@@ -7608,7 +7625,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
               )}
               <button onClick={()=>downloadCSV()}
                 style={{background:"transparent",color:"#7EC8A4",border:"1px solid #7EC8A4",borderRadius:5,
-                  padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ 전체 CSV</button>
+                  padding:"4px 12px",fontSize:13,cursor:"pointer"}}>↓ 전체 다운로드</button>
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
