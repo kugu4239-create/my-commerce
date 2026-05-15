@@ -309,6 +309,11 @@ function filterByDate(rows, dateField, period, customStart, customEnd, upToYeste
     const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
     return rows.filter(r => r[dateField] >= cut && r[dateField] <= ceiling);
   }
+  if (period === "tm") {
+    const n=new Date();
+    const cut=[n.getFullYear(),String(n.getMonth()+1).padStart(2,'0'),'01'].join('-');
+    return rows.filter(r => r[dateField] >= cut && r[dateField] <= ceiling);
+  }
   if (period === "3m") {
     const d=new Date(); d.setMonth(d.getMonth()-3);
     const cut=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
@@ -334,6 +339,7 @@ function getPeriodStr(period, customStart, customEnd) {
     return `${customStart.replace(/-/g,'.')} ~ ${customEnd.replace(/-/g,'.')}`;
   if(period==="all") return "전체";
   if(period==="yd"){const d=new Date(today);d.setDate(d.getDate()-1);return fmt(d);}
+  if(period==="tm"){const s=new Date(today.getFullYear(),today.getMonth(),1);return `${fmt(s)} ~ ${todayStr}`;}
   const s=new Date(today);
   if(period==="7d") s.setDate(s.getDate()-7);
   else if(period==="14d") s.setDate(s.getDate()-14);
@@ -1800,6 +1806,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     if(p==="7d"){const c=new Date();c.setDate(c.getDate()-7);return`${fmt(c)} ~ ${todayStr}`;}
     if(p==="14d"){const c=new Date();c.setDate(c.getDate()-14);return`${fmt(c)} ~ ${todayStr}`;}
     if(p==="1m"){const c=new Date();c.setMonth(c.getMonth()-1);return`${fmt(c)} ~ ${todayStr}`;}
+    if(p==="tm"){const c=new Date(today.getFullYear(),today.getMonth(),1);return`${fmt(c)} ~ ${todayStr}`;}
     if(p==="3m"){const c=new Date();c.setMonth(c.getMonth()-3);return`${fmt(c)} ~ ${todayStr}`;}
     if(p==="6m"){const c=new Date();c.setMonth(c.getMonth()-6);return`${fmt(c)} ~ ${todayStr}`;}
     return null;
@@ -1830,7 +1837,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",flexDirection:"column",gap:5}}>
           <CalDrop id="kpi" period={period} setPeriod={setPeriod}
-            presets={[["yd","어제"],["7d","최근 7일"],["1m","최근 한달"],["3m","최근 3개월"],["all","전체"]]}
+            presets={[["yd","어제"],["7d","최근 7일"],["tm","이번 한달"],["1m","최근 한달"],["3m","최근 3개월"],["all","전체"]]}
             start={customStart} setStart={setCustomStart}
             end={customEnd} setEnd={setCustomEnd}
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
@@ -2238,6 +2245,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               </div>
             ))}
           </div>
+          {getPeriodStr(optionPeriod,optionCustomStart,optionCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:8}}>{getPeriodStr(optionPeriod,optionCustomStart,optionCustomEnd)}</div>}
         </Card>
       )}
 
@@ -2360,6 +2368,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               </div>
             ))}
           </div>
+          {getPeriodStr(returnOptionPeriod,returnOptionCustomStart,returnOptionCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:8}}>{getPeriodStr(returnOptionPeriod,returnOptionCustomStart,returnOptionCustomEnd)}</div>}
         </Card>
       )}
 
@@ -6485,7 +6494,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                           <span>수량 {stat.qty.toLocaleString()}개</span><span style={{fontWeight:600}}>{stat.pct}%</span>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
-                          <span>금액</span><span style={{fontWeight:600}}>{stat.valPct}%</span>
+                          <span>금액 {fmtWonShort(stat.val)}</span><span style={{fontWeight:600}}>{stat.valPct}%</span>
                         </div>
                       </div>
                     )}
@@ -6495,9 +6504,15 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
             </div>
             {agingQtyStat.totalQty>0&&(
               <div style={{marginTop:6,padding:"5px 6px",background:"rgba(255,255,255,0.03)",borderRadius:5,
-                display:"flex",justifyContent:"space-between",fontSize:10,color:DC.sub}}>
-                <span>총 재고</span>
-                <span style={{color:DC.text,fontWeight:600}}>{agingQtyStat.totalQty.toLocaleString()}개</span>
+                display:"flex",flexDirection:"column",gap:2,fontSize:10,color:DC.sub}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span>총 재고</span>
+                  <span style={{color:DC.text,fontWeight:600}}>{agingQtyStat.totalQty.toLocaleString()}개</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span>총 금액</span>
+                  <span style={{color:DC.text,fontWeight:600}}>{fmtWonShort(agingQtyStat.totalVal)}</span>
+                </div>
               </div>
             )}
           </div>
