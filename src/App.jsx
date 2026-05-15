@@ -8013,28 +8013,30 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
   // 인사이트 자동 생성
   const insightText=useMemo(()=>{
     if(!activeRow) return "";
-    const total=activeRow._allCnt||0;
-    if(!total) return "";
-    const buckets=[
-      {key:"common",label:"공통",val:activeRow.common||0},
-      {key:"cross",label:"교차",val:activeRow.cross||0},
-      ...channelOrder.map(ch=>({key:`${ch}_only`,label:`${ch} only`,val:activeRow[`${ch}_only`]||0})),
-    ];
-    const top=buckets.filter(b=>b.val>0).sort((a,b)=>b.val-a.val)[0];
-    let s=`${activeRow.label} 기준, ${top.label} SKU가 ${(top.val/total*100).toFixed(1)}%로 가장 높습니다.`;
+    if(!(activeRow._allCnt>0)) return "";
+    const prevUnit=aggUnit==="week"?"전주":aggUnit==="quarter"?"전분기":"전월";
+    // 채널별 활성 SKU 수 (해당 채널에서 판매된 모든 SKU)
+    const chTotals=channelOrder.map(ch=>({ch,n:activeRow._chSets?.[ch]?.length||0}));
+    const topCh=chTotals.filter(c=>c.n>0).sort((a,b)=>b.n-a.n)[0];
+    let s="";
+    if(topCh){
+      s=`${activeRow.label} 기준, 활성 SKU가 가장 많은 채널은 ${topCh.ch} (${topCh.n.toLocaleString()}개)입니다.`;
+    }
     if(prevRow){
-      const changes=channelOrder.map(ch=>{
-        const k=`${ch}_only`;
-        return{ch,d:(activeRow[k]||0)-(prevRow[k]||0)};
-      }).filter(c=>c.d!==0).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
-      if(changes.length){
-        const c=changes[0];
-        const arrow=c.d>0?"▲":"▼";
-        s+=` ${c.ch} 단독 SKU는 전월 대비 ${arrow}${Math.abs(c.d)}개 ${c.d>0?"증가":"감소"}했습니다.`;
+      const drops=channelOrder.map(ch=>{
+        const cur=activeRow._chSets?.[ch]?.length||0;
+        const prev=prevRow._chSets?.[ch]?.length||0;
+        return{ch,d:cur-prev,cur,prev};
+      }).filter(c=>c.d<0).sort((a,b)=>a.d-b.d);
+      if(drops.length){
+        const c=drops[0];
+        s+=` ${prevUnit} 대비 감소폭이 가장 큰 채널은 ${c.ch} (▼${Math.abs(c.d).toLocaleString()}개, ${c.prev.toLocaleString()} → ${c.cur.toLocaleString()})입니다.`;
+      } else {
+        s+=` ${prevUnit} 대비 모든 채널이 유지 또는 증가했습니다.`;
       }
     }
     return s;
-  },[activeRow,prevRow,channelOrder]);
+  },[activeRow,prevRow,channelOrder,aggUnit]);
 
   // 채널 카드용 전체 채널(공통/교차 + 4채널 only)
   const summaryCards=useMemo(()=>{
