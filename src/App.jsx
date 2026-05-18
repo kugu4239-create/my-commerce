@@ -3796,7 +3796,7 @@ function PromoFlow({ revenues, storeSales=[] }) {
             <div className="promo-shimmer"/>
           </div>
           {isDragging&&<div style={{position:"absolute",inset:0,zIndex:10,cursor:"grabbing"}}/>}
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={280}>
             <LineChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
               <XAxis dataKey="date" tick={{fill:D.textMeta,fontSize:11}}/>
@@ -3812,7 +3812,7 @@ function PromoFlow({ revenues, storeSales=[] }) {
                 const pastPromos=inRange.filter(p=>isEnded(p));
                 return (
                   <div style={{background:"#fff",border:`1px solid ${D.border}`,borderRadius:8,
-                    padding:"10px 14px",fontSize:13,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180}}>
+                    padding:"10px 14px",fontSize:13,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:180,maxHeight:400,overflowY:"auto"}}>
                     <div style={{fontWeight:600,marginBottom:6,color:D.text}}>{fullDate||label}</div>
                     {payload.filter(p=>p.value!=null).sort((a,b)=>(b.value||0)-(a.value||0)).map((p,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
