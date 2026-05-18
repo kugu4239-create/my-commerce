@@ -4579,10 +4579,24 @@ function RevenueForm({ onUpdate }) {
       });
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
-    const ts2=nowStr();
-    setResult({type:"success",msg:`${dates.length}일 저장 완료`,ts:ts2});
+    // 저장 검증: 실제로 저장되었는지 확인
+    const {data:saved,error:verifyErr}=await db.from("revenues").select("id,date,channel,amount").in("date",dates).eq("channel",ch);
+    if(verifyErr){
+      setResult({type:"error",msg:"저장 검증 실패: "+verifyErr.message});setLoading(false);return;
+    }
+    if(!saved||saved.length===0){
+      setResult({type:"error",msg:"데이터 저장 후 검증 실패: 저장된 데이터 없음"});setLoading(false);return;
+    }
+    const totalSaved=saved.reduce((sum,r)=>sum+r.amount,0);
+    const expectedTotal=Math.round(num);
+    if(Math.abs(totalSaved-expectedTotal)>1){
+      setResult({type:"warning",msg:`저장됨 (경고: 금액 불일치. 요청 ${expectedTotal}, 저장 ${totalSaved})`,ts:nowStr()});
+    } else {
+      const ts2=nowStr();
+      setResult({type:"success",msg:`${dates.length}일 저장 완료 (${saved.length}건 검증됨)`,ts:ts2});
+    }
     setAmt("");setOrderCnt("");setRefundAmt("");setRefundCnt("");
-    onUpdate(ts2);if(history.length)loadHistory();
+    onUpdate(nowStr());if(history.length)loadHistory();
     setLoading(false);
   };
 
@@ -4677,10 +4691,20 @@ function RevenueForm({ onUpdate }) {
       const {error}=await db.from("revenues").insert(toUpload.slice(i,i+200));
       if(error){setResult({type:"error",msg:error.message});return;}
     }
+    // 저장 검증
+    const {data:saved,error:verifyErr}=await db.from("revenues")
+      .select("id,date,channel,amount")
+      .in("date",delDates);
+    if(verifyErr){
+      setResult({type:"error",msg:"저장 검증 실패: "+verifyErr.message});return;
+    }
+    if(!saved||saved.length<toUpload.length*0.9){
+      console.warn(`CSV저장 검증 경고: 요청 ${toUpload.length}건, 저장됨 ${saved?.length||0}건`);
+    }
     const ts2=nowStr();
     const overlapCount=choice==="new"?csvPreview.overlaps?.length||0:0;
     const replaceNote=overlapCount>0?` (기존 ${overlapCount}건 대체됨)`:"";
-    setResult({type:"success",msg:`${toUpload.length}건 저장 완료${replaceNote}`,ts:ts2});
+    setResult({type:"success",msg:`${toUpload.length}건 저장 완료${replaceNote} (${saved?.length||0}건 검증됨)`,ts:ts2});
     setCsvPreview(null);setCsvConflictChoice(null);
     onUpdate(ts2);loadHistory();
   };
@@ -5629,10 +5653,30 @@ function StoreUploader({ onUpdate }) {
       const{error}=await db.from("store_sales").insert(preview.slice(i,i+500));
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
-    const ts2=nowStr();
-    const replaceNote=conflictCount>0?` (기존 ${conflictCount}건 대체됨)`:"";
-    setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료${replaceNote}`,ts:ts2});
-    onUpdate(ts2);setLoading(false);
+    // 저장 검증: 실제로 저장되었는지 확인
+    const {data:saved,error:verifyErr}=await db.from("store_sales")
+      .select("id,sale_date,product_name,qty,amount")
+      .gte("sale_date",dateRange.start||preview[0].sale_date)
+      .lte("sale_date",dateRange.end||preview[preview.length-1].sale_date);
+    if(verifyErr){
+      setResult({type:"error",msg:"저장 검증 실패: "+verifyErr.message});setLoading(false);return;
+    }
+    if(!saved||saved.length===0){
+      setResult({type:"error",msg:"데이터 저장 후 검증 실패: 저장된 데이터 없음"});setLoading(false);return;
+    }
+    const totalQty=saved.reduce((sum,r)=>sum+r.qty,0);
+    const totalAmount=saved.reduce((sum,r)=>sum+r.amount,0);
+    const previewTotalQty=preview.reduce((sum,r)=>sum+r.qty,0);
+    const previewTotalAmount=preview.reduce((sum,r)=>sum+r.amount,0);
+    if(totalQty!==previewTotalQty||Math.abs(totalAmount-previewTotalAmount)>1){
+      setResult({type:"warning",msg:`저장됨 (경고: 데이터 불일치. 요청 ${preview.length}건 ${totalQty}개, 저장 ${saved.length}건 ${totalQty}개)`,ts:nowStr()});
+    } else {
+      const ts2=nowStr();
+      const replaceNote=conflictCount>0?` (기존 ${conflictCount}건 대체됨)`:"";
+      setResult({type:"success",msg:`${preview.length}건 등록 완료${replaceNote} (${saved.length}건 검증됨)`,ts:ts2});
+    }
+    setStep(2);
+    onUpdate(nowStr());setLoading(false);
   };
 
   const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);setConflictCount(0);};
