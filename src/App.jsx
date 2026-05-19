@@ -1201,25 +1201,28 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
 
   // ── [배송·반품 KPI] (온라인만, 매장 제외) ─────────────
   // 소스: 이지어드민 orders CSV — 오프라인 채널(매장 판매 머지 행 포함)은 제외
-  // 계산: status="배송"/"반품" 행에서 COUNT(DISTINCT order_no || order_id)
-  //       라인(행) 수가 아니라 고유 주문번호 단위로 셈
-  const onlineRows    = orderRows.filter(r=>!isOffline(r));
-  const shippedRows   = onlineRows.filter(r=>r.status==="배송");
-  const returnedRows  = onlineRows.filter(r=>r.status==="반품");
-  const totalShipped  = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
-  const totalReturned = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
-  // 반품률: 반품 고유 주문번호 / 배송 고유 주문번호
-  const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
+  // 계산:
+  //   - 배송 수    = COUNT(DISTINCT order_no||order_id) where status="배송"
+  //   - 반품 수    = COUNT(DISTINCT order_no||order_id) where status="반품"
+  //   - 배송 장수  = SUM(qty) where 배송
+  //   - 반품 장수  = SUM(qty) where 반품
+  //   - 반품률     = 반품 장수 / 배송 장수 * 100 (장수 기준 — 부분 반품/교환 반영)
+  const onlineRows       = orderRows.filter(r=>!isOffline(r));
+  const shippedRows      = onlineRows.filter(r=>r.status==="배송");
+  const returnedRows     = onlineRows.filter(r=>r.status==="반품");
+  const totalShipped     = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalReturned    = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalDeliveredQty= shippedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const totalReturnedQty = returnedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const returnRate       = totalDeliveredQty>0?(totalReturnedQty/totalDeliveredQty*100).toFixed(1):"0.0";
 
   // ── [주문 KPI] (온라인 전체, 배송 완료 여부 무관) ─────
   // 소스: 이지어드민 orders CSV (매장 제외)
   // 계산:
   //   - 주문 수    = COUNT(DISTINCT order_no||order_id) 모든 상태 포함
   //   - 주문 장수  = SUM(qty) 모든 상태 포함
-  //   - 배송 장수  = SUM(qty) where status="배송"
   const totalUniqueOrders = new Set(onlineRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalOrderedQty   = onlineRows.reduce((s,r)=>s+(r.qty||1),0);
-  const totalDeliveredQty = shippedRows.reduce((s,r)=>s+(r.qty||1),0);
 
   // ── [매장 KPI] (store_sales CSV 별도 수집, 배송 카운트로 합산 안 함) ──
   // 소스: store_sales (StoreUploader 업로드, 기존 파싱 컬럼 유지)
@@ -1260,10 +1263,14 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
-  // (2),(3) 이지어드민 행 순회 — 배송/반품 고유 주문번호 + 객단가 금액 맵
+  // (2),(3) 이지어드민 행 순회 — 배송/반품/전체 고유 주문번호 + 장수 + 객단가 금액 맵
   const chOrderAmt={};      // 채널별 {oid: amount} — 객단가 분자
   const chOrderIds={};      // 채널별 Set(oid) where 배송 — 객단가 분모 / 배송 카운트
   const chReturnedIds={};   // 채널별 Set(oid) where 반품 — 반품 카운트
+  const chAllOrderIds={};   // 채널별 Set(oid) 모든 상태 — 판매처 상세의 '주문 수' 컬럼용
+  const chOrderedQty={};    // 채널별 SUM(qty) 모든 상태 — '주문 장수'
+  const chShippedQty={};    // 채널별 SUM(qty) 배송   — '배송 장수' + 반품률 분모
+  const chReturnedQty={};   // 채널별 SUM(qty) 반품   — '반품 장수' + 반품률 분자
   const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
@@ -1271,14 +1278,25 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     const oid=r.order_no||r.order_id||"";
     // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
     const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
+    const qty=(r.qty||1);
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    if(status==="반품"&&oid){
-      if(!chReturnedIds[ch]) chReturnedIds[ch]=new Set();
-      chReturnedIds[ch].add(oid);
+    // 전체 주문 Set: 모든 상태(배송/반품/교환 등) 포함
+    if(oid){
+      if(!chAllOrderIds[ch]) chAllOrderIds[ch]=new Set();
+      chAllOrderIds[ch].add(oid);
+    }
+    chOrderedQty[ch]=(chOrderedQty[ch]||0)+qty;
+    if(status==="반품"){
+      if(oid){
+        if(!chReturnedIds[ch]) chReturnedIds[ch]=new Set();
+        chReturnedIds[ch].add(oid);
+      }
+      chReturnedQty[ch]=(chReturnedQty[ch]||0)+qty;
     }
     if(status!=="배송") return;
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
+    chShippedQty[ch]=(chShippedQty[ch]||0)+qty;
     if(!chOrderAmt[ch]) chOrderAmt[ch]={};
     if(PAYMENT_CH.has(ch)){
       // 자사몰: 결제금액은 동일 주문의 각 행에 중복 기록 → 덮어쓰기(= 사실상 MAX)
@@ -1301,6 +1319,8 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
   const offlineOrderIds=new Set();
   const offlineReturnedIds=new Set();
+  const offlineAllOrderIds=new Set();
+  let offlineOrderedQty=0, offlineShippedQty=0, offlineReturnedQty=0;
   const offlineBreakdown={};  // 판교점/일산점 별도 보존(채널별 표 sub-row용)
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
@@ -1311,11 +1331,19 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       offlineAgg.refundCount+=byChannel[ch].refundCount;
       (chOrderIds[ch]||new Set()).forEach(id=>offlineOrderIds.add(id));
       (chReturnedIds[ch]||new Set()).forEach(id=>offlineReturnedIds.add(id));
+      (chAllOrderIds[ch]||new Set()).forEach(id=>offlineAllOrderIds.add(id));
+      offlineOrderedQty +=(chOrderedQty[ch] ||0);
+      offlineShippedQty +=(chShippedQty[ch] ||0);
+      offlineReturnedQty+=(chReturnedQty[ch]||0);
       if(ch!=="오프라인스토어"&&ch!=="오프라인"&&ch!=="오프라인 스토어")
         offlineBreakdown[ch]={...byChannel[ch]};
       delete byChannel[ch];
       delete chOrderIds[ch];
       delete chReturnedIds[ch];
+      delete chAllOrderIds[ch];
+      delete chOrderedQty[ch];
+      delete chShippedQty[ch];
+      delete chReturnedQty[ch];
     }
   });
   if(hasOffline){
@@ -1324,6 +1352,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel["오프라인 스토어"]=offlineAgg;
     chOrderIds["오프라인 스토어"]=offlineOrderIds;
     chReturnedIds["오프라인 스토어"]=offlineReturnedIds;
+    chAllOrderIds["오프라인 스토어"]=offlineAllOrderIds;
+    chOrderedQty["오프라인 스토어"] =offlineOrderedQty;
+    chShippedQty["오프라인 스토어"] =offlineShippedQty;
+    chReturnedQty["오프라인 스토어"]=offlineReturnedQty;
   }
   // (4-b) 매장 판매 CSV가 있으면 storeMetrics로 오프라인 스토어 행 덮어쓰기
   // 이지어드민 머지 데이터보다 store_sales 원본이 권위 있음
@@ -1334,6 +1366,12 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel["오프라인 스토어"].returned = storeReturnedCount; // 고유 order_id (반품)
     // 객단가 분모: 매장 배송 order_id 집합으로 덮어쓰기
     chOrderIds["오프라인 스토어"] = new Set(storeShippedRows.map(r=>r.order_id).filter(Boolean));
+    // 주문 수 집합: 매장 전체 order_id (배송+반품)로 덮어쓰기 — 매장 데이터가 권위
+    chAllOrderIds["오프라인 스토어"] = new Set(storeRows.map(r=>r.order_id).filter(Boolean));
+    // 장수: 매장 권위 데이터로 덮어쓰기 (주문 장수 = 배송 qty + 반품 qty)
+    chOrderedQty["오프라인 스토어"]  = storeQty + storeReturnedQty;
+    chShippedQty["오프라인 스토어"]  = storeQty;
+    chReturnedQty["오프라인 스토어"] = storeReturnedQty;
     // 매장별(판교점/일산점) 매출 breakdown
     const storeByStore={};
     storeRows.forEach(r=>{
@@ -1358,9 +1396,16 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
-    c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
+    // 장수 트래커 → 채널 객체에 노출
+    c.orderedQty  = chOrderedQty[c.name] ||0;  // 주문 장수
+    c.shippedQty  = chShippedQty[c.name] ||0;  // 배송 장수
+    c.returnedQty = chReturnedQty[c.name]||0;  // 반품 장수
+    // 반품률: 장수 기준 (부분 반품/교환 반영)
+    c.returnRate  = c.shippedQty>0?(c.returnedQty/c.shippedQty*100).toFixed(1):"0.0";
     const uq=(chOrderIds[c.name]||new Set()).size||c.shipped;
     c.uniqueOrders=uq;
+    // totalOrders: 모든 상태 포함 고유 주문번호 수 (판매처 상세의 '주문 수' 컬럼)
+    c.totalOrders=(chAllOrderIds[c.name]||new Set()).size||uq;
     if(c.name==="오프라인 스토어"){
       c.avgOrderValue=storeAOV;  // storeRevenue / storeOrderCount
     } else {
@@ -1424,13 +1469,21 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const weekWorst=[...prodList].filter(p=>p.returned>0).sort((a,b)=>b.returned-a.returned).slice(0,20)
     .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0"}));
 
+  // ── [전체 합산 KPI (온라인 + 매장)] ────────────────────
+  // KPI 카드의 '주문 수' / '주문 장수' 표기용
+  // 배송 KPI는 매장 제외(totalShipped/totalDeliveredQty)지만,
+  // 주문 KPI는 사용자 요청으로 매장까지 합쳐서 단일 숫자로 표시
+  const totalUniqueOrdersAll = totalUniqueOrders + storeOrderCount;
+  const totalOrderedQtyAll   = totalOrderedQty   + storeQty;
+
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
-    totalUniqueOrders,totalOrderedQty,totalDeliveredQty,
+    totalUniqueOrders,totalOrderedQty,totalDeliveredQty,totalReturnedQty,
+    totalUniqueOrdersAll,totalOrderedQtyAll, // 매장 포함 합산
     storeMetrics,  // 매장 별도 KPI: revenue/orderCount/returnedCount/qty/returnedQty/aov
     channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
-    chOrderAmt,
+    chOrderAmt,chAllOrderIds, // 객단가/주문수 모달 소스
   };
 }
 
@@ -1637,6 +1690,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [offlineExpanded,setOfflineExpanded]=useState(false);
   const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
   const [aovModal,setAovModal]=useState(null); // channel name
+  const [chOrderModal,setChOrderModal]=useState(null); // channel name — 주문 수 소스 모달
   const [delPeriod,setDelPeriod]=useState("all");
   const [delStart,setDelStart]=useState("");
   const [delEnd,setDelEnd]=useState("");
@@ -1959,11 +2013,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송·주문은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
         <KPI label="총 매출" value={fmtWonShort(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
-        <KPI label="주문 수" value={stats.totalUniqueOrders.toLocaleString()+"건"} sub={stats.totalOrderedQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
+        <KPI label="주문 수" value={stats.totalUniqueOrdersAll.toLocaleString()+"건"} sub={stats.totalOrderedQtyAll.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         <KPI label="배송 수" value={stats.totalShipped.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
-        {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
-          sub={stats.totalReturned.toLocaleString()+"건"}
-          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}
+        {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.returnRate+"%"}
+          sub={`${stats.totalReturnedQty.toLocaleString()}장 / ${stats.totalDeliveredQty.toLocaleString()}장`}
+          accent={parseFloat(stats.returnRate)>10?D.red:D.textSub}
           onClick={()=>setKpiModal("returnRate")}/>}
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
       </div>
@@ -2068,7 +2122,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
-            {[["revenue","매출"],["share","점유율"],["shipped","배송"],...(!["yd","7d"].includes(period)?[["returned","반품"],["rate","반품률"]]:[]),["aov","객단가"]].map(([k,l])=>(
+            {[["revenue","매출"],["share","점유율"],["orders","주문 수"],["shipped","배송 수"],...(!["yd","7d"].includes(period)?[["returned","반품 수"],["rate","반품률"]]:[]),["aov","객단가"]].map(([k,l])=>(
               <button key={k} onClick={()=>setChSort({key:k,dir:"desc"})}
                 style={{background:chSort.key===k?D.black:"transparent",
                   color:chSort.key===k?"#fff":D.textSub,
@@ -2090,16 +2144,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           };
           const hasRet=!["yd","7d"].includes(period);
           const cols=[
-            {key:"name",   label:"판매처",     left:true, val:c=>c.name,               w:hasRet?"22%":"26%"},
-            {key:"share",  label:"점유율",                val:c=>parseFloat(c.share),  w:hasRet?"8%":"9%"},
-            {key:"revenue",label:"매출",                  val:c=>c.revenue,            w:hasRet?"15%":"18%"},
-            {key:"cmp",    label:"동기간 비교",            val:c=>0,                    w:hasRet?"14%":"17%"},
-            {key:"shipped",label:"배송",                  val:c=>c.shipped,            w:hasRet?"8%":"10%"},
+            {key:"name",   label:"판매처",     left:true, val:c=>c.name,               w:hasRet?"17%":"20%"},
+            {key:"share",  label:"점유율",                val:c=>parseFloat(c.share),  w:"7%"},
+            {key:"revenue",label:"매출",                  val:c=>c.revenue,            w:hasRet?"13%":"16%"},
+            {key:"cmp",    label:"동기간 비교",            val:c=>0,                    w:hasRet?"12%":"15%"},
+            // 주문 수: 모든 상태 고유 주문번호 (건수) + 주문 장수 (병기, 셀 안에 sub)
+            {key:"orders", label:"주문 수",               val:c=>c.totalOrders||0,     w:"10%"},
+            {key:"shipped",label:"배송 수",               val:c=>c.shipped,            w:"10%"},
             ...(hasRet?[
-              {key:"returned",label:"반품",               val:c=>c.returned,           w:"8%"},
-              {key:"rate",   label:"반품률",              val:c=>c.shipped>0?c.returned/c.shipped:0, w:"9%"},
+              {key:"returned",label:"반품 수",            val:c=>c.returned,           w:"9%"},
+              {key:"rate",   label:"반품률",              val:c=>c.shippedQty>0?c.returnedQty/c.shippedQty:0, w:"8%"},
             ]:[]),
-            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"16%":"20%", tooltip:"개발 중인 지표입니다.\n온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다.", wip:true},
+            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"14%":"17%", tooltip:"개발 중인 지표입니다.\n온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다.", wip:true},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
@@ -2157,10 +2213,25 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
                       </td>
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
-                      {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
+                      {/* 주문 수: 클릭하면 채널별 주문 소스 모달 */}
+                      <td onClick={!c.isSubRow&&c.totalOrders>0?()=>setChOrderModal(c.name):undefined}
+                        style={{textAlign:"right",padding:"7px 9px",
+                          color:!c.isSubRow&&c.totalOrders>0?D.blue:D.textSub,
+                          cursor:!c.isSubRow&&c.totalOrders>0?"pointer":"default",
+                          textDecoration:!c.isSubRow&&c.totalOrders>0?"underline":"none"}}>
+                        {(c.totalOrders||0).toLocaleString()}
+                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.orderedQty||0).toLocaleString()}장</div>
+                      </td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
+                        {(c.shipped||0).toLocaleString()}
+                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.shippedQty||0).toLocaleString()}장</div>
+                      </td>
+                      {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>
+                        {(c.returned||0).toLocaleString()}
+                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.returnedQty||0).toLocaleString()}장</div>
+                      </td>}
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
-                        {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
+                        {c.shippedQty>0?(c.returnedQty/c.shippedQty*100).toFixed(1):"0.0"}%</td>}
                       <td onClick={c.avgOrderValue>0?()=>setAovModal(c.name):undefined}
                         style={{textAlign:"right",padding:"7px 9px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                           color:c.avgOrderValue>0?D.blue:"—"===c.avgOrderValue?"transparent":D.textMeta,
@@ -2175,9 +2246,19 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
                   <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWonShort(stats.totalRevenue)}</td>
                   <td/>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalReturned.toLocaleString()}</td>}
-                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>}
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>
+                    {stats.totalUniqueOrdersAll.toLocaleString()}
+                    <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalOrderedQtyAll.toLocaleString()}장</div>
+                  </td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
+                    {stats.totalShipped.toLocaleString()}
+                    <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalDeliveredQty.toLocaleString()}장</div>
+                  </td>
+                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>
+                    {stats.totalReturned.toLocaleString()}
+                    <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalReturnedQty.toLocaleString()}장</div>
+                  </td>}
+                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.returnRate}%</td>}
                   <td/>
                 </tr>
               </tbody>
@@ -2689,12 +2770,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     ))}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{stats.totalUniqueOrders.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{stats.totalUniqueOrdersAll.toLocaleString()}</td>
                       <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{totalQty.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{stats.totalDeliveredQty.toLocaleString()}</td>
                     </tr>
                   </tbody>
                 </table>
+                <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
+                  * 주문 수 합계 = 온라인 + 매장 / 배송 수·장 합계 = 온라인만 (매장 제외)
+                </div>
               </div>
               <div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>주문일별 (최근 30일)</div>
@@ -2963,6 +3047,87 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     <td style={{padding:"7px"}}>합계 {rows.length}건</td>
                     <td/>
                     <td style={{textAlign:"right",padding:"7px"}}>{totalAmt.toLocaleString()}원</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {rows.length>200&&<div style={{fontSize:11,color:D.textMeta,marginTop:8}}>상위 200건만 표시 (전체 {rows.length}건)</div>}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 채널별 주문 수 소스 모달 — 판매처 상세에서 '주문 수' 셀 클릭 시 */}
+      {chOrderModal&&(()=>{
+        const ch=chOrderModal;
+        const isOffline=ch==="오프라인 스토어";
+        // 매장은 storeSales 원본, 온라인은 filteredOrders에서 채널 매칭
+        const sourceLabel = isOffline ? "매장 판매 업로드 데이터 (store_sales)" : "주문·배송 업로드 데이터 (이지어드민 CSV)";
+        const idKey = r => r.order_no || r.order_id || "";
+        const dateKey = r => isOffline ? (r.sale_date||"—") : (r.order_date||"—");
+        const baseRows = isOffline
+          ? filteredStoreSales
+          : filteredOrders.filter(r=>(r.channel||"")===ch);
+        // 주문번호별 그룹화 — 상태별 라인 수/장수/금액 합산
+        const byOid={};
+        baseRows.forEach(r=>{
+          const oid=idKey(r);
+          if(!oid) return;
+          if(!byOid[oid]) byOid[oid]={oid,date:dateKey(r),shippedQty:0,returnedQty:0,otherQty:0,lines:0};
+          byOid[oid].lines++;
+          const q=r.qty||1;
+          if(r.status==="배송") byOid[oid].shippedQty+=q;
+          else if(r.status==="반품") byOid[oid].returnedQty+=q;
+          else byOid[oid].otherQty+=q;
+          // 최신 날짜 채택
+          if(dateKey(r)>byOid[oid].date) byOid[oid].date=dateKey(r);
+        });
+        const rows=Object.values(byOid).sort((a,b)=>a.date<b.date?1:-1);
+        const totalQty=rows.reduce((s,r)=>s+r.shippedQty+r.returnedQty+r.otherQty,0);
+        return(
+          <div onClick={()=>setChOrderModal(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+                width:"min(720px,95vw)",maxHeight:"85vh",overflowY:"auto",
+                boxShadow:"0 8px 40px rgba(0,0,0,0.22)",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:15,color:D.black}}>{ch} 주문 수 소스</div>
+                <button onClick={()=>setChOrderModal(null)}
+                  style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                    padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+              </div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: {sourceLabel}<br/>
+                계산: 모든 상태(배송/반품/교환 등) 포함, COUNT(DISTINCT 주문번호) = <b>{rows.length.toLocaleString()}건</b> · SUM(qty) = <b>{totalQty.toLocaleString()}장</b>
+              </div>
+              <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${D.border}`}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문번호</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문일</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.green}}>배송 장수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.red}}>반품 장수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0,200).map((r,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:240,
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.oid}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{r.shippedQty||"—"}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:r.returnedQty>0?D.red:D.textMeta}}>{r.returnedQty||"—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700,background:D.bg}}>
+                    <td style={{padding:"7px"}}>합계 {rows.length.toLocaleString()}건</td>
+                    <td/>
+                    <td style={{textAlign:"right",padding:"7px",color:D.green}}>{rows.reduce((s,r)=>s+r.shippedQty,0).toLocaleString()}</td>
+                    <td style={{textAlign:"right",padding:"7px",color:D.red}}>{rows.reduce((s,r)=>s+r.returnedQty,0).toLocaleString()}</td>
                   </tr>
                 </tfoot>
               </table>
