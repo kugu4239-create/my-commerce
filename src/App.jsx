@@ -2197,6 +2197,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)}</div>}
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 이지어드민 CSV (오프라인 제외)</div>
       </Card>
 
       {/* 플랫폼별 선호 옵션 */}
@@ -2321,6 +2322,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)}</div>}
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 이지어드민 CSV (오프라인 제외)</div>
       </Card>
 
       {/* 플랫폼별 반품률 높은 옵션 */}
