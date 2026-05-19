@@ -9495,10 +9495,107 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
 }
 
 // ─────────────────────────────────────────────
+// CONTENT IMPACT — 콘텐츠(인스타그램 포스트) × 매출 attribution 캘린더
+// ─────────────────────────────────────────────
+// Phase 1: 월 셀렉터 + 빈 캘린더 그리드 (스캐폴드)
+// 다음 단계: KPI 카드 → 셀별 매출/판매Top → IG 포스트 등록 → 리본
+function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
+  const now=new Date();
+  const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+
+  // 월 이동
+  const shiftMonth=(delta)=>{
+    const [y,m]=ym.split("-").map(Number);
+    const d=new Date(y,m-1+delta,1);
+    setYm(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  };
+
+  // 월 그리드 생성 — 일요일 시작, 6주(42칸) 고정
+  const grid=useMemo(()=>{
+    const [y,m]=ym.split("-").map(Number);
+    const first=new Date(y,m-1,1);
+    const startDay=first.getDay(); // 0=Sun
+    const cells=[];
+    for(let i=0;i<42;i++){
+      const d=new Date(y,m-1,i-startDay+1);
+      cells.push({
+        date:d,
+        iso:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
+        inMonth:d.getMonth()===m-1,
+        isToday:d.toDateString()===now.toDateString(),
+      });
+    }
+    return cells;
+  },[ym]);
+
+  const monthLabel=(()=>{
+    const [y,m]=ym.split("-").map(Number);
+    return `${y}년 ${m}월`;
+  })();
+  const WEEKDAYS=["일","월","화","수","목","금","토"];
+
+  return (
+    <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
+      {/* 월 셀렉터 */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>shiftMonth(-1)} data-hf
+            style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"5px 12px",fontSize:13,cursor:"pointer",color:D.text}}>◂</button>
+          <div style={{fontSize:18,fontWeight:700,color:D.black,minWidth:120,textAlign:"center"}}>{monthLabel}</div>
+          <button onClick={()=>shiftMonth(1)} data-hf
+            style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"5px 12px",fontSize:13,cursor:"pointer",color:D.text}}>▸</button>
+          <button onClick={()=>setYm(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`)} data-hf
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"5px 10px",fontSize:11,cursor:"pointer",color:D.textMeta,marginLeft:6}}>이번 달</button>
+        </div>
+        <div style={{fontSize:11,color:D.textMeta}}>
+          orders {orders.length.toLocaleString()} · revenues {revenues.length.toLocaleString()} · store {storeSales.length.toLocaleString()}
+        </div>
+      </div>
+
+      {/* 캘린더 그리드 (스캐폴드 — 데이터는 다음 단계) */}
+      <Card>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:6,overflow:"hidden"}}>
+          {WEEKDAYS.map((w,i)=>(
+            <div key={w} style={{background:D.surfaceAlt,padding:"7px 9px",fontSize:11,fontWeight:600,
+              color:i===0?D.red:i===6?D.blue:D.textMeta,textAlign:"center"}}>{w}</div>
+          ))}
+          {grid.map((c,i)=>(
+            <div key={i} style={{
+              background:c.inMonth?D.surface:D.bg,
+              minHeight:120,padding:"6px 8px",
+              opacity:c.inMonth?1:0.4,
+              position:"relative",
+              display:"flex",flexDirection:"column"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <span style={{fontSize:11,fontWeight:c.isToday?700:500,
+                  color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                  {c.date.getDate()}
+                </span>
+                {c.isToday&&<span style={{fontSize:9,color:D.blue,fontWeight:600}}>오늘</span>}
+              </div>
+              {/* 다음 단계: 매출 mini-bar, IG 썸네일, 판매 Top */}
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <div style={{marginTop:16,fontSize:11,color:D.textMeta,lineHeight:1.7,background:D.bg,
+        padding:"10px 14px",borderRadius:6,border:`1px dashed ${D.border}`}}>
+        <b>Phase 1 진행 중</b> — 현재는 빈 캘린더만 표시됩니다.<br/>
+        다음 단계: ① 상단 KPI 카드 → ② 셀별 매출/판매Top → ③ IG 포스트 등록 모달 → ④ 리본 연결
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","flow","promo","input","compare"];
+  const validPages=["dashboard","flow","promo","input","compare","impact"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
@@ -9595,6 +9692,7 @@ export default function App() {
     {key:"compare",label:"데이터 컴페어"},
     {key:"promo",label:"프로모션 플로우"},
     {key:"flow",label:"물류 플로우"},
+    {key:"impact",label:"콘텐츠 임팩트"},
     {key:"input",label:"데이터 입력"},
   ];
 
@@ -9649,6 +9747,7 @@ export default function App() {
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
+        {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
