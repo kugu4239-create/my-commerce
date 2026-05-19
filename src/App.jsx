@@ -1205,12 +1205,14 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const PAYMENT_CH=new Set(["자사몰"]);   // MAX(payment_amount) 사용 채널
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
-    if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    if(r.status==="배송") byChannel[ch].shipped++;
-    if(r.status==="반품") byChannel[ch].returned++;
-    if(r.status!=="배송") return;
     // order_no: 신규 필드 우선, 없으면 order_id 전체를 키로 사용 (이전 데이터 호환)
     const oid=r.order_no||r.order_id||"";
+    // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
+    const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
+    if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
+    if(status==="배송") byChannel[ch].shipped++;
+    if(status==="반품") byChannel[ch].returned++;
+    if(status!=="배송") return;
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
     if(!chOrderAmt[ch]) chOrderAmt[ch]={};
@@ -5511,7 +5513,9 @@ function EasyAdminUploader({ onUpdate }) {
             const deliveryDateVal=toDate(r[deliveryDateCol]);
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
-            const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
+            // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
+            const rawStatus=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
+            const status=(rawStatus==="배송"&&/^CORD/i.test(oid))?"반품":rawStatus;
             const qty=toNum(r[qtyCol])||1;
             const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
             const paymentAmtVal = paymentAmtCol ? toNum(r[paymentAmtCol]) : 0;
