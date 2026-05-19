@@ -1172,27 +1172,87 @@ const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ANALYTICS ENGINE
 // ─────────────────────────────────────────────
 function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
-  // 매출 입력 데이터 기반 KPI
+  // ═══════════════════════════════════════════════════════
+  // 데이터 소스 가이드
+  //   - orderRows   : 이지어드민 주문·배송 CSV (loadData에서 store_sales도 channel="오프라인 스토어"로 머지됨)
+  //   - storeRows   : 매장 판매 CSV (StoreUploader) — 오프라인 전용 원본
+  //   - revenueRows : 채널별 일자 매출 CSV (RevenueForm)
+  //   - stockRows   : 입고 CSV
+  // 매장(오프라인) 행은 '배송 KPI'에서 제외하고 별도 storeMetrics로 수집한다.
+  // ═══════════════════════════════════════════════════════
+
+  // 오프라인 채널 식별: 이지어드민 판교점/일산점 행, store_sales 머지 행 모두 포함
+  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+  const isOffline = r => OFFLINE_CHS.has(r.channel||"");
+
+  // ── [총 매출] ──────────────────────────────────────────
+  // 소스: revenues(온라인 채널 일자 매출) + storeSales(매장 실판매금액)
+  // 계산: SUM(amount - refund_amount)  +  매장 (배송 amount 합 - 반품 amount 합)
   const onlineRevenue   = revenueRows.reduce((s,r)=>s+(r.amount||0)-(r.refund_amount||0),0);
   const offlineRevenue  = storeRows.reduce((s,r)=>r.status==="배송"?s+(r.amount||0):r.status==="반품"?s-(r.amount||0):s,0);
   const totalRevenue    = onlineRevenue + offlineRevenue;
+
+  // ── [매출 입력 기반 보조 지표] ────────────────────────
+  // 소스: revenues CSV
+  // 계산: order_count / refund_amount / refund_count 컬럼 단순 합산
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
-  // 이지어드민 CSV 기반 KPI — 배송/반품 수는 고유 주문번호 기준으로 카운트
-  const shippedRows   = orderRows.filter(r=>r.status==="배송");
-  const returnedRows  = orderRows.filter(r=>r.status==="반품");
+
+  // ── [배송·반품 KPI] (온라인만, 매장 제외) ─────────────
+  // 소스: 이지어드민 orders CSV — 오프라인 채널(매장 판매 머지 행 포함)은 제외
+  // 계산: status="배송"/"반품" 행에서 COUNT(DISTINCT order_no || order_id)
+  //       라인(행) 수가 아니라 고유 주문번호 단위로 셈
+  const onlineRows    = orderRows.filter(r=>!isOffline(r));
+  const shippedRows   = onlineRows.filter(r=>r.status==="배송");
+  const returnedRows  = onlineRows.filter(r=>r.status==="반품");
   const totalShipped  = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalReturned = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  // 반품률: 반품 고유 주문번호 / 배송 고유 주문번호
   const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
-  // 주문 수: 배송 완료 여부 무관, 전체 고유 주문번호 카운트
-  const totalUniqueOrders = new Set(orderRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
-  const totalOrderedQty = orderRows.reduce((s,r)=>s+(r.qty||1),0);
-  const totalDeliveredQty = shippedRows.reduce((s,r)=>s+(r.qty||1),0);
-  const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
-  // 판매처별 집계
+  // ── [주문 KPI] (온라인 전체, 배송 완료 여부 무관) ─────
+  // 소스: 이지어드민 orders CSV (매장 제외)
+  // 계산:
+  //   - 주문 수    = COUNT(DISTINCT order_no||order_id) 모든 상태 포함
+  //   - 주문 장수  = SUM(qty) 모든 상태 포함
+  //   - 배송 장수  = SUM(qty) where status="배송"
+  const totalUniqueOrders = new Set(onlineRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalOrderedQty   = onlineRows.reduce((s,r)=>s+(r.qty||1),0);
+  const totalDeliveredQty = shippedRows.reduce((s,r)=>s+(r.qty||1),0);
+
+  // ── [매장 KPI] (store_sales CSV 별도 수집, 배송 카운트로 합산 안 함) ──
+  // 소스: store_sales (StoreUploader 업로드, 기존 파싱 컬럼 유지)
+  // 계산:
+  //   - 매장 매출    = SUM(실판매금액)배송 - SUM(실판매금액)반품  ← offlineRevenue와 동일
+  //   - 매장 주문 수 = COUNT(DISTINCT order_id) where 배송   (일자별 ID 집계의 유니크)
+  //   - 매장 반품 수 = COUNT(DISTINCT order_id) where 반품
+  //   - 판매 장수    = SUM(qty) where 배송
+  //   - 반품 장수    = SUM(qty) where 반품
+  //   - 객단가       = 매장 매출 / 매장 주문 수
+  const storeShippedRows  = storeRows.filter(r=>r.status==="배송");
+  const storeReturnedRows = storeRows.filter(r=>r.status==="반품");
+  const storeRevenue      = offlineRevenue;
+  const storeOrderCount   = new Set(storeShippedRows.map(r=>r.order_id).filter(Boolean)).size;
+  const storeReturnedCount= new Set(storeReturnedRows.map(r=>r.order_id).filter(Boolean)).size;
+  const storeQty          = storeShippedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const storeReturnedQty  = storeReturnedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const storeAOV          = storeOrderCount>0?Math.round(storeRevenue/storeOrderCount):0;
+  const storeMetrics      = {storeRevenue,storeOrderCount,storeReturnedCount,storeQty,storeReturnedQty,storeAOV};
+
+  // ── [재고] ──────────────────────────────────────────
+  // 소스: stock_uploads — 입고 CSV 누적 (필터링은 호출부에서)
+  const totalStock = stockRows.reduce((s,r)=>s+(r.qty||0),0);
+
+  // ─────────────────────────────────────────────────────
+  // 판매처별(채널별) 집계
+  // 1) 매출/주문수/환불수: revenues CSV 단순 합산
+  // 2) 배송/반품 고유 주문번호: 이지어드민 orders CSV에서 channel별 Set 누적
+  // 3) 객단가 소스 금액 맵: 자사몰=payment_amount MAX, 29CM·무신사=sale_price SUM
+  // 4) 오프라인 행(판교점/일산점/매장 머지)은 "오프라인 스토어"로 통합 후 storeMetrics로 덮어씀
+  // ─────────────────────────────────────────────────────
   const byChannel={};
+  // (1) 매출 입력 합산 — 채널별 매출/주문수/환불수
   revenueRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
@@ -1200,16 +1260,14 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
-  // 채널별 배송 주문 집계: shipped/returned 카운트 + 객단가용 주문금액 맵
-  // 자사몰: MAX(payment_amount) — 결제금액이 각 행에 중복, 합산 금지
-  // 29CM·무신사: SUM(sale_price) — 판매가가 상품별로 다름, 합산 필요
-  const chOrderAmt={};  // 객단가 계산용
-  const chOrderIds={};  // uniqueOrders 카운트용 (offline 합산에도 사용)
-  const chReturnedIds={}; // 반품 고유 주문번호 카운트용
-  const PAYMENT_CH=new Set(["자사몰"]);   // MAX(payment_amount) 사용 채널
+  // (2),(3) 이지어드민 행 순회 — 배송/반품 고유 주문번호 + 객단가 금액 맵
+  const chOrderAmt={};      // 채널별 {oid: amount} — 객단가 분자
+  const chOrderIds={};      // 채널별 Set(oid) where 배송 — 객단가 분모 / 배송 카운트
+  const chReturnedIds={};   // 채널별 Set(oid) where 반품 — 반품 카운트
+  const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
-    // order_no: 신규 필드 우선, 없으면 order_id 전체를 키로 사용 (이전 데이터 호환)
+    // 주문번호 키: 신규 order_no 필드 우선, 없으면 order_id 전체(이전 데이터 호환)
     const oid=r.order_no||r.order_id||"";
     // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
     const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
@@ -1223,26 +1281,27 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     chOrderIds[ch].add(oid);
     if(!chOrderAmt[ch]) chOrderAmt[ch]={};
     if(PAYMENT_CH.has(ch)){
-      // 자사몰: 결제금액(payment_amount) 기준, 중복 행이므로 덮어쓰기(= MAX)
+      // 자사몰: 결제금액은 동일 주문의 각 행에 중복 기록 → 덮어쓰기(= 사실상 MAX)
       const pa=r.payment_amount||r.amount||0;
       if(pa>0) chOrderAmt[ch][oid]=pa;
     } else {
-      // 29CM·무신사 등: 판매가(sale_price) 상품별 합산
+      // 29CM·무신사: 판매가는 상품별로 다름 → 같은 주문 안에서 상품별 합산
       const sp=r.sale_price||r.amount||0;
       chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+sp;
     }
   });
-  // 채널별 shipped/returned는 고유 주문번호 수 (라인 수 아님)
+  // 채널 shipped/returned는 라인 수 X → 고유 주문번호 수로 채움
   Object.keys(byChannel).forEach(ch=>{
     byChannel[ch].shipped  = (chOrderIds[ch]||new Set()).size;
     byChannel[ch].returned = (chReturnedIds[ch]||new Set()).size;
   });
-  // 판교점+일산점 → 오프라인 스토어 합산
-  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+
+  // (4-a) 오프라인 채널(판교점/일산점/매장 머지 행) → "오프라인 스토어"로 통합
+  // 단, 이 단계에서 만든 값들은 storeRows가 있으면 (4-b)에서 storeMetrics로 덮어씀
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
   const offlineOrderIds=new Set();
   const offlineReturnedIds=new Set();
-  const offlineBreakdown={};  // 판교점/일산점 개별 보존
+  const offlineBreakdown={};  // 판교점/일산점 별도 보존(채널별 표 sub-row용)
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
     if(OFFLINE_CHS.has(ch)){
@@ -1266,27 +1325,35 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     chOrderIds["오프라인 스토어"]=offlineOrderIds;
     chReturnedIds["오프라인 스토어"]=offlineReturnedIds;
   }
-  // 매장 판매 CSV 기반 오프라인 매출 및 객단가 주문 ID
+  // (4-b) 매장 판매 CSV가 있으면 storeMetrics로 오프라인 스토어 행 덮어쓰기
+  // 이지어드민 머지 데이터보다 store_sales 원본이 권위 있음
   if(storeRows.length){
+    if(!byChannel["오프라인 스토어"]) byChannel["오프라인 스토어"]={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
+    byChannel["오프라인 스토어"].revenue  = storeRevenue;       // 실판매금액 합 (배송 - 반품)
+    byChannel["오프라인 스토어"].shipped  = storeOrderCount;    // 고유 order_id (배송)
+    byChannel["오프라인 스토어"].returned = storeReturnedCount; // 고유 order_id (반품)
+    // 객단가 분모: 매장 배송 order_id 집합으로 덮어쓰기
+    chOrderIds["오프라인 스토어"] = new Set(storeShippedRows.map(r=>r.order_id).filter(Boolean));
+    // 매장별(판교점/일산점) 매출 breakdown
     const storeByStore={};
     storeRows.forEach(r=>{
       const st=r.store_name||"오프라인 스토어";
-      if(!storeByStore[st]) storeByStore[st]={revenue:0,orderIds:new Set()};
-      if(r.status==="배송"){storeByStore[st].revenue+=(r.amount||0);if(r.order_id)storeByStore[st].orderIds.add(r.order_id);}
+      if(!storeByStore[st]) storeByStore[st]={revenue:0};
+      if(r.status==="배송") storeByStore[st].revenue+=(r.amount||0);
       else if(r.status==="반품") storeByStore[st].revenue-=(r.amount||0);
     });
-    let storeTotal=0; const storeAllIds=new Set();
-    Object.values(storeByStore).forEach(d=>{storeTotal+=d.revenue;d.orderIds.forEach(id=>storeAllIds.add(id));});
-    if(!byChannel["오프라인 스토어"]) byChannel["오프라인 스토어"]={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    byChannel["오프라인 스토어"].revenue=storeTotal;
-    const existingIds=chOrderIds["오프라인 스토어"]||new Set();
-    storeAllIds.forEach(id=>existingIds.add(id));
-    chOrderIds["오프라인 스토어"]=existingIds;
-    // store_sales 기반 판교점/일산점 breakdown 덮어쓰기
     Object.entries(storeByStore).forEach(([st,d])=>{
       if(st!=="오프라인 스토어") offlineBreakdown[st]={name:st,revenue:d.revenue};
     });
   }
+  // ── [채널별 정렬 + 점유율/반품률/객단가] ──────────────
+  // 정렬: 매출 desc, 동률이면 배송 수 desc
+  // share         = 채널 매출 / 전체 채널 매출 합 * 100
+  // returnRate    = 채널 반품(주문수) / 채널 배송(주문수) * 100
+  // uniqueOrders  = chOrderIds[ch].size (오프라인은 매장 order_id, 온라인은 배송 oid)
+  // avgOrderValue:
+  //   - 오프라인 스토어: 매장 매출(storeRevenue) / 매장 주문수(uq)
+  //   - 온라인: 채널 chOrderAmt 합 / 주문번호 수 (revenues CSV가 아닌 orders CSV에서 직접 계산)
   const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
@@ -1295,10 +1362,8 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     const uq=(chOrderIds[c.name]||new Set()).size||c.shipped;
     c.uniqueOrders=uq;
     if(c.name==="오프라인 스토어"){
-      // 오프라인: store_sales CSV 매출 / unique 주문ID
-      c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
+      c.avgOrderValue=storeAOV;  // storeRevenue / storeOrderCount
     } else {
-      // 온라인: orders CSV 주문금액 합 / unique 주문번호 수만 사용 (revenues CSV 제외)
       const orderMap=chOrderAmt[c.name]||{};
       const totalAmt=Object.values(orderMap).reduce((s,a)=>s+a,0);
       const orderCount=Object.keys(orderMap).length;
@@ -1306,7 +1371,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     }
   });
 
-  // 월별 배송/반품
+  // ── [월별 배송/반품 추이] ─────────────────────────────
+  // 소스: 이지어드민 orders CSV (매장 포함 — 차트에서 라인이 채널별로 분리됨)
+  // 계산: order_date의 YYYY-MM 단위 그룹 → 배송/반품 라인 카운트, 반품률
+  // (라인 카운트 유지: 차트는 추세 시각화 목적이므로 행 단위로 충분)
   const byMonth={};
   orderRows.forEach(r=>{
     const ym=r.order_date?r.order_date.slice(0,7):null;
@@ -1319,7 +1387,16 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     .sort((a,b)=>a.month>b.month?1:-1)
     .map(m=>({...m,returnRate:m.shipped>0?(m.returned/m.shipped*100).toFixed(1):"0.0"}));
 
-  // 주간 상품 랭킹 (상품명 기준, 옵션 합산)
+  // ── [판매·반품 Top — 주간 상품 랭킹] ──────────────────
+  // 소스: 이지어드민 orders CSV + store_sales(loadData 머지) — 매장 상품도 포함
+  // 계산:
+  //   - 최신 주(latestWeek) 기준 행만 추림
+  //   - 상품명 기준 그룹화(옵션 합산):
+  //       qty      = SUM(qty)                ← 판매 Top 정렬 기준
+  //       orders   = COUNT(행)               ← 반품률 분모
+  //       returned = COUNT(상태=반품 행)     ← 반품 Top 정렬 기준
+  //   - 판매 Top = qty desc 상위 20
+  //   - 반품 Top = returned>0 중 returned desc 상위 20
   const getWeek=ds=>{
     if(!ds) return null;
     const dt=new Date(ds); if(isNaN(dt)) return null;
@@ -1333,7 +1410,6 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const latestWeek=weeks[weeks.length-1];
   const weekRows=latestWeek?orderRows.filter(r=>getWeek(r.order_date)===latestWeek):orderRows;
 
-  // 상품명 기준 합산 (옵션 미구분)
   const byProd={};
   weekRows.forEach(r=>{
     const key=r.product_name||"미분류";
@@ -1352,6 +1428,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
     totalUniqueOrders,totalOrderedQty,totalDeliveredQty,
+    storeMetrics,  // 매장 별도 KPI: revenue/orderCount/returnedCount/qty/returnedQty/aov
     channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
     chOrderAmt,
   };
@@ -2587,8 +2664,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV)<br/>
-                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관, 장 = 전체 주문 수량) / 배송 수 = 배송 완료된 고유 주문번호 수 (장 = 배송 완료 수량)
+                소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV) — 매장 판매(오프라인 스토어)는 제외<br/>
+                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관, 장 = 전체 주문 수량) / 배송 수 = 배송 완료된 고유 주문번호 수 (장 = 배송 완료 수량)<br/>
+                매장 판매는 별도 수집: 매출 / 매장 주문 수(고유 ID) / 판매 장수(qty 합) / 객단가
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
