@@ -5376,10 +5376,11 @@ function EasyAdminUploader({ onUpdate }) {
           const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
           const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","판매가","금액","amount","price") || f.revenue;
 
-          if(!orderIdCol)   throw new Error("관리번호 컬럼을 찾을 수 없습니다");
-          if(!orderDateCol) throw new Error(`주문일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
+          if(!orderIdCol)      throw new Error("주문번호 컬럼을 찾을 수 없습니다");
+          if(!orderDateCol)    throw new Error(`주문일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
+          if(!deliveryDateCol) throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
 
-          // 주문일+관리번호+상품명+옵션 기준 중복 합산 (주문일별 유니크 보장)
+          // 주문일+주문번호+상품명+옵션 기준 중복 합산 (날짜별 주문 유니크화)
           const grouped={};
           data.filter(r=>{
             if(!r[orderIdCol]) return false;
@@ -5393,17 +5394,18 @@ function EasyAdminUploader({ onUpdate }) {
             const opt=String(r[optionCol]||"").trim();
             const ch=normChannel(r[channelCol]);
             const orderDateVal=toDate(r[orderDateCol]);
-            const deliveryDateVal=deliveryDateCol?toDate(r[deliveryDateCol]):null;
+            const deliveryDateVal=toDate(r[deliveryDateCol]);
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
             const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
             const qty=toNum(r[qtyCol])||1;
             const amt=amtCol?toNum(r[amtCol]):0;
-            // 주문일+관리번호+상품명+옵션 조합을 DB key로 사용 (날짜별 주문 유니크화)
+            // 주문일+주문번호+상품명+옵션 조합을 DB key (날짜별+상품별 유니크)
             const dbKey=`${orderDateVal||""}||${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
-              grouped[dbKey]={order_id:dbKey,order_date:orderDateVal,delivery_date:deliveryDateVal||null,
-                channel:ch,product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
+              grouped[dbKey]={order_id:dbKey,order_no:oid,order_date:orderDateVal,
+                delivery_date:deliveryDateVal||null,channel:ch,
+                product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
             }
             grouped[dbKey].qty+=qty;
             grouped[dbKey].amount+=amt;
@@ -5413,9 +5415,7 @@ function EasyAdminUploader({ onUpdate }) {
           setParsedFile(parsed);
           const sampleRaw=data[0]?.[orderDateCol]??"(없음)";
           const sampleParsed=toDate(sampleRaw)??"파싱실패";
-          setResult({type:"info",msg:`주문일 컬럼: "${orderDateCol}" · 첫 값: "${sampleRaw}" → ${sampleParsed}`
-            +(deliveryDateCol?` | 배송일 컬럼: "${deliveryDateCol}"`:" | 배송일 컬럼 없음")
-            +` | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
+          setResult({type:"info",msg:`주문일: "${orderDateCol}" · 배송일: "${deliveryDateCol}" · 주문번호: "${orderIdCol}" | 첫 주문일: ${sampleParsed} | ${parsed.length}행 파싱 완료`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
@@ -5479,8 +5479,8 @@ function EasyAdminUploader({ onUpdate }) {
               주문일 {startDate} ~ {endDate}
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
-              required="관리번호 · 주문일"
-              optional="배송일 · 판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
+              required="주문번호 · 주문일 · 배송일"
+              optional="판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
@@ -5528,7 +5528,7 @@ function EasyAdminUploader({ onUpdate }) {
               rows={[...inRange,...outRows]}
               outIdx={new Set(inRange.map((_,i)=>-1).concat(outRows.map((_,i)=>inRange.length+i)).filter(i=>i>=inRange.length))}
               cols={[
-                {key:"order_id",label:"관리번호",color:D.textMeta,maxW:90},
+                {key:"order_no",label:"주문번호",color:D.textMeta,maxW:100},
                 {key:"order_date",label:"주문일",color:D.textMeta},
                 {key:"delivery_date",label:"배송일",color:D.textMeta},
                 {key:"channel",label:"판매처",bold:true},
@@ -5551,6 +5551,7 @@ function EasyAdminUploader({ onUpdate }) {
         placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
         cols={[
+          {key:"order_no",label:"주문번호",color:D.textMeta,maxW:110},
           {key:"order_date",label:"주문일",color:D.textMeta},
           {key:"delivery_date",label:"배송일",color:D.textMeta},
           {key:"channel",label:"판매처",bold:true},
@@ -5558,7 +5559,6 @@ function EasyAdminUploader({ onUpdate }) {
           {key:"option_name",label:"옵션",color:D.textMeta},
           {key:"qty",label:"수량"},
           {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:D.green,fontWeight:500}}>{v}</span>},
-          {key:"order_id",label:"관리번호",color:D.textMeta,maxW:120},
         ]}
         onChanged={()=>onUpdate(nowStr())}
       />
@@ -5811,7 +5811,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
-    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필수 컬럼: 관리번호 · 주문일 / 선택 컬럼: 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필수 컬럼: 주문번호 · 주문일 · 배송일 / 선택 컬럼: 판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
