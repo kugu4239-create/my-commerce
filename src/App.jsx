@@ -1195,27 +1195,30 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
   // 채널별 배송 주문 집계: shipped/returned 카운트 + 객단가용 주문금액 맵
-  // chOrderAmt[ch][oid] = 주문금액 (자사몰/무신사: 상품별 합산, 29CM: 최초값만)
+  // 자사몰: MAX(payment_amount) — 결제금액이 각 행에 중복, 합산 금지
+  // 29CM·무신사: SUM(sale_price) — 판매가가 상품별로 다름, 합산 필요
   const chOrderAmt={};  // 객단가 계산용
   const chOrderIds={};  // uniqueOrders 카운트용 (offline 합산에도 사용)
-  // 29CM은 주문번호당 총금액이 각 행에 중복 표시 → 첫 번째 값만
-  const CH_SUM_ALL=new Set(["자사몰","무신사"]);
+  const PAYMENT_CH=new Set(["자사몰"]);   // MAX(payment_amount) 사용 채널
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(r.status==="배송") byChannel[ch].shipped++;
     if(r.status==="반품") byChannel[ch].returned++;
     if(r.status!=="배송") return;
-    const raw=(r.order_id||"");
-    const oid=raw.split("||")[0]||raw;
+    // order_no: 신규 필드 우선, 없으면 order_id 전체를 키로 사용 (이전 데이터 호환)
+    const oid=r.order_no||r.order_id||"";
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
     if(!chOrderAmt[ch]) chOrderAmt[ch]={};
-    const amt=r.amount||0;
-    if(CH_SUM_ALL.has(ch)){
-      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+amt; // 개별 금액 합산
+    if(PAYMENT_CH.has(ch)){
+      // 자사몰: 결제금액(payment_amount) 기준, 중복 행이므로 덮어쓰기(= MAX)
+      const pa=r.payment_amount||r.amount||0;
+      if(pa>0) chOrderAmt[ch][oid]=pa;
     } else {
-      if(chOrderAmt[ch][oid]===undefined) chOrderAmt[ch][oid]=amt; // 29CM: 최초값만
+      // 29CM·무신사 등: 판매가(sale_price) 상품별 합산
+      const sp=r.sale_price||r.amount||0;
+      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+sp;
     }
   });
   // 판교점+일산점 → 오프라인 스토어 합산
