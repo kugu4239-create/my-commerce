@@ -1180,9 +1180,12 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
   // 이지어드민 CSV 기반 KPI
-  const totalShipped  = orderRows.filter(r=>r.status==="배송").length;
+  const shippedRows   = orderRows.filter(r=>r.status==="배송");
+  const totalShipped  = shippedRows.length;
   const totalReturned = orderRows.filter(r=>r.status==="반품").length;
   const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
+  const totalUniqueOrders = new Set(shippedRows.map(r=>r.order_no||r.order_id)).size;
+  const totalDeliveredQty = shippedRows.reduce((s,r)=>s+(r.qty||1),0);
   const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
   // 판매처별 집계
@@ -1331,7 +1334,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
+    totalUniqueOrders,totalDeliveredQty,
     channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
+    chOrderAmt,
   };
 }
 
@@ -1537,6 +1542,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [calOpenFor,setCalOpenFor]=useState(null);
   const [offlineExpanded,setOfflineExpanded]=useState(false);
   const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
+  const [aovModal,setAovModal]=useState(null); // channel name
   const [delPeriod,setDelPeriod]=useState("all");
   const [delStart,setDelStart]=useState("");
   const [delEnd,setDelEnd]=useState("");
@@ -1856,10 +1862,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         </button>
       </div>
 
-      {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
+      {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송·주문은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
         <KPI label="총 매출" value={fmtWonShort(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
-        <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
+        <KPI label="주문 수" value={stats.totalUniqueOrders.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
+        <KPI label="배송 수" value={stats.totalShipped.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
           accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}
@@ -2060,7 +2067,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
                         {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.avgOrderValue>0?fmtWonShort(c.avgOrderValue):"—"}</td>
+                      <td onClick={c.avgOrderValue>0?()=>setAovModal(c.name):undefined}
+                        style={{textAlign:"right",padding:"7px 9px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                          color:c.avgOrderValue>0?D.blue:"—"===c.avgOrderValue?"transparent":D.textMeta,
+                          cursor:c.avgOrderValue>0?"pointer":"default",
+                          textDecoration:c.avgOrderValue>0?"underline":"none"}}>
+                        {c.avgOrderValue>0?fmtWonShort(c.avgOrderValue):"—"}</td>
                     </tr>
                   );
                 })}
@@ -2516,70 +2528,87 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           );
         }
 
-        /* ── 배송 ── */
+        /* ── 주문·배송 ── */
         else if(kpiModal==="shipped"){
-          modalTitle="배송 소스";
+          modalTitle="주문·배송 소스";
           const shipped=filteredOrders.filter(r=>r.status==="배송");
           const byCh={};
           shipped.forEach(r=>{
             const ch=normCh(r.channel);
-            if(!byCh[ch]) byCh[ch]={cnt:0,oids:new Set()};
+            if(!byCh[ch]) byCh[ch]={cnt:0,qty:0,oids:new Set()};
             byCh[ch].cnt++;
-            const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
+            byCh[ch].qty+=(r.qty||1);
+            const oid=r.order_no||r.order_id||"";
             if(oid) byCh[ch].oids.add(oid);
           });
           const chRows=Object.entries(byCh).sort((a,b)=>b[1].cnt-a[1].cnt);
           const byDate={};
           shipped.forEach(r=>{
             const d=r.order_date||"—";
-            if(!byDate[d]) byDate[d]=0;
-            byDate[d]++;
+            if(!byDate[d]) byDate[d]={cnt:0,qty:0,oids:new Set()};
+            byDate[d].cnt++;
+            byDate[d].qty+=(r.qty||1);
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byDate[d].oids.add(oid);
           });
           const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
+          const totalQty=shipped.reduce((s,r)=>s+(r.qty||1),0);
           modalContent=(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            <div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV)<br/>
+                주문 수 = 배송 완료된 고유 주문번호 수 / 배송 수 = 배송 완료된 상품 라인 수 / 장 = 수량 합계
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별</div>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                     <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
-                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
-                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문수(고유)</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문 수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송 수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>장</th>
                   </tr></thead>
                   <tbody>
                     {chRows.map(([ch,d])=>(
                       <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.cnt.toLocaleString()}</td>
                         <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{d.oids.size.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.cnt.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{d.qty.toLocaleString()}</td>
                       </tr>
                     ))}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{stats.totalUniqueOrders.toLocaleString()}</td>
                       <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                      <td/>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{totalQty.toLocaleString()}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
               <div>
-                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>날짜별 (최근 30일)</div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>주문일별 (최근 30일)</div>
                 <div style={{maxHeight:360,overflowY:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
-                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>주문일</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문 수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>장</th>
                   </tr></thead>
                   <tbody>
-                    {dateRows.map(([d,cnt])=>(
+                    {dateRows.map(([d,v])=>(
                       <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green,fontWeight:600}}>{cnt.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green,fontWeight:600}}>{v.oids.size.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{v.qty.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 </div>
+              </div>
               </div>
             </div>
           );
@@ -2750,6 +2779,86 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
               </div>
               {modalContent}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 객단가 소스 모달 */}
+      {aovModal&&(()=>{
+        const ch=aovModal;
+        const isOffline=ch==="오프라인 스토어";
+        let rows=[];
+        if(isOffline){
+          const offMap={};
+          filteredStoreSales.filter(r=>r.status==="배송"&&r.order_id).forEach(r=>{
+            if(!offMap[r.order_id]) offMap[r.order_id]={order_no:r.order_id,date:r.sale_date,amount:0,store:r.store_name||""};
+            offMap[r.order_id].amount+=(r.amount||0);
+          });
+          rows=Object.values(offMap).sort((a,b)=>a.date<b.date?1:-1);
+        } else {
+          const orderMap=stats.chOrderAmt?.[ch]||{};
+          // order_date lookup from filteredOrders
+          const dateLookup={};
+          filteredOrders.filter(r=>(r.channel||"")===(ch||"")).forEach(r=>{
+            const oid=r.order_no||r.order_id;
+            if(oid&&!dateLookup[oid]) dateLookup[oid]=r.order_date||"";
+          });
+          rows=Object.entries(orderMap).map(([oid,amt])=>({
+            order_no:oid,date:dateLookup[oid]||"—",amount:amt
+          })).sort((a,b)=>a.date<b.date?1:-1);
+        }
+        const totalAmt=rows.reduce((s,r)=>s+(r.amount||0),0);
+        const aov=rows.length>0?Math.round(totalAmt/rows.length):0;
+        const PAYMENT_CH=new Set(["자사몰"]);
+        const amtLabel=isOffline?"실판매금액 합":PAYMENT_CH.has(ch)?"결제금액":"판매가 합";
+        return(
+          <div onClick={()=>setAovModal(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+                width:"min(600px,95vw)",maxHeight:"85vh",overflowY:"auto",
+                boxShadow:"0 8px 40px rgba(0,0,0,0.22)",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:15,color:D.black}}>{ch} 객단가 소스</div>
+                <button onClick={()=>setAovModal(null)}
+                  style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                    padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+              </div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: 주문·배송 업로드 데이터 (이지어드민){isOffline?" / 매장 판매 업로드 데이터":""}<br/>
+                금액 기준: {amtLabel}<br/>
+                객단가 = {totalAmt.toLocaleString()}원 ÷ {rows.length}건 = <b>{fmtWon(aov)}</b>
+              </div>
+              <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${D.border}`}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문번호</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문일</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>{amtLabel}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0,200).map((r,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:200,
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.order_no}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600}}>{(r.amount||0).toLocaleString()}원</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700,background:D.bg}}>
+                    <td style={{padding:"7px"}}>합계 {rows.length}건</td>
+                    <td/>
+                    <td style={{textAlign:"right",padding:"7px"}}>{totalAmt.toLocaleString()}원</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {rows.length>200&&<div style={{fontSize:11,color:D.textMeta,marginTop:8}}>상위 200건만 표시 (전체 {rows.length}건)</div>}
             </div>
           </div>
         );
