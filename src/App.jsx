@@ -5330,22 +5330,16 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
 // DATA INPUT — 이지어드민 CSV (주문일 기준 · 배송일 선택)
 // ─────────────────────────────────────────────
 function EasyAdminUploader({ onUpdate }) {
-  const today=new Date().toISOString().slice(0,10);
-  const [startDate,setStartDate]=useState(today);
-  const [endDate,setEndDate]=useState(today);
+  const [startDate,setStartDate]=useState("");
+  const [endDate,setEndDate]=useState("");
   const [step,setStep]=useState(0);
   const [fileName,setFileName]=useState("");
-  const [parsedFile,setParsedFile]=useState(null); // 파일 파싱 결과 (업로드 전)
-  const [allRows,setAllRows]=useState([]);
+  const [parsedFile,setParsedFile]=useState(null);
   const [inRange,setInRange]=useState([]);
   const [outRows,setOutRows]=useState([]);
   const [dupInfo,setDupInfo]=useState(null);
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
-  const dateValid=startDate&&endDate&&startDate<=endDate;
-
-  // Step 0→1: 기간 확정
-  const confirmDate=()=>{ if(dateValid) setStep(1); };
 
   // Step 1: 파일 선택 (파싱만, 업로드 X)
   const handleFile=useCallback(file=>{
@@ -5428,26 +5422,29 @@ function EasyAdminUploader({ onUpdate }) {
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
-          const sampleRaw=data[0]?.[orderDateCol]??"(없음)";
-          const sampleParsed=toDate(sampleRaw)??"파싱실패";
-          setResult({type:"info",msg:`주문일: "${orderDateCol}" · 배송일: "${deliveryDateCol}" · 주문번호: "${orderIdCol}" | 첫 주문일: ${sampleParsed} | ${parsed.length}행 파싱 완료`});
+          // 주문일 min/max 자동 감지
+          const dates=parsed.map(r=>r.order_date).filter(Boolean).sort();
+          const autoStart=dates[0]||"";
+          const autoEnd=dates[dates.length-1]||"";
+          setStartDate(autoStart);
+          setEndDate(autoEnd);
+          const validRows=parsed.filter(r=>r.order_date);
+          const noDateRows=parsed.filter(r=>!r.order_date);
+          setInRange(validRows);
+          setOutRows(noDateRows);
+          setDupInfo({total:validRows.length,newCount:validRows.length,updateCount:0,sameCount:0});
+          setResult({type:"info",msg:`주문일 ${autoStart} ~ ${autoEnd} · ${validRows.length}건 파싱 완료`+(noDateRows.length>0?` (주문일 없는 ${noDateRows.length}건 제외)`:"")+` | 주문번호: "${orderIdCol}" · 배송일: "${deliveryDateCol}"`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
 
-  // Step 1→2: 미리보기 (파싱 결과만 확인, DB 조회 없음)
-  const handlePreview=async()=>{
+  // Step 0→1: 미리보기 (파싱 완료 후 확인)
+  const handlePreview=()=>{
     if(!parsedFile?.length) {setResult({type:"error",msg:"파일을 먼저 선택해주세요"});return;}
-    setLoading(true);
-    const inR=parsedFile.filter(r=>r.order_date&&r.order_date>=startDate&&r.order_date<=endDate);
-    const outR=parsedFile.filter(r=>!r.order_date||r.order_date<startDate||r.order_date>endDate);
-    setInRange(inR); setOutRows(outR);
-    setDupInfo({total:inR.length,newCount:inR.length,updateCount:0,sameCount:0});
-    setLoading(false);
-    setStep(2);
+    setStep(1);
   };
 
-  // Step 2→3: 확정 업로드 (기간 내 전체 삭제 후 재삽입 → 재업로드 시 완전 교체)
+  // Step 1→2: 확정 업로드 (기간 내 전체 삭제 후 재삽입 → 재업로드 시 완전 교체)
   const handleUpload=async()=>{
     if(!inRange.length) return;
     setLoading(true); setResult(null);
@@ -5466,64 +5463,53 @@ function EasyAdminUploader({ onUpdate }) {
       inserted:inRange.length,updated:0,
       skipped:outRows.length,date_start:startDate,date_end:endDate,
     });
-    setStep(3);
+    setStep(2);
     const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
-    setResult({type:"success",msg:`기간 내 ${inRange.length}건 등록 / 기간 외 ${outRows.length}건 제외${replaceNote}`,ts:ts2});
+    setResult({type:"success",msg:`${inRange.length}건 등록 완료 (${startDate} ~ ${endDate})${replaceNote}`,ts:ts2});
     onUpdate(ts2); setLoading(false);
   };
 
-  const reset=()=>{setStep(0);setAllRows([]);setInRange([]);setOutRows([]);setDupInfo(null);setFileName("");setParsedFile(null);setResult(null);};
+  const reset=()=>{setStep(0);setInRange([]);setOutRows([]);setDupInfo(null);setFileName("");setParsedFile(null);setResult(null);setStartDate("");setEndDate("");};
 
   return (
     <div>
-      <Steps current={step} steps={["주문일 기간","파일 선택","미리보기 확인","완료"]}/>
+      <Steps current={step} steps={["파일 선택","미리보기 확인","완료"]}/>
       <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
         <Card>
           {step===0&&<>
-            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>주문일 기간 선택</div>
-            <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
-              onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
-            <div style={{color:D.blue,fontSize:10,marginBottom:12,lineHeight:1.7}}>
-              주문일 기준 · 관리번호 기준 upsert<br/>신규→추가 / 기존→상태업데이트
-            </div>
-            <Btn onClick={confirmDate} disabled={!dateValid} style={{width:"100%"}}>다음</Btn>
-          </>}
-          {step===1&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 선택</div>
-            <div style={{color:D.textMeta,fontSize:11,marginBottom:10,lineHeight:1.6}}>
-              주문일 {startDate} ~ {endDate}
-            </div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
               required="주문번호 · 주문일 · 배송일"
               optional="판매처 · 상품명 · 옵션 · 수량 · 판매가 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
-            <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
+            {startDate&&<div style={{color:D.blue,fontSize:11,marginTop:8,lineHeight:1.7}}>
+              감지된 주문일: <b>{startDate}</b> ~ <b>{endDate}</b>
+            </div>}
+            <div style={{marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
-                {loading?"분석 중...":"미리보기"}
+                {loading?"파싱 중...":"미리보기"}
               </Btn>
-              <button onClick={()=>setStep(0)}
-                style={{background:"transparent",border:"none",color:D.textMeta,
-                  fontSize:11,cursor:"pointer",padding:"5px"}}>← 기간 다시 선택</button>
             </div>
           </>}
-          {step===2&&<>
+          {step===1&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>미리보기 확인</div>
             {dupInfo&&<StatRow items={[
-              {label:"기간 내 등록",value:`${dupInfo.total}건`,color:D.green},
-              {label:"기간 외 제외",value:`${outRows.length}건`,color:D.textMeta},
+              {label:"업로드 대상",value:`${dupInfo.total}건`,color:D.green},
+              {label:"주문일 없음(제외)",value:`${outRows.length}건`,color:D.textMeta},
             ]}/>}
-            {outRows.length>0&&<Alert type="warn" msg={`기간 밖 ${outRows.length}건 제외`}/>}
+            <div style={{color:D.textMeta,fontSize:11,marginBottom:8}}>주문일 {startDate} ~ {endDate}</div>
+            {outRows.length>0&&<Alert type="warn" msg={`주문일 없는 ${outRows.length}건 제외`}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handleUpload} disabled={loading||!inRange.length} style={{width:"100%"}}>
                 {loading?"처리 중...":`확정 업로드 (${dupInfo?.total||0}건)`}
               </Btn>
-              <button onClick={()=>setStep(1)}
+              <button onClick={()=>setStep(0)}
                 style={{background:"transparent",border:"none",color:D.textMeta,
                   fontSize:11,cursor:"pointer",padding:"5px"}}>← 파일 다시 선택</button>
             </div>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
-          {step===3&&<div style={{textAlign:"center"}}>
+          {step===2&&<div style={{textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:8}}>✓</div>
             <div style={{color:D.green,fontWeight:600,marginBottom:10}}>업로드 완료</div>
             {result&&<Alert type={result.type} msg={result.msg} ts={result.ts}/>}
