@@ -1184,7 +1184,8 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalShipped  = shippedRows.length;
   const totalReturned = orderRows.filter(r=>r.status==="반품").length;
   const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
-  const totalUniqueOrders = new Set(shippedRows.map(r=>r.order_no||r.order_id)).size;
+  // 주문 수: 배송 완료 여부 무관, 전체 고유 주문번호 카운트
+  const totalUniqueOrders = new Set(orderRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalDeliveredQty = shippedRows.reduce((s,r)=>s+(r.qty||1),0);
   const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
@@ -2537,23 +2538,32 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           modalTitle="주문·배송 소스";
           const shipped=filteredOrders.filter(r=>r.status==="배송");
           const byCh={};
+          // 주문 수(oids)는 전체 행 기준, 배송 수/장은 배송 완료 기준
+          filteredOrders.forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={cnt:0,qty:0,oids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byCh[ch].oids.add(oid);
+          });
           shipped.forEach(r=>{
             const ch=normCh(r.channel);
             if(!byCh[ch]) byCh[ch]={cnt:0,qty:0,oids:new Set()};
             byCh[ch].cnt++;
             byCh[ch].qty+=(r.qty||1);
-            const oid=r.order_no||r.order_id||"";
-            if(oid) byCh[ch].oids.add(oid);
           });
           const chRows=Object.entries(byCh).sort((a,b)=>b[1].cnt-a[1].cnt);
           const byDate={};
+          filteredOrders.forEach(r=>{
+            const d=r.order_date||"—";
+            if(!byDate[d]) byDate[d]={cnt:0,qty:0,oids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byDate[d].oids.add(oid);
+          });
           shipped.forEach(r=>{
             const d=r.order_date||"—";
             if(!byDate[d]) byDate[d]={cnt:0,qty:0,oids:new Set()};
             byDate[d].cnt++;
             byDate[d].qty+=(r.qty||1);
-            const oid=r.order_no||r.order_id||"";
-            if(oid) byDate[d].oids.add(oid);
           });
           const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
           const totalQty=shipped.reduce((s,r)=>s+(r.qty||1),0);
@@ -2562,7 +2572,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
                 소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV)<br/>
-                주문 수 = 배송 완료된 고유 주문번호 수 / 배송 수 = 배송 완료된 상품 라인 수 / 장 = 수량 합계
+                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관) / 배송 수 = 배송 완료된 상품 라인 수 / 장 = 배송 완료된 수량 합계
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
