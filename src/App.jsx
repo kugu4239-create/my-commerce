@@ -679,14 +679,14 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   }
 };
 
-function DropZone({ onFile, label="파일을 드래그 앤 드롭 또는 클릭하여 선택", fileName="", required="", optional="" }) {
+function DropZone({ onFile, label="파일을 드래그 앤 드롭 또는 클릭하여 선택", fileName="", columns="" }) {
   const [hover,setHover]=useState(false);
   const handle=useCallback(e=>{
     e.preventDefault();
     const file=e.dataTransfer?.files?.[0]||e.target.files?.[0];
     if(file) onFile(file);
   },[onFile]);
-  const cols=[...required.split("·").map(s=>s.trim()).filter(Boolean),...optional.split("·").map(s=>s.trim()).filter(Boolean)].filter(Boolean);
+  const cols=columns.split("·").map(s=>s.trim()).filter(Boolean);
   return (
     <label onDragOver={e=>{e.preventDefault();setHover(true);}}
       onDragLeave={()=>setHover(false)} onDrop={e=>{setHover(false);handle(e);}}
@@ -3226,8 +3226,7 @@ function InventoryAgingUploader({ onDone }){
         필요 시 <strong>정상재고 1 이상</strong>으로 검색한 애널리틱스용 파일을 업로드해주세요.
       </div>
       <DropZone onFile={handleFile} fileName={fileName} label="재고 파일 업로드"
-        required="상품명 · 처음입고일"
-        optional="옵션 · 수량 · 마지막배송일"/>
+        columns="상품명 · 옵션 · 수량 · 처음입고일 · 마지막배송일"/>
       {(preview||loading)&&(
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:8}}>
           {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
@@ -4809,8 +4808,7 @@ function CSDataInput() {
             선택: [날짜] [판매처]
           </div>
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
-            required="상품명 · 반품사유"
-            optional="날짜 · 판매처"/>
+            columns="날짜 · 판매처 · 상품명 · 반품사유"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
         </div>
       </Card>
@@ -5188,8 +5186,7 @@ function RevenueForm({ onUpdate }) {
         <div style={{marginTop:14,borderTop:`1px solid ${D.border}`,paddingTop:14}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>CSV 일괄 업로드</div>
           <DropZone onFile={handleCsvFile} label="매출 파일 업로드"
-            required="날짜 · 매출금액"
-            optional="판매처 · 주문수 · 환불금 · 환불수"/>
+            columns="날짜 · 판매처 · 매출금액 · 주문수 · 환불금 · 환불수"/>
           {csvPreview?.error&&<div style={{color:D.red,fontSize:10,marginTop:4}}>{csvPreview.error}</div>}
           {csvPreview&&!csvPreview.error&&(csvPreview.overlaps?.length===0||csvConflictChoice)&&(
             <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center"}}>
@@ -5425,8 +5422,7 @@ function StockUploader({ onUpdate }) {
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
             <StatRow items={[{label:"삭제 예정",value:`${existing?.length||0}건`,color:D.red}]}/>
             <DropZone onFile={handleFile} fileName={fileName} label="입고 파일 업로드"
-              required="상품명"
-              optional="옵션 · 수량 · 메모"/>
+              columns="상품명 · 옵션 · 수량 · 메모"/>
             <button onClick={()=>{setStep(0);setExisting(null);}}
               style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,
                 fontSize:11,cursor:"pointer",marginTop:8,padding:"5px"}}>← 기간 다시 선택</button>
@@ -5742,9 +5738,7 @@ function EasyAdminUploader({ onUpdate }) {
             for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
             return null;
           };
-          // 주문일 (필수)
           const orderDateCol = findCol("주문일","주문일시","주문날짜","order_date","날짜","date") || f.date;
-          // 배송일 (선택)
           const deliveryDateCol = findCol("배송일","배송일시","배송날짜","배송완료일","발송일","출고일","출고일시","출고완료일","배송(예정)일","예정배송일","delivery_date");
           const orderIdCol = findCol("주문번호","orderid") || findCol("관리번호","order_id") || f.orderId;
           const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
@@ -5863,8 +5857,7 @@ function EasyAdminUploader({ onUpdate }) {
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 선택</div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
-              required="주문번호 · 주문일 · 배송일"
-              optional="판매처 · 상품명 · 옵션 · 수량 · 판매가 · 결제금액 · CS처리"/>
+              columns="주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             {startDate&&<div style={{color:D.blue,fontSize:11,marginTop:8,lineHeight:1.7}}>
               감지된 주문일: <b>{startDate}</b> ~ <b>{endDate}</b>
@@ -6035,13 +6028,11 @@ function StoreUploader({ onUpdate }) {
             <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 CSV 업로드</div>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.7}}>
               POS 시스템 판매 데이터를 업로드합니다.<br/>
-              인식 컬럼: <b>구매일자</b>, <b>상품명</b>, <b>수량</b>, <b>실판매금액</b><br/>
-              <b>매장</b>, <b>옵션</b>, <b>ID</b> (객단가 분모) 선택<br/>
+              인식 컬럼: <b>구매일자 · 매장 · 상품명 · 옵션 · 수량 · 실판매금액 · ID</b><br/>
               실판매금액=0인 행 자동 제외
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"
-              required="구매일자 · 상품명 · 수량 · 실판매금액"
-              optional="매장 · 옵션 · ID"/>
+              columns="구매일자 · 매장 · 상품명 · 옵션 · 수량 · 실판매금액 · ID"/>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
@@ -6196,7 +6187,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
-    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필수 컬럼: 주문번호 · 주문일 · 배송일\n선택 컬럼: 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필요 컬럼: 주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
