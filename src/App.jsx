@@ -1179,10 +1179,11 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
-  // 이지어드민 CSV 기반 KPI
+  // 이지어드민 CSV 기반 KPI — 배송/반품 수는 고유 주문번호 기준으로 카운트
   const shippedRows   = orderRows.filter(r=>r.status==="배송");
-  const totalShipped  = shippedRows.length;
-  const totalReturned = orderRows.filter(r=>r.status==="반품").length;
+  const returnedRows  = orderRows.filter(r=>r.status==="반품");
+  const totalShipped  = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalReturned = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
   // 주문 수: 배송 완료 여부 무관, 전체 고유 주문번호 카운트
   const totalUniqueOrders = new Set(orderRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
@@ -1204,6 +1205,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 29CM·무신사: SUM(sale_price) — 판매가가 상품별로 다름, 합산 필요
   const chOrderAmt={};  // 객단가 계산용
   const chOrderIds={};  // uniqueOrders 카운트용 (offline 합산에도 사용)
+  const chReturnedIds={}; // 반품 고유 주문번호 카운트용
   const PAYMENT_CH=new Set(["자사몰"]);   // MAX(payment_amount) 사용 채널
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
@@ -1212,8 +1214,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
     const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    if(status==="배송") byChannel[ch].shipped++;
-    if(status==="반품") byChannel[ch].returned++;
+    if(status==="반품"&&oid){
+      if(!chReturnedIds[ch]) chReturnedIds[ch]=new Set();
+      chReturnedIds[ch].add(oid);
+    }
     if(status!=="배송") return;
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
@@ -1228,10 +1232,16 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+sp;
     }
   });
+  // 채널별 shipped/returned는 고유 주문번호 수 (라인 수 아님)
+  Object.keys(byChannel).forEach(ch=>{
+    byChannel[ch].shipped  = (chOrderIds[ch]||new Set()).size;
+    byChannel[ch].returned = (chReturnedIds[ch]||new Set()).size;
+  });
   // 판교점+일산점 → 오프라인 스토어 합산
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
   const offlineOrderIds=new Set();
+  const offlineReturnedIds=new Set();
   const offlineBreakdown={};  // 판교점/일산점 개별 보존
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
@@ -1240,18 +1250,21 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       offlineAgg.revenue+=byChannel[ch].revenue;
       offlineAgg.orderCount+=byChannel[ch].orderCount;
       offlineAgg.refundCount+=byChannel[ch].refundCount;
-      offlineAgg.shipped+=byChannel[ch].shipped;
-      offlineAgg.returned+=byChannel[ch].returned;
       (chOrderIds[ch]||new Set()).forEach(id=>offlineOrderIds.add(id));
+      (chReturnedIds[ch]||new Set()).forEach(id=>offlineReturnedIds.add(id));
       if(ch!=="오프라인스토어"&&ch!=="오프라인"&&ch!=="오프라인 스토어")
         offlineBreakdown[ch]={...byChannel[ch]};
       delete byChannel[ch];
       delete chOrderIds[ch];
+      delete chReturnedIds[ch];
     }
   });
   if(hasOffline){
+    offlineAgg.shipped  = offlineOrderIds.size;
+    offlineAgg.returned = offlineReturnedIds.size;
     byChannel["오프라인 스토어"]=offlineAgg;
     chOrderIds["오프라인 스토어"]=offlineOrderIds;
+    chReturnedIds["오프라인 스토어"]=offlineReturnedIds;
   }
   // 매장 판매 CSV 기반 오프라인 매출 및 객단가 주문 ID
   if(storeRows.length){
@@ -2539,31 +2552,33 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           modalTitle="주문·배송 소스";
           const shipped=filteredOrders.filter(r=>r.status==="배송");
           const byCh={};
-          // 주문 수(oids)는 전체 행 기준, 배송 수/장은 배송 완료 기준
+          // 주문 수(oids)는 전체 행 기준, 배송 수(shippedOids)는 배송 완료된 고유 주문번호
           filteredOrders.forEach(r=>{
             const ch=normCh(r.channel);
-            if(!byCh[ch]) byCh[ch]={cnt:0,qty:0,oids:new Set()};
+            if(!byCh[ch]) byCh[ch]={qty:0,oids:new Set(),shippedOids:new Set()};
             const oid=r.order_no||r.order_id||"";
             if(oid) byCh[ch].oids.add(oid);
           });
           shipped.forEach(r=>{
             const ch=normCh(r.channel);
-            if(!byCh[ch]) byCh[ch]={cnt:0,qty:0,oids:new Set()};
-            byCh[ch].cnt++;
+            if(!byCh[ch]) byCh[ch]={qty:0,oids:new Set(),shippedOids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byCh[ch].shippedOids.add(oid);
             byCh[ch].qty+=(r.qty||1);
           });
-          const chRows=Object.entries(byCh).sort((a,b)=>b[1].cnt-a[1].cnt);
+          const chRows=Object.entries(byCh).sort((a,b)=>b[1].shippedOids.size-a[1].shippedOids.size);
           const byDate={};
           filteredOrders.forEach(r=>{
             const d=r.order_date||"—";
-            if(!byDate[d]) byDate[d]={cnt:0,qty:0,oids:new Set()};
+            if(!byDate[d]) byDate[d]={qty:0,oids:new Set(),shippedOids:new Set()};
             const oid=r.order_no||r.order_id||"";
             if(oid) byDate[d].oids.add(oid);
           });
           shipped.forEach(r=>{
             const d=r.order_date||"—";
-            if(!byDate[d]) byDate[d]={cnt:0,qty:0,oids:new Set()};
-            byDate[d].cnt++;
+            if(!byDate[d]) byDate[d]={qty:0,oids:new Set(),shippedOids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byDate[d].shippedOids.add(oid);
             byDate[d].qty+=(r.qty||1);
           });
           const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
@@ -2573,7 +2588,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
                 소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV)<br/>
-                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관, 장 = 전체 주문 수량) / 배송 수 = 배송 완료된 상품 라인 수 (장 = 배송 완료 수량)
+                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관, 장 = 전체 주문 수량) / 배송 수 = 배송 완료된 고유 주문번호 수 (장 = 배송 완료 수량)
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
@@ -2590,7 +2605,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
                         <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{d.oids.size.toLocaleString()}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.cnt.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.shippedOids.size.toLocaleString()}</td>
                         <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{d.qty.toLocaleString()}</td>
                       </tr>
                     ))}
