@@ -5371,10 +5371,16 @@ function EasyAdminUploader({ onUpdate }) {
           const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
           const productCol = findCol("상품명","product","품명") || f.product;
           const optionCol  = findCol("옵션명","옵션","option") || f.option;
-          const csCol      = findCol("CS","cs처리","cs상태","cs") || f.cs;
-          const statusCol  = findCol("상태","status") || f.status;
-          const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
-          const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","판매가","금액","amount","price") || f.revenue;
+          const csCol          = findCol("CS","cs처리","cs상태","cs") || f.cs;
+          const statusCol      = findCol("상태","status") || f.status;
+          const qtyCol         = findCol("주문수량","수량","qty","quantity") || f.qty;
+          // 판매가 (상품별, 29CM·무신사 AOV용 SUM)
+          const salePriceCol   = findCol("판매가","상품금액","상품판매가","item_price");
+          // 결제금액 (주문 단위, 자사몰 AOV용 — 합산 금지)
+          const paymentAmtCol  = findCol("결제금액","주문금액","결제총액","실결제금액","payment_amount");
+          // amount: 하위 호환용 (기존 차트 소스)
+          const amtCol         = salePriceCol || paymentAmtCol
+                               || findCol("판매금액","실판매가","금액","amount","price") || f.revenue;
 
           if(!orderIdCol)      throw new Error("주문번호 컬럼을 찾을 수 없습니다");
           if(!orderDateCol)    throw new Error(`주문일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
@@ -5399,16 +5405,22 @@ function EasyAdminUploader({ onUpdate }) {
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
             const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
             const qty=toNum(r[qtyCol])||1;
-            const amt=amtCol?toNum(r[amtCol]):0;
+            const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
+            const paymentAmtVal = paymentAmtCol ? toNum(r[paymentAmtCol]) : 0;
+            const amt = salePriceVal || paymentAmtVal || (amtCol?toNum(r[amtCol]):0);
             // 주문일+주문번호+상품명+옵션 조합을 DB key (날짜별+상품별 유니크)
             const dbKey=`${orderDateVal||""}||${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
               grouped[dbKey]={order_id:dbKey,order_no:oid,order_date:orderDateVal,
                 delivery_date:deliveryDateVal||null,channel:ch,
-                product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
+                product_name:prod,option_name:opt,
+                qty:0,amount:0,sale_price:0,payment_amount:0,
+                status,raw_status:csRaw||statusRaw};
             }
             grouped[dbKey].qty+=qty;
-            grouped[dbKey].amount+=amt;
+            grouped[dbKey].amount+=amt;                                        // 하위 호환
+            grouped[dbKey].sale_price+=salePriceVal;                          // 상품별 합산 (29CM·무신사)
+            if(paymentAmtVal) grouped[dbKey].payment_amount=paymentAmtVal;    // 주문 단위, 덮어쓰기 (합산 X)
             grouped[dbKey].status=status;
           });
           const parsed=Object.values(grouped);
@@ -5480,7 +5492,7 @@ function EasyAdminUploader({ onUpdate }) {
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
               required="주문번호 · 주문일 · 배송일"
-              optional="판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
+              optional="판매처 · 상품명 · 옵션 · 수량 · 판매가 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
@@ -5811,7 +5823,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
-    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필수 컬럼: 주문번호 · 주문일 · 배송일 / 선택 컬럼: 판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필수 컬럼: 주문번호 · 주문일 · 배송일\n선택 컬럼: 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
