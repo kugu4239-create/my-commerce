@@ -1186,6 +1186,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
   // 주문 수: 배송 완료 여부 무관, 전체 고유 주문번호 카운트
   const totalUniqueOrders = new Set(orderRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalOrderedQty = orderRows.reduce((s,r)=>s+(r.qty||1),0);
   const totalDeliveredQty = shippedRows.reduce((s,r)=>s+(r.qty||1),0);
   const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
@@ -1337,7 +1338,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
-    totalUniqueOrders,totalDeliveredQty,
+    totalUniqueOrders,totalOrderedQty,totalDeliveredQty,
     channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
     chOrderAmt,
   };
@@ -1868,7 +1869,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송·주문은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
         <KPI label="총 매출" value={fmtWonShort(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
-        <KPI label="주문 수" value={stats.totalUniqueOrders.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
+        <KPI label="주문 수" value={stats.totalUniqueOrders.toLocaleString()+"건"} sub={stats.totalOrderedQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         <KPI label="배송 수" value={stats.totalShipped.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
           sub={stats.totalReturned.toLocaleString()+"건"}
@@ -2572,7 +2573,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
                 소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV)<br/>
-                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관) / 배송 수 = 배송 완료된 상품 라인 수 / 장 = 배송 완료된 수량 합계
+                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관, 장 = 전체 주문 수량) / 배송 수 = 배송 완료된 상품 라인 수 (장 = 배송 완료 수량)
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
