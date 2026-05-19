@@ -468,7 +468,8 @@ function Alert({ type, msg, ts }) {
   const i = {success:"✓",error:"✕",warn:"⚠",info:"i"}[type];
   return (
     <div style={{ background:`${c}0d`, border:`1px solid ${c}30`, borderRadius:7,
-      padding:"9px 13px", color:c, fontSize:12, marginTop:9, lineHeight:1.5 }}>
+      padding:"9px 13px", color:c, fontSize:12, marginTop:9, lineHeight:1.5,
+      whiteSpace:"pre-line" }}>
       {i} {msg}<UpdatedAt ts={ts}/>
     </div>
   );
@@ -641,6 +642,46 @@ const parseHtmlTable=(text,opts)=>{
   return data;
 };
 
+// ─────────────────────────────────────────────
+// 업로더 공통 — 누구나 알아볼 수 있는 에러 메시지 빌더
+// ─────────────────────────────────────────────
+// 컬럼 누락 에러: 파일에 있는 헤더 + 필요한 컬럼 + 누락된 것 + 해결법까지 함께 표시
+function uploadErrColumns({ missing, required, headers }) {
+  const headerLines = headers?.length
+    ? headers.map(h=>`  • ${h}`).join("\n")
+    : "  (헤더가 비어있음)";
+  return [
+    `필요한 컬럼을 파일에서 찾지 못했습니다.`,
+    ``,
+    `누락된 컬럼: ${missing.join(", ")}`,
+    ``,
+    `현재 파일의 컬럼 헤더 (첫 행):`,
+    headerLines,
+    ``,
+    `이 업로더가 필요로 하는 컬럼:`,
+    required.map(r=>`  • ${r}`).join("\n"),
+    ``,
+    `해결 방법: 파일의 첫 행 헤더에 위 컬럼명을 포함시키세요. 일부 유사 이름은 자동 매칭됩니다(예: '관리번호'→주문번호).`,
+  ].join("\n");
+}
+// 파일 파싱 실패 에러 (포맷 불일치, 헤더 누락 등)
+function uploadErrParse(detail="") {
+  return [
+    `파일을 읽을 수 없습니다.`,
+    detail?`\n원인: ${detail}`:"",
+    ``,
+    `확인 사항:`,
+    `  • CSV 또는 Excel(.xlsx / .xls) 파일이 맞는지`,
+    `  • 첫 행이 컬럼 헤더이고, 그 아래에 1개 이상의 데이터 행이 있는지`,
+    `  • 파일이 손상되지 않았는지 (Excel로 한 번 열어서 다시 저장해보세요)`,
+  ].join("\n");
+}
+// 데이터 갈음 안내 — 업로드 직전에 보여줘야 함
+function uploadReplaceWarn(prevCount, scope) {
+  if(!prevCount||prevCount<=0) return "";
+  return `⚠ 기존 ${prevCount.toLocaleString()}건이 삭제되고 새 데이터로 교체됩니다 (${scope}).`;
+}
+
 const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="xlsx"||ext==="xls"){
@@ -669,7 +710,7 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
           data=parseHtmlTable(text,opts);
         }
 
-        if(!data||!data.length) throw new Error("파일을 파싱할 수 없습니다");
+        if(!data||!data.length) throw new Error(uploadErrParse("Excel/HTML 모두 시도했으나 행을 추출하지 못했습니다"));
         completeCb({data});
       }catch(err){if(errorCb)errorCb(err);}
     };
@@ -3168,7 +3209,7 @@ function InventoryAgingUploader({ onDone }){
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          if(!data.length) throw new Error("데이터가 없습니다");
+          if(!data.length) throw new Error(uploadErrParse("파일에 데이터 행이 없습니다"));
           const cols=Object.keys(data[0]);
           const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
           const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
@@ -3177,8 +3218,16 @@ function InventoryAgingUploader({ onDone }){
           const qtyCol=find("수량","qty","quantity","개수","재고");
           const recCol=find("처음입고일","입고일","최초입고","first","입고");
           const shipCol=find("마지막배송일","최종배송일","마지막출고","last","배송일","출고일");
-          if(!prodCol) throw new Error("상품명 컬럼을 찾을 수 없습니다");
-          if(!recCol)  throw new Error("처음입고일 컬럼을 찾을 수 없습니다");
+          const missingCols=[];
+          if(!prodCol) missingCols.push("상품명");
+          if(!recCol)  missingCols.push("처음입고일");
+          if(missingCols.length){
+            throw new Error(uploadErrColumns({
+              missing:missingCols,
+              required:["상품명","옵션","수량","처음입고일","마지막배송일"],
+              headers:cols,
+            }));
+          }
           const rows=data.map(r=>({
             product_name:String(r[prodCol]||"").trim(),
             option_name:optCol?String(r[optCol]||"").trim():"",
@@ -3187,11 +3236,22 @@ function InventoryAgingUploader({ onDone }){
             last_shipped_date:shipCol&&r[shipCol]?toDate(r[shipCol]):null,
             diagnosis_date:diagDate,
           })).filter(r=>r.product_name&&r.first_received_date);
-          if(!rows.length) throw new Error("유효한 데이터가 없습니다");
+          if(!rows.length) throw new Error("파싱된 행이 0건입니다. '상품명'과 '처음입고일' 둘 다 값이 있는 행이 1개 이상 있어야 합니다.");
           setPreview(rows);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },e=>setResult({type:"error",msg:e.message}));
+      },e=>setResult({type:"error",msg:e.message?.message||String(e.message||e)}));
   },[diagDate]);
+
+  const [existingCount,setExistingCount]=useState(0);
+  // 파일 파싱 후 기존 데이터 수 조회 (갈음 안내용)
+  useEffect(()=>{
+    if(!preview) {setExistingCount(0);return;}
+    (async()=>{
+      const db=await getSupabase();
+      const {count}=await db.from("inventory_aging").select("*",{count:"exact",head:true});
+      setExistingCount(count||0);
+    })();
+  },[preview]);
 
   const handleUpload=async()=>{
     if(!preview?.length) return;
@@ -3204,8 +3264,8 @@ function InventoryAgingUploader({ onDone }){
       if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
     }
     try{localStorage.setItem("merryon_aging_date",diagDate);}catch{}
-    setResult({type:"success",msg:`${preview.length}건 저장 완료`});
-    setPreview(null); setFileName("");
+    setResult({type:"success",msg:`${preview.length}건 저장 완료 (기존 ${existingCount}건 대체)`});
+    setPreview(null); setFileName(""); setExistingCount(0);
     onDone?.();
     setLoading(false);
   };
@@ -3239,7 +3299,8 @@ function InventoryAgingUploader({ onDone }){
           )}
         </div>
       )}
-      {result&&<div style={{marginTop:8,fontSize:11,color:result.type==="error"?D.red:D.green}}>{result.msg}</div>}
+      {preview&&existingCount>0&&<Alert type="warn" msg={uploadReplaceWarn(existingCount,"재고 에이징 전체")}/>}
+      {result&&<Alert type={result.type==="error"?"error":"success"} msg={result.msg}/>}
       {infoOpen&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}
           onClick={()=>setInfoOpen(false)}>
@@ -4706,8 +4767,16 @@ function CSDataInput() {
           const reasonCol=findCol("반품사유","반품","사유","reason","취소");
           const dateCol=findCol("날짜","date","일자","접수일","처리일");
           const chCol=findCol("판매처","채널","channel","플랫폼","mall");
-          if(!prodCol)throw new Error("[상품] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
-          if(!reasonCol)throw new Error("[반품 사유] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
+          const missingCs=[];
+          if(!prodCol)   missingCs.push("상품명");
+          if(!reasonCol) missingCs.push("반품사유");
+          if(missingCs.length){
+            throw new Error(uploadErrColumns({
+              missing:missingCs,
+              required:["날짜","판매처","상품명","반품사유"],
+              headers:cols,
+            }));
+          }
 
           const extractReason=raw=>{
             const s=String(raw||"").toLowerCase();
@@ -4949,6 +5018,8 @@ function RevenueForm({ onUpdate }) {
     } else {
       dates.push(date);
     }
+    // 갈음 안내용: 삭제 직전 기존 건수 조회
+    const {count:prevCount}=await db.from("revenues").select("*",{count:"exact",head:true}).in("date",dates).eq("channel",ch);
     // DELETE 후 INSERT — UNIQUE 제약 없이도 중복 방지
     const {error:de}=await db.from("revenues").delete().in("date",dates).eq("channel",ch);
     if(de){setResult({type:"error",msg:"기존 삭제 실패: "+de.message});setLoading(false);return;}
@@ -4963,7 +5034,8 @@ function RevenueForm({ onUpdate }) {
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    setResult({type:"success",msg:`${dates.length}일 저장 완료`,ts:ts2});
+    const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
+    setResult({type:"success",msg:`${dates.length}일 저장 완료${replaceNote}`,ts:ts2});
     setAmt("");setOrderCnt("");setRefundAmt("");setRefundCnt("");
     onUpdate(ts2);if(history.length)loadHistory();
     setLoading(false);
@@ -5019,7 +5091,14 @@ function RevenueForm({ onUpdate }) {
       const refAmtCol=find("환불금","refundamount","환불액");
       const refCntCol=find("환불수","환불건","refundcount");
       if(!dateCol||!amtCol){
-        setCsvPreview({error:`필수 컬럼 없음. 헤더: ${cols.join(", ")}`});return;
+        const missingRev=[];
+        if(!dateCol) missingRev.push("날짜");
+        if(!amtCol)  missingRev.push("매출금액");
+        setCsvPreview({error:uploadErrColumns({
+          missing:missingRev,
+          required:["날짜","판매처","매출금액","주문수","환불금","환불수"],
+          headers:cols,
+        })});return;
       }
       const rows=data.filter(r=>r[dateCol]&&toDate(r[dateCol])).map(r=>({
         date:toDate(r[dateCol]),
@@ -5370,16 +5449,26 @@ function StockUploader({ onUpdate }) {
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          const f=detectFields(Object.keys(data[0]||{}));
-          const rows=data.filter(r=>f.product&&r[f.product]).map(r=>({
+          if(!data?.length) throw new Error(uploadErrParse("파일에 데이터 행이 없습니다"));
+          const headers=Object.keys(data[0]||{});
+          const f=detectFields(headers);
+          if(!f.product){
+            throw new Error(uploadErrColumns({
+              missing:["상품명"],
+              required:["상품명","옵션","수량","메모"],
+              headers,
+            }));
+          }
+          const rows=data.filter(r=>r[f.product]).map(r=>({
             product_name:String(r[f.product]||"").trim(),
             option_name:String(r[f.option]||"").trim(),
             qty:toNum(r[f.qty]),
             memo:String(r[f.memo]||"").trim(),
           }));
+          if(!rows.length) throw new Error("파싱된 행이 0건입니다. '상품명' 컬럼에 값이 있는 행이 1개 이상 있어야 합니다.");
           setPreview(rows); setStep(2);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },e=>setResult({type:"error",msg:e.message}));
+      },e=>setResult({type:"error",msg:e?.message||String(e)}));
   },[]);
   const handleUpload=async()=>{
     if(!preview?.length||!dateValid) return;
@@ -5755,9 +5844,18 @@ function EasyAdminUploader({ onUpdate }) {
           const amtCol         = salePriceCol || paymentAmtCol
                                || findCol("판매금액","실판매가","금액","amount","price") || f.revenue;
 
-          if(!orderIdCol)      throw new Error("주문번호 컬럼을 찾을 수 없습니다");
-          if(!orderDateCol)    throw new Error(`주문일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
-          if(!deliveryDateCol) throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
+          // 누락된 필수 컬럼을 한 번에 모아 안내 (한 개씩 throw 대신)
+          const missingCols=[];
+          if(!orderIdCol)      missingCols.push("주문번호");
+          if(!orderDateCol)    missingCols.push("주문일");
+          if(!deliveryDateCol) missingCols.push("배송일");
+          if(missingCols.length){
+            throw new Error(uploadErrColumns({
+              missing:missingCols,
+              required:["주문번호","주문일","배송일","판매처","상품명","옵션","수량","판매가","결제금액","CS처리"],
+              headers:allCols,
+            }));
+          }
 
           // 주문일+주문번호+상품명+옵션 기준 중복 합산 (날짜별 주문 유니크화)
           const grouped={};
@@ -5817,8 +5915,17 @@ function EasyAdminUploader({ onUpdate }) {
   },[]);
 
   // Step 0→1: 미리보기 (파싱 완료 후 확인)
-  const handlePreview=()=>{
+  const [existingCount,setExistingCount]=useState(0);
+  const handlePreview=async()=>{
     if(!parsedFile?.length) {setResult({type:"error",msg:"파일을 먼저 선택해주세요"});return;}
+    setLoading(true);
+    try{
+      const db=await getSupabase();
+      const {count}=await db.from("orders").select("*",{count:"exact",head:true})
+        .gte("order_date",startDate).lte("order_date",endDate);
+      setExistingCount(count||0);
+    }catch{}
+    setLoading(false);
     setStep(1);
   };
 
@@ -5875,6 +5982,7 @@ function EasyAdminUploader({ onUpdate }) {
               {label:"주문일 없음(제외)",value:`${outRows.length}건`,color:D.textMeta},
             ]}/>}
             <div style={{color:D.textMeta,fontSize:11,marginBottom:8}}>주문일 {startDate} ~ {endDate}</div>
+            {existingCount>0&&<Alert type="warn" msg={uploadReplaceWarn(existingCount,`${startDate}~${endDate} 주문일`)}/>}
             {outRows.length>0&&<Alert type="warn" msg={`주문일 없는 ${outRows.length}건 제외`}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handleUpload} disabled={loading||!inRange.length} style={{width:"100%"}}>
@@ -5980,6 +6088,18 @@ function StoreUploader({ onUpdate }) {
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
+          if(!data?.length) throw new Error(uploadErrParse("파일에 데이터 행이 없습니다"));
+          const headers=Object.keys(data[0]||{});
+          // 필요 컬럼 존재 여부 사전 검증 (StoreUploader는 정확 매칭 사용)
+          const REQ=["구매일자","상품명","수량","실판매금액"];
+          const missing=REQ.filter(c=>!headers.includes(c));
+          if(missing.length){
+            throw new Error(uploadErrColumns({
+              missing,
+              required:["구매일자","매장","상품명","옵션","수량","실판매금액","ID"],
+              headers,
+            }));
+          }
           const rows=data.map(r=>{
             const qty=parseKRW(r["수량"]);
             const amount=parseKRW(r["실판매금액"]);
@@ -5994,11 +6114,12 @@ function StoreUploader({ onUpdate }) {
               status:qty<0?"반품":"배송",
             };
           }).filter(r=>r.sale_date&&r.product_name&&r.qty>0&&r.amount>0);
+          if(!rows.length) throw new Error("파싱된 행이 0건입니다. '구매일자', '상품명', '수량'(>0), '실판매금액'(>0) 모두 값이 있는 행이 1개 이상 있어야 합니다.");
           const dates=[...new Set(rows.map(r=>r.sale_date))].sort();
           setDateRange({start:dates[0]||"",end:dates[dates.length-1]||""});
           setPreview(rows); setStep(1);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },e=>setResult({type:"error",msg:e.message}));
+      },e=>setResult({type:"error",msg:e?.message||String(e)}));
   },[]);
 
   const handleUpload=async()=>{
@@ -6323,12 +6444,20 @@ function parseInvFile(file,onResult,onError){
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:"YYYY-MM-DD"});
-      if(!raw||raw.length<2){onError("데이터가 없습니다");return;}
+      if(!raw||raw.length<2){onError(uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)"));return;}
       const headers=raw[0].map(h=>String(h||"").trim());
       const colMap=mapInvCols(headers);
+      const FIELD_LABELS={product_name:"상품명",current_stock_qty:"현재고",snapshot_date:"데이터날짜",first_inbound_date:"처음입고일"};
       const required=["product_name","current_stock_qty","snapshot_date","first_inbound_date"];
-      const missing=required.filter(f=>colMap[f]===undefined);
-      if(missing.length>0){onError(`필수 컬럼 누락: ${missing.join(", ")}`);return;}
+      const missing=required.filter(f=>colMap[f]===undefined).map(f=>FIELD_LABELS[f]);
+      if(missing.length>0){
+        onError(uploadErrColumns({
+          missing,
+          required:Object.values(FIELD_LABELS).concat(["옵션","판매가","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"]),
+          headers,
+        }));
+        return;
+      }
       const hasReorder=colMap["_r_weekly"]!==undefined||colMap["_r_avail"]!==undefined;
       const rows=raw.slice(1).map(r=>{
         const get=(f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
@@ -6358,9 +6487,9 @@ function parseInvFile(file,onResult,onError){
         };
       }).filter(r=>r.product_name&&r.snapshot_date&&r.first_inbound_date);
       onResult(rows);
-    }catch(err){onError(String(err));}
+    }catch(err){onError(uploadErrParse(String(err?.message||err)));}
   };
-  reader.onerror=()=>onError("파일 읽기 오류");
+  reader.onerror=()=>onError(uploadErrParse("파일 읽기 도중 시스템 오류가 발생했습니다"));
   reader.readAsArrayBuffer(file);
 }
 
