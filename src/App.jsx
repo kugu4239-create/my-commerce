@@ -5324,7 +5324,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
 }
 
 // ─────────────────────────────────────────────
-// DATA INPUT — 이지어드민 CSV (배송일 기준)
+// DATA INPUT — 이지어드민 CSV (주문일 기준 · 배송일 선택)
 // ─────────────────────────────────────────────
 function EasyAdminUploader({ onUpdate }) {
   const today=new Date().toISOString().slice(0,10);
@@ -5353,7 +5353,7 @@ function EasyAdminUploader({ onUpdate }) {
           if(!data.length) throw new Error("데이터가 없습니다");
           const f=detectFields(Object.keys(data[0]));
 
-          // 배송일 컬럼 명시적 우선 탐색 (Unicode 정규화 + exact match 우선)
+          // 컬럼 탐색 (Unicode 정규화 + exact match 우선)
           const allCols=Object.keys(data[0]);
           const nrm=s=>String(s).trim().normalize("NFC");
           const findCol=(...names)=>{
@@ -5363,9 +5363,10 @@ function EasyAdminUploader({ onUpdate }) {
             for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
             return null;
           };
-          const dateCol = findCol("배송일","배송일시","배송날짜","배송완료일","발송일","출고일","출고일시","출고완료일","배송(예정)일","예정배송일","delivery_date")
-                       || findCol("주문일","주문일시","주문날짜","order_date","날짜","date")
-                       || f.date;
+          // 주문일 (필수)
+          const orderDateCol = findCol("주문일","주문일시","주문날짜","order_date","날짜","date") || f.date;
+          // 배송일 (선택)
+          const deliveryDateCol = findCol("배송일","배송일시","배송날짜","배송완료일","발송일","출고일","출고일시","출고완료일","배송(예정)일","예정배송일","delivery_date");
           const orderIdCol = findCol("주문번호","orderid") || findCol("관리번호","order_id") || f.orderId;
           const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
           const productCol = findCol("상품명","product","품명") || f.product;
@@ -5375,10 +5376,10 @@ function EasyAdminUploader({ onUpdate }) {
           const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
           const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","판매가","금액","amount","price") || f.revenue;
 
-          if(!orderIdCol) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
-          if(!dateCol)    throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
+          if(!orderIdCol)   throw new Error("관리번호 컬럼을 찾을 수 없습니다");
+          if(!orderDateCol) throw new Error(`주문일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
 
-          // 관리번호+상품명+옵션 기준 중복 합산
+          // 주문일+관리번호+상품명+옵션 기준 중복 합산 (주문일별 유니크 보장)
           const grouped={};
           data.filter(r=>{
             if(!r[orderIdCol]) return false;
@@ -5391,18 +5392,18 @@ function EasyAdminUploader({ onUpdate }) {
             const prod=String(r[productCol]||"").trim();
             const opt=String(r[optionCol]||"").trim();
             const ch=normChannel(r[channelCol]);
-            const rawDate=r[dateCol];
-            const dateVal=toDate(rawDate);
+            const orderDateVal=toDate(r[orderDateCol]);
+            const deliveryDateVal=deliveryDateCol?toDate(r[deliveryDateCol]):null;
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
             const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
             const qty=toNum(r[qtyCol])||1;
             const amt=amtCol?toNum(r[amtCol]):0;
-            // 관리번호+상품명+옵션 조합을 DB key로 사용 → 같은 관리번호 내 여러 상품 허용
-            const dbKey=`${oid}||${prod}||${opt}`;
+            // 주문일+관리번호+상품명+옵션 조합을 DB key로 사용 (날짜별 주문 유니크화)
+            const dbKey=`${orderDateVal||""}||${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
-              grouped[dbKey]={order_id:dbKey,order_date:dateVal,channel:ch,
-                product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
+              grouped[dbKey]={order_id:dbKey,order_date:orderDateVal,delivery_date:deliveryDateVal||null,
+                channel:ch,product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
             }
             grouped[dbKey].qty+=qty;
             grouped[dbKey].amount+=amt;
@@ -5410,9 +5411,11 @@ function EasyAdminUploader({ onUpdate }) {
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
-          const sampleRaw=data[0]?.[dateCol]??"(없음)";
+          const sampleRaw=data[0]?.[orderDateCol]??"(없음)";
           const sampleParsed=toDate(sampleRaw)??"파싱실패";
-          setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" · 첫 값: "${sampleRaw}" → ${sampleParsed} | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
+          setResult({type:"info",msg:`주문일 컬럼: "${orderDateCol}" · 첫 값: "${sampleRaw}" → ${sampleParsed}`
+            +(deliveryDateCol?` | 배송일 컬럼: "${deliveryDateCol}"`:" | 배송일 컬럼 없음")
+            +` | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
@@ -5458,26 +5461,26 @@ function EasyAdminUploader({ onUpdate }) {
 
   return (
     <div>
-      <Steps current={step} steps={["배송일 기간","파일 선택","미리보기 확인","완료"]}/>
+      <Steps current={step} steps={["주문일 기간","파일 선택","미리보기 확인","완료"]}/>
       <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
         <Card>
           {step===0&&<>
-            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>배송일 기간 선택</div>
+            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>주문일 기간 선택</div>
             <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
               onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
             <div style={{color:D.blue,fontSize:10,marginBottom:12,lineHeight:1.7}}>
-              배송일 기준 · 관리번호 기준 upsert<br/>신규→추가 / 기존→상태업데이트
+              주문일 기준 · 관리번호 기준 upsert<br/>신규→추가 / 기존→상태업데이트
             </div>
             <Btn onClick={confirmDate} disabled={!dateValid} style={{width:"100%"}}>다음</Btn>
           </>}
           {step===1&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 선택</div>
             <div style={{color:D.textMeta,fontSize:11,marginBottom:10,lineHeight:1.6}}>
-              배송일 {startDate} ~ {endDate}
+              주문일 {startDate} ~ {endDate}
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
-              required="관리번호 · 배송일(또는 주문일)"
-              optional="판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
+              required="관리번호 · 주문일"
+              optional="배송일 · 판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
@@ -5526,7 +5529,8 @@ function EasyAdminUploader({ onUpdate }) {
               outIdx={new Set(inRange.map((_,i)=>-1).concat(outRows.map((_,i)=>inRange.length+i)).filter(i=>i>=inRange.length))}
               cols={[
                 {key:"order_id",label:"관리번호",color:D.textMeta,maxW:90},
-                {key:"order_date",label:"배송일",color:D.textMeta},
+                {key:"order_date",label:"주문일",color:D.textMeta},
+                {key:"delivery_date",label:"배송일",color:D.textMeta},
                 {key:"channel",label:"판매처",bold:true},
                 {key:"product_name",label:"상품명",maxW:140},
                 {key:"option_name",label:"옵션",color:D.textMeta},
@@ -5547,7 +5551,8 @@ function EasyAdminUploader({ onUpdate }) {
         placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
         cols={[
-          {key:"order_date",label:"배송일",color:D.textMeta},
+          {key:"order_date",label:"주문일",color:D.textMeta},
+          {key:"delivery_date",label:"배송일",color:D.textMeta},
           {key:"channel",label:"판매처",bold:true},
           {key:"product_name",label:"상품명",maxW:180},
           {key:"option_name",label:"옵션",color:D.textMeta},
@@ -5797,7 +5802,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const tabs=[
     {key:"revenue",name:"매출 입력",extra:lastDate(revenues,"date")},
     {key:"stock",name:"입고",extra:lastDate(stocks,"upload_date")},
-    {key:"orders",name:"배송",extra:lastDate(orders,"order_date")},
+    {key:"orders",name:"주문·배송",extra:lastDate(orders,"order_date")},
     {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
     {key:"cs",name:"CS"},
     {key:"delete",name:"데이터 삭제"},
@@ -5806,7 +5811,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
-    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필수 컬럼: 관리번호 · 주문일 / 선택 컬럼: 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
@@ -5842,7 +5847,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>onDataChange?.()}/>
           <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="orders" dateField="order_date" label="배송" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="orders" dateField="order_date" label="주문·배송" onDone={()=>onDataChange?.()}/>
           <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매" onDone={()=>onDataChange?.()}/>
         </div>
       )}
