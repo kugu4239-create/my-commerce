@@ -9510,13 +9510,18 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     setYm(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
   };
 
-  // 월 그리드 생성 — 일요일 시작, 6주(42칸) 고정
+  // 월 그리드 생성 — 일요일 시작, 월말일이 포함된 마지막 주까지만 표시
   const grid=useMemo(()=>{
     const [y,m]=ym.split("-").map(Number);
     const first=new Date(y,m-1,1);
+    const last=new Date(y,m,0);  // 해당 월 마지막 날
     const startDay=first.getDay(); // 0=Sun
+    // (월말일이 들어가는 주의 토요일까지) - (첫 주의 일요일) + 1 = 표시할 셀 수
+    const totalDays=startDay+last.getDate();
+    const weeks=Math.ceil(totalDays/7);
+    const cellCount=weeks*7;
     const cells=[];
-    for(let i=0;i<42;i++){
+    for(let i=0;i<cellCount;i++){
       const d=new Date(y,m-1,i-startDay+1);
       cells.push({
         date:d,
@@ -9536,45 +9541,41 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
-      {/* 월 셀렉터 */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>shiftMonth(-1)} data-hf
-            style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
-              padding:"5px 12px",fontSize:13,cursor:"pointer",color:D.text}}>◂</button>
-          <div style={{fontSize:18,fontWeight:700,color:D.black,minWidth:120,textAlign:"center"}}>{monthLabel}</div>
-          <button onClick={()=>shiftMonth(1)} data-hf
-            style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
-              padding:"5px 12px",fontSize:13,cursor:"pointer",color:D.text}}>▸</button>
-          <button onClick={()=>setYm(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`)} data-hf
-            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-              padding:"5px 10px",fontSize:11,cursor:"pointer",color:D.textMeta,marginLeft:6}}>이번 달</button>
-        </div>
-        <div style={{fontSize:11,color:D.textMeta}}>
-          orders {orders.length.toLocaleString()} · revenues {revenues.length.toLocaleString()} · store {storeSales.length.toLocaleString()}
-        </div>
+      {/* 월 셀렉터 — 중앙 정렬 */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:24}}>
+        <button onClick={()=>shiftMonth(-1)} data-hf
+          style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,
+            padding:"8px 16px",fontSize:16,cursor:"pointer",color:D.text,fontWeight:600}}>◂</button>
+        <div style={{fontSize:22,fontWeight:700,color:D.black,minWidth:170,textAlign:"center"}}>{monthLabel}</div>
+        <button onClick={()=>shiftMonth(1)} data-hf
+          style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,
+            padding:"8px 16px",fontSize:16,cursor:"pointer",color:D.text,fontWeight:600}}>▸</button>
+        <button onClick={()=>setYm(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`)} data-hf
+          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:8,
+            padding:"7px 14px",fontSize:12,cursor:"pointer",color:D.textMeta,marginLeft:8}}>이번 달</button>
       </div>
 
-      {/* 캘린더 그리드 (스캐폴드 — 데이터는 다음 단계) */}
+      {/* 캘린더 그리드 — iPad 사이즈 (셀 크게) */}
       <Card>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:6,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
           {WEEKDAYS.map((w,i)=>(
-            <div key={w} style={{background:D.surfaceAlt,padding:"7px 9px",fontSize:11,fontWeight:600,
+            <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
               color:i===0?D.red:i===6?D.blue:D.textMeta,textAlign:"center"}}>{w}</div>
           ))}
           {grid.map((c,i)=>(
             <div key={i} style={{
               background:c.inMonth?D.surface:D.bg,
-              minHeight:120,padding:"6px 8px",
-              opacity:c.inMonth?1:0.4,
+              minHeight:170,padding:"10px 12px",
+              opacity:c.inMonth?1:0.35,
               position:"relative",
               display:"flex",flexDirection:"column"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <span style={{fontSize:11,fontWeight:c.isToday?700:500,
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <span style={{fontSize:14,fontWeight:c.isToday?700:600,
                   color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
                   {c.date.getDate()}
                 </span>
-                {c.isToday&&<span style={{fontSize:9,color:D.blue,fontWeight:600}}>오늘</span>}
+                {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
+                  background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
               </div>
               {/* 다음 단계: 매출 mini-bar, IG 썸네일, 판매 Top */}
             </div>
