@@ -4818,7 +4818,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     <td {...td} style={{...td.style,fontWeight:600}}>
                       {p.name}
                       {ended&&<span style={{marginLeft:6,fontSize:11,fontWeight:500,color:D.red}}>종료된 프로모션</span>}
-                      {ended&&(
+                      {/* 시작일이 지난(진행중 또는 종료된) 프로모션은 임팩트 분석 진입 가능 */}
+                      {p.start_date&&p.start_date.slice(0,10)<=today&&(
                         <button onClick={()=>setImpactModal(p)}
                           style={{marginLeft:8,background:D.black,color:"#fff",border:"none",borderRadius:5,
                             padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
@@ -5078,9 +5079,17 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 // ─────────────────────────────────────────────
 function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
   const ch=promo.platform;
-  const promoStart=String(promo.start_date||"").slice(0,10);
-  const promoEnd=String(promo.end_date||"").slice(0,10);
   const dayMs=86400000;
+  const todayStr=new Date().toISOString().slice(0,10);
+  const yesterdayStr=new Date(Date.now()-dayMs).toISOString().slice(0,10);
+  const promoStart=String(promo.start_date||"").slice(0,10);
+  const promoEndRaw=String(promo.end_date||"").slice(0,10);
+  // 진행중 프로모션: 종료일이 미래 → 분석 종료일은 어제로 클램프
+  //   - 어제가 시작일보다 이르면(시작 당일) 시작일로 클램프
+  const isOngoing=promoEndRaw>todayStr;
+  const promoEnd=isOngoing
+    ?(yesterdayStr>=promoStart?yesterdayStr:promoStart)
+    :promoEndRaw;
   const dur=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs); // 일 수 (포함 길이 = dur+1)
   const lenDays=dur+1;
   const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
@@ -5157,10 +5166,31 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
           <div>
-            <div style={{fontWeight:700,fontSize:16,color:D.black}}>{promo.name} <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span></div>
-            <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
-              <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
-              {ch} · 프로모션 {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span> · 직전 동일기간 {prevStart} ~ {prevEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span>
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>
+              {promo.name}
+              <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span>
+              {isOngoing&&(
+                <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:"#fff",
+                  background:D.green,padding:"2px 7px",borderRadius:10,verticalAlign:"middle"}}>
+                  진행중
+                </span>
+              )}
+            </div>
+            {/* 기간 표기 — 진행중일 경우 분석기간이 어제까지로 클램프됨을 명확히 표시 */}
+            <div style={{fontSize:11,color:D.textMeta,marginTop:5,lineHeight:1.7}}>
+              <div>
+                <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
+                <b style={{color:D.text,fontWeight:600}}>{ch}</b>
+                {isOngoing&&<span style={{marginLeft:6,color:D.textSub}}>· 프로모션 종료일 {promoEndRaw} (현재 진행 중)</span>}
+              </div>
+              <div>
+                <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>분석 기간</span>
+                {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일{isOngoing?", 시작일 ~ 어제":""})</span>
+              </div>
+              <div>
+                <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>직전 동일기간</span>
+                {prevStart} ~ {prevEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
