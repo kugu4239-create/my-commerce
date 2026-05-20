@@ -2235,7 +2235,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               {key:"returned",label:"반품 수량(장)",       val:c=>c.returnedQty||0,     w:"10%"},
               {key:"rate",   label:"반품률",              val:c=>c.shippedQty>0?c.returnedQty/c.shippedQty:0, w:"8%"},
             ]:[]),
-            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"14%":"17%", tooltip:"개발 중인 지표입니다.\n온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다.", wip:true},
+            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"14%":"17%"},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
