@@ -11001,6 +11001,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   <InstagramThumb src={curPost.thumb_url}/>
                 </div>
               )}
+              {/* 반투명 검정 레이어 — 흰 텍스트 가독성 확보 */}
+              {!impactMode&&c.inMonth&&posts.length>0&&(
+                <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
+                  background:"rgba(0,0,0,0.42)"}}/>
+              )}
               {/* 같은 날 멀티 포스트 좌우 넘김 화살표 (별점 desc 순) */}
               {c.inMonth&&posts.length>1&&(
                 <>
@@ -11236,7 +11241,7 @@ function ImpactGuideSticky({ monthLabel }) {
       width:"min(1280px, 94vw)",maxHeight:"58vh",overflowY:"auto"
     }}>
       <div style={{fontSize:13,fontWeight:700,letterSpacing:"0.03em",marginBottom:8,
-        display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",color:D.black}}>
+        display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap",color:D.black,textAlign:"center"}}>
         포스트 임팩트 분석 모드 · {monthLabel}
         <span style={{fontSize:11,fontWeight:500,color:D.textMeta,marginLeft:2}}>
           업계 표준 Pre/Post Sales Lift 방식
@@ -11282,8 +11287,6 @@ function ImpactGuideSticky({ monthLabel }) {
             ④ 상단 차트 — 월 전체 흐름
           </div>
           <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
-            <b style={{color:D.text}}>포스트별 임팩트 랭킹</b>: 각 막대 = 한 포스트의 LIFT(%). 위에서부터 효과가 좋았던 순.
-            <br/>
             <b style={{color:D.text}}>모든 포스트 평균 효과 곡선</b>: D-14 ~ D+14 일별 평균 판매량. 효과 정점일(D+N)이 표시됩니다.
             <br/>
             <b style={{color:D.text}}>속도계</b>: 월 전반 14일 평균 vs 후반 14일 평균 — 판매가 가속 / 감속 중인지.
@@ -11463,7 +11466,7 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
 function ImpactAnalysisHeader({ summary, monthLabel }) {
   const {avgStars,avgLift,velocityChange,firstAvg,secondAvg,
     bestPost,bestPostTagCount,avgTagCount,avgAttrVelocity,
-    postRanking,cohort,peakDay,peakAvg,preAvg,postCohortAvg}=summary;
+    cohort,peakDay,peakAvg,preAvg,postCohortAvg}=summary;
   const liftColor=avgLift>=0?"#10b981":"#ef4444";
   const attrVelColor=avgAttrVelocity>=0?"#10b981":"#ef4444";
   const cohortLiftPct=preAvg?((postCohortAvg-preAvg)/preAvg)*100:0;
@@ -11487,61 +11490,8 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
         <VelocityGauge change={velocityChange} firstAvg={firstAvg} secondAvg={secondAvg}/>
       </div>
 
-      {/* 포스트별 LIFT 랭킹 + Cohort 평균 lift 곡선 — 2열 */}
-      <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr",gap:10,alignItems:"stretch"}}>
-        <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:D.black}}>포스트별 임팩트 랭킹</div>
-              <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
-                각 막대 = 한 포스트의 LIFT(%). 위에서부터 효과가 좋았던 순. 어떤 포스트를 재현·재활용할지 한눈에 보세요.
-              </div>
-            </div>
-            <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
-              총 {postRanking.length}개 태깅 포스트
-            </div>
-          </div>
-          {postRanking.length>0?(
-            <div style={{maxHeight:240,overflowY:"auto",paddingRight:4}}>
-              {(()=>{
-                const maxAbs=Math.max(30,...postRanking.map(r=>Math.abs(r.lift)));
-                return postRanking.map(r=>{
-                  const w=Math.min(100,(Math.abs(r.lift)/maxAbs)*100);
-                  const col=r.lift>=30?"#15803d":r.lift>=10?"#22c55e":r.lift>=0?"#7BB7E5":r.lift>=-10?"#b45309":"#b91c1c";
-                  return (
-                    <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",
-                      fontSize:11,borderBottom:`1px dashed ${D.border}`}}>
-                      <span style={{minWidth:74,color:D.textSub,fontVariantNumeric:"tabular-nums"}}>{r.iso}</span>
-                      <span title={r.bestProduct||""}
-                        style={{flex:"0 0 28%",color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                        {r.bestProduct||<span style={{color:D.textMeta}}>—</span>}
-                      </span>
-                      <div style={{flex:1,position:"relative",height:14,display:"flex",alignItems:"center"}}>
-                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:D.border}}/>
-                        <div style={{position:"absolute",
-                          [r.lift>=0?"left":"right"]:"50%",
-                          width:`${w/2}%`,height:8,background:col,borderRadius:2}}/>
-                      </div>
-                      <span style={{minWidth:56,textAlign:"right",fontWeight:700,color:col,
-                        fontVariantNumeric:"tabular-nums"}}>
-                        {r.lift>=0?"+":""}{r.lift.toFixed(0)}%
-                      </span>
-                      <span style={{minWidth:18,color:"#F2B544",fontSize:9,letterSpacing:0.3,textAlign:"right"}}>
-                        {"★".repeat(r.stars)}
-                      </span>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          ):(
-            <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
-              태깅된 포스트가 없습니다 — 포스트 셀의 ✎ 버튼으로 상품을 연결하세요
-            </div>
-          )}
-        </Card>
-
+      {/* Cohort 평균 효과 곡선 — full width */}
+      <div>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
             <div>
