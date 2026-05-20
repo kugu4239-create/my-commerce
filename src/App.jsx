@@ -11305,10 +11305,6 @@ function ImpactGuideSticky({ monthLabel }) {
             ④ 상단 차트 — 월 전체 흐름
           </div>
           <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
-            <b style={{color:D.text}}>포스트별 임팩트 랭킹 (태깅 상품)</b>: 태깅한 상품의 LIFT(%)를 best→worst 정렬.
-            <br/>
-            <b style={{color:D.text}}>포스트별 전체 매출 영향</b>: 태깅 안 한 상품 포함, 전체 매출(원)의 전 14일 vs 후 14일 변화율.
-            <br/>
             <b style={{color:D.text}}>모든 포스트 평균 효과 곡선</b>: D-14 ~ D+14 일별 평균 판매량. 효과 정점일(D+N)이 표시됩니다.
             <br/>
             <b style={{color:D.text}}>속도계</b>: 월 전반 14일 평균 vs 후반 14일 평균 — 판매가 가속 / 감속 중인지.
@@ -11488,7 +11484,7 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
 function ImpactAnalysisHeader({ summary, monthLabel }) {
   const {avgStars,avgLift,velocityChange,firstAvg,secondAvg,
     bestPost,bestPostTagCount,avgTagCount,avgAttrVelocity,
-    postRanking,overallRanking,cohort,peakDay,peakAvg,preAvg,postCohortAvg}=summary;
+    cohort,peakDay,peakAvg,preAvg,postCohortAvg}=summary;
   const liftColor=avgLift>=0?"#10b981":"#ef4444";
   const attrVelColor=avgAttrVelocity>=0?"#10b981":"#ef4444";
   const cohortLiftPct=preAvg?((postCohortAvg-preAvg)/preAvg)*100:0;
@@ -11510,113 +11506,6 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
         <KpiTile label="포스트당 태깅 상품 일평균 추가 판매" value={`${avgAttrVelocity>=0?"+":""}${avgAttrVelocity.toFixed(1)}`} unit="장 / 일" valueColor={attrVelColor}
           hint="포스트 1회가 태깅한 상품을 하루 평균 몇 장 더 팔게 만들었는지 (포스트 후 14일 일평균 − 전 14일 일평균)"/>
         <VelocityGauge change={velocityChange} firstAvg={firstAvg} secondAvg={secondAvg}/>
-      </div>
-
-      {/* 포스트별 랭킹 2종 — 태깅 상품 LIFT + 전체 매출 영향 */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,alignItems:"stretch"}}>
-        <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:D.black}}>포스트별 임팩트 랭킹 (태깅 상품)</div>
-              <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
-                각 막대 = 한 포스트가 태깅한 상품의 LIFT(%). 위에서부터 효과가 좋았던 순.
-              </div>
-            </div>
-            <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
-              총 {postRanking.length}개 태깅 포스트
-            </div>
-          </div>
-          {postRanking.length>0?(
-            <div style={{maxHeight:280,overflowY:"auto",paddingRight:4}}>
-              {(()=>{
-                const maxAbs=Math.max(30,...postRanking.map(r=>Math.abs(r.lift)));
-                return postRanking.map(r=>{
-                  const w=Math.min(100,(Math.abs(r.lift)/maxAbs)*100);
-                  const col=r.lift>=30?"#15803d":r.lift>=10?"#22c55e":r.lift>=0?"#7BB7E5":r.lift>=-10?"#b45309":"#b91c1c";
-                  return (
-                    <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",
-                      fontSize:11,borderBottom:`1px dashed ${D.border}`}}>
-                      <span style={{minWidth:74,color:D.textSub,fontVariantNumeric:"tabular-nums"}}>{r.iso}</span>
-                      <span title={r.bestProduct||""}
-                        style={{flex:"0 0 32%",color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                        {r.bestProduct||<span style={{color:D.textMeta}}>—</span>}
-                      </span>
-                      <div style={{flex:1,position:"relative",height:14,display:"flex",alignItems:"center"}}>
-                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:D.border}}/>
-                        <div style={{position:"absolute",
-                          [r.lift>=0?"left":"right"]:"50%",
-                          width:`${w/2}%`,height:8,background:col,borderRadius:2}}/>
-                      </div>
-                      <span style={{minWidth:56,textAlign:"right",fontWeight:700,color:col,
-                        fontVariantNumeric:"tabular-nums"}}>
-                        {r.lift>=0?"+":""}{r.lift.toFixed(0)}%
-                      </span>
-                      <span style={{minWidth:18,color:"#F2B544",fontSize:9,letterSpacing:0.3,textAlign:"right"}}>
-                        {"★".repeat(r.stars)}
-                      </span>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          ):(
-            <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
-              태깅된 포스트가 없습니다 — 포스트 셀의 ✎ 버튼으로 상품을 연결하세요
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:D.black}}>포스트별 전체 매출 영향</div>
-              <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
-                태깅 안 한 상품 포함 <b style={{color:D.text}}>전체 매출(원)</b>의 전 14일 vs 후 14일 변화율. 포스트가 매장 전체에 미친 영향.
-              </div>
-            </div>
-            <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
-              총 {overallRanking.length}개 포스트
-            </div>
-          </div>
-          {overallRanking.length>0?(
-            <div style={{maxHeight:280,overflowY:"auto",paddingRight:4}}>
-              {(()=>{
-                const maxAbs=Math.max(20,...overallRanking.map(r=>Math.abs(r.lift)));
-                return overallRanking.map(r=>{
-                  const w=Math.min(100,(Math.abs(r.lift)/maxAbs)*100);
-                  const col=r.lift>=20?"#15803d":r.lift>=5?"#22c55e":r.lift>=0?"#7BB7E5":r.lift>=-5?"#b45309":"#b91c1c";
-                  return (
-                    <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",
-                      fontSize:11,borderBottom:`1px dashed ${D.border}`}}>
-                      <span style={{minWidth:74,color:D.textSub,fontVariantNumeric:"tabular-nums"}}>{r.iso}</span>
-                      <span style={{flex:"0 0 32%",color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                        fontVariantNumeric:"tabular-nums",fontSize:10}}
-                        title={`전 14일 ${r.preRev.toLocaleString()}원 → 후 14일 ${r.postRev.toLocaleString()}원`}>
-                        {fmtWonShort(r.delta)} {r.delta>=0?"↑":"↓"}
-                      </span>
-                      <div style={{flex:1,position:"relative",height:14,display:"flex",alignItems:"center"}}>
-                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:D.border}}/>
-                        <div style={{position:"absolute",
-                          [r.lift>=0?"left":"right"]:"50%",
-                          width:`${w/2}%`,height:8,background:col,borderRadius:2}}/>
-                      </div>
-                      <span style={{minWidth:56,textAlign:"right",fontWeight:700,color:col,
-                        fontVariantNumeric:"tabular-nums"}}>
-                        {r.lift>=0?"+":""}{r.lift.toFixed(0)}%
-                      </span>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          ):(
-            <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
-              포스트가 없습니다
-            </div>
-          )}
-        </Card>
       </div>
 
       {/* Cohort 평균 효과 곡선 — full width */}
