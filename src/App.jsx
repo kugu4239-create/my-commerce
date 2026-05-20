@@ -10428,9 +10428,10 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
               padding:"4px 12px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
         </div>
 
-        {/* 새 포스트 추가 — wizard */}
+        {/* 새 포스트 추가 — wizard. Sticky 로 고정 → 포스트 임베드 로딩 시 입력 위치 흔들림 방지 */}
         <div style={{background:`${D.blue}06`,borderRadius:8,padding:"14px 16px",marginBottom:18,
-          border:`1.5px dashed ${D.blue}55`}}>
+          border:`1.5px dashed ${D.blue}55`,
+          position:"sticky",top:0,zIndex:5,backdropFilter:"blur(2px)"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
             <div style={{fontWeight:700,fontSize:14,color:D.blue}}>
               ＋ 이 날짜에 포스트 추가
@@ -10764,6 +10765,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const gridRef=useRef(null);
   // 같은 날 다중 포스트 좌우 넘김 — iso → 현재 보여줄 인덱스
   const [cellPostIdx,setCellPostIdx]=useState({});
+  // 리본 표시 토글 — 기본 OFF (요청)
+  const [ribbonsOn,setRibbonsOn]=useState(false);
 
   // 같은 달 안 ribbons
   const ribbons=useMemo(()=>{
@@ -10784,11 +10787,15 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         for(const tagName of tagged){
           const hitIdx=d.topProducts.findIndex(tp=>nameMatches(tagName,tp.name));
           if(hitIdx>=0){
+            const hit=d.topProducts[hitIdx];
             result.push({
               fromIso:post.post_date,toIso:cell.iso,postId:post.id,
-              product:d.topProducts[hitIdx].name,
+              product:hit.name,
               productIdx:hitIdx,
               productCount:d.topProducts.length,
+              qty:hit.qty||0,
+              tagName,
+              postUrl:post.url,
             });
             break;
           }
@@ -11050,7 +11057,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         </div>
         {/* 리본 SVG 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트끼리 정확하게 연결 */}
         <RibbonOverlay gridRef={gridRef} ribbons={ribbons}
-          ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}/>
+          ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}
+          visible={ribbonsOn}/>
         </div>
       </Card>
 
@@ -11076,6 +11084,21 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           postScores={postScores}
           onClose={()=>setScoreModalIso(null)}/>
       )}
+
+      {/* Sticky 리본 토글 — 뷰포트 하단 20% 중앙 */}
+      {ribbons.length>0&&(
+        <button onClick={()=>setRibbonsOn(v=>!v)}
+          title={ribbonsOn?"리본 끄기":"리본 켜기 (판매 수량에 따라 두께)"}
+          style={{position:"fixed",left:"50%",bottom:"20vh",transform:"translateX(-50%)",
+            zIndex:1500,padding:"10px 22px",fontSize:13,fontWeight:700,
+            background:ribbonsOn?D.blue:D.surface,color:ribbonsOn?"#fff":D.text,
+            border:`1.5px solid ${ribbonsOn?D.blue:D.border}`,borderRadius:24,cursor:"pointer",
+            boxShadow:"0 6px 20px rgba(0,0,0,0.18)",
+            display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:14,lineHeight:1}}>{ribbonsOn?"🎀":"🔗"}</span>
+          {ribbonsOn?`리본 ON · ${ribbons.length}개`:"리본 보기"}
+        </button>
+      )}
     </div>
   );
 }
@@ -11085,11 +11108,13 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 //   - 시작: 포스트 셀의 ★ 버튼 (data-star-iso)
 //   - 끝  : 매칭된 판매 Top 행 (data-iso + data-pidx)
 // ─────────────────────────────────────────────
-function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
+function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible }) {
   const [paths,setPaths]=useState([]);
   const [size,setSize]=useState({w:0,h:0});
+  const [hovered,setHovered]=useState(null); // {ribbon, x, y}
 
   useEffect(()=>{
+    if(!visible){ setPaths([]); return; }
     const compute=()=>{
       const container=gridRef?.current;
       if(!container) return;
@@ -11097,23 +11122,28 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
       setSize({w:cRect.width,h:cRect.height});
       const next=[];
       ribbons.forEach((r,i)=>{
-        const fromEl=container.querySelector(`[data-star-iso="${r.fromIso}"]`);
+        // 시작점 우선순위: 1) 소개 상품 텍스트(tag-name) → 2) ★ 버튼 폴백
+        const tagSafe=String(r.tagName||"").replace(/"/g,'\\"');
+        const fromEl=
+          (r.tagName&&container.querySelector(`[data-tag-iso="${r.fromIso}"][data-tag-name="${tagSafe}"]`))
+          ||container.querySelector(`[data-star-iso="${r.fromIso}"]`);
         const toEl  =container.querySelector(`[data-iso="${r.toIso}"][data-pidx="${r.productIdx??0}"]`);
         if(!fromEl||!toEl) return;
         const fRect=fromEl.getBoundingClientRect();
         const tRect=toEl.getBoundingClientRect();
-        // 시작점: ★ 버튼 중앙
-        const fx=fRect.left+fRect.width/2-cRect.left;
+        const fromOnText=fromEl.hasAttribute("data-tag-iso");
+        const fx=(fromOnText?fRect.right-4:fRect.left+fRect.width/2)-cRect.left;
         const fy=fRect.top+fRect.height/2-cRect.top;
-        // 끝점: 매칭 상품 행 좌측 인셋(불릿 옆) + 세로 중앙
         const tx=tRect.left+6-cRect.left;
         const ty=tRect.top+tRect.height/2-cRect.top;
-        // 부드러운 베지어: 수직 중간에서 휘게
+        const dx=Math.abs(tx-fx);
         const dy=Math.abs(ty-fy);
-        const cy1=fy+Math.max(20,dy*0.45);
-        const cy2=ty-Math.max(20,dy*0.45);
-        const d=`M${fx},${fy} C${fx},${cy1} ${tx},${cy2} ${tx},${ty}`;
-        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i});
+        const cx1=fx+Math.max(20,dx*0.35);
+        const cy1=fy+Math.max(10,dy*0.45);
+        const cx2=tx-Math.max(20,dx*0.35);
+        const cy2=ty-Math.max(10,dy*0.45);
+        const d=`M${fx},${fy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`;
+        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i,ribbon:r,tx,ty});
       });
       setPaths(next);
     };
@@ -11124,7 +11154,6 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
     const onScroll=()=>compute();
     window.addEventListener("scroll",onScroll,true);
     window.addEventListener("resize",compute);
-    // 첫 페인트 직후 한 번 더 (폰트 로드 등으로 위치 살짝 어긋날 때 보정)
     const raf=requestAnimationFrame(compute);
     return()=>{
       ro.disconnect();
@@ -11132,23 +11161,107 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
       window.removeEventListener("resize",compute);
       cancelAnimationFrame(raf);
     };
-  },[gridRef,ribbons,ribbonColor]);
+  },[gridRef,ribbons,ribbonColor,visible]);
 
-  if(!paths.length) return null;
+  // 두께 스케일: 판매 수량 → 1.5~7 px
+  const maxQty=useMemo(()=>{
+    let m=0;
+    paths.forEach(p=>{ if((p.ribbon?.qty||0)>m) m=p.ribbon.qty; });
+    return m||1;
+  },[paths]);
+  const widthOf=(qty)=>{
+    const base=1.5,top=7;
+    return base+(top-base)*Math.min(1,(qty||0)/maxQty);
+  };
+
+  if(!visible||!paths.length) return null;
+
+  // 호버된 리본은 정렬상 가장 위에 그리도록 paths 끝으로
+  const ordered=hovered
+    ?[...paths.filter(p=>p.key!==hovered.key),...paths.filter(p=>p.key===hovered.key)]
+    :paths;
+
   return (
-    <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
-        pointerEvents:"none",overflow:"visible"}}>
-      {paths.map(p=>{
-        const focused=hoveredFromIso===p.fromIso;
-        const dim=hoveredFromIso&&!focused;
-        return (
-          <path key={p.key} d={p.d} stroke={p.color} fill="none"
-            strokeWidth={focused?2.5:1.8}
-            opacity={dim?0.08:focused?0.85:0.42}
-            strokeLinecap="round"/>
-        );
-      })}
-    </svg>
+    <>
+      <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
+          pointerEvents:"none",overflow:"visible"}}>
+        <defs>
+          <filter id="ribbon-glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="1.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <marker id="ribbon-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        {ordered.map(p=>{
+          const isHover=hovered?.key===p.key;
+          const dim=hovered&&!isHover;
+          const w=widthOf(p.ribbon?.qty);
+          return (
+            <g key={p.key} style={{color:p.color}}>
+              {/* 흰 외곽으로 가시성 */}
+              <path d={p.d} stroke="#fff" fill="none"
+                strokeWidth={w+2.5}
+                opacity={dim?0.05:0.55}
+                strokeLinecap="round"/>
+              {/* 본 라인 */}
+              <path d={p.d} stroke={p.color} fill="none"
+                strokeWidth={w}
+                opacity={dim?0.18:isHover?1:0.85}
+                strokeLinecap="round"
+                filter="url(#ribbon-glow)"
+                markerEnd="url(#ribbon-arrow)"
+                pointerEvents="stroke"
+                style={{cursor:"pointer"}}
+                onMouseEnter={e=>setHovered({key:p.key,ribbon:p.ribbon,color:p.color,x:e.clientX,y:e.clientY})}
+                onMouseMove={e=>setHovered(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
+                onMouseLeave={()=>setHovered(null)}/>
+            </g>
+          );
+        })}
+      </svg>
+      {/* 호버 툴팁 (모달형) */}
+      {hovered&&(
+        <RibbonTooltip x={hovered.x} y={hovered.y} ribbon={hovered.ribbon} color={hovered.color}/>
+      )}
+    </>
+  );
+}
+
+// 리본 호버 시 표시되는 모달형 툴팁 카드
+function RibbonTooltip({ x, y, ribbon, color }) {
+  if(!ribbon) return null;
+  // 화면 경계 고려 — 우측/하단 넘침 방지
+  const w=280,h=160;
+  const left=Math.min(x+14,window.innerWidth-w-10);
+  const top =Math.min(y+14,window.innerHeight-h-10);
+  return (
+    <div style={{position:"fixed",left,top,zIndex:2500,
+      width:w,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
+      boxShadow:"0 8px 28px rgba(0,0,0,0.22)",padding:"12px 14px",fontSize:12,color:D.text,
+      pointerEvents:"none",lineHeight:1.6}}>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,
+        paddingBottom:6,borderBottom:`1px solid ${D.border}`}}>
+        <span style={{width:10,height:10,background:color,borderRadius:"50%",display:"inline-block",flexShrink:0}}/>
+        <b style={{color:D.black}}>콘텐츠 → 판매 매칭</b>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"68px 1fr",gap:4,color:D.textSub}}>
+        <span style={{color:D.textMeta}}>포스트</span><span>{ribbon.fromIso}</span>
+        <span style={{color:D.textMeta}}>소개 상품</span><b style={{color:D.text}}>{ribbon.tagName||"—"}</b>
+        <span style={{color:D.textMeta}}>매칭일</span><span>{ribbon.toIso}</span>
+        <span style={{color:D.textMeta}}>판매 상품</span><b style={{color:D.text}}>{ribbon.product}</b>
+        <span style={{color:D.textMeta}}>당일 순위</span><span>Top {(ribbon.productIdx??0)+1}/{ribbon.productCount||5}</span>
+        <span style={{color:D.textMeta}}>판매 수량</span>
+        <b style={{color:D.blue}}>{(ribbon.qty||0).toLocaleString()}장</b>
+      </div>
+      {ribbon.postUrl&&(
+        <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${D.border}`,fontSize:10,color:D.textMeta,wordBreak:"break-all"}}>
+          🔗 {ribbon.postUrl}
+        </div>
+      )}
+    </div>
   );
 }
 
