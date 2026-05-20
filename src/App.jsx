@@ -11229,63 +11229,64 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 function ImpactGuideSticky({ monthLabel }) {
   return (
     <div style={{
-      background:`linear-gradient(135deg, ${D.black} 0%, #2a2a3a 100%)`,color:"#fff",
+      background:D.surface,color:D.text,
+      border:`1px solid ${D.border}`,
       borderRadius:10,padding:"14px 18px",
-      boxShadow:"0 6px 20px rgba(0,0,0,0.22)",
+      boxShadow:"0 6px 20px rgba(0,0,0,0.18)",
       width:"min(1280px, 94vw)",maxHeight:"58vh",overflowY:"auto"
     }}>
       <div style={{fontSize:13,fontWeight:700,letterSpacing:"0.03em",marginBottom:8,
-        display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",color:D.black}}>
         포스트 임팩트 분석 모드 · {monthLabel}
-        <span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.5)",marginLeft:2}}>
+        <span style={{fontSize:11,fontWeight:500,color:D.textMeta,marginLeft:2}}>
           업계 표준 Pre/Post Sales Lift 방식
         </span>
       </div>
-      <div style={{fontSize:12,color:"rgba(255,255,255,0.85)",lineHeight:1.65,marginBottom:10,textAlign:"center"}}>
-        <b style={{color:"#fff"}}>이 페이지는 무엇을 보여주나요?</b><br/>
+      <div style={{fontSize:12,color:D.textSub,lineHeight:1.65,marginBottom:10,textAlign:"center"}}>
+        <b style={{color:D.text}}>이 페이지는 무엇을 보여주나요?</b><br/>
         인스타그램에 어떤 상품을 소개(태깅)한 포스트를 올렸을 때, 그 상품의 판매량이 정말 늘었는지 — 그리고 얼마나 늘었는지를 한눈에 볼 수 있게 해줍니다.
-        포스트가 효과가 있었는지 <b style={{color:"#fff"}}>"숫자"</b>로 판단하세요.
+        포스트가 효과가 있었는지 <b style={{color:D.text}}>"숫자"</b>로 판단하세요.
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:8,marginTop:6}}>
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#10b981",letterSpacing:"0.04em",marginBottom:5}}>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#15803d",letterSpacing:"0.04em",marginBottom:5}}>
             ① LIFT (가장 중요) — 포스트 효과 측정
           </div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-            포스트 게시 <b style={{color:"#fff"}}>전 14일</b>의 태깅 상품 평균 판매량과 <b style={{color:"#fff"}}>후 14일</b>의 평균 판매량의 변화율(%).
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            포스트 게시 <b style={{color:D.text}}>전 14일</b>의 태깅 상품 평균 판매량과 <b style={{color:D.text}}>후 14일</b>의 평균 판매량의 변화율(%).
             <br/>
-            <span style={{color:"#10b981"}}>+30% 이상</span> 매우 좋음 / <span style={{color:"#10b981"}}>+10~30%</span> 양호 / <span style={{color:"#9ca3af"}}>−10~+10%</span> 영향 미미 / <span style={{color:"#ef4444"}}>−10% 이하</span> 역효과
+            <span style={{color:"#15803d"}}>+30% 이상</span> 매우 좋음 / <span style={{color:"#15803d"}}>+10~30%</span> 양호 / <span style={{color:D.textMeta}}>−10~+10%</span> 영향 미미 / <span style={{color:"#b91c1c"}}>−10% 이하</span> 역효과
           </div>
         </div>
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#F2B544",letterSpacing:"0.04em",marginBottom:5}}>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#b45309",letterSpacing:"0.04em",marginBottom:5}}>
             ② ★ 점수 — LIFT를 5단계 등급으로
           </div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
             LIFT% 절댓값 기준 ★1~5 변환. ★5 = +30% 이상, ★4 = +10~30%, ★3 = ±10% 이내, ★2 = −10~−20%, ★1 = −20% 이하.
             <br/>
             ★를 클릭하면 일별 판매표 + 산식 모달을 볼 수 있습니다.
           </div>
         </div>
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#7BB7E5",letterSpacing:"0.04em",marginBottom:5}}>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#1d4ed8",letterSpacing:"0.04em",marginBottom:5}}>
             ③ 셀 안 차트 (날짜별 카드) — 흐름 읽기
           </div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-            X축 가운데 <b style={{color:"#fff"}}>점선(=0)</b>이 포스트 게시일. 왼쪽 회색 = 포스트 <b>전 14일</b> 판매, 오른쪽 컬러 = 포스트 <b>후 14일</b> 판매. 오른쪽이 왼쪽보다 위로 올라가면 효과 있음.
-            아래 <b style={{color:"#fff"}}>속도</b> = 일평균 추가 판매 장수 / <b style={{color:"#fff"}}>인사이트</b> = 다음 액션 추천.
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            X축 가운데 <b style={{color:D.text}}>점선(=0)</b>이 포스트 게시일. 왼쪽 회색 = 포스트 <b>전 14일</b> 판매, 오른쪽 컬러 = 포스트 <b>후 14일</b> 판매. 오른쪽이 왼쪽보다 위로 올라가면 효과 있음.
+            아래 <b style={{color:D.text}}>속도</b> = 일평균 추가 판매 장수 / <b style={{color:D.text}}>인사이트</b> = 다음 액션 추천.
           </div>
         </div>
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#a78bfa",letterSpacing:"0.04em",marginBottom:5}}>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#6d28d9",letterSpacing:"0.04em",marginBottom:5}}>
             ④ 상단 차트 — 월 전체 흐름
           </div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-            <b style={{color:"#fff"}}>당월 일별 판매량 추이</b>: 월 안의 일별 판매 흐름. 빨간 점선 = 포스트 발생일. 직후 곡선이 올라가면 효과 있음.
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            <b style={{color:D.text}}>포스트별 임팩트 랭킹</b>: 각 막대 = 한 포스트의 LIFT(%). 위에서부터 효과가 좋았던 순.
             <br/>
-            <b style={{color:"#fff"}}>태그×판매 산점도</b>: 포스트당 태그 수가 늘수록 판매도 늘어나는지 (상관 r ≥ 0.4 면 양의 상관).
+            <b style={{color:D.text}}>모든 포스트 평균 효과 곡선</b>: D-14 ~ D+14 일별 평균 판매량. 효과 정점일(D+N)이 표시됩니다.
             <br/>
-            <b style={{color:"#fff"}}>속도계</b>: 월 전반 14일 평균 vs 후반 14일 평균 — 판매가 가속 / 감속 중인지.
+            <b style={{color:D.text}}>속도계</b>: 월 전반 14일 평균 vs 후반 14일 평균 — 판매가 가속 / 감속 중인지.
           </div>
         </div>
       </div>
