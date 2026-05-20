@@ -10678,7 +10678,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const weeksCount=grid.length/7;
 
   return (
-    <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
+    <div style={{padding:"20px 24px",maxWidth:1960,margin:"0 auto"}}>
       {/* 월 셀렉터 — 중앙 정렬 */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:24}}>
         <button onClick={()=>shiftMonth(-1)} data-hf
@@ -10721,7 +10721,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
               style={{
               background:c.inMonth?D.surface:D.bg,
-              minHeight:210,padding:0,
+              minHeight:252,padding:0,
               opacity:c.inMonth?1:0.35,
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
@@ -10797,23 +10797,40 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                     </div>
                   </>
                 )}
-                {c.inMonth&&d?.topProducts?.length>0&&(
-                  <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
-                    <div style={{fontSize:9,fontWeight:700,color:D.textMeta,letterSpacing:"0.05em",
-                      textTransform:"uppercase",marginBottom:2}}>판매 top</div>
-                    {d.topProducts.map((p,j)=>{
-                      const hi=isHighlighted(p.name);
-                      return (
-                        <div key={j} data-iso={c.iso} data-pidx={j} className="impact-prod-row"
-                          style={{display:"flex",alignItems:"center",gap:3,
-                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                          position:"relative"}}>
-                          {hi
-                            ?<MatchedProductBadge name={p.name} qty={p.qty}/>
-                            :<><span>• {p.name}</span><span style={{color:D.textMeta}}>{p.qty}장</span></>}
-                        </div>
-                      );
-                    })}
+                {c.inMonth&&(samedayTagged.size>0||d?.topProducts?.length>0)&&(
+                  <div style={{marginTop:"auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:9,color:D.textSub,lineHeight:1.6}}>
+                    {/* 좌측: 소개 상품 (당일 포스트 태깅 상품) */}
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:9,fontWeight:700,color:D.textMeta,letterSpacing:"0.05em",
+                        textTransform:"uppercase",marginBottom:2}}>소개 상품</div>
+                      {samedayTagged.size>0
+                        ?[...samedayTagged].slice(0,5).map((name,j)=>(
+                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                            · {name}
+                          </div>
+                        ))
+                        :<div style={{color:D.textMeta,opacity:0.5}}>—</div>}
+                    </div>
+                    {/* 우측: 판매 베스트 (Top 5) — 매칭은 손그림 강조 */}
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:9,fontWeight:700,color:D.textMeta,letterSpacing:"0.05em",
+                        textTransform:"uppercase",marginBottom:2}}>판매 top</div>
+                      {d?.topProducts?.length>0
+                        ?d.topProducts.map((p,j)=>{
+                          const hi=isHighlighted(p.name);
+                          return (
+                            <div key={j} data-iso={c.iso} data-pidx={j} className="impact-prod-row"
+                              style={{display:"flex",alignItems:"center",gap:3,
+                              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                              position:"relative"}}>
+                              {hi
+                                ?<MatchedProductBadge name={p.name} qty={p.qty}/>
+                                :<><span style={{overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>• {p.name}</span><span style={{color:D.textMeta,flexShrink:0}}>{p.qty}장</span></>}
+                            </div>
+                          );
+                        })
+                        :<div style={{color:D.textMeta,opacity:0.5}}>—</div>}
+                    </div>
                   </div>
                 )}
               </div>
@@ -10834,10 +10851,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               // 시작점: 포스트 셀 우상단(IG 인디케이터 근처)
               const fx=(fi%7)+0.78;
               const fy=Math.floor(fi/7)+1.12;
-              // 끝점: 매칭된 상품 행에 정밀하게 — 셀 내 'Top' 영역(0.62~0.97) 5분할
+              // 끝점: 우측 컬럼(판매 top) 행에 정밀하게 — 셀 내 영역(0.62~0.97) 5분할
               const pIdx=r.productIdx??0;
               const slot=0.62+(pIdx+0.5)*((0.97-0.62)/5);
-              const tx=(ti%7)+0.12; // 행 시작(불릿 옆)
+              // 우측 컬럼 시작 = 셀 가로 절반(0.5) + 약간 안쪽(불릿 옆)
+              const tx=(ti%7)+0.55;
               const ty=Math.floor(ti/7)+1+slot;
               const midY=(fy+ty)/2;
               const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
