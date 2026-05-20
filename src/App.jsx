@@ -10186,13 +10186,21 @@ function useInstagramEmbedScript(deps){
   },deps);
 }
 
-// 인스타그램 포스트 썸네일 — Microlink API 로 og:image 를 받아 <img> 로 표시
-// 캘린더 셀 배경처럼 가볍게 깔 때 사용 (실제 embed iframe 보다 빠르고 안정적)
-function InstagramThumb({ url }) {
+// Microlink JSON 으로 og:image URL 받아옴 (DB 캐시용)
+//   - 실패/CORS 에러는 null 반환 → 호출부에서 폴백 처리
+async function fetchOgImage(postUrl){
+  try{
+    const res=await fetch(`https://api.microlink.io/?url=${encodeURIComponent(postUrl)}`);
+    const json=await res.json();
+    return json?.data?.image?.url||null;
+  }catch{ return null; }
+}
+
+// 인스타그램 포스트 썸네일 — DB에 캐시된 thumb_url 만 사용 (외부 호출 X)
+//   thumb_url 누락 포스트는 빈 셀 — IGPostModal '썸네일 새로고침' 버튼으로 보충 가능
+function InstagramThumb({ src }) {
   const [err,setErr]=useState(false);
-  if(err||!url) return null;
-  // Microlink: embed=image.url → 헤더 og:image 를 직접 이미지로 반환
-  const src=`https://api.microlink.io/?url=${encodeURIComponent(url)}&embed=image.url`;
+  if(err||!src) return null;
   return (
     <img src={src} alt="" loading="lazy" decoding="async"
       referrerPolicy="no-referrer"
@@ -10305,7 +10313,7 @@ function ProductTagger({ postId, tagged, allProducts, onChange }){
 }
 
 // 포스트 등록·관리 모달
-function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose, onChange }){
+function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose, onChange, onRefreshThumb }){
   // wizard step: 0=URL 입력, 1=URL 완료(임베드 확인) + 상품 매칭, 2=상품 매칭 완료
   const [step,setStep]=useState(0);
   const [url,setUrl]=useState("");
@@ -10333,6 +10341,10 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
     setNewPostUrl(norm);
     setStep(1);
     onChange(); // 부모 리스트 갱신
+    // 백그라운드로 og:image 받아서 thumb_url 캐시 (실패 무시)
+    fetchOgImage(norm).then(thumb=>{
+      if(thumb){ db.from("instagram_posts").update({thumb_url:thumb}).eq("id",data.id).then(()=>onChange()); }
+    });
   };
   // Step 1 → 2: 상품 매칭 완료 (그냥 step 전환 — 상품은 chip 추가마다 즉시 저장됨)
   const handleComplete=()=>{ setStep(2); };
@@ -10435,9 +10447,19 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                     style={{fontSize:11,color:D.blue,wordBreak:"break-all"}}>{p.url}</a>
                   {p.caption_memo&&<div style={{fontSize:12,color:D.textSub,marginTop:4}}>{p.caption_memo}</div>}
                 </div>
-                <button onClick={()=>handleDelete(p.id)}
-                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
+                <div style={{display:"flex",gap:4,flexShrink:0}}>
+                  {onRefreshThumb&&(
+                    <button onClick={async()=>{const ok=await onRefreshThumb(p.id,p.url);if(ok)onChange();}}
+                      title={p.thumb_url?"캐시된 썸네일이 있습니다 — 강제 갱신":"DB 에 썸네일 없음 — Microlink 호출하여 캐시"}
+                      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                        padding:"3px 9px",fontSize:11,cursor:"pointer",color:p.thumb_url?D.textMeta:D.blue}}>
+                      {p.thumb_url?"🔄 썸네일 갱신":"📷 썸네일 가져오기"}
+                    </button>
+                  )}
+                  <button onClick={()=>handleDelete(p.id)}
+                    style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                      padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red}}>삭제</button>
+                </div>
               </div>
               {/* 인스타그램 공식 임베드 */}
               <InstagramEmbed url={p.url}/>
@@ -10504,8 +10526,21 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
       setIgPosts(postsRes.data||[]);
       setPostProducts(prodsRes.data||[]);
       setTableMissing(false);
+      // 주의: thumb_url 자동 백필은 일부러 하지 않음 (Microlink 호출량 절감)
+      //       - 저장 시점에만 1회 호출하여 DB 캐시
+      //       - 캐시 누락 포스트는 IGPostModal 의 '썸네일 새로고침' 버튼으로 수동 갱신
     })();
   },[postLoadTick]);
+
+  // 단일 포스트의 thumb_url 수동 갱신 (Microlink 호출 1회)
+  const refreshThumb=async(postId,postUrl)=>{
+    const thumb=await fetchOgImage(postUrl);
+    if(!thumb) return false;
+    const db=await getSupabase();
+    await db.from("instagram_posts").update({thumb_url:thumb}).eq("id",postId);
+    setIgPosts(prev=>prev.map(x=>x.id===postId?{...x,thumb_url:thumb}:x));
+    return true;
+  };
   const refreshPosts=()=>setPostLoadTick(t=>t+1);
 
   // 일자별 포스트 인덱스
@@ -10742,10 +10777,10 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              {/* IG 포스트 첫 장 썸네일 배경 — Microlink og:image */}
-              {c.inMonth&&posts.length>0&&(
+              {/* IG 포스트 첫 장 썸네일 배경 — DB 캐시(thumb_url) 전용. 없으면 미표시 */}
+              {c.inMonth&&posts.length>0&&posts[0].thumb_url&&(
                 <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-                  <InstagramThumb url={posts[0].url}/>
+                  <InstagramThumb src={posts[0].thumb_url}/>
                 </div>
               )}
               {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 */}
@@ -10900,7 +10935,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
       {/* 포스트 등록·관리 모달 */}
       {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
         postProductsMap={postProductsMap} allProducts={allProducts}
-        onClose={()=>setPostModalDate(null)} onChange={refreshPosts}/>}
+        onClose={()=>setPostModalDate(null)} onChange={refreshPosts}
+        onRefreshThumb={refreshThumb}/>}
     </div>
   );
 }
