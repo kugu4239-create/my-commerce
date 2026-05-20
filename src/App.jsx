@@ -10790,6 +10790,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               product:d.topProducts[hitIdx].name,
               productIdx:hitIdx,
               productCount:d.topProducts.length,
+              tagName,
             });
             break;
           }
@@ -11011,7 +11012,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                         textTransform:"uppercase",marginBottom:2}}>소개 상품</div>
                       {samedayTagged.size>0
                         ?[...samedayTagged].slice(0,5).map((name,j)=>(
-                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"#000"}}>
+                          <div key={j} data-tag-iso={c.iso} data-tag-name={name}
+                            style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"#000"}}>
                             · {name}
                           </div>
                         ))
@@ -11092,23 +11094,32 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
       setSize({w:cRect.width,h:cRect.height});
       const next=[];
       ribbons.forEach((r,i)=>{
-        const fromEl=container.querySelector(`[data-star-iso="${r.fromIso}"]`);
+        // 시작점 우선순위: 1) 소개 상품 텍스트(tag-name) → 2) ★ 버튼 폴백
+        const tagSafe=String(r.tagName||"").replace(/"/g,'\\"');
+        const fromEl=
+          (r.tagName && container.querySelector(`[data-tag-iso="${r.fromIso}"][data-tag-name="${tagSafe}"]`))
+          || container.querySelector(`[data-star-iso="${r.fromIso}"]`);
         const toEl  =container.querySelector(`[data-iso="${r.toIso}"][data-pidx="${r.productIdx??0}"]`);
         if(!fromEl||!toEl) return;
         const fRect=fromEl.getBoundingClientRect();
         const tRect=toEl.getBoundingClientRect();
-        // 시작점: ★ 버튼 중앙
-        const fx=fRect.left+fRect.width/2-cRect.left;
+        // 시작점: 소개 상품 텍스트 우측 끝 + 세로 중앙 → 오른쪽 / 아래로 향함
+        const fromOnText=fromEl.hasAttribute("data-tag-iso");
+        const fx=(fromOnText?fRect.right-4:fRect.left+fRect.width/2)-cRect.left;
         const fy=fRect.top+fRect.height/2-cRect.top;
-        // 끝점: 매칭 상품 행 좌측 인셋(불릿 옆) + 세로 중앙
+        // 끝점: 매칭 상품 행 좌측 인셋 + 세로 중앙
         const tx=tRect.left+6-cRect.left;
         const ty=tRect.top+tRect.height/2-cRect.top;
-        // 부드러운 베지어: 수직 중간에서 휘게
+        // 베지어: 가로/세로 모두 자연스럽게 휘게
+        const dx=Math.abs(tx-fx);
         const dy=Math.abs(ty-fy);
-        const cy1=fy+Math.max(20,dy*0.45);
-        const cy2=ty-Math.max(20,dy*0.45);
-        const d=`M${fx},${fy} C${fx},${cy1} ${tx},${cy2} ${tx},${ty}`;
-        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i});
+        const cx1=fx+Math.max(20,dx*0.35);
+        const cy1=fy+Math.max(10,dy*0.45);
+        const cx2=tx-Math.max(20,dx*0.35);
+        const cy2=ty-Math.max(10,dy*0.45);
+        const d=`M${fx},${fy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`;
+        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i,
+          tx,ty,fromOnText});
       });
       setPaths(next);
     };
@@ -11119,7 +11130,6 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
     const onScroll=()=>compute();
     window.addEventListener("scroll",onScroll,true);
     window.addEventListener("resize",compute);
-    // 첫 페인트 직후 한 번 더 (폰트 로드 등으로 위치 살짝 어긋날 때 보정)
     const raf=requestAnimationFrame(compute);
     return()=>{
       ro.disconnect();
@@ -11133,14 +11143,39 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
   return (
     <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
         pointerEvents:"none",overflow:"visible"}}>
+      <defs>
+        {/* 발광 효과로 흰 배경에서도 잘 보이게 */}
+        <filter id="ribbon-glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.5" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        {/* 끝점에 화살촉 — 각 색상별로 marker 가 다르지만 currentColor 로 통일 */}
+        <marker id="ribbon-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+          markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
       {paths.map(p=>{
         const focused=hoveredFromIso===p.fromIso;
         const dim=hoveredFromIso&&!focused;
         return (
-          <path key={p.key} d={p.d} stroke={p.color} fill="none"
-            strokeWidth={focused?2.5:1.8}
-            opacity={dim?0.08:focused?0.85:0.42}
-            strokeLinecap="round"/>
+          <g key={p.key} style={{color:p.color}}>
+            {/* 두꺼운 외곽 라인 (그림자 효과) — 가시성 보조 */}
+            <path d={p.d} stroke="#fff" fill="none"
+              strokeWidth={focused?5:4}
+              opacity={dim?0.05:focused?0.7:0.45}
+              strokeLinecap="round"/>
+            {/* 본 라인 — 색상 + 발광 */}
+            <path d={p.d} stroke={p.color} fill="none"
+              strokeWidth={focused?2.8:2.2}
+              opacity={dim?0.15:focused?1:0.85}
+              strokeLinecap="round"
+              filter="url(#ribbon-glow)"
+              markerEnd="url(#ribbon-arrow)"/>
+          </g>
         );
       })}
     </svg>
