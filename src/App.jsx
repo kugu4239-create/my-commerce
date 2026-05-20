@@ -10576,16 +10576,36 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
               </span>
             )}
           </div>
-          <div style={{display:"flex",gap:6,marginBottom:12,fontSize:11}}>
-            {stepLabel.map((s,i)=>(
-              <div key={i} style={{flex:1,padding:"5px 8px",borderRadius:5,textAlign:"center",
-                fontWeight:600,
-                background:step===i?D.blue:step>i?`${D.green}20`:D.surface,
-                color:step===i?"#fff":step>i?D.green:D.textMeta,
-                border:`1px solid ${step===i?D.blue:step>i?`${D.green}40`:D.border}`}}>
-                {step>i?"✓ ":""}{s.replace(/^[①②✓]\s/,"")}
-              </div>
-            ))}
+          {/* 화살표 형태 step indicator — 각 step 이 chevron 모양으로 흐름 직관화 */}
+          <div style={{display:"flex",marginBottom:12,fontSize:11,gap:2}}>
+            {stepLabel.map((s,i)=>{
+              const isActive=step===i;
+              const isDone=step>i;
+              const isLast=i===stepLabel.length-1;
+              const isFirst=i===0;
+              const bg=isActive?D.blue:isDone?`${D.green}22`:D.surface;
+              const fg=isActive?"#fff":isDone?D.green:D.textMeta;
+              const bd=isActive?D.blue:isDone?`${D.green}55`:D.border;
+              // chevron 화살표: 우측 끝에 뾰족한 모양 + 좌측은 들어간 모양 (첫/마지막 제외)
+              const clip=isFirst&&isLast?"none":
+                isFirst?"polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%)":
+                isLast?"polygon(0 0, 100% 0, 100% 100%, 0 100%, 12px 50%)":
+                "polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%)";
+              return (
+                <div key={i} style={{flex:1,padding:isFirst?"7px 14px 7px 12px":"7px 14px 7px 22px",
+                  textAlign:"center",fontWeight:600,
+                  background:bg,color:fg,
+                  border:`1px solid ${bd}`,
+                  clipPath:clip,
+                  display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+                  whiteSpace:"nowrap",overflow:"hidden"}}>
+                  <span style={{fontSize:11,opacity:0.85}}>
+                    {isDone?"✓":isActive?"●":i+1}
+                  </span>
+                  <span>{s.replace(/^[①②③✓]\s?/,"")}</span>
+                </div>
+              );
+            })}
           </div>
 
           {step===0&&<>
@@ -10614,11 +10634,15 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
             </div>
             <ProductTagger postId={newPostId} tagged={postProductsMap[newPostId]||[]}
               allProducts={allProducts} onChange={onChange}/>
-            <div style={{display:"flex",gap:7,marginTop:14}}>
-              <Btn onClick={handleComplete} style={{flex:1}}>✓ 완료</Btn>
+            {/* 우하단 정렬: 완료 버튼이 모달 우측 하단에 위치해 순서 종료를 안심하게 인지 */}
+            <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",
+              gap:8,marginTop:18,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
               <button onClick={resetWizard}
                 style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-                  padding:"6px 14px",fontSize:12,cursor:"pointer",color:D.textMeta}}>처음부터</button>
+                  padding:"7px 14px",fontSize:12,cursor:"pointer",color:D.textMeta}}>← 처음부터</button>
+              <Btn onClick={handleComplete} style={{padding:"8px 22px",fontSize:13,fontWeight:700}}>
+                ✓ 완료
+              </Btn>
             </div>
           </>}
 
