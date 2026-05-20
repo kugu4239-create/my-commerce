@@ -165,6 +165,9 @@ const normChannel = raw => {
 const normCS = raw => {
   if (!raw) return "배송";
   const v = String(raw).trim().toLowerCase().replace(/\s/g,"");
+  // 배송 전 취소 = '취소' (반품 아님 — 배송 자체가 일어나지 않은 주문 무효화)
+  if (v.includes("배송전") && v.includes("취소")) return "취소";
+  // 그 외 취소(배송 후/미명시) = 반품 처리
   if (v.includes("취소")) return "반품";
   if (v.includes("교환")) return "교환";
   return "배송";
@@ -6051,11 +6054,20 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
             // 상태 추론 우선순위: CS → 상태 → 기본 "배송"
+            //   normCS: 배송전+취소→"취소", 그 외 취소→"반품", 교환→"교환"
             const rawStatus=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
-            // 1) 배송일 없으면 실제 배송 전 → "주문" (CS가 비어 있어도 동일)
-            // 2) CORD prefix = 29CM 취소 주문 → 반품으로 강제
             let status=rawStatus;
+            // 배송 전 취소/교환은 실제 배송 발생 여부에 따라 재분류
+            //   - 배송일 있음: 결국 배송됨 → "배송" 으로 카운트
+            //   - 배송일 없음 + 교환: "주문" (교환으로 잡지 않음)
+            //   - 배송일 없음 + 취소: "취소" 유지
+            const csLower=csRaw.toLowerCase().replace(/\s/g,"");
+            const isPreShip=csLower.includes("배송전");
+            if(isPreShip&&deliveryDateVal) status="배송";
+            else if(isPreShip&&!deliveryDateVal&&rawStatus==="교환") status="주문";
+            // 배송일 없으면 실제 배송 전 → "주문"
             if(status==="배송"&&!deliveryDateVal) status="주문";
+            // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (배송일 있는 경우만 fire)
             if(status==="배송"&&/^CORD/i.test(oid)) status="반품";
             const qty=toNum(r[qtyCol])||1;
             const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
@@ -6254,7 +6266,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
                 {key:"option_name",label:"옵션",color:D.textMeta},
                 {key:"qty",label:"수량",bold:true},
                 {key:"status",label:"상태",fmt:v=>(
-                  <span style={{color:v==="반품"?D.red:v==="교환"?D.amber:v==="주문"?D.textMeta:D.green,fontWeight:500}}>{v}</span>
+                  <span style={{color:v==="반품"?D.red:v==="교환"?D.amber:(v==="주문"||v==="취소")?D.textMeta:D.green,fontWeight:500}}>{v}</span>
                 )},
               ]}
             />
@@ -6281,7 +6293,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
           {key:"product_name",label:"상품명",maxW:180},
           {key:"option_name",label:"옵션",color:D.textMeta},
           {key:"qty",label:"수량"},
-          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:v==="주문"?D.textMeta:D.green,fontWeight:500}}>{v}</span>},
+          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:(v==="주문"||v==="취소")?D.textMeta:D.green,fontWeight:500}}>{v}</span>},
         ]}
         onChanged={()=>onUpdate(nowStr())}
       />
