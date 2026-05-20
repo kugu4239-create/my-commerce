@@ -1425,16 +1425,17 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   if(storeRows.length){
     if(!byChannel["오프라인 스토어"]) byChannel["오프라인 스토어"]={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     byChannel["오프라인 스토어"].revenue  = storeRevenue;       // 실판매금액 합 (배송 - 반품)
-    byChannel["오프라인 스토어"].shipped  = storeOrderCount;    // 고유 order_id (배송)
-    byChannel["오프라인 스토어"].returned = storeReturnedCount; // 고유 order_id (반품)
-    // 객단가 분모: 매장 배송 order_id 집합으로 덮어쓰기
+    // 매장은 배송/반품 카운트에 흘러들어가지 않음 — 모두 0으로 고정
+    byChannel["오프라인 스토어"].shipped  = 0;
+    byChannel["오프라인 스토어"].returned = 0;
+    // 객단가 분모(c.uniqueOrders)는 그대로 매장 배송 order_id로 사용 (storeAOV 계산용)
     chOrderIds["오프라인 스토어"] = new Set(storeShippedRows.map(r=>r.order_id).filter(Boolean));
     // 주문 수 집합: 매장 전체 order_id (배송+반품)로 덮어쓰기 — 매장 데이터가 권위
     chAllOrderIds["오프라인 스토어"] = new Set(storeRows.map(r=>r.order_id).filter(Boolean));
-    // 장수: 매장 권위 데이터로 덮어쓰기 (주문 장수 = 배송 qty + 반품 qty)
+    // 주문 장수는 매장 권위 데이터(배송+반품 qty 합), 배송/반품 장수는 0 (배송과 무관)
     chOrderedQty["오프라인 스토어"]  = storeQty + storeReturnedQty;
-    chShippedQty["오프라인 스토어"]  = storeQty;
-    chReturnedQty["오프라인 스토어"] = storeReturnedQty;
+    chShippedQty["오프라인 스토어"]  = 0;
+    chReturnedQty["오프라인 스토어"] = 0;
     // 매장별(판교점/일산점) 매출 breakdown
     const storeByStore={};
     storeRows.forEach(r=>{
@@ -1731,7 +1732,6 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [returnPeriod,setReturnPeriod]=useState("1m");
   const [rankBestPeriod,setRankBestPeriod]=useState("7d");
   const [rankBestChannel,setRankBestChannel]=useState("전체");
-  const [rankInfoOpen,setRankInfoOpen]=useState(false);
   const [rankBestCustomStart,setRankBestCustomStart]=useState("");
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
   const [rankWorstPeriod,setRankWorstPeriod]=useState("1m");
@@ -2392,7 +2392,6 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <SecTitle ts={ts.orders}>판매 Top</SecTitle>
-            <InfoBtn onClick={()=>setRankInfoOpen(true)}/>
             {["전체",...activeChannels].map(ch=>(
               <button key={ch} onClick={()=>setRankBestChannel(ch)}
                 style={{background:rankBestChannel===ch?D.black:"transparent",
@@ -2501,15 +2500,6 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         </Card>
       )}
 
-      {rankInfoOpen&&(
-        <div onClick={()=>setRankInfoOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <div style={{background:"#fff",borderRadius:12,padding:28,maxWidth:340,width:"90%"}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>판매 Top 안내</div>
-            <p style={{fontSize:12,color:"#555",lineHeight:1.7,margin:"0 0 16px"}}>정확한 데이터 수집을 위해 판매 수치는 배송까지 완료된 건으로 카운트 됩니다.</p>
-            <button onClick={()=>setRankInfoOpen(false)} style={{width:"100%",padding:"8px",borderRadius:7,border:"1px solid #e0e0e0",cursor:"pointer",fontSize:12}}>닫기</button>
-          </div>
-        </div>
-      )}
       {/* 반품 탑 */}
       <Card ref={returnTopCardRef} style={{marginBottom:20,minHeight:660}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
