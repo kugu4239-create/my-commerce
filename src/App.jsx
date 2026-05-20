@@ -2093,9 +2093,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
       </div>
 
-      {/* 판매처 점유율 + 판매처별 매출 */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:10,marginBottom:20,minHeight:220}}>
-        <Card>
+      {/* 매출 점유율 + 판매처별 매출 + 판매처 상세 — 동일 일정 필터 사용 → 하나의 카드, 점선 구분 */}
+      <Card style={{marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:0,minHeight:220}}>
+        <div style={{paddingRight:isMobile?0:14,paddingBottom:isMobile?14:0,
+          borderRight:isMobile?"none":`1px dashed ${D.border}`,
+          borderBottom:isMobile?`1px dashed ${D.border}`:"none"}}>
           <SecTitle ts={ts.orders}>매출 점유율</SecTitle>
           {(()=>{
             const sorted=[...stats.channelList.slice(0,6)].sort((a,b)=>b.revenue-a.revenue);
@@ -2127,8 +2130,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               </>
             );
           })()}
-        </Card>
-        <Card ref={salesByChCardRef}>
+        </div>
+        <div ref={salesByChCardRef} style={{paddingLeft:isMobile?0:14,paddingTop:isMobile?14:0}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
             <SecTitle ts={ts.orders}>판매처별 매출</SecTitle>
             <CaptureBtn cardRef={salesByChCardRef} filename="판매처별매출" DC={{border:D.border,sub:D.textMeta}}/>
@@ -2185,11 +2188,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             })()}
           </ResponsiveContainer>
           {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(period,customStart,customEnd)}</div>}
-        </Card>
+        </div>
       </div>
 
+      {/* 점선 구분 */}
+      <div style={{borderTop:`1px dashed ${D.border}`,margin:"20px 0"}}/>
+
       {/* 판매처 상세 */}
-      <Card ref={chDetailCardRef} style={{marginBottom:20,minHeight:380}}>
+      <div ref={chDetailCardRef} style={{minHeight:380}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
@@ -2336,6 +2342,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           );
         })()}
         {getPeriodStr(period,customStart,customEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:8}}>{getPeriodStr(period,customStart,customEnd)}</div>}
+      </div>
       </Card>
 
       {/* 월별 배송량 (독립 기간) */}
