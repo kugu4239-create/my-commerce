@@ -3896,11 +3896,12 @@ function DateButtonPicker({value,onChange}){
   );
 }
 
-function PromoFlow({ revenues, storeSales=[] }) {
+function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
   const today=new Date().toISOString().slice(0,10);
+  const [impactModal,setImpactModal]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
   const [viewEnd,setViewEnd]=useState(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().slice(0,10);});
   const [viewPeriod,setViewPeriod]=useState("2m");
@@ -4638,6 +4639,13 @@ function PromoFlow({ revenues, storeSales=[] }) {
                     <td {...td} style={{...td.style,fontWeight:600}}>
                       {p.name}
                       {ended&&<span style={{marginLeft:6,fontSize:11,fontWeight:500,color:D.red}}>종료된 프로모션</span>}
+                      {ended&&(
+                        <button onClick={()=>setImpactModal(p)}
+                          style={{marginLeft:8,background:D.black,color:"#fff",border:"none",borderRadius:5,
+                            padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
+                          임팩트 분석
+                        </button>
+                      )}
                     </td>
                     <td {...td} style={{...td.style,whiteSpace:"nowrap",textDecoration:"none"}}>
                       {[p.start_date,p.end_date].map((dt,i)=>{
@@ -4862,6 +4870,173 @@ function PromoFlow({ revenues, storeSales=[] }) {
           );
         })()}
       </Card>
+      {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 프로모션 임팩트 분석 모달 — 종료된 프로모션 임팩트 분석
+//   - 일별 매출: 직전 동일 기간(점선 전) → 프로모션 기간(점선 후)
+//   - Top 20: 프로모션 기간 + 해당 채널의 배송 완료된 상품 수량 랭킹
+// ─────────────────────────────────────────────
+function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
+  const ch=promo.platform;
+  const promoStart=String(promo.start_date||"").slice(0,10);
+  const promoEnd=String(promo.end_date||"").slice(0,10);
+  const dayMs=86400000;
+  const dur=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs); // 일 수 (포함 길이 = dur+1)
+  const lenDays=dur+1;
+  const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
+  const prevEnd=new Date(new Date(promoStart).getTime()-dayMs).toISOString().slice(0,10);
+
+  // 채널 매출 소스: 자사몰/29CM/무신사 → revenues, 오프라인 스토어 → storeSales
+  const dailyRevenue=useMemo(()=>{
+    const map={};
+    const init=d=>{if(!map[d]) map[d]={date:d,revenue:0};};
+    // 전체 두 기간 일자 채우기 (0으로 시작)
+    let cur=new Date(prevStart);
+    const last=new Date(promoEnd);
+    while(cur<=last){ init(cur.toISOString().slice(0,10)); cur=new Date(cur.getTime()+dayMs); }
+    if(ch==="오프라인 스토어"){
+      storeSales.forEach(r=>{
+        const d=r.sale_date;
+        if(!d||d<prevStart||d>promoEnd) return;
+        init(d);
+        if(r.status==="배송") map[d].revenue+=(r.amount||0);
+        else if(r.status==="반품") map[d].revenue-=(r.amount||0);
+      });
+    } else {
+      revenues.forEach(r=>{
+        if(r.channel!==ch) return;
+        const d=r.date;
+        if(!d||d<prevStart||d>promoEnd) return;
+        init(d);
+        map[d].revenue+=((r.amount||0)-(r.refund_amount||0));
+      });
+    }
+    return Object.values(map).sort((a,b)=>a.date>b.date?1:-1).map(p=>({
+      ...p,
+      prev:p.date<promoStart?p.revenue:null,
+      promo:p.date>=promoStart?p.revenue:null,
+    }));
+  },[ch,prevStart,prevEnd,promoStart,promoEnd,revenues,storeSales]);
+
+  // Top 20 상품: 프로모션 기간 + 해당 채널의 배송 status 행
+  const top20=useMemo(()=>{
+    const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+    const matchesCh=r=>{
+      if(ch==="오프라인 스토어") return OFFLINE.has(r.channel||"");
+      return (r.channel||"")===ch;
+    };
+    const m={};
+    orders.forEach(r=>{
+      if(r.status!=="배송") return;
+      if(!matchesCh(r)) return;
+      const d=r.order_date;
+      if(!d||d<promoStart||d>promoEnd) return;
+      const k=r.product_name||"미분류";
+      if(!m[k]) m[k]={name:k,qty:0,orders:new Set()};
+      m[k].qty+=(r.qty||1);
+      const oid=r.order_no||r.order_id;
+      if(oid) m[k].orders.add(oid);
+    });
+    return Object.values(m).map(p=>({...p,orders:p.orders.size}))
+      .sort((a,b)=>b.qty-a.qty).slice(0,20);
+  },[ch,promoStart,promoEnd,orders]);
+
+  const prevTotal=dailyRevenue.filter(p=>p.date<promoStart).reduce((s,p)=>s+(p.revenue||0),0);
+  const promoTotal=dailyRevenue.filter(p=>p.date>=promoStart).reduce((s,p)=>s+(p.revenue||0),0);
+  const chg=prevTotal>0?((promoTotal-prevTotal)/prevTotal*100):null;
+
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+          width:"min(900px,95vw)",maxHeight:"90vh",overflowY:"auto",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>{promo.name} <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span></div>
+            <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
+              <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
+              {ch} · 프로모션 {promoStart} ~ {promoEnd} · 직전 동일기간 {prevStart} ~ {prevEnd}
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+        </div>
+
+        {/* 매출 요약 */}
+        <div style={{display:"flex",gap:14,marginTop:14,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
+          <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
+            <span style={{color:D.textMeta}}>직전 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(prevTotal)}</b>
+          </div>
+          <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
+            <span style={{color:D.textMeta}}>프로모션 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(promoTotal)}</b>
+          </div>
+          {chg!==null&&(
+            <div style={{padding:"7px 12px",background:chg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:chg>=0?D.green:D.red}}>
+              <span>증감</span> <b style={{marginLeft:6}}>{chg>=0?"+":""}{chg.toFixed(1)}%</b>
+            </div>
+          )}
+        </div>
+
+        {/* 일별 매출 추이 */}
+        <div style={{marginTop:6,marginBottom:18}}>
+          <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+            일별 매출 — 직전 동일기간(점선) → 프로모션 기간(실선)
+          </div>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={dailyRevenue} margin={{top:10,right:20,left:0,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
+              <XAxis dataKey="date" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"/>
+              <YAxis tick={{fontSize:10,fill:D.textMeta}} tickFormatter={v=>fmtWonShort(v)}/>
+              <Tooltip formatter={(v)=>v==null?"":fmtWon(v)} labelFormatter={d=>d}/>
+              <ReferenceLine x={promoStart} stroke={D.red} strokeDasharray="4 3"
+                label={{value:"프로모션 시작",position:"top",fill:D.red,fontSize:10}}/>
+              <Line type="monotone" dataKey="prev"  name="직전 매출"  stroke={D.textMeta} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false}/>
+              <Line type="monotone" dataKey="promo" name="프로모션 매출" stroke={chColor(ch)||D.blue} strokeWidth={2} dot={false} connectNulls={false}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Top 20 */}
+        <div>
+          <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+            프로모션 기간 판매 Top 20 ({ch}, 배송 완료 기준)
+          </div>
+          {top20.length===0?(
+            <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
+              해당 기간·채널의 배송 데이터가 없습니다.
+            </div>
+          ):(
+            <div style={{maxHeight:360,overflowY:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta,position:"sticky",top:0,background:D.surface}}>
+                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
+                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
+                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
+                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>주문 건</th>
+                </tr></thead>
+                <tbody>
+                  {top20.map((p,i)=>(
+                    <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"5px 7px",color:D.textMeta}}>{i+1}</td>
+                      <td style={{padding:"5px 7px",color:D.text,maxWidth:380,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>{p.name}</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.blue,fontWeight:600}}>{p.qty.toLocaleString()}</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.orders.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -10547,7 +10722,7 @@ export default function App() {
             onRefresh={loadData}/>
         )}
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
-        {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales}/>}
+        {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
         {page==="input"&&(
