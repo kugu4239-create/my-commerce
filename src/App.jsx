@@ -10205,9 +10205,10 @@ async function fetchOgImage(postUrl){
   }catch{ return null; }
 }
 
-// 사용자가 업로드한 이미지를 캘린더 셀 사이즈에 맞게 다운스케일 + JPEG 압축
+// 사용자가 업로드한 이미지를 캘린더 셀 비율(4:5)에 맞춰 center crop + JPEG 압축
+// 셀에 cover 로 표시될 때 잘림 없이 보이도록 저장 단계에서 비율을 맞춤.
 // 원본 2~5MB → 50~150KB (Supabase Storage 무료 1GB 안에 1만+ 포스트 가능)
-async function resizeImageForUpload(file, maxSize=800, quality=0.82) {
+async function resizeImageForUpload(file, targetW=640, targetH=800, quality=0.82) {
   const dataUrl=await new Promise((res,rej)=>{
     const fr=new FileReader();
     fr.onload=()=>res(fr.result); fr.onerror=rej;
@@ -10218,11 +10219,20 @@ async function resizeImageForUpload(file, maxSize=800, quality=0.82) {
     i.onload=()=>res(i); i.onerror=rej;
     i.src=dataUrl;
   });
-  const scale=Math.min(1, maxSize/Math.max(img.width,img.height));
-  const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+  const srcRatio=img.width/img.height;
+  const targetRatio=targetW/targetH; // 4:5 = 0.8
+  // 원본이 더 가로형이면 좌우 자르고 세로 가득, 더 세로형이면 상하 자르고 가로 가득
+  let sw,sh,sx,sy;
+  if(srcRatio>targetRatio){
+    sh=img.height; sw=img.height*targetRatio;
+    sx=(img.width-sw)/2; sy=0;
+  } else {
+    sw=img.width; sh=img.width/targetRatio;
+    sx=0; sy=(img.height-sh)/2;
+  }
   const canvas=document.createElement("canvas");
-  canvas.width=w; canvas.height=h;
-  canvas.getContext("2d").drawImage(img,0,0,w,h);
+  canvas.width=targetW; canvas.height=targetH;
+  canvas.getContext("2d").drawImage(img,sx,sy,sw,sh,0,0,targetW,targetH);
   const blob=await new Promise(res=>canvas.toBlob(res,"image/jpeg",quality));
   return blob;
 }
