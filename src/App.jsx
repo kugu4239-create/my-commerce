@@ -10532,19 +10532,25 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 }
 
 // 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
-// 어트리뷰션 출발 소개 상품 — 손그림 동그라미 (옐로우)
+// 어트리뷰션 출발 소개 상품 — 둥근 모서리 이름표 (Sankey 분지 출발점)
 function SourceProductBadge({ name }) {
   return (
-    <span style={{position:"relative",display:"inline-block",padding:"1px 6px"}}>
-      <span style={{position:"relative",zIndex:1,fontWeight:700,color:"#fff",
-        textShadow:"0 1px 2px rgba(0,0,0,0.6)"}}>· {name}</span>
-      <svg viewBox="0 0 100 30" preserveAspectRatio="none"
-        style={{position:"absolute",inset:-2,width:"calc(100% + 4px)",height:"calc(100% + 4px)",pointerEvents:"none",zIndex:0,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.5))"}}>
-        <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
-          fill="none" stroke="#FFD166" strokeWidth="2.2" strokeLinecap="round" opacity="0.95"/>
-        <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
-          fill="none" stroke="#FFD166" strokeWidth="1.1" strokeLinecap="round" opacity="0.65"/>
-      </svg>
+    <span data-source-pill style={{
+      display:"inline-block",
+      position:"relative",
+      zIndex:3,
+      padding:"4px 11px",
+      fontSize:16,
+      fontWeight:700,
+      color:"#111",
+      background:"#FFD166",
+      borderRadius:14,
+      boxShadow:"0 0 0 2px rgba(255,255,255,0.95), 0 6px 16px rgba(0,0,0,0.45)",
+      lineHeight:1.15,
+      whiteSpace:"nowrap",
+      transform:"translateY(-3px)",
+    }}>
+      {name}
     </span>
   );
 }
@@ -11178,29 +11184,70 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
       if(!container) return;
       const cRect=container.getBoundingClientRect();
       setSize({w:cRect.width,h:cRect.height});
+      // 같은 (fromIso, tagName) 출발 소스 ribbons 그룹화 → Sankey 분지 offset 계산
+      const groups={};
+      ribbons.forEach((r,i)=>{
+        const k=`${r.fromIso}__${r.tagName||""}`;
+        if(!groups[k]) groups[k]=[];
+        groups[k].push(i);
+      });
+      Object.values(groups).forEach(arr=>{
+        arr.sort((a,b)=>ribbons[a].toIso.localeCompare(ribbons[b].toIso));
+      });
+      const offsetIdx={},offsetCount={};
+      Object.entries(groups).forEach(([k,arr])=>{
+        offsetCount[k]=arr.length;
+        arr.forEach((idx,i)=>{ offsetIdx[idx]=i; });
+      });
+
       const next=[];
       ribbons.forEach((r,i)=>{
-        // 시작점 우선순위: 1) 소개 상품 텍스트(tag-name) → 2) ★ 버튼 폴백
+        // 출발: 소개 상품 pill (data-tag-iso/data-tag-name) → 없으면 ★ 버튼 폴백
         const tagSafe=String(r.tagName||"").replace(/"/g,'\\"');
         const fromEl=
-          (r.tagName&&container.querySelector(`[data-tag-iso="${r.fromIso}"][data-tag-name="${tagSafe}"]`))
+          (r.tagName&&container.querySelector(`[data-tag-iso="${r.fromIso}"][data-tag-name="${tagSafe}"] [data-source-pill]`))
+          ||(r.tagName&&container.querySelector(`[data-tag-iso="${r.fromIso}"][data-tag-name="${tagSafe}"]`))
           ||container.querySelector(`[data-star-iso="${r.fromIso}"]`);
         const toEl  =container.querySelector(`[data-iso="${r.toIso}"][data-pidx="${r.productIdx??0}"]`);
         if(!fromEl||!toEl) return;
         const fRect=fromEl.getBoundingClientRect();
         const tRect=toEl.getBoundingClientRect();
-        const fromOnText=fromEl.hasAttribute("data-tag-iso");
-        const fx=(fromOnText?fRect.right-4:fRect.left+fRect.width/2)-cRect.left;
-        const fy=fRect.top+fRect.height/2-cRect.top;
+        const isPill=fromEl.hasAttribute("data-source-pill");
+        const fromOnText=fromEl.hasAttribute("data-tag-iso")||isPill;
+
+        // Sankey 분지 offset — pill 인 경우 pill 폭에 분포
+        const k=`${r.fromIso}__${r.tagName||""}`;
+        const cnt=offsetCount[k]||1;
+        const oi=offsetIdx[i]||0;
+        let fx,fy;
+        if(isPill){
+          // pill 하단 가장자리에 N등분 분지
+          const w=fRect.width;
+          fx=fRect.left+(oi+0.5)*w/cnt-cRect.left;
+          fy=fRect.bottom-2-cRect.top;
+        } else {
+          fx=(fromOnText?fRect.right-4:fRect.left+fRect.width/2)-cRect.left;
+          fy=fRect.top+fRect.height/2-cRect.top;
+        }
         const tx=tRect.left+6-cRect.left;
         const ty=tRect.top+tRect.height/2-cRect.top;
-        const dx=Math.abs(tx-fx);
-        const dy=Math.abs(ty-fy);
-        const cx1=fx+Math.max(20,dx*0.35);
-        const cy1=fy+Math.max(10,dy*0.45);
-        const cx2=tx-Math.max(20,dx*0.35);
-        const cy2=ty-Math.max(10,dy*0.45);
-        const d=`M${fx},${fy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`;
+
+        // Sankey 스타일 곡선 — pill 출발이면 수직 흐름 우선
+        const dy=ty-fy;
+        let d;
+        if(isPill){
+          const cy1=fy+Math.max(18,Math.abs(dy)*0.5);
+          const cy2=ty-Math.max(18,Math.abs(dy)*0.5);
+          d=`M${fx},${fy} C${fx},${cy1} ${tx},${cy2} ${tx},${ty}`;
+        } else {
+          const dx=Math.abs(tx-fx);
+          const ady=Math.abs(dy);
+          const cx1=fx+Math.max(20,dx*0.35);
+          const cy1=fy+Math.max(10,ady*0.45);
+          const cx2=tx-Math.max(20,dx*0.35);
+          const cy2=ty-Math.max(10,ady*0.45);
+          d=`M${fx},${fy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`;
+        }
         next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i,ribbon:r,tx,ty});
       });
       setPaths(next);
