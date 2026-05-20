@@ -1544,8 +1544,12 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // KPI 카드의 '주문 수' / '주문 장수' 표기용
   // 배송 KPI는 매장 제외(totalShipped/totalDeliveredQty)지만,
   // 주문 KPI는 사용자 요청으로 매장까지 합쳐서 단일 숫자로 표시
-  const totalUniqueOrdersAll = totalUniqueOrders + storeOrderCount;
-  const totalOrderedQtyAll   = totalOrderedQty   + storeQty;
+  // ※ '주문'은 배송/반품/교환 모든 상태 포함이므로 매장 측 합산도 반품 행까지 모두 포함해야
+  //   '판매처 상세' 표의 매장 row와 합계 row가 일치한다 (반품을 빼면 합계가 줄어드는 버그)
+  const storeAllOrderCount = new Set(storeRows.map(r=>r.order_id).filter(Boolean)).size;
+  const storeAllQty        = storeRows.reduce((s,r)=>s+(r.qty||1),0);
+  const totalUniqueOrdersAll = totalUniqueOrders + storeAllOrderCount;
+  const totalOrderedQtyAll   = totalOrderedQty   + storeAllQty;
 
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
