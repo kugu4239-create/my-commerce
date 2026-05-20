@@ -4720,53 +4720,6 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         </Card>
       )}
 
-      {/* 가려진 프로모션 로그 */}
-      {hiddenLog.length>0&&(
-        <Card style={{marginTop:12}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-            <div style={{fontWeight:600,fontSize:14,color:D.black}}>가려진 프로모션 로그</div>
-            {selHiddenIds.size>0&&(
-              <button onClick={()=>delFromHiddenLog(selHiddenIds)}
-                style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
-                  padding:"4px 12px",fontSize:12,cursor:"pointer",fontWeight:600}}>
-                선택 삭제 ({selHiddenIds.size})
-              </button>
-            )}
-          </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{background:D.surfaceAlt}}>
-                <th style={{padding:"4px 6px",width:22}}/>
-                {["채널","프로모션명","기간","가린 시각"].map(h=>(
-                  <th key={h} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,
-                    color:D.textSub,borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap"}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
-                <tr key={h.id} style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                  <td style={{padding:"4px 6px"}}>
-                    <input type="checkbox" checked={selHiddenIds.has(h.id)}
-                      onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
-                      style={{cursor:"pointer"}}/>
-                  </td>
-                  <td style={{padding:"4px 8px"}}>
-                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
-                      <span style={{width:5,height:5,borderRadius:"50%",background:chColor(h.platform),display:"inline-block"}}/>
-                      {h.platform}
-                    </span>
-                  </td>
-                  <td style={{padding:"4px 8px",color:D.text,fontWeight:500}}>{h.name}</td>
-                  <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{h.start_date?.slice(0,10)} ~ {h.end_date?.slice(0,10)}</td>
-                  <td style={{padding:"4px 8px",fontSize:11}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
       {/* 프로모션 검색 */}
       <Card style={{marginTop:12}}>
         <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>프로모션 검색</div>
@@ -4870,6 +4823,64 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           );
         })()}
       </Card>
+
+      {/* 가려진 종료 프로모션 — 페이지 가장 하단. 가리기 버튼으로 숨긴 종료 프로모션만 모아 표시 + 임팩트 분석 진입 */}
+      {hiddenLog.length>0&&(
+        <Card style={{marginTop:12}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div style={{fontWeight:600,fontSize:14,color:D.black}}>
+              가려진 종료 프로모션
+              <span style={{marginLeft:8,fontSize:11,color:D.textMeta,fontWeight:400}}>{hiddenLog.length}건</span>
+            </div>
+            {selHiddenIds.size>0&&(
+              <button onClick={()=>delFromHiddenLog(selHiddenIds)}
+                style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                  padding:"4px 12px",fontSize:12,cursor:"pointer",fontWeight:600}}>
+                선택 삭제 ({selHiddenIds.size})
+              </button>
+            )}
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:D.surfaceAlt}}>
+                <th style={{padding:"4px 6px",width:22}}/>
+                {["채널","프로모션명","기간","가린 시각",""].map((h,i)=>(
+                  <th key={i} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
+                <tr key={h.id} style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                  <td style={{padding:"4px 6px"}}>
+                    <input type="checkbox" checked={selHiddenIds.has(h.id)}
+                      onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
+                      style={{cursor:"pointer"}}/>
+                  </td>
+                  <td style={{padding:"4px 8px"}}>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:chColor(h.platform),display:"inline-block"}}/>
+                      {h.platform}
+                    </span>
+                  </td>
+                  <td style={{padding:"4px 8px",color:D.text,fontWeight:500}}>{h.name}</td>
+                  <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{h.start_date?.slice(0,10)} ~ {h.end_date?.slice(0,10)}</td>
+                  <td style={{padding:"4px 8px",fontSize:11}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
+                  <td style={{padding:"4px 8px"}}>
+                    <button onClick={()=>setImpactModal(h)}
+                      style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                        padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
+                      임팩트 분석
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
       {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
     </div>
   );
