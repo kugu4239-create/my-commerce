@@ -10,11 +10,26 @@ import {
 } from "recharts";
 
 // ─────────────────────────────────────────────
-// NOTE: Supabase 테이블 컬럼 추가 필요:
+// NOTE: Supabase 테이블/컬럼 추가 필요:
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS order_count integer DEFAULT 0;
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_amount integer DEFAULT 0;
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_count integer DEFAULT 0;
 //   ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount integer DEFAULT 0;
+//
+//   -- 콘텐츠 임팩트 (인스타그램 포스트 캘린더):
+//   CREATE TABLE IF NOT EXISTS instagram_posts (
+//     id            serial PRIMARY KEY,
+//     post_date     date    NOT NULL,
+//     url           text    NOT NULL,
+//     caption_memo  text,
+//     created_at    timestamptz DEFAULT now()
+//   );
+//   CREATE INDEX IF NOT EXISTS instagram_posts_date_idx ON instagram_posts (post_date);
+//   CREATE TABLE IF NOT EXISTS instagram_post_products (
+//     post_id      int  NOT NULL REFERENCES instagram_posts(id) ON DELETE CASCADE,
+//     product_name text NOT NULL,
+//     PRIMARY KEY (post_id, product_name)
+//   );
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
@@ -9499,9 +9514,156 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
 // ─────────────────────────────────────────────
 // Phase 1: 월 셀렉터 + 빈 캘린더 그리드 (스캐폴드)
 // 다음 단계: KPI 카드 → 셀별 매출/판매Top → IG 포스트 등록 → 리본
+// 인스타그램 embed.js 1회 로드 + 새 임베드 process 호출
+function useInstagramEmbedScript(deps){
+  useEffect(()=>{
+    const SRC="https://www.instagram.com/embed.js";
+    let s=document.querySelector(`script[src="${SRC}"]`);
+    if(!s){
+      s=document.createElement("script");
+      s.src=SRC; s.async=true;
+      document.body.appendChild(s);
+    }
+    // 이미 로드된 경우 즉시 process, 아니면 onload 후 process
+    const run=()=>{ try{ window.instgrm?.Embeds?.process(); }catch{} };
+    if(window.instgrm) run();
+    else s.addEventListener("load",run,{once:true});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },deps);
+}
+
+// URL 정규화: 트래킹 파라미터 제거 + permalink 형태로 표준화
+function normalizeIgUrl(raw){
+  const s=String(raw||"").trim();
+  // 인스타그램 URL 패턴: /p/SHORTCODE/, /reel/SHORTCODE/, /tv/SHORTCODE/
+  const m=s.match(/instagram\.com\/(p|reel|tv)\/([A-Za-z0-9_-]+)/i);
+  if(!m) return null;
+  return `https://www.instagram.com/${m[1]}/${m[2]}/`;
+}
+
+// 포스트 등록·관리 모달
+function IGPostModal({ date, posts, onClose, onChange }){
+  const [url,setUrl]=useState("");
+  const [memo,setMemo]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+
+  // 임베드 script 로드 + posts 변경 시마다 process
+  useInstagramEmbedScript([posts.length,posts.map(p=>p.url).join("|")]);
+
+  const handleAdd=async()=>{
+    const norm=normalizeIgUrl(url);
+    if(!norm){ setErr("올바른 인스타그램 포스트 URL이 아닙니다 (https://www.instagram.com/p/... 또는 /reel/...)"); return; }
+    setSaving(true); setErr("");
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_posts").insert({post_date:date,url:norm,caption_memo:memo||null});
+    setSaving(false);
+    if(error){ setErr("저장 실패: "+error.message); return; }
+    setUrl(""); setMemo("");
+    onChange();
+  };
+  const handleDelete=async(id)=>{
+    if(!confirm("이 포스트를 삭제하시겠습니까?")) return;
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_posts").delete().eq("id",id);
+    if(error){ setErr("삭제 실패: "+error.message); return; }
+    onChange();
+  };
+
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+          width:"min(720px,95vw)",maxHeight:"85vh",overflowY:"auto",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.25)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div style={{fontWeight:700,fontSize:16,color:D.black}}>{date} · 인스타그램 포스트</div>
+          <button onClick={onClose}
+            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 12px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+        </div>
+
+        {/* 새 포스트 추가 폼 */}
+        <div style={{background:D.bg,borderRadius:8,padding:"14px 16px",marginBottom:18}}>
+          <div style={{fontSize:12,fontWeight:600,color:D.text,marginBottom:8}}>새 포스트 추가</div>
+          <input value={url} onChange={e=>setUrl(e.target.value)}
+            placeholder="https://www.instagram.com/p/..."
+            style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
+              fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
+          <input value={memo} onChange={e=>setMemo(e.target.value)}
+            placeholder="메모 (선택)"
+            style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
+              fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
+          {err&&<Alert type="error" msg={err}/>}
+          <Btn onClick={handleAdd} disabled={saving||!url}>{saving?"저장 중...":"추가"}</Btn>
+        </div>
+
+        {/* 등록된 포스트 리스트 */}
+        <div style={{fontSize:12,fontWeight:600,color:D.text,marginBottom:10}}>등록된 포스트 ({posts.length})</div>
+        {posts.length===0
+          ? <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center"}}>아직 등록된 포스트가 없습니다.</div>
+          : posts.map(p=>(
+            <div key={p.id} style={{border:`1px solid ${D.border}`,borderRadius:8,padding:14,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <a href={p.url} target="_blank" rel="noreferrer"
+                    style={{fontSize:11,color:D.blue,wordBreak:"break-all"}}>{p.url}</a>
+                  {p.caption_memo&&<div style={{fontSize:12,color:D.textSub,marginTop:4}}>{p.caption_memo}</div>}
+                </div>
+                <button onClick={()=>handleDelete(p.id)}
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
+              </div>
+              {/* 인스타그램 공식 임베드 */}
+              <blockquote className="instagram-media"
+                data-instgrm-permalink={p.url}
+                data-instgrm-version="14"
+                style={{margin:0,maxWidth:"100%",minWidth:"100%"}}>
+                <a href={p.url} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>
+                  포스트 보기
+                </a>
+              </blockquote>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const now=new Date();
   const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+  const [igPosts,setIgPosts]=useState([]);          // 전체 IG 포스트
+  const [tableMissing,setTableMissing]=useState(false);
+  const [postModalDate,setPostModalDate]=useState(null);  // 모달 열림 상태(iso date)
+  const [postLoadTick,setPostLoadTick]=useState(0);
+
+  // IG 포스트 로딩
+  useEffect(()=>{
+    (async()=>{
+      const db=await getSupabase();
+      const {data,error}=await db.from("instagram_posts").select("*").order("post_date",{ascending:false}).limit(1000);
+      if(error){
+        // 테이블 미생성 시 안내 (코드 42P01 = undefined_table)
+        if(error.code==="42P01"||/relation.*does not exist/i.test(error.message||"")){
+          setTableMissing(true);
+        }
+        return;
+      }
+      setIgPosts(data||[]);
+      setTableMissing(false);
+    })();
+  },[postLoadTick]);
+  const refreshPosts=()=>setPostLoadTick(t=>t+1);
+
+  // 일자별 포스트 인덱스
+  const postsByDate=useMemo(()=>{
+    const m={};
+    igPosts.forEach(p=>{ if(!m[p.post_date]) m[p.post_date]=[]; m[p.post_date].push(p); });
+    return m;
+  },[igPosts]);
 
   // 월 이동
   const shiftMonth=(delta)=>{
@@ -9601,20 +9763,29 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             const d=dailyData[c.iso];
             const channels=d?Object.entries(d.channels).filter(([,v])=>v>0):[];
             const barTotal=channels.reduce((s,[,v])=>s+v,0)||1;
+            const posts=postsByDate[c.iso]||[];
             return (
-            <div key={i} style={{
+            <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
+              style={{
               background:c.inMonth?D.surface:D.bg,
               minHeight:170,padding:"10px 12px",
               opacity:c.inMonth?1:0.35,
               position:"relative",
+              cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                 <span style={{fontSize:14,fontWeight:c.isToday?700:600,
                   color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
                   {c.date.getDate()}
                 </span>
-                {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
-                  background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+                <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                  {posts.length>0&&<span title={`${posts.length}개 포스트`}
+                    style={{fontSize:10,color:"#fff",fontWeight:700,
+                      background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
+                      padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                  {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
+                    background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+                </div>
               </div>
               {/* IG 썸네일 영역 (다음 step에서 채워짐) — 현재는 그래프/Top만 */}
               {c.inMonth&&d&&d.total>0&&(
@@ -9644,10 +9815,17 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         </div>
       </Card>
 
+      {tableMissing&&<Alert type="warn" msg={`Supabase에 instagram_posts 테이블이 없습니다. 아래 SQL을 Supabase Editor에서 실행해주세요:\n\nCREATE TABLE IF NOT EXISTS instagram_posts (\n  id            serial PRIMARY KEY,\n  post_date     date NOT NULL,\n  url           text NOT NULL,\n  caption_memo  text,\n  created_at    timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS instagram_posts_date_idx ON instagram_posts (post_date);`}/>}
+
       <div style={{marginTop:16,fontSize:11,color:D.textMeta,lineHeight:1.7,background:D.bg,
         padding:"10px 14px",borderRadius:6,border:`1px dashed ${D.border}`}}>
-        <b>다음 단계</b> — ① IG 포스트 등록 모달 → ② oEmbed 썸네일 → ③ 상품 매칭 검색 → ④ 리본 연결
+        <b>사용법</b> — 캘린더 셀을 클릭하면 그 날짜의 인스타그램 포스트를 등록/관리할 수 있습니다.<br/>
+        <b>다음 단계</b> — ① 상품 매칭 검색 → ② 리본 연결
       </div>
+
+      {/* 포스트 등록·관리 모달 */}
+      {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
+        onClose={()=>setPostModalDate(null)} onChange={refreshPosts}/>}
     </div>
   );
 }
