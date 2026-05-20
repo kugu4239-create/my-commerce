@@ -10205,10 +10205,10 @@ async function fetchOgImage(postUrl){
   }catch{ return null; }
 }
 
-// 사용자가 업로드한 이미지를 캘린더 셀 비율(4:5)에 맞춰 center crop + JPEG 압축
-// 셀에 cover 로 표시될 때 잘림 없이 보이도록 저장 단계에서 비율을 맞춤.
-// 원본 2~5MB → 50~150KB (Supabase Storage 무료 1GB 안에 1만+ 포스트 가능)
-async function resizeImageForUpload(file, targetW=640, targetH=800, quality=0.82) {
+// 사용자가 업로드한 이미지를 캘린더 셀 픽셀 크기 + 비율(4:5)에 맞춰 center crop + JPEG 압축
+// 셀 픽셀 ~268×336 에 가깝게 320×400 (1.2x) 로 저장하여 용량 절약 + 표시 sharp.
+// 원본 2~5MB → 10~25KB (Storage 무료 1GB 안에 40,000+ 포스트 가능)
+async function resizeImageForUpload(file, targetW=320, targetH=400, quality=0.75) {
   const dataUrl=await new Promise((res,rej)=>{
     const fr=new FileReader();
     fr.onload=()=>res(fr.result); fr.onerror=rej;
@@ -10261,7 +10261,7 @@ async function fetchAndCropOgImage(postUrl, postId) {
       i.onload=()=>res(i); i.onerror=rej;
       i.src=rawUrl;
     });
-    const targetW=640, targetH=800, q=0.82;
+    const targetW=320, targetH=400, q=0.75;
     const srcRatio=img.width/img.height;
     const targetRatio=targetW/targetH;
     let sw,sh,sx,sy;
