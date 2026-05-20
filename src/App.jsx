@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 // XLSX and papaparse are lazy-loaded on first use to keep initial bundle small
 const getXLSX = () => import("xlsx").then(m => m);
@@ -10865,6 +10866,47 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     //   각 포스트의 (postQty - preQty) / 14 의 평균
     const velList=igPosts.map(p=>{const s=postScores[p.id];return s?((s.postQty||0)-(s.preQty||0))/14:null;}).filter(v=>v!==null);
     const avgAttrVelocity=velList.length?velList.reduce((s,v)=>s+v,0)/velList.length:0;
+    // ─ 포스트별 LIFT 랭킹 (best → worst) ─
+    const postRanking=igPosts.map(p=>{
+      const s=postScores[p.id]||{};
+      const tags=postProductsMap[p.id]||[];
+      // 베스트 매칭 상품
+      const m=s.postPerProduct||{};
+      const list=Object.entries(m).sort(([,a],[,b])=>b-a);
+      const bestProduct=list.length&&list[0][1]>0?list[0][0]:null;
+      return {iso:p.post_date,id:p.id,lift:s.lift||0,stars:s.stars||0,
+        postQty:s.postQty||0,preQty:s.preQty||0,bestProduct,tagCount:tags.length};
+    }).filter(x=>x.tagCount>0).sort((a,b)=>b.lift-a.lift);
+    // ─ Cohort 평균 곡선 — 모든 포스트의 D-14 ~ D+14 평균 판매량 + 효과 정점 day ─
+    const cohortDays=Array.from({length:29},(_,i)=>i-14); // -14..0..14
+    const cohort=cohortDays.map(d=>{
+      const vals=[];
+      igPosts.forEach(p=>{
+        const s=postScores[p.id]; if(!s) return;
+        if(d<0){
+          const idx=(s.preDays||[]).length+d;
+          if(idx>=0&&idx<(s.preDays||[]).length) vals.push(s.preDays[idx].qty||0);
+        } else if(d===0){
+          // 게시일 — 보간을 위해 pre 마지막 + post 첫 평균
+          const pl=s.preDays?.length?s.preDays[s.preDays.length-1].qty||0:0;
+          const p0=s.postDays?.length?s.postDays[0].qty||0:0;
+          vals.push((pl+p0)/2);
+        } else {
+          const idx=d-1;
+          if(idx>=0&&idx<(s.postDays||[]).length) vals.push(s.postDays[idx].qty||0);
+        }
+      });
+      return {d, avg:vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:0, n:vals.length};
+    });
+    // 효과 정점: D>0 중 평균 최대인 day
+    const postCohort=cohort.filter(c=>c.d>0&&c.n>0);
+    const peakDay=postCohort.length?postCohort.reduce((a,b)=>a.avg>b.avg?a:b).d:0;
+    const peakAvg=postCohort.length?Math.max(...postCohort.map(c=>c.avg)):0;
+    // 전 평균 (D-14..D-1)
+    const preCohort=cohort.filter(c=>c.d<0&&c.n>0);
+    const preAvg=preCohort.length?preCohort.reduce((s,c)=>s+c.avg,0)/preCohort.length:0;
+    // 후 평균 (D+1..D+14)
+    const postCohortAvg=postCohort.length?postCohort.reduce((s,c)=>s+c.avg,0)/postCohort.length:0;
     // ─ 자동 인사이트 텍스트 (방향성 있는) ─
     const insights=[];
     if(avgLift>=15) insights.push({tone:"good",text:`평균 Lift +${avgLift.toFixed(0)}% — 콘텐츠 ROI가 매우 강력합니다. 유사한 포스팅 방식을 다음 달에도 유지하세요.`});
@@ -10885,7 +10927,9 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return {postCount:igPosts.length,avgStars,avgLift,totalAttr,
       timeline,velocityChange,firstAvg,secondAvg,
       bestPost,bestPostTagCount,tagScatter,correlation,avgQtyPerTag,
-      avgTagCount,avgAttrVelocity,insights};
+      avgTagCount,avgAttrVelocity,
+      postRanking,cohort,peakDay,peakAvg,preAvg,postCohortAvg,
+      insights};
   },[impactMode,igPosts,postScores,postProductsMap,grid,dailyData,postsByDate]);
 
   return (
@@ -10956,15 +11000,6 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                 <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
                   <InstagramThumb src={curPost.thumb_url}/>
                 </div>
-              )}
-              {/* 노이즈 + 반투명 검정 — 임팩트 모드에서는 흰 카드 가독성을 위해 표시 안 함 */}
-              {!impactMode&&c.inMonth&&posts.length>0&&(
-                <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
-                  background:"rgba(0,0,0,0.45)",
-                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
-                  backgroundBlendMode:"overlay",
-                  mixBlendMode:"normal",
-                }}/>
               )}
               {/* 같은 날 멀티 포스트 좌우 넘김 화살표 (별점 desc 순) */}
               {c.inMonth&&posts.length>1&&(
@@ -11352,7 +11387,6 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
               fontSize:11,letterSpacing:0.4,lineHeight:1,color:"#F2B544",whiteSpace:"nowrap"}}>
             <span>{"★".repeat(stars)}</span>
             <span style={{color:"#cfcfcf"}}>{"★".repeat(5-stars)}</span>
-            <span style={{fontSize:10,color:D.textMeta,marginLeft:4}}>{stars}/5</span>
           </button>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
@@ -11373,14 +11407,16 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
               border:`1px dashed ${D.border}`,cursor:"pointer"}}>
             태깅 상품 없음 — 클릭하여 연결
           </div>}
-      {/* mini 속도계 + 인사이트 한 줄 */}
+      {/* mini 속도계 + 인사이트 한 줄 (속도 hover popover 안내) */}
       <div style={{display:"flex",gap:6,alignItems:"center",fontSize:10,
         background:D.surfaceAlt,borderRadius:5,padding:"4px 8px"}}>
-        <MiniSpeedGauge value={dailyAttr}/>
-        <span style={{fontWeight:600,color:D.textMeta}}>속도</span>
-        <b style={{color:dailyAttr>=0?"#15803d":"#b91c1c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
-          {dailyAttr>=0?"+":""}{dailyAttr.toFixed(1)}장/일
-        </b>
+        <SpeedHoverInfo value={dailyAttr} score={score}>
+          <MiniSpeedGauge value={dailyAttr}/>
+          <span style={{fontWeight:600,color:D.textMeta}}>속도</span>
+          <b style={{color:dailyAttr>=0?"#15803d":"#b91c1c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+            {dailyAttr>=0?"+":""}{dailyAttr.toFixed(1)}장/일
+          </b>
+        </SpeedHoverInfo>
         <span style={{flex:1,color:toneCol,textAlign:"right",
           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
           {insight.text}
@@ -11424,11 +11460,12 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
 // 포스트 임팩트 분석 모드 상단 패널 — KPI · 속도계 · Sales Velocity Timeline · 태그×매출 산점도
 // ─────────────────────────────────────────────
 function ImpactAnalysisHeader({ summary, monthLabel }) {
-  const {postCount,avgStars,avgLift,totalAttr,timeline,velocityChange,firstAvg,secondAvg,
-    tagScatter,correlation,avgQtyPerTag,bestPost,bestPostTagCount,avgTagCount,avgAttrVelocity}=summary;
+  const {avgStars,avgLift,velocityChange,firstAvg,secondAvg,
+    bestPost,bestPostTagCount,avgTagCount,avgAttrVelocity,
+    postRanking,cohort,peakDay,peakAvg,preAvg,postCohortAvg}=summary;
   const liftColor=avgLift>=0?"#10b981":"#ef4444";
-  const velColor=velocityChange>=0?"#10b981":"#ef4444";
   const attrVelColor=avgAttrVelocity>=0?"#10b981":"#ef4444";
+  const cohortLiftPct=preAvg?((postCohortAvg-preAvg)/preAvg)*100:0;
   return (
     <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:10}}>
       {/* KPI Row — 6 타일 + 속도계 */}
@@ -11449,89 +11486,106 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
         <VelocityGauge change={velocityChange} firstAvg={firstAvg} secondAvg={secondAvg}/>
       </div>
 
-      {/* 당월 일별 판매 흐름 + 태그×판매 산점도 — 2열 (lg 폭) */}
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,alignItems:"stretch"}}>
+      {/* 포스트별 LIFT 랭킹 + Cohort 평균 lift 곡선 — 2열 */}
+      <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr",gap:10,alignItems:"stretch"}}>
         <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4,gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
             <div>
-              <div style={{fontSize:13,fontWeight:700,color:D.black}}>당월 일별 판매량 추이</div>
+              <div style={{fontSize:13,fontWeight:700,color:D.black}}>포스트별 임팩트 랭킹</div>
               <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
-                Y축: 그날 팔린 Top 상품의 합계 (장) · X축: 일자 · 빨간 점선: 포스트 게시일
+                각 막대 = 한 포스트의 LIFT(%). 위에서부터 효과가 좋았던 순. 어떤 포스트를 재현·재활용할지 한눈에 보세요.
               </div>
             </div>
             <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
-              월 전반 평균 <b style={{color:D.text}}>{Math.round(firstAvg)}장</b> → 후반 평균 <b style={{color:D.text}}>{Math.round(secondAvg)}장</b>
-              <br/>
-              <b style={{color:velColor}}>{velocityChange>=0?"+":""}{velocityChange.toFixed(0)}% {velocityChange>=0?"가속":"감속"}</b>
+              총 {postRanking.length}개 태깅 포스트
             </div>
           </div>
-          <div style={{height:150}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timeline} margin={{top:8,right:12,left:0,bottom:4}}>
-                <defs>
-                  <linearGradient id="velocityGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={D.blue} stopOpacity={0.35}/>
-                    <stop offset="100%" stopColor={D.blue} stopOpacity={0.03}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
-                <XAxis dataKey="day" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"
-                  label={{value:"일",fontSize:10,fill:D.textMeta,position:"insideBottomRight",offset:-2}}/>
-                <YAxis tick={{fontSize:10,fill:D.textMeta}} width={36}
-                  label={{value:"판매량 (장)",fontSize:10,fill:D.textMeta,angle:-90,position:"insideLeft",offset:8,style:{textAnchor:"middle"}}}/>
-                <Tooltip
-                  contentStyle={{fontSize:11,padding:"6px 10px",borderRadius:5}}
-                  formatter={(v,k,row)=>[`${v}장${row.payload?.hasPost?" · 포스트 게시일":""}`,"판매량"]}
-                  labelFormatter={(day)=>`${day}일`}/>
-                <Area type="monotone" dataKey="qty" stroke={D.blue} strokeWidth={2} fill="url(#velocityGrad)"/>
-                {timeline.filter(t=>t.hasPost).map(t=>(
-                  <ReferenceLine key={t.iso} x={t.day} stroke={D.red} strokeWidth={1.2} strokeDasharray="3 3"
-                    label={{value:"포스트",fontSize:8,fill:D.red,position:"top"}}/>
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          {postRanking.length>0?(
+            <div style={{maxHeight:240,overflowY:"auto",paddingRight:4}}>
+              {(()=>{
+                const maxAbs=Math.max(30,...postRanking.map(r=>Math.abs(r.lift)));
+                return postRanking.map(r=>{
+                  const w=Math.min(100,(Math.abs(r.lift)/maxAbs)*100);
+                  const col=r.lift>=30?"#15803d":r.lift>=10?"#22c55e":r.lift>=0?"#7BB7E5":r.lift>=-10?"#b45309":"#b91c1c";
+                  return (
+                    <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",
+                      fontSize:11,borderBottom:`1px dashed ${D.border}`}}>
+                      <span style={{minWidth:74,color:D.textSub,fontVariantNumeric:"tabular-nums"}}>{r.iso}</span>
+                      <span title={r.bestProduct||""}
+                        style={{flex:"0 0 28%",color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {r.bestProduct||<span style={{color:D.textMeta}}>—</span>}
+                      </span>
+                      <div style={{flex:1,position:"relative",height:14,display:"flex",alignItems:"center"}}>
+                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:D.border}}/>
+                        <div style={{position:"absolute",
+                          [r.lift>=0?"left":"right"]:"50%",
+                          width:`${w/2}%`,height:8,background:col,borderRadius:2}}/>
+                      </div>
+                      <span style={{minWidth:56,textAlign:"right",fontWeight:700,color:col,
+                        fontVariantNumeric:"tabular-nums"}}>
+                        {r.lift>=0?"+":""}{r.lift.toFixed(0)}%
+                      </span>
+                      <span style={{minWidth:18,color:"#F2B544",fontSize:9,letterSpacing:0.3,textAlign:"right"}}>
+                        {"★".repeat(r.stars)}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          ):(
+            <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
+              태깅된 포스트가 없습니다 — 포스트 셀의 ✎ 버튼으로 상품을 연결하세요
+            </div>
+          )}
         </Card>
 
         <Card>
-          <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:2}}>태그 상품 수와 판매량의 관계</div>
-          <div style={{fontSize:10,color:D.textMeta,marginBottom:6,lineHeight:1.45}}>
-            한 점 = 한 포스트. 우측으로 갈수록 태깅 상품이 많고, 위로 갈수록 판매가 많음.
-            <br/>
-            상관계수 r = <b style={{color:correlation>=0.4?"#15803d":correlation<=-0.2?"#b91c1c":D.text}}>{correlation.toFixed(2)}</b>
-            <span style={{color:D.textMeta,marginLeft:4}}>
-              (+1 강한 양 · 0 무관 · −1 강한 음)
-            </span>
-          </div>
-          {tagScatter.length>=2?(
-            <div style={{height:130}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{top:6,right:10,bottom:24,left:8}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
-                  <XAxis dataKey="tagCount" type="number" name="태그수"
-                    tick={{fontSize:10,fill:D.textMeta}}
-                    label={{value:"포스트당 태그 상품 수 (개)",fontSize:10,fill:D.textMeta,position:"insideBottom",offset:-12}}/>
-                  <YAxis dataKey="postQty" type="number" name="판매량"
-                    tick={{fontSize:10,fill:D.textMeta}} width={40}
-                    label={{value:"판매량 (장)",fontSize:10,fill:D.textMeta,angle:-90,position:"insideLeft",offset:14,style:{textAnchor:"middle"}}}/>
-                  <Tooltip
-                    cursor={{strokeDasharray:"3 3"}}
-                    contentStyle={{fontSize:11,padding:"6px 10px",borderRadius:5}}
-                    formatter={(v,k)=>[k==="postQty"?`${v}장`:`${v}개`,k==="postQty"?"판매량":"태그 상품 수"]}
-                    labelFormatter={()=>""}/>
-                  <Scatter data={tagScatter} fill={D.blue} shape="circle"/>
-                </ScatterChart>
-              </ResponsiveContainer>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:D.black}}>모든 포스트 평균 효과 곡선</div>
+              <div style={{fontSize:10,color:D.textMeta,marginTop:2,lineHeight:1.45}}>
+                D-14 ~ D+14 일별 평균 판매량을 모든 포스트 기준으로 합친 곡선. 효과가 보통 며칠 만에 정점에 도달하는지 보세요.
+              </div>
             </div>
+          </div>
+          {cohort.some(c=>c.n>0)?(
+            <>
+              <div style={{height:140}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={cohort} margin={{top:14,right:10,left:0,bottom:4}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
+                    <XAxis dataKey="d" tick={{fontSize:10,fill:D.textMeta}} ticks={[-14,-7,0,7,14]}
+                      type="number" domain={[-14,14]}/>
+                    <YAxis tick={{fontSize:10,fill:D.textMeta}} width={36}
+                      label={{value:"평균 (장)",fontSize:9,fill:D.textMeta,angle:-90,position:"insideLeft",offset:10,style:{textAnchor:"middle"}}}/>
+                    <Tooltip
+                      contentStyle={{fontSize:11,padding:"6px 10px",borderRadius:5}}
+                      formatter={(v)=>[`${v.toFixed(1)}장`,"평균 판매"]}
+                      labelFormatter={(d)=>`D${d>0?"+":""}${d}`}/>
+                    <ReferenceLine x={0} stroke={D.black} strokeDasharray="3 3"
+                      label={{value:"포스트일",fontSize:9,fill:D.text,position:"top",fontWeight:600,offset:4}}/>
+                    {peakDay>0&&<ReferenceLine x={peakDay} stroke="#15803d" strokeDasharray="2 2"
+                      label={{value:`정점 D+${peakDay}`,fontSize:9,fill:"#15803d",position:"top",offset:4}}/>}
+                    <Line type="monotone" dataKey="avg" stroke="#7BB7E5" strokeWidth={2.5} dot={{r:2,fill:"#7BB7E5"}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{fontSize:11,color:D.textSub,marginTop:6,lineHeight:1.55,
+                background:D.surfaceAlt,borderRadius:5,padding:"6px 10px"}}>
+                <b style={{color:D.text}}>효과 정점</b>: D+{peakDay}일 ({peakAvg.toFixed(1)}장)
+                · <b style={{color:D.text}}>전 평균</b> {preAvg.toFixed(1)}장
+                → <b style={{color:D.text}}>후 평균</b> {postCohortAvg.toFixed(1)}장
+                ({cohortLiftPct>=0?"+":""}{cohortLiftPct.toFixed(0)}%)
+              </div>
+            </>
           ):(
-            <div style={{height:130,display:"flex",alignItems:"center",justifyContent:"center",
+            <div style={{height:140,display:"flex",alignItems:"center",justifyContent:"center",
               fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
-              산점도 표시를 위해 2개 이상의 태깅된 포스트가 필요합니다
+              평균 곡선 표시를 위해 태깅된 포스트가 필요합니다
             </div>
           )}
-          <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
-            태그 1개당 평균 판매 <b style={{color:D.text}}>{avgQtyPerTag.toFixed(1)}장</b>
-          </div>
         </Card>
       </div>
     </div>
@@ -11552,6 +11606,60 @@ function KpiTile({ label, value, unit, valueColor, badge, hint }) {
       {badge&&<div style={{marginTop:2}}>{badge}</div>}
       {hint&&<div style={{fontSize:10,color:D.textMeta,lineHeight:1.4,marginTop:2}}>{hint}</div>}
     </div>
+  );
+}
+
+// 속도 hover 시 깔끔한 설명 popover (portal로 viewport에 떠 있게)
+function SpeedHoverInfo({ value, score, children }) {
+  const [pos,setPos]=useState(null); // {x,y}
+  const ref=useRef(null);
+  const onEnter=()=>{
+    const r=ref.current?.getBoundingClientRect();
+    if(r) setPos({x:r.left+r.width/2, y:r.top});
+  };
+  const onLeave=()=>setPos(null);
+  const pre=score?.preQty||0;
+  const post=score?.postQty||0;
+  const delta=post-pre;
+  return (
+    <>
+      <div ref={ref} onMouseEnter={onEnter} onMouseLeave={onLeave}
+        style={{display:"flex",alignItems:"center",gap:6,cursor:"help"}}>
+        {children}
+      </div>
+      {pos&&createPortal(
+        <div style={{position:"fixed",left:pos.x,top:pos.y-8,transform:"translate(-50%, -100%)",
+          zIndex:3500,pointerEvents:"none",
+          background:D.black,color:"#fff",padding:"10px 14px",borderRadius:8,
+          width:260,fontSize:11,lineHeight:1.6,
+          boxShadow:"0 8px 24px rgba(0,0,0,0.22)"}}>
+          <div style={{fontWeight:700,fontSize:12,marginBottom:6,letterSpacing:"0.02em"}}>
+            속도란?
+          </div>
+          <div style={{color:"rgba(255,255,255,0.85)"}}>
+            태깅한 상품이 <b style={{color:"#fff"}}>포스트 이후</b> 하루 평균 몇 장 더 팔렸는지.
+            <br/>
+            <span style={{color:"rgba(255,255,255,0.6)"}}>= (후 14일 일평균 − 전 14일 일평균)</span>
+          </div>
+          <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.15)",
+            display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:11}}>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>전 14일 합</span>
+            <b style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{pre.toLocaleString()}장</b>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>후 14일 합</span>
+            <b style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{post.toLocaleString()}장</b>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>증감</span>
+            <b style={{textAlign:"right",color:delta>=0?"#7BB7E5":"#fca5a5",fontVariantNumeric:"tabular-nums"}}>
+              {delta>=0?"+":""}{delta.toLocaleString()}장
+            </b>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>일평균</span>
+            <b style={{textAlign:"right",color:value>=0?"#7BB7E5":"#fca5a5",fontVariantNumeric:"tabular-nums"}}>
+              {value>=0?"+":""}{value.toFixed(2)}장/일
+            </b>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
