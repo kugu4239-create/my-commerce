@@ -10225,6 +10225,28 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
   );
 }
 
+// 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
+function MatchedProductBadge({ name, qty }) {
+  // 손그림 동그라미: 살짝 비대칭 SVG ellipse 두 겹 (offset 다르게 → wobble 느낌)
+  return (
+    <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:3,padding:"1px 4px"}}>
+      {/* 별 스티커 */}
+      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 0 1px #fff)"}}>★</span>
+      <span style={{fontWeight:700,color:D.black,position:"relative",zIndex:1}}>{name}</span>
+      <span style={{color:D.textMeta,position:"relative",zIndex:1}}>{qty}장</span>
+      {/* 손그림 동그라미 — absolute fill, SVG inline */}
+      <svg viewBox="0 0 100 30" preserveAspectRatio="none"
+        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0}}>
+        {/* 손으로 그린 듯한 비대칭 타원 두 겹 */}
+        <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
+          fill="none" stroke="#E94A6B" strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
+        <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
+          fill="none" stroke="#E94A6B" strokeWidth="0.9" strokeLinecap="round" opacity="0.5"/>
+      </svg>
+    </span>
+  );
+}
+
 function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const now=new Date();
   const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
@@ -10460,64 +10482,108 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           ))}
           {grid.map((c,i)=>{
             const d=dailyData[c.iso];
-            const channels=d?Object.entries(d.channels).filter(([,v])=>v>0):[];
-            const barTotal=channels.reduce((s,[,v])=>s+v,0)||1;
+            // 채널 매출: 매출 큰 순 정렬, 채널당 1줄 mini-bar
+            const channels=d?Object.entries(d.channels).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]):[];
+            const maxAmt=channels.length?channels[0][1]:1;
             const posts=postsByDate[c.iso]||[];
             const cm=crossMonthByPostDate[c.iso];
+            // 당일 임베드 포스트의 태깅 상품 ∩ 당일 판매 Top → 강조 매칭 set
+            const samedayTagged=new Set();
+            posts.forEach(p=>(postProductsMap[p.id]||[]).forEach(n=>samedayTagged.add(n)));
+            const isHighlighted=name=>{
+              for(const t of samedayTagged) if(nameMatches(t,name)) return true;
+              return false;
+            };
             return (
             <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
               onMouseEnter={posts.length>0?()=>setHoveredFromIso(c.iso):undefined}
               onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
               style={{
               background:c.inMonth?D.surface:D.bg,
-              minHeight:170,padding:"10px 12px",
+              minHeight:210,padding:0,
               opacity:c.inMonth?1:0.35,
-              position:"relative",
+              position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                <span style={{fontSize:14,fontWeight:c.isToday?700:600,
-                  color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
-                  {c.date.getDate()}
-                </span>
-                <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {posts.length>0&&<span title={`${posts.length}개 포스트`}
-                    style={{fontSize:10,color:"#fff",fontWeight:700,
-                      background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
-                      padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
-                  {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
-                    title={`다음: ${cm.nextYm} (${cm.count}건)`}
-                    style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
-                      border:`1px solid ${D.blue}30`,borderRadius:10,padding:"2px 6px",cursor:"pointer"}}>
-                    ▸{parseInt(cm.nextYm.split("-")[1])}월
-                  </button>}
-                  {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
-                    background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+              {/* IG 임베드 배경: 셀에 직접 가시화. 비율은 transform scale로 압축 */}
+              {c.inMonth&&posts.length>0&&(
+                <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
+                  <div style={{transform:"scale(0.32)",transformOrigin:"top left",
+                    width:"312.5%",height:"312.5%"}}>
+                    <InstagramEmbed url={posts[0].url}/>
+                  </div>
                 </div>
-              </div>
-              {/* IG 썸네일 영역 (다음 step에서 채워짐) — 현재는 그래프/Top만 */}
-              {c.inMonth&&d&&d.total>0&&(
-                <>
-                  <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:3}}>
-                    {fmtWonShort(d.total)}
-                  </div>
-                  <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:D.bg,marginBottom:8}}>
-                    {channels.map(([ch,amt])=>(
-                      <div key={ch} title={`${ch} ${fmtWonShort(amt)} (${(amt/barTotal*100).toFixed(0)}%)`}
-                        style={{flex:amt,background:chColor(ch),minWidth:2}}/>
-                    ))}
-                  </div>
-                </>
               )}
-              {c.inMonth&&d?.topProducts?.length>0&&(
-                <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
-                  {d.topProducts.map((p,j)=>(
-                    <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      • {p.name} <span style={{color:D.textMeta}}>{p.qty}장</span>
+              {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 */}
+              {c.inMonth&&posts.length>0&&(
+                <div style={{position:"absolute",inset:0,zIndex:1,
+                  background:"rgba(255,255,255,0.78)",pointerEvents:"none"}}/>
+              )}
+              {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
+              <div style={{position:"relative",zIndex:2,padding:"10px 12px",
+                display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                  <span style={{fontSize:14,fontWeight:c.isToday?700:600,
+                    color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                    {c.date.getDate()}
+                  </span>
+                  <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    {posts.length>0&&<span title={`${posts.length}개 포스트`}
+                      style={{fontSize:10,color:"#fff",fontWeight:700,
+                        background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
+                        padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                    {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
+                      title={`다음: ${cm.nextYm} (${cm.count}건)`}
+                      style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
+                        border:`1px solid ${D.blue}30`,borderRadius:10,padding:"2px 6px",cursor:"pointer"}}>
+                      ▸{parseInt(cm.nextYm.split("-")[1])}월
+                    </button>}
+                    {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
+                      background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+                  </div>
+                </div>
+                {c.inMonth&&d&&d.total>0&&(
+                  <>
+                    <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:6}}>
+                      {fmtWonShort(d.total)}
                     </div>
-                  ))}
-                </div>
-              )}
+                    {/* 채널별 1줄 미니 바 — 매출 큰 순 */}
+                    <div style={{marginBottom:8}}>
+                      {channels.slice(0,4).map(([ch,amt])=>(
+                        <div key={ch} title={`${ch} ${fmtWonShort(amt)}`}
+                          style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
+                          <span style={{fontSize:9,color:chColor(ch),fontWeight:600,
+                            minWidth:34,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                            {ch.length>3?ch.slice(0,3):ch}
+                          </span>
+                          <div style={{flex:1,height:4,background:`${D.border}80`,borderRadius:2,overflow:"hidden"}}>
+                            <div style={{width:`${Math.max(4,amt/maxAmt*100)}%`,height:"100%",background:chColor(ch),borderRadius:2}}/>
+                          </div>
+                          <span style={{fontSize:9,color:D.textMeta,minWidth:36,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>
+                            {fmtWonShort(amt)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {c.inMonth&&d?.topProducts?.length>0&&(
+                  <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
+                    {d.topProducts.map((p,j)=>{
+                      const hi=isHighlighted(p.name);
+                      return (
+                        <div key={j} style={{display:"flex",alignItems:"center",gap:3,
+                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                          position:"relative"}}>
+                          {hi
+                            ?<MatchedProductBadge name={p.name} qty={p.qty}/>
+                            :<><span>• {p.name}</span><span style={{color:D.textMeta}}>{p.qty}장</span></>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           );})}
         </div>
@@ -10535,7 +10601,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               const fx=(fi%7)+0.5;
               const fy=Math.floor(fi/7)+1.5;  // +1 for header row, +0.5 for center
               const tx=(ti%7)+0.5;
-              const ty=Math.floor(ti/7)+1.5;
+              // 끝점을 셀 하단(베스트 상품 영역)에 바싹 붙여 매칭 시각화 강화
+              const ty=Math.floor(ti/7)+1.88;
               const midY=(fy+ty)/2;
               const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
               const color=ribbonColor(r.postId);
