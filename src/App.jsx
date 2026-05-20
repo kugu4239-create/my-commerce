@@ -10514,22 +10514,24 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 }
 
 // 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
-function MatchedProductBadge({ name, qty }) {
+function MatchedProductBadge({ name, qty, onDark=true }) {
   // 손그림 동그라미: 살짝 비대칭 SVG ellipse 두 겹 (offset 다르게 → wobble 느낌)
+  const fg=onDark?"#fff":D.black;
+  const ts=onDark?"0 1px 2px rgba(0,0,0,0.6)":"none";
   return (
     <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:3,padding:"1px 4px"}}>
       {/* 별 스티커 */}
-      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 0 1px #fff)"}}>★</span>
-      <span style={{fontWeight:700,color:D.black,position:"relative",zIndex:1}}>{name}</span>
-      <span style={{color:D.textMeta,position:"relative",zIndex:1}}>{qty}장</span>
+      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.5))"}}>★</span>
+      <span style={{fontWeight:700,color:fg,textShadow:ts,position:"relative",zIndex:1}}>{name}</span>
+      <span style={{color:fg,opacity:0.85,textShadow:ts,position:"relative",zIndex:1}}>{qty}장</span>
       {/* 손그림 동그라미 — absolute fill, SVG inline */}
       <svg viewBox="0 0 100 30" preserveAspectRatio="none"
-        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0}}>
+        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0,filter:onDark?"drop-shadow(0 1px 2px rgba(0,0,0,0.5))":"none"}}>
         {/* 손으로 그린 듯한 비대칭 타원 두 겹 */}
         <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
-          fill="none" stroke="#E94A6B" strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
+          fill="none" stroke="#FF6B8A" strokeWidth="1.8" strokeLinecap="round" opacity="0.95"/>
         <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
-          fill="none" stroke="#E94A6B" strokeWidth="0.9" strokeLinecap="round" opacity="0.5"/>
+          fill="none" stroke="#FF6B8A" strokeWidth="1.0" strokeLinecap="round" opacity="0.6"/>
       </svg>
     </span>
   );
@@ -10718,33 +10720,41 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return 0;
   };
   const postScores=useMemo(()=>{
-    const map={}; // postId → {stars, lift, preQty, postQty, preDays[], postDays[], tagged, WINDOW}
+    const map={};
     const WINDOW=14;
     const dayMs=86400000;
     igPosts.forEach(post=>{
       const tagged=postProductsMap[post.id]||[];
       if(!tagged.length){
-        map[post.id]={stars:0,lift:0,preQty:0,postQty:0,preDays:[],postDays:[],tagged:[],WINDOW,empty:true};
+        map[post.id]={stars:0,lift:0,preQty:0,postQty:0,preDays:[],postDays:[],tagged:[],WINDOW,empty:true,
+          prePerProduct:{},postPerProduct:{}};
         return;
       }
       const baseMs=new Date(post.post_date).getTime();
-      const collect=(offset)=>{ // offset: -14..-1 또는 +1..+14
+      // 한 날짜의 태깅 상품 qty 합 + 일별 상품별 누적
+      const collect=(offset,perProductAccum)=>{
         const iso=new Date(baseMs+offset*dayMs).toISOString().slice(0,10);
         const dd=dailyData[iso];
         let dQty=0;
         Object.entries(dd?.products||{}).forEach(([name,qty])=>{
-          if(tagged.some(t=>nameMatches(t,name))) dQty+=qty;
+          if(tagged.some(t=>nameMatches(t,name))){
+            dQty+=qty;
+            const matchedTag=tagged.find(t=>nameMatches(t,name))||name;
+            perProductAccum[matchedTag]=(perProductAccum[matchedTag]||0)+qty;
+          }
         });
         return {iso,qty:dQty};
       };
+      const prePerProduct={},postPerProduct={};
       const preDays=[],postDays=[];
-      for(let i=WINDOW;i>=1;i--) preDays.push(collect(-i));
-      for(let i=1;i<=WINDOW;i++) postDays.push(collect(i));
+      for(let i=WINDOW;i>=1;i--) preDays.push(collect(-i,prePerProduct));
+      for(let i=1;i<=WINDOW;i++) postDays.push(collect(i,postPerProduct));
       const preQty=preDays.reduce((s,d)=>s+d.qty,0);
       const postQty=postDays.reduce((s,d)=>s+d.qty,0);
       const lift=preQty>0?((postQty-preQty)/preQty*100):(postQty>0?100:0);
       const stars=liftToStars(lift);
-      map[post.id]={stars,lift,preQty,postQty,preDays,postDays,tagged,WINDOW};
+      map[post.id]={stars,lift,preQty,postQty,preDays,postDays,tagged,WINDOW,
+        prePerProduct,postPerProduct};
     });
     return map;
   },[igPosts,postProductsMap,dailyData]);
@@ -11151,11 +11161,8 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,gap:10}}>
           <div>
-            <div style={{fontWeight:700,fontSize:16,color:D.black}}>임팩트 점수 — Pre/Post Sales Lift
+            <div style={{fontWeight:700,fontSize:18,color:D.black}}>임팩트 점수
               <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· {iso}</span>
-            </div>
-            <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
-              포스트 게시 <b>전 14일</b> vs <b>후 14일</b> 태깅 상품 판매 수량 변화율(%)로 5★ 점수 산출 — 인플루언서·콘텐츠 마케팅 측정의 가장 통용되는 방식
             </div>
           </div>
           <button onClick={onClose}
@@ -11163,44 +11170,12 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
               padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta,flexShrink:0}}>✕ 닫기</button>
         </div>
 
-        {/* 산식 */}
-        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"12px 14px",marginBottom:14,fontSize:12,color:D.text,lineHeight:1.7}}>
-          <div style={{fontWeight:700,marginBottom:6}}>산식</div>
-          <div style={{fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,marginBottom:8,color:D.textSub}}>
-            Lift% = (Post14_qty − Pre14_qty) / max(Pre14_qty, 1) × 100<br/>
-            Pre14_qty&nbsp; = 포스트 전 14일간 태깅 상품 총 판매 수량<br/>
-            Post14_qty = 포스트 후 14일간 태깅 상품 총 판매 수량
-          </div>
-          <div style={{fontWeight:700,marginTop:10,marginBottom:6,color:D.text}}>별 등급 (업계 통용 임계치)</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
-            <thead><tr style={{color:D.textMeta}}>
-              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>Lift</th>
-              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>의미</th>
-              <th style={{textAlign:"center",padding:"4px 6px",fontWeight:600}}>★</th>
-            </tr></thead>
-            <tbody>
-              {[
-                ["≥ +100%","매출 2배 이상 — 강한 임팩트",5],
-                ["+50 ~ 99%","매우 유의미",4],
-                ["+20 ~ 49%","유의미",3],
-                ["+5 ~ 19%","약한 양의 효과",2],
-                ["−5 ~ +5%","중립 / 변동 범위",1],
-                ["≤ −5%","부정 효과",0],
-              ].map(([range,desc,n])=>(
-                <tr key={range} style={{borderTop:`1px solid ${D.border}`}}>
-                  <td style={{padding:"4px 6px",fontFamily:"'JetBrains Mono','Courier New',monospace",color:D.text}}>{range}</td>
-                  <td style={{padding:"4px 6px",color:D.textSub}}>{desc}</td>
-                  <td style={{padding:"4px 6px",textAlign:"center",letterSpacing:0.5}}>
-                    <span style={{color:"#F2B544"}}>{"★".repeat(n)}</span>
-                    <span style={{color:"#cfcfcf"}}>{"★".repeat(5-n)}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{marginTop:10,padding:"6px 10px",background:`${D.amber}10`,border:`1px solid ${D.amber}40`,borderRadius:4,color:D.text,fontSize:11.5}}>
-            <b>한계</b>: 통제군 없는 단순 Pre/Post 비교라 계절성·외부 이벤트 영향을 분리하지 못합니다. 정확한 ROI 를 보려면 A/B(Lift study) 또는 MMM(Marketing Mix Modeling) 도구를 함께 사용해야 합니다.
-          </div>
+        {/* 본문 큰 설명 */}
+        <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}25`,borderRadius:8,
+          padding:"14px 16px",marginBottom:16,fontSize:14,color:D.text,lineHeight:1.7}}>
+          포스트 게시 <b>전 14일</b> 동안 팔린 태깅 상품 수량과 <b>후 14일</b> 동안 팔린 수량을 비교해
+          <b style={{color:D.blue}}> 변화율(%)</b>로 5★ 점수를 산출합니다.<br/>
+          <span style={{fontSize:12,color:D.textSub}}>인플루언서·콘텐츠 마케팅 효과 측정에서 가장 통용되는 방식 (Pre/Post Sales Lift).</span>
         </div>
 
         {/* 포스트별 실제 계산 */}
@@ -11222,42 +11197,72 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
                 </div>
               </div>
 
-              {/* 태깅 상품 */}
+              {/* 태깅 상품 + 베스트 (포스트 후 14일 가장 많이 팔린 태깅 상품) */}
               <div style={{marginBottom:10}}>
                 <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>태깅 상품 ({s.tagged?.length||0}개)</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                  {(s.tagged||[]).map(t=>(
-                    <span key={t} style={{padding:"2px 8px",fontSize:11,background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:10}}>{t}</span>
-                  ))}
+                  {(()=>{
+                    const post=s.postPerProduct||{};
+                    const sorted=Object.entries(post).sort(([,a],[,b])=>b-a);
+                    const bestName=sorted.length?sorted[0][0]:null;
+                    return (s.tagged||[]).map(t=>{
+                      const postQ=post[t]||0;
+                      const isBest=t===bestName&&postQ>0;
+                      return (
+                        <span key={t} style={{padding:"3px 9px",fontSize:11,
+                          background:isBest?`${D.green}15`:D.surfaceAlt,
+                          border:`1px solid ${isBest?D.green:D.border}`,
+                          color:isBest?D.green:D.text,fontWeight:isBest?700:400,
+                          borderRadius:10,display:"inline-flex",alignItems:"center",gap:4}}>
+                          {isBest&&<span style={{fontSize:10}}>🏆</span>}
+                          {t}
+                          {postQ>0&&<span style={{color:isBest?D.green:D.textMeta,fontSize:10}}>· {postQ}장</span>}
+                        </span>
+                      );
+                    });
+                  })()}
                   {(!s.tagged||s.tagged.length===0)&&<span style={{fontSize:11,color:D.textMeta,fontStyle:"italic"}}>(없음 — 점수 0)</span>}
                 </div>
+                {(()=>{
+                  const post=s.postPerProduct||{};
+                  const sorted=Object.entries(post).sort(([,a],[,b])=>b-a);
+                  if(!sorted.length||sorted[0][1]===0) return null;
+                  return (
+                    <div style={{marginTop:6,fontSize:11.5,color:D.text,padding:"6px 10px",
+                      background:`${D.green}10`,border:`1px solid ${D.green}30`,borderRadius:6}}>
+                      🏆 가장 잘 팔린 태깅 상품 (포스트 후 14일): <b style={{color:D.green}}>{sorted[0][0]}</b> · {sorted[0][1].toLocaleString()}장
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* 요약 지표 — Pre / Post / Lift */}
+              {/* 요약 지표 — 전·후·변화율 (한글) */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
                 <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:D.textMeta}}>Pre14_qty <span style={{color:D.textMeta}}>(D−14 ~ D−1)</span></div>
+                  <div style={{fontSize:10,color:D.textMeta}}>전 14일 판매 <span style={{color:D.textMeta}}>(D−14 ~ D−1)</span></div>
                   <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.preQty||0).toLocaleString()}장</div>
                 </div>
                 <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:D.textMeta}}>Post14_qty <span style={{color:D.textMeta}}>(D+1 ~ D+14)</span></div>
+                  <div style={{fontSize:10,color:D.textMeta}}>후 14일 판매 <span style={{color:D.textMeta}}>(D+1 ~ D+14)</span></div>
                   <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.postQty||0).toLocaleString()}장</div>
                 </div>
                 <div style={{background:`${(s.lift||0)>=0?D.green:D.red}10`,
                   border:`1px solid ${(s.lift||0)>=0?D.green:D.red}30`,
                   borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:D.textMeta}}>Sales Lift</div>
+                  <div style={{fontSize:10,color:D.textMeta}}>변화율(Lift)</div>
                   <div style={{fontSize:14,fontWeight:700,color:(s.lift||0)>=0?D.green:D.red}}>
                     {(s.lift||0)>=0?"+":""}{(s.lift||0).toFixed(1)}%
                   </div>
                 </div>
               </div>
 
-              {/* 최종 계산 step */}
-              <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}25`,borderRadius:6,padding:"8px 12px",marginBottom:12,
-                fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:11.5,color:D.text,lineHeight:1.7}}>
-                Lift% = ({(s.postQty||0).toLocaleString()} − {(s.preQty||0).toLocaleString()}) / max({(s.preQty||0).toLocaleString()}, 1) × 100 = <b>{(s.lift||0).toFixed(1)}%</b><br/>
-                ★ = liftToStars({(s.lift||0).toFixed(1)}%) = <b>{s.stars}/5</b>
+              {/* 한글 계산 과정 */}
+              <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}25`,borderRadius:6,padding:"10px 12px",marginBottom:12,
+                fontSize:12,color:D.text,lineHeight:1.8}}>
+                <div>① 변화량 = 후 14일 판매({(s.postQty||0).toLocaleString()}장) − 전 14일 판매({(s.preQty||0).toLocaleString()}장) = <b>{((s.postQty||0)-(s.preQty||0)).toLocaleString()}장</b></div>
+                <div>② 변화율 = 변화량 ÷ 전 14일 판매 × 100</div>
+                <div style={{marginLeft:14}}>= {((s.postQty||0)-(s.preQty||0)).toLocaleString()} ÷ max({(s.preQty||0).toLocaleString()}, 1) × 100 = <b style={{color:(s.lift||0)>=0?D.green:D.red}}>{(s.lift||0).toFixed(1)}%</b></div>
+                <div>③ 임계표에 따라 별점 부여 → <b>{s.stars} / 5 ★</b></div>
               </div>
 
               {/* Pre / Post 일별 breakdown */}
@@ -11305,6 +11310,46 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
             </div>
           );
         })}
+
+        {/* 산식·임계표 — 모달 맨 아래 (참고용) */}
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"12px 14px",marginTop:10,fontSize:12,color:D.text,lineHeight:1.7}}>
+          <div style={{fontWeight:700,marginBottom:6}}>산식 (참고)</div>
+          <div style={{fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,marginBottom:8,color:D.textSub}}>
+            Lift% = (Post14_qty − Pre14_qty) / max(Pre14_qty, 1) × 100<br/>
+            Pre14_qty&nbsp; = 포스트 전 14일간 태깅 상품 총 판매 수량<br/>
+            Post14_qty = 포스트 후 14일간 태깅 상품 총 판매 수량
+          </div>
+          <div style={{fontWeight:700,marginTop:10,marginBottom:6,color:D.text}}>별 등급 (업계 통용 임계치)</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+            <thead><tr style={{color:D.textMeta}}>
+              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>변화율</th>
+              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>의미</th>
+              <th style={{textAlign:"center",padding:"4px 6px",fontWeight:600}}>★</th>
+            </tr></thead>
+            <tbody>
+              {[
+                ["≥ +100%","매출 2배 이상 — 강한 임팩트",5],
+                ["+50 ~ 99%","매우 유의미",4],
+                ["+20 ~ 49%","유의미",3],
+                ["+5 ~ 19%","약한 양의 효과",2],
+                ["−5 ~ +5%","중립 / 변동 범위",1],
+                ["≤ −5%","부정 효과",0],
+              ].map(([range,desc,n])=>(
+                <tr key={range} style={{borderTop:`1px solid ${D.border}`}}>
+                  <td style={{padding:"4px 6px",fontFamily:"'JetBrains Mono','Courier New',monospace",color:D.text}}>{range}</td>
+                  <td style={{padding:"4px 6px",color:D.textSub}}>{desc}</td>
+                  <td style={{padding:"4px 6px",textAlign:"center",letterSpacing:0.5}}>
+                    <span style={{color:"#F2B544"}}>{"★".repeat(n)}</span>
+                    <span style={{color:"#cfcfcf"}}>{"★".repeat(5-n)}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{marginTop:10,padding:"6px 10px",background:`${D.amber}10`,border:`1px solid ${D.amber}40`,borderRadius:4,color:D.text,fontSize:11.5}}>
+            <b>한계</b>: 통제군 없는 단순 Pre/Post 비교라 계절성·외부 이벤트 영향을 분리하지 못합니다. 정확한 ROI 를 보려면 A/B(Lift study) 또는 MMM(Marketing Mix Modeling) 도구를 함께 사용해야 합니다.
+          </div>
+        </div>
       </div>
     </div>
   );
