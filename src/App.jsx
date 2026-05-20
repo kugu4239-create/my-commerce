@@ -11232,10 +11232,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           <button onClick={()=>setImpactMode(v=>!v)}
             title={impactMode?"포스트 임팩트 분석 모드 끄기 (캘린더 일반 보기)":"포스트 임팩트 분석 모드 켜기"}
             style={{padding:"10px 22px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
-              background:impactMode?D.black:D.surface,color:impactMode?"#fff":D.text,
-              border:`1px solid ${impactMode?D.black:D.border}`,borderRadius:6,cursor:"pointer",
-              boxShadow:"0 4px 14px rgba(0,0,0,0.15)"}}>
-            포스트 임팩트 분석 {impactMode?`ON · ${igPosts.length}개`:"보기"}
+              background:D.black,color:"#fff",
+              border:`1px solid ${impactMode?"#fff":D.black}`,borderRadius:6,cursor:"pointer",
+              boxShadow:"0 4px 14px rgba(0,0,0,0.25)",
+              display:"inline-flex",alignItems:"center",gap:8}}>
+            <span style={{width:7,height:7,borderRadius:"50%",
+              background:impactMode?"#22c55e":"rgba(255,255,255,0.35)",
+              boxShadow:impactMode?"0 0 6px #22c55e":"none"}}/>
+            포스트 임팩트 분석 {impactMode?`ON · ${igPosts.length}개`:"OFF"}
           </button>
           {impactMode&&<ImpactGuideSticky monthLabel={monthLabel}/>}
         </div>
