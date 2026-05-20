@@ -10752,7 +10752,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
               style={{
               background:c.inMonth?D.surface:D.bg,
-              minHeight:252,padding:0,
+              aspectRatio:"4 / 5",minHeight:252,padding:0,
               opacity:c.inMonth?1:0.35,
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
