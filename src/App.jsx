@@ -10249,6 +10249,38 @@ async function uploadIgThumb(postId, blob) {
   return data.publicUrl;
 }
 
+// Microlink 가 반환한 IG CDN 이미지 URL 을 받아 4:5 로 center crop 한 뒤 Storage 에 저장.
+// CORS 차단(IG CDN 일부) 으로 캔버스 가공이 안 되면 원본 URL 그대로 반환 (폴백).
+async function fetchAndCropOgImage(postUrl, postId) {
+  const rawUrl=await fetchOgImage(postUrl);
+  if(!rawUrl) return null;
+  try{
+    const img=await new Promise((res,rej)=>{
+      const i=new Image();
+      i.crossOrigin="anonymous";
+      i.onload=()=>res(i); i.onerror=rej;
+      i.src=rawUrl;
+    });
+    const targetW=640, targetH=800, q=0.82;
+    const srcRatio=img.width/img.height;
+    const targetRatio=targetW/targetH;
+    let sw,sh,sx,sy;
+    if(srcRatio>targetRatio){ sh=img.height; sw=img.height*targetRatio; sx=(img.width-sw)/2; sy=0; }
+    else { sw=img.width; sh=img.width/targetRatio; sx=0; sy=(img.height-sh)/2; }
+    const canvas=document.createElement("canvas");
+    canvas.width=targetW; canvas.height=targetH;
+    canvas.getContext("2d").drawImage(img,sx,sy,sw,sh,0,0,targetW,targetH);
+    const blob=await new Promise((res,rej)=>{
+      try{ canvas.toBlob(b=>b?res(b):rej(new Error("toBlob null")),"image/jpeg",q); }
+      catch(e){ rej(e); }
+    });
+    return await uploadIgThumb(postId, blob);
+  }catch{
+    // CORS 차단 또는 캔버스 보안 에러 시 원본 URL 폴백 (셀에서 cover 로 잘림 있지만 표시는 됨)
+    return rawUrl;
+  }
+}
+
 // 인스타그램 포스트 썸네일 — DB에 캐시된 thumb_url 만 사용 (외부 호출 X)
 //   thumb_url 누락 포스트는 빈 셀 — IGPostModal '썸네일 새로고침' 버튼으로 보충 가능
 function InstagramThumb({ src }) {
@@ -10466,7 +10498,7 @@ function ThumbRefreshButton({ post, onChange }) {
   const [manualUrl,setManualUrl]=useState(post.thumb_url||"");
   const tryFetch=async()=>{
     setState("loading");
-    const thumb=await fetchOgImage(post.url);
+    const thumb=await fetchAndCropOgImage(post.url, post.id);
     if(thumb){
       const db=await getSupabase();
       const {error}=await db.from("instagram_posts").update({thumb_url:thumb}).eq("id",post.id);
@@ -10536,8 +10568,8 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
     setNewPostUrl(norm);
     setStep(1);
     onChange(); // 부모 리스트 갱신
-    // 백그라운드로 og:image 받아서 thumb_url 캐시 (실패 무시)
-    fetchOgImage(norm).then(thumb=>{
+    // 백그라운드로 og:image 받아서 4:5 crop + Storage 업로드 후 thumb_url 캐시 (실패 무시)
+    fetchAndCropOgImage(norm, data.id).then(thumb=>{
       if(thumb){ db.from("instagram_posts").update({thumb_url:thumb}).eq("id",data.id).then(()=>onChange()); }
     });
   };
