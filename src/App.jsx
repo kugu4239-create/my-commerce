@@ -2721,7 +2721,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
                 소스: <b>매출 입력 업로더</b> (revenues CSV) — 채널별 일자 매출/환불금<br/>
                 계산: 채널별 = SUM(amount) − SUM(refund_amount) · 순매출 = 매출 − 반품<br/>
-                오프라인 스토어 매출/반품은 <b>매장 판매 CSV</b> (store_sales)의 실판매금액 (배송 − 반품)
+                오프라인 스토어 매출/반품은 <b>매장 판매 업로드 데이터</b>의 실판매금액 (배송 − 반품)
               </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
@@ -2806,7 +2806,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>주문·배송 업로드 데이터</b> (orders, 모든 상태) + <b>매장 판매 CSV</b> (store_sales, 모든 상태)<br/>
+                소스: <b>주문·배송 업로드 데이터</b> (orders, 모든 상태) + <b>매장 판매 업로드 데이터</b> (store_sales, 모든 상태)<br/>
                 <b>주문 건</b> = COUNT(DISTINCT 주문번호) — 배송/반품/교환 등 상태 무관<br/>
                 <b>주문 수량(장)</b> = SUM(qty) — 모든 상태 포함
               </div>
@@ -6279,7 +6279,7 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
       <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
         <Card>
           {step===0&&<>
-            <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 CSV 업로드</div>
+            <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 업로드</div>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.7}}>
               POS 시스템 판매 데이터를 업로드합니다.<br/>
               인식 컬럼: <b>구매일자 · 매장 · 상품명 · 옵션 · 수량 · 실판매금액 · ID</b><br/>
