@@ -11501,7 +11501,7 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
           hint="포스트 전 14일 대비 후 14일 태깅 상품 판매 변화율의 평균"/>
         <KpiTile label="평균 태그 상품 수" value={avgTagCount.toFixed(1)} unit="개 / 포스트"
           hint="포스트 1개당 평균 몇 개의 상품을 소개했는지"/>
-        <KpiTile label="최고 LIFT 포스트의 태그 수" value={`${bestPostTagCount}`} unit={bestPost?`개 · ${bestPost.post_date}`:"개"}
+        <KpiTile label="최고 LIFT 포스트의 상품 태그 수" value={`${bestPostTagCount}`} unit={bestPost?`개 · ${bestPost.post_date}`:"개"}
           hint="가장 효과 좋았던 포스트가 몇 개 상품을 소개했는지"/>
         <KpiTile label="포스트당 태깅 상품 일평균 추가 판매" value={`${avgAttrVelocity>=0?"+":""}${avgAttrVelocity.toFixed(1)}`} unit="장 / 일" valueColor={attrVelColor}
           hint="포스트 1회가 태깅한 상품을 하루 평균 몇 장 더 팔게 만들었는지 (포스트 후 14일 일평균 − 전 14일 일평균)"/>
