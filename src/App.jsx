@@ -10751,6 +10751,10 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
   // 임팩트 점수 산식 모달 상태
   const [scoreModalIso,setScoreModalIso]=useState(null);
+  // 캘린더 그리드 컨테이너 ref — 리본 픽셀 좌표 측정용
+  const gridRef=useRef(null);
+  // 같은 날 다중 포스트 좌우 넘김 — iso → 현재 보여줄 인덱스
+  const [cellPostIdx,setCellPostIdx]=useState({});
 
   // 같은 달 안 ribbons
   const ribbons=useMemo(()=>{
@@ -10830,7 +10834,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
       {/* 캘린더 그리드 — iPad 사이즈 (셀 크게) */}
       <Card>
-        <div style={{position:"relative"}}>
+        <div ref={gridRef} style={{position:"relative"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
           {WEEKDAYS.map((w,i)=>(
             <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
@@ -10841,7 +10845,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             // 채널 매출: 매출 큰 순 정렬, 채널당 1줄 mini-bar
             const channels=d?Object.entries(d.channels).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]):[];
             const maxAmt=channels.length?channels[0][1]:1;
-            const posts=postsByDate[c.iso]||[];
+            // 같은 날 포스트는 별점 desc 정렬 — 임팩트 큰 포스트 먼저 보임
+            const postsRaw=postsByDate[c.iso]||[];
+            const posts=[...postsRaw].sort((a,b)=>(postScores[b.id]?.stars||0)-(postScores[a.id]?.stars||0));
+            const curIdx=Math.min(cellPostIdx[c.iso]||0,Math.max(0,posts.length-1));
+            const curPost=posts[curIdx];
             const cm=crossMonthByPostDate[c.iso];
             // 당일 임베드 포스트의 태깅 상품 ∩ 당일 판매 Top → 강조 매칭 set
             const samedayTagged=new Set();
@@ -10861,16 +10869,42 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              {/* IG 포스트 첫 장 썸네일 배경 — DB 캐시(thumb_url) 전용. 없으면 미표시 */}
-              {c.inMonth&&posts.length>0&&posts[0].thumb_url&&(
+              {/* IG 포스트 썸네일 배경 — 현재 인덱스의 포스트 (정렬: 별점 desc) */}
+              {c.inMonth&&posts.length>0&&curPost?.thumb_url&&(
                 <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-                  <InstagramThumb src={posts[0].thumb_url}/>
+                  <InstagramThumb src={curPost.thumb_url}/>
                 </div>
               )}
-              {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 (현재 0.47 — 기존 0.78 대비 40% 더 투명) */}
+              {/* 노이즈 + 반투명 흰색 — 이미지 위 텍스트 가독성 향상 (gritty grain + white film) */}
               {c.inMonth&&posts.length>0&&(
-                <div style={{position:"absolute",inset:0,zIndex:1,
-                  background:"rgba(255,255,255,0.25)",pointerEvents:"none"}}/>
+                <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
+                  background:"rgba(255,255,255,0.30)",
+                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+                  backgroundBlendMode:"overlay",
+                  mixBlendMode:"normal",
+                }}/>
+              )}
+              {/* 같은 날 멀티 포스트 좌우 넘김 화살표 (별점 desc 순) */}
+              {c.inMonth&&posts.length>1&&(
+                <>
+                  <button onClick={e=>{e.stopPropagation();setCellPostIdx(p=>({...p,[c.iso]:(curIdx-1+posts.length)%posts.length}));}}
+                    title={`이전 포스트 (${curIdx+1}/${posts.length})`}
+                    style={{position:"absolute",left:4,top:"50%",transform:"translateY(-50%)",zIndex:3,
+                      background:"rgba(255,255,255,0.9)",border:`1px solid ${D.border}`,borderRadius:14,
+                      width:24,height:24,padding:0,fontSize:13,cursor:"pointer",color:D.text,fontWeight:700,
+                      lineHeight:1,boxShadow:"0 1px 4px rgba(0,0,0,0.15)"}}>‹</button>
+                  <button onClick={e=>{e.stopPropagation();setCellPostIdx(p=>({...p,[c.iso]:(curIdx+1)%posts.length}));}}
+                    title={`다음 포스트 (${curIdx+1}/${posts.length})`}
+                    style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",zIndex:3,
+                      background:"rgba(255,255,255,0.9)",border:`1px solid ${D.border}`,borderRadius:14,
+                      width:24,height:24,padding:0,fontSize:13,cursor:"pointer",color:D.text,fontWeight:700,
+                      lineHeight:1,boxShadow:"0 1px 4px rgba(0,0,0,0.15)"}}>›</button>
+                  <div style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",zIndex:3,
+                    fontSize:9,color:"#000",fontWeight:700,background:"rgba(255,255,255,0.85)",
+                    padding:"1px 7px",borderRadius:8,whiteSpace:"nowrap"}}>
+                    {curIdx+1} / {posts.length}
+                  </div>
+                </>
               )}
               {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
@@ -10886,6 +10920,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                       const stars=posts.reduce((m,p)=>Math.max(m,postScores[p.id]?.stars||0),0);
                       return (
                         <button onClick={e=>{e.stopPropagation();setScoreModalIso(c.iso);}}
+                          data-star-iso={c.iso}
                           title="임팩트 점수 산식 보기"
                           style={{background:"none",border:"none",padding:0,cursor:"pointer",
                             fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap"}}>
@@ -10984,40 +11019,9 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             </div>
           );})}
         </div>
-        {/* 리본 SVG 오버레이 — 포스트 → 후속 판매 Top 매칭 */}
-        {ribbons.length>0&&(
-          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",
-              pointerEvents:"none",overflow:"visible"}}
-            viewBox={`0 0 7 ${weeksCount+1}`}
-            preserveAspectRatio="none">
-            {/* 그리드 헤더(요일) 행 1만큼 offset → 셀 row+1 위치 */}
-            {ribbons.map((r,i)=>{
-              const fi=isoToGridIdx[r.fromIso];
-              const ti=isoToGridIdx[r.toIso];
-              if(fi===undefined||ti===undefined) return null;
-              // 시작점: 포스트 셀 우상단(IG 인디케이터 근처)
-              const fx=(fi%7)+0.78;
-              const fy=Math.floor(fi/7)+1.12;
-              // 끝점: 우측 컬럼(판매 top) 행에 정밀하게 — 셀 내 영역(0.62~0.97) 5분할
-              const pIdx=r.productIdx??0;
-              const slot=0.62+(pIdx+0.5)*((0.97-0.62)/5);
-              // 우측 컬럼 시작 = 셀 가로 절반(0.5) + 약간 안쪽(불릿 옆)
-              const tx=(ti%7)+0.55;
-              const ty=Math.floor(ti/7)+1+slot;
-              const midY=(fy+ty)/2;
-              const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
-              const color=ribbonColor(r.postId);
-              const focused=hoveredFromIso===r.fromIso;
-              const dim=hoveredFromIso&&!focused;
-              return (
-                <path key={i} d={path} stroke={color} fill="none"
-                  strokeWidth={focused?2.5:1.8}
-                  opacity={dim?0.08:focused?0.85:0.32}
-                  vectorEffect="non-scaling-stroke"/>
-              );
-            })}
-          </svg>
-        )}
+        {/* 리본 SVG 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트끼리 정확하게 연결 */}
+        <RibbonOverlay gridRef={gridRef} ribbons={ribbons}
+          ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}/>
         </div>
       </Card>
 
@@ -11044,6 +11048,78 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           onClose={()=>setScoreModalIso(null)}/>
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 리본 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트 끼리 정확 연결
+//   - 시작: 포스트 셀의 ★ 버튼 (data-star-iso)
+//   - 끝  : 매칭된 판매 Top 행 (data-iso + data-pidx)
+// ─────────────────────────────────────────────
+function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
+  const [paths,setPaths]=useState([]);
+  const [size,setSize]=useState({w:0,h:0});
+
+  useEffect(()=>{
+    const compute=()=>{
+      const container=gridRef?.current;
+      if(!container) return;
+      const cRect=container.getBoundingClientRect();
+      setSize({w:cRect.width,h:cRect.height});
+      const next=[];
+      ribbons.forEach((r,i)=>{
+        const fromEl=container.querySelector(`[data-star-iso="${r.fromIso}"]`);
+        const toEl  =container.querySelector(`[data-iso="${r.toIso}"][data-pidx="${r.productIdx??0}"]`);
+        if(!fromEl||!toEl) return;
+        const fRect=fromEl.getBoundingClientRect();
+        const tRect=toEl.getBoundingClientRect();
+        // 시작점: ★ 버튼 중앙
+        const fx=fRect.left+fRect.width/2-cRect.left;
+        const fy=fRect.top+fRect.height/2-cRect.top;
+        // 끝점: 매칭 상품 행 좌측 인셋(불릿 옆) + 세로 중앙
+        const tx=tRect.left+6-cRect.left;
+        const ty=tRect.top+tRect.height/2-cRect.top;
+        // 부드러운 베지어: 수직 중간에서 휘게
+        const dy=Math.abs(ty-fy);
+        const cy1=fy+Math.max(20,dy*0.45);
+        const cy2=ty-Math.max(20,dy*0.45);
+        const d=`M${fx},${fy} C${fx},${cy1} ${tx},${cy2} ${tx},${ty}`;
+        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i});
+      });
+      setPaths(next);
+    };
+    compute();
+    if(!gridRef?.current) return;
+    const ro=new ResizeObserver(compute);
+    ro.observe(gridRef.current);
+    const onScroll=()=>compute();
+    window.addEventListener("scroll",onScroll,true);
+    window.addEventListener("resize",compute);
+    // 첫 페인트 직후 한 번 더 (폰트 로드 등으로 위치 살짝 어긋날 때 보정)
+    const raf=requestAnimationFrame(compute);
+    return()=>{
+      ro.disconnect();
+      window.removeEventListener("scroll",onScroll,true);
+      window.removeEventListener("resize",compute);
+      cancelAnimationFrame(raf);
+    };
+  },[gridRef,ribbons,ribbonColor]);
+
+  if(!paths.length) return null;
+  return (
+    <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
+        pointerEvents:"none",overflow:"visible"}}>
+      {paths.map(p=>{
+        const focused=hoveredFromIso===p.fromIso;
+        const dim=hoveredFromIso&&!focused;
+        return (
+          <path key={p.key} d={p.d} stroke={p.color} fill="none"
+            strokeWidth={focused?2.5:1.8}
+            opacity={dim?0.08:focused?0.85:0.42}
+            strokeLinecap="round"/>
+        );
+      })}
+    </svg>
   );
 }
 
