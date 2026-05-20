@@ -10554,6 +10554,8 @@ function MatchedProductBadge({ name, qty }) {
 
 function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const now=new Date();
+  // 뷰 토글: 분석 탭이 기본 진입 (리본 모드 폐기 의도 반영)
+  const [view,setView]=useState("impact"); // "impact" | "calendar"
   const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
   const [igPosts,setIgPosts]=useState([]);          // 전체 IG 포스트
   const [postProducts,setPostProducts]=useState([]); // 포스트별 소개 상품 (post_id, product_name)
@@ -10841,6 +10843,29 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1960,margin:"0 auto"}}>
+      {/* 뷰 탭 토글 — [포스트 임팩트 분석] / [캘린더 뷰] */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16}}>
+        {[
+          {k:"impact",l:"포스트 임팩트 분석"},
+          {k:"calendar",l:"캘린더 뷰"},
+        ].map(t=>(
+          <button key={t.k} onClick={()=>setView(t.k)}
+            style={{padding:"7px 16px",fontSize:13,fontWeight:600,letterSpacing:"0.02em",
+              background:view===t.k?D.black:"transparent",color:view===t.k?"#fff":D.textMeta,
+              border:`1px solid ${view===t.k?D.black:D.border}`,borderRadius:6,cursor:"pointer"}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {view==="impact"&&(
+        <PostImpactPanel igPosts={igPosts} postScores={postScores}
+          postProductsMap={postProductsMap}
+          onOpenScoreModal={iso=>setScoreModalIso(iso)}
+          onOpenPostModal={iso=>setPostModalDate(iso)}/>
+      )}
+
+      {view==="calendar"&&<>
       {/* 월 셀렉터 — 중앙 정렬 */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:24}}>
         <button onClick={()=>shiftMonth(-1)} data-hf
@@ -11079,6 +11104,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         ② 소개 상품이 후속 날짜 판매 Top에 들어가면 자동으로 리본 연결 (포스트 셀 호버 시 강조)<br/>
         ③ 매칭이 다음 달까지 이어지면 셀에 <span style={{color:D.blue,fontWeight:600}}>▸N월</span> 버튼 표시 — 클릭하면 그 달로 이동
       </div>
+      </>}{/* view==="calendar" 끝 */}
 
       {/* 포스트 등록·관리 모달 */}
       {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
@@ -11093,8 +11119,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           onClose={()=>setScoreModalIso(null)}/>
       )}
 
-      {/* Sticky 어트리뷰션 토글 — 뷰포트 하단 20% 중앙 */}
-      {ribbons.length>0&&(
+      {/* Sticky 어트리뷰션 토글 — 캘린더 뷰에서만 노출 */}
+      {view==="calendar"&&ribbons.length>0&&(
         <button onClick={()=>setRibbonsOn(v=>!v)}
           title={ribbonsOn?"어트리뷰션 라인 끄기":"어트리뷰션 라인 켜기 (판매 수량에 비례한 두께)"}
           style={{position:"fixed",left:"50%",bottom:"20vh",transform:"translateX(-50%)",
@@ -11246,6 +11272,184 @@ function RibbonTooltip({ x, y, ribbon, color }) {
           🔗 {ribbon.postUrl}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 포스트 임팩트 분석 — 카드 그리드 + mini Lift 차트 (Pre/Post 14일)
+// ─────────────────────────────────────────────
+function PostImpactPanel({ igPosts, postScores, postProductsMap, onOpenScoreModal, onOpenPostModal }) {
+  const cards=useMemo(()=>{
+    // 카드 = igPosts 그대로. 정렬: 별점 desc → lift desc → 날짜 desc
+    return [...igPosts].sort((a,b)=>{
+      const sa=postScores[a.id]||{},sb=postScores[b.id]||{};
+      const ks=(sb.stars||0)-(sa.stars||0);
+      if(ks!==0) return ks;
+      const kl=(sb.lift||0)-(sa.lift||0);
+      if(kl!==0) return kl;
+      return String(b.post_date||"").localeCompare(String(a.post_date||""));
+    });
+  },[igPosts,postScores]);
+
+  if(igPosts.length===0){
+    return (
+      <Card>
+        <div style={{textAlign:"center",padding:"60px 20px",color:D.textMeta,fontSize:13,lineHeight:1.7}}>
+          아직 등록된 포스트가 없습니다.<br/>
+          <span style={{color:D.text}}>[캘린더 뷰]</span> 탭에서 셀을 클릭해 인스타그램 포스트를 추가하세요.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{fontSize:12,color:D.textMeta,marginBottom:12,lineHeight:1.6}}>
+        포스트별 <b style={{color:D.text}}>전 14일 vs 후 14일</b> 태깅 상품 판매량 변화. 카드를 클릭하면 일별 breakdown 모달이 열립니다.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(290px, 1fr))",gap:12}}>
+        {cards.map(post=>{
+          const score=postScores[post.id];
+          return (
+            <PostImpactCard key={post.id} post={post} score={score}
+              taggedProducts={postProductsMap[post.id]||[]}
+              onClickScore={()=>onOpenScoreModal(post.post_date)}
+              onClickPost={()=>onOpenPostModal(post.post_date)}/>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PostImpactCard({ post, score, taggedProducts, onClickScore, onClickPost }) {
+  const stars=score?.stars||0;
+  const lift=score?.lift||0;
+  const hasTagged=(taggedProducts||[]).length>0;
+  const dot=chColor(post.platform||"자사몰");
+  // 베스트 매칭 상품 (after 14일 가장 많이 팔린 태깅 상품)
+  const bestProduct=(()=>{
+    const m=score?.postPerProduct||{};
+    const list=Object.entries(m).sort(([,a],[,b])=>b-a);
+    return list.length&&list[0][1]>0?list[0][0]:null;
+  })();
+  const liftColor=lift>=0?D.green:D.red;
+  return (
+    <div onClick={onClickScore}
+      style={{border:`1px solid ${D.border}`,borderRadius:8,padding:12,background:D.surface,
+        cursor:"pointer",transition:"border-color 0.15s",position:"relative"}}
+      onMouseEnter={e=>e.currentTarget.style.borderColor=D.blue}
+      onMouseLeave={e=>e.currentTarget.style.borderColor=D.border}>
+
+      {/* 헤더 */}
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
+        <div style={{width:48,height:48,borderRadius:6,overflow:"hidden",background:D.surfaceAlt,flexShrink:0,
+          border:`1px solid ${D.border}`}}>
+          {post.thumb_url
+            ?<InstagramThumb src={post.thumb_url}/>
+            :<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:D.textMeta}}>—</div>}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,color:D.textMeta,marginBottom:2,display:"flex",alignItems:"center",gap:5}}>
+            <span style={{width:6,height:6,background:dot,borderRadius:"50%",display:"inline-block"}}/>
+            {post.post_date}
+          </div>
+          <div style={{fontSize:11,color:"#F2B544",letterSpacing:0.5,lineHeight:1}}>
+            <span>{"★".repeat(stars)}</span>
+            <span style={{color:"#cfcfcf"}}>{"★".repeat(5-stars)}</span>
+            <span style={{fontSize:10,color:D.textMeta,marginLeft:5}}>{stars}/5</span>
+          </div>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontSize:10,color:D.textMeta}}>Lift</div>
+          <div style={{fontSize:15,fontWeight:700,color:liftColor,lineHeight:1.1}}>
+            {lift>=0?"+":""}{lift.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+
+      {/* 차트 또는 CTA */}
+      {hasTagged&&score?(
+        <LiftMiniChart preDays={score.preDays||[]} postDays={score.postDays||[]}
+          color={dot} height={110}/>
+      ):(
+        <div onClick={e=>{e.stopPropagation();onClickPost();}}
+          style={{height:110,display:"flex",alignItems:"center",justifyContent:"center",
+            background:D.surfaceAlt,borderRadius:6,fontSize:11,color:D.textSub,
+            border:`1px dashed ${D.border}`,cursor:"pointer"}}>
+          태깅 상품 없음 — 클릭하여 상품 연결
+        </div>
+      )}
+
+      {/* 푸터 */}
+      <div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:3,alignItems:"center",minHeight:20}}>
+        {bestProduct&&(
+          <span style={{fontSize:10,fontWeight:700,color:D.green,
+            background:`${D.green}12`,border:`1px solid ${D.green}33`,
+            padding:"2px 7px",borderRadius:10}}>🏆 {bestProduct}</span>
+        )}
+        {(taggedProducts||[]).filter(t=>t!==bestProduct).slice(0,2).map(t=>(
+          <span key={t} style={{fontSize:10,color:D.textSub,background:D.surfaceAlt,
+            border:`1px solid ${D.border}`,padding:"2px 7px",borderRadius:10,
+            maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t}</span>
+        ))}
+        {(taggedProducts||[]).length>3&&(
+          <span style={{fontSize:10,color:D.textMeta}}>+{taggedProducts.length-3}</span>
+        )}
+        <span style={{flex:1}}/>
+        <button onClick={e=>{e.stopPropagation();onClickPost();}}
+          title="포스트 수정"
+          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+            padding:"2px 7px",fontSize:11,cursor:"pointer",color:D.textMeta,lineHeight:1}}>
+          ✎
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Pre/Post 14일 일별 qty mini Lift 차트
+function LiftMiniChart({ preDays, postDays, color, height=110 }) {
+  const data=useMemo(()=>{
+    const out=[];
+    const pre=Array.isArray(preDays)?preDays:[];
+    const post=Array.isArray(postDays)?postDays:[];
+    pre.forEach((d,i)=>out.push({d:-pre.length+i,iso:d.iso,pre:d.qty||0,post:null}));
+    // 경계점에서 라인 연결을 위해 D=0 가상 분기 (pre 끝 값을 post 시작에도)
+    const preLast=pre.length?pre[pre.length-1].qty||0:0;
+    out.push({d:0,iso:"D",pre:preLast,post:preLast});
+    post.forEach((d,i)=>out.push({d:i+1,iso:d.iso,pre:null,post:d.qty||0}));
+    return out;
+  },[preDays,postDays]);
+  const total=(preDays||[]).reduce((s,d)=>s+(d.qty||0),0)+(postDays||[]).reduce((s,d)=>s+(d.qty||0),0);
+  if(total===0){
+    return (
+      <div style={{height,display:"flex",alignItems:"center",justifyContent:"center",
+        background:D.surfaceAlt,borderRadius:6,fontSize:11,color:D.textMeta,
+        border:`1px solid ${D.border}`}}>
+        판매 데이터 없음
+      </div>
+    );
+  }
+  return (
+    <div style={{height}}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{top:8,right:6,bottom:0,left:0}}>
+          <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
+          <XAxis dataKey="d" tick={{fontSize:9,fill:D.textMeta}}
+            ticks={[-14,-7,0,7,14]} type="number" domain={[-14,14]}/>
+          <YAxis hide={true}/>
+          <Tooltip
+            contentStyle={{fontSize:11,padding:"4px 8px",borderRadius:5}}
+            formatter={(v)=>v===null?"":`${v}장`}
+            labelFormatter={(d)=>{const row=data.find(x=>x.d===d);return row?row.iso:`D${d>=0?"+":""}${d}`;}}/>
+          <ReferenceLine x={0} stroke={D.black} strokeDasharray="3 3"
+            label={{value:"포스트",fontSize:9,fill:D.textSub,position:"top"}}/>
+          <Line type="monotone" dataKey="pre" stroke={D.textMeta} strokeWidth={1.5} dot={false} connectNulls={false}/>
+          <Line type="monotone" dataKey="post" stroke={color} strokeWidth={2} dot={false} connectNulls={false}/>
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
