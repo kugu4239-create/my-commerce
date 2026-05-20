@@ -10429,8 +10429,18 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
         </div>
 
         {/* 새 포스트 추가 — wizard */}
-        <div style={{background:D.bg,borderRadius:8,padding:"14px 16px",marginBottom:18,
-          border:`1px solid ${D.border}`}}>
+        <div style={{background:`${D.blue}06`,borderRadius:8,padding:"14px 16px",marginBottom:18,
+          border:`1.5px dashed ${D.blue}55`}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+            <div style={{fontWeight:700,fontSize:14,color:D.blue}}>
+              ＋ 이 날짜에 포스트 추가
+            </div>
+            {posts.length>0&&(
+              <span style={{fontSize:11,color:D.textMeta}}>
+                현재 {posts.length}개 등록됨 · 아래에서 확인/수정 가능
+              </span>
+            )}
+          </div>
           <div style={{display:"flex",gap:6,marginBottom:12,fontSize:11}}>
             {stepLabel.map((s,i)=>(
               <div key={i} style={{flex:1,padding:"5px 8px",borderRadius:5,textAlign:"center",
@@ -10858,6 +10868,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               for(const t of samedayTagged) if(nameMatches(t,name)) return true;
               return false;
             };
+            // 포스트 있는 셀은 검정 오버레이 위 → 흰 텍스트, 없으면 기본
+            const hasBg=c.inMonth&&posts.length>0;
+            const fg=hasBg?"#fff":D.text;
+            const fgMeta=hasBg?"rgba(255,255,255,0.75)":D.textMeta;
+            const ts=hasBg?"0 1px 2px rgba(0,0,0,0.6)":"none"; // text-shadow for legibility
             return (
             <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
               onMouseEnter={posts.length>0?()=>setHoveredFromIso(c.iso):undefined}
@@ -10875,11 +10890,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   <InstagramThumb src={curPost.thumb_url}/>
                 </div>
               )}
-              {/* 노이즈 + 반투명 흰색 — 이미지 위 텍스트 가독성 향상 (gritty grain + white film) */}
+              {/* 노이즈 + 반투명 검정 — 이미지 위 흰 텍스트 가독성 향상 (dark film + grain) */}
               {c.inMonth&&posts.length>0&&(
                 <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
-                  background:"rgba(255,255,255,0.30)",
-                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+                  background:"rgba(0,0,0,0.45)",
+                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
                   backgroundBlendMode:"overlay",
                   mixBlendMode:"normal",
                 }}/>
@@ -10912,7 +10927,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                   <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
                     <span style={{fontSize:14,fontWeight:c.isToday?700:600,
-                      color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                      color:hasBg?"#fff":(c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text),
+                      textShadow:ts}}>
                       {c.date.getDate()}
                     </span>
                     {posts.length>0&&(()=>{
@@ -10970,7 +10986,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                 </div>
                 {c.inMonth&&d&&d.total>0&&(
                   <>
-                    <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:6}}>
+                    <div style={{fontSize:11,fontWeight:700,color:fg,marginBottom:6,textShadow:ts}}>
                       {fmtWonShort(d.total)}
                     </div>
                     {/* 채널별 1줄 미니 바 — 매출 큰 순 */}
@@ -10978,14 +10994,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                       {channels.slice(0,4).map(([ch,amt])=>(
                         <div key={ch} title={`${ch} ${fmtWonShort(amt)}`}
                           style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
-                          <span style={{fontSize:9,color:chColor(ch),fontWeight:600,
-                            minWidth:34,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          <span style={{fontSize:9,color:hasBg?"#fff":chColor(ch),fontWeight:600,
+                            minWidth:34,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textShadow:ts}}>
                             {ch.length>3?ch.slice(0,3):ch}
                           </span>
-                          <div style={{flex:1,height:4,background:`${D.border}80`,borderRadius:2,overflow:"hidden"}}>
+                          <div style={{flex:1,height:4,background:hasBg?"rgba(255,255,255,0.25)":`${D.border}80`,borderRadius:2,overflow:"hidden"}}>
                             <div style={{width:`${Math.max(4,amt/maxAmt*100)}%`,height:"100%",background:chColor(ch),borderRadius:2}}/>
                           </div>
-                          <span style={{fontSize:9,color:D.textMeta,minWidth:36,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>
+                          <span style={{fontSize:9,color:fgMeta,minWidth:36,textAlign:"right",fontVariantNumeric:"tabular-nums",textShadow:ts}}>
                             {fmtWonShort(amt)}
                           </span>
                         </div>
@@ -10994,38 +11010,38 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   </>
                 )}
                 {c.inMonth&&(samedayTagged.size>0||d?.topProducts?.length>0)&&(
-                  <div style={{marginTop:"auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:9,color:"#000",lineHeight:1.6}}>
+                  <div style={{marginTop:"auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:9,color:fg,lineHeight:1.6,textShadow:ts}}>
                     {/* 좌측: 소개 상품 (당일 포스트 태깅 상품) */}
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:9,fontWeight:700,color:"#000",letterSpacing:"0.05em",
+                      <div style={{fontSize:9,fontWeight:700,color:fg,letterSpacing:"0.05em",
                         textTransform:"uppercase",marginBottom:2}}>소개 상품</div>
                       {samedayTagged.size>0
                         ?[...samedayTagged].slice(0,5).map((name,j)=>(
-                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"#000"}}>
+                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:fg}}>
                             · {name}
                           </div>
                         ))
-                        :<div style={{color:D.textMeta,opacity:0.5}}>—</div>}
+                        :<div style={{color:fgMeta,opacity:0.7}}>—</div>}
                     </div>
                     {/* 우측: 판매 베스트 (Top 5) — 매칭은 손그림 강조 */}
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:9,fontWeight:700,color:"#000",letterSpacing:"0.05em",
+                      <div style={{fontSize:9,fontWeight:700,color:fg,letterSpacing:"0.05em",
                         textTransform:"uppercase",marginBottom:2}}>판매 top</div>
                       {d?.topProducts?.length>0
                         ?d.topProducts.map((p,j)=>{
                           const hi=isHighlighted(p.name);
                           return (
                             <div key={j} data-iso={c.iso} data-pidx={j} className="impact-prod-row"
-                              style={{display:"flex",alignItems:"center",gap:3,color:"#000",
+                              style={{display:"flex",alignItems:"center",gap:3,color:fg,
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                               position:"relative"}}>
                               {hi
                                 ?<MatchedProductBadge name={p.name} qty={p.qty}/>
-                                :<><span style={{overflow:"hidden",textOverflow:"ellipsis",minWidth:0,color:"#000"}}>• {p.name}</span><span style={{color:"#000",flexShrink:0}}>{p.qty}장</span></>}
+                                :<><span style={{overflow:"hidden",textOverflow:"ellipsis",minWidth:0,color:fg}}>• {p.name}</span><span style={{color:fg,flexShrink:0}}>{p.qty}장</span></>}
                             </div>
                           );
                         })
-                        :<div style={{color:D.textMeta,opacity:0.5}}>—</div>}
+                        :<div style={{color:fgMeta,opacity:0.7}}>—</div>}
                     </div>
                   </div>
                 )}
