@@ -10428,10 +10428,9 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
               padding:"4px 12px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
         </div>
 
-        {/* 새 포스트 추가 — wizard. Sticky 로 고정 → 포스트 임베드 로딩 시 입력 위치 흔들림 방지 */}
+        {/* 새 포스트 추가 — wizard */}
         <div style={{background:`${D.blue}06`,borderRadius:8,padding:"14px 16px",marginBottom:18,
-          border:`1.5px dashed ${D.blue}55`,
-          position:"sticky",top:0,zIndex:5,backdropFilter:"blur(2px)"}}>
+          border:`1.5px dashed ${D.blue}55`}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
             <div style={{fontWeight:700,fontSize:14,color:D.blue}}>
               ＋ 이 날짜에 포스트 추가
@@ -10471,7 +10470,9 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 
           {step===1&&<>
             <Alert type="success" msg="✓ URL 등록 완료 — 아래 임베드를 확인하고 소개 상품을 매칭하세요"/>
-            <InstagramEmbed url={newPostUrl} style="margin:10px 0;"/>
+            <div style={{minHeight:620,overflow:"hidden",margin:"10px 0"}}>
+              <InstagramEmbed url={newPostUrl}/>
+            </div>
             <ProductTagger postId={newPostId} tagged={postProductsMap[newPostId]||[]}
               allProducts={allProducts} onChange={onChange}/>
             <div style={{display:"flex",gap:7,marginTop:14}}>
@@ -10501,7 +10502,9 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
         {posts.length===0
           ? <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center"}}>아직 등록된 포스트가 없습니다.</div>
           : posts.map(p=>(
-            <div key={p.id} style={{border:`1px solid ${D.border}`,borderRadius:8,padding:14,marginBottom:12}}>
+            // 카드/임베드 영역에 미리 공간 예약 → 임베드 iframe 로딩으로 인한 입력 위치 흔들림 방지
+            <div key={p.id} style={{border:`1px solid ${D.border}`,borderRadius:8,padding:14,marginBottom:12,
+              minHeight:760}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:8}}>
                 <div style={{flex:1,minWidth:0}}>
                   <a href={p.url} target="_blank" rel="noreferrer"
@@ -10512,8 +10515,10 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
                     padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
               </div>
-              {/* 인스타그램 공식 임베드 */}
-              <InstagramEmbed url={p.url}/>
+              {/* 인스타그램 공식 임베드 — 임베드 iframe 로드 전후 높이 변동 차단 */}
+              <div style={{minHeight:620,overflow:"hidden",marginBottom:8}}>
+                <InstagramEmbed url={p.url}/>
+              </div>
               {/* 소개 상품 태깅 */}
               <ProductTagger postId={p.id} tagged={postProductsMap[p.id]||[]}
                 allProducts={allProducts} onChange={onChange}/>
