@@ -10845,7 +10845,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
       if(!tagged.length) return;
       grid.forEach(cell=>{
         if(!cell.inMonth) return;
-        if(cell.iso<=post.post_date) return; // 후속 날짜만
+        if(cell.iso<post.post_date) return; // 당일 + 후속 (당일 매칭 포함)
         const d=dailyData[cell.iso];
         if(!d?.topProducts?.length) return;
         // tagged 중 하나라도 그날 topProducts에 매칭되면 1개 리본
@@ -11283,11 +11283,24 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredHov
       });
       setSpots(out);
     };
-    // rAF 루프로 위치 지속 갱신 → 스크롤·임베드 로드 시 들썩임 없음
-    let raf;
-    const loop=()=>{ compute(); raf=requestAnimationFrame(loop); };
-    loop();
-    return()=>cancelAnimationFrame(raf);
+    compute();
+    // scroll/resize 시에만 rAF 한 번 트로틀 — 매 프레임 setSpots 가 야기하던 jitter 제거
+    if(!gridRef?.current) return;
+    let raf=0;
+    const trigger=()=>{
+      if(raf) return;
+      raf=requestAnimationFrame(()=>{raf=0;compute();});
+    };
+    const ro=new ResizeObserver(trigger);
+    ro.observe(gridRef.current);
+    window.addEventListener("scroll",trigger,{capture:true,passive:true});
+    window.addEventListener("resize",trigger);
+    return()=>{
+      ro.disconnect();
+      window.removeEventListener("scroll",trigger,{capture:true});
+      window.removeEventListener("resize",trigger);
+      if(raf) cancelAnimationFrame(raf);
+    };
   },[gridRef,visibleRibbons,ribbonColor]);
 
   return createPortal(
@@ -11298,12 +11311,14 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredHov
           background:"rgba(0,0,0,0.75)",cursor:"default"}}/>
       {/* 출발/도착 spotlight 클론 — 흰 직사각형. hover 가능, 동명 라벨 일괄 강조 */}
       {spots.map(s=>{
-        const isActive=!hoveredHover||nameMatches(s.name,hoveredHover.name);
+        // 기본 dim(0.4), hover 시 동명 라벨 1.0, 비매칭 0.12
+        const isActive=hoveredHover&&nameMatches(s.name,hoveredHover.name);
+        const op=hoveredHover?(isActive?1:0.12):0.4;
         return (
           <div key={s.key} style={{position:"fixed",
             left:s.rect.left,top:s.rect.top,width:s.rect.width,height:s.rect.height,
             zIndex:1010,pointerEvents:"auto",cursor:"pointer",
-            opacity:isActive?1:0.18,transition:"opacity 0.15s ease",
+            opacity:op,transition:"opacity 0.15s ease",
             display:"flex",alignItems:"center",justifyContent:s.type==="source"?"center":"flex-start"}}
             onMouseEnter={e=>setHoveredHover({name:s.name,type:s.type,x:e.clientX,y:e.clientY})}
             onMouseMove={e=>setHoveredHover(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
@@ -11407,11 +11422,23 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
       });
       setPaths(next);
     };
-    // rAF 루프로 위치 지속 갱신 → 스크롤·임베드 로드 시 들썩임 없음
-    let raf;
-    const loop=()=>{ compute(); raf=requestAnimationFrame(loop); };
-    loop();
-    return()=>cancelAnimationFrame(raf);
+    compute();
+    if(!gridRef?.current) return;
+    let raf=0;
+    const trigger=()=>{
+      if(raf) return;
+      raf=requestAnimationFrame(()=>{raf=0;compute();});
+    };
+    const ro=new ResizeObserver(trigger);
+    ro.observe(gridRef.current);
+    window.addEventListener("scroll",trigger,{capture:true,passive:true});
+    window.addEventListener("resize",trigger);
+    return()=>{
+      ro.disconnect();
+      window.removeEventListener("scroll",trigger,{capture:true});
+      window.removeEventListener("resize",trigger);
+      if(raf) cancelAnimationFrame(raf);
+    };
   },[gridRef,ribbons,ribbonColor,visible,portal]);
 
   // 두께 스케일: 판매 수량 → 1.5~7 px
@@ -11427,9 +11454,9 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
 
   if(!visible||!paths.length) return null;
 
-  // hoveredHover 시 매칭되는 ribbon (tagName / product 가 hover name 과 nameMatches) 만 진하게
+  // 호버 없으면 전체 dim, 호버 시 매칭 리본만 진하게
   const isActive=(r)=>{
-    if(!hoveredHover) return true;
+    if(!hoveredHover) return false;
     return nameMatches(r.tagName,hoveredHover.name)||nameMatches(r.product,hoveredHover.name);
   };
 
@@ -11439,10 +11466,12 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
         {paths.map(p=>{
           const active=isActive(p.ribbon);
           const w=widthOf(p.ribbon?.qty);
+          // 리본 컬러 흰색 통일. 기본 dim(0.35) → hover 매칭 시 1.0, 비매칭 시 0.1
+          const op=hoveredHover?(active?1:0.1):0.35;
           return (
-            <path key={p.key} d={p.d} stroke={p.color} fill="none"
+            <path key={p.key} d={p.d} stroke="#fff" fill="none"
               strokeWidth={w}
-              opacity={hoveredHover?(active?1:0.12):0.95}
+              opacity={op}
               strokeLinecap="round"
               pointerEvents="none"/>
           );
