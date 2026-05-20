@@ -10448,12 +10448,13 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                   {p.caption_memo&&<div style={{fontSize:12,color:D.textSub,marginTop:4}}>{p.caption_memo}</div>}
                 </div>
                 <div style={{display:"flex",gap:4,flexShrink:0}}>
-                  {onRefreshThumb&&(
+                  {/* 썸네일 가져오기: thumb_url 없는 포스트만 노출 → 중복 호출 방지 */}
+                  {onRefreshThumb&&!p.thumb_url&&(
                     <button onClick={async()=>{const ok=await onRefreshThumb(p.id,p.url);if(ok)onChange();}}
-                      title={p.thumb_url?"캐시된 썸네일이 있습니다 — 강제 갱신":"DB 에 썸네일 없음 — Microlink 호출하여 캐시"}
+                      title="DB 에 썸네일 없음 — Microlink 호출하여 캐시"
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                        padding:"3px 9px",fontSize:11,cursor:"pointer",color:p.thumb_url?D.textMeta:D.blue}}>
-                      {p.thumb_url?"🔄 썸네일 갱신":"📷 썸네일 가져오기"}
+                        padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.blue}}>
+                      📷 썸네일 가져오기
                     </button>
                   )}
                   <button onClick={()=>handleDelete(p.id)}
