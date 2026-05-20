@@ -10923,18 +10923,32 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                           data-star-iso={c.iso}
                           title="임팩트 점수 산식 보기"
                           style={{background:"none",border:"none",padding:0,cursor:"pointer",
-                            fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap"}}>
-                          <span style={{color:"#F2B544"}}>{"★".repeat(stars)}</span>
-                          <span style={{color:"#cfcfcf"}}>{"★".repeat(5-stars)}</span>
+                            fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap",
+                            filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.55))"}}>
+                          <span style={{color:"#fff"}}>{"★".repeat(stars)}</span>
+                          <span style={{color:"rgba(255,255,255,0.40)"}}>{"★".repeat(5-stars)}</span>
                         </button>
                       );
                     })()}
                   </div>
                   <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    {posts.length>0&&<span title={`${posts.length}개 포스트`}
-                      style={{fontSize:10,color:"#fff",fontWeight:700,
-                        background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
-                        padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                    {posts.length>0&&(
+                      <span title={`${posts.length}개 포스트`}
+                        style={{display:"inline-flex",alignItems:"center",gap:3}}>
+                        {/* 흰색 인스타그램 로고 */}
+                        <svg width="13" height="13" viewBox="0 0 24 24"
+                          style={{filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.55))"}}>
+                          <rect x="3" y="3" width="18" height="18" rx="5" stroke="#fff" strokeWidth="2.2" fill="none"/>
+                          <circle cx="12" cy="12" r="4" stroke="#fff" strokeWidth="2.2" fill="none"/>
+                          <circle cx="17.5" cy="6.5" r="1.3" fill="#fff"/>
+                        </svg>
+                        {/* 흰색 숫자 뱃지 */}
+                        <span style={{fontSize:10,fontWeight:700,color:"#111",
+                          background:"#fff",padding:"0 6px",borderRadius:8,
+                          minWidth:12,textAlign:"center",lineHeight:"16px",
+                          boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}>{posts.length}</span>
+                      </span>
+                    )}
                     {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
                       title={`다음: ${cm.nextYm} (${cm.count}건)`}
                       style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
