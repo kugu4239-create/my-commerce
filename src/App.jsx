@@ -10283,14 +10283,14 @@ async function fetchAndCropOgImage(postUrl, postId) {
 
 // 인스타그램 포스트 썸네일 — DB에 캐시된 thumb_url 만 사용 (외부 호출 X)
 //   thumb_url 누락 포스트는 빈 셀 — IGPostModal '썸네일 새로고침' 버튼으로 보충 가능
-function InstagramThumb({ src }) {
+function InstagramThumb({ src, objectPosition="center" }) {
   const [err,setErr]=useState(false);
   if(err||!src) return null;
   return (
     <img src={src} alt="" loading="lazy" decoding="async"
       referrerPolicy="no-referrer"
       onError={()=>setErr(true)}
-      style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+      style={{width:"100%",height:"100%",objectFit:"cover",objectPosition,display:"block"}}
     />
   );
 }
@@ -11597,7 +11597,7 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
       display:"flex",flexDirection:"column",flex:1,minHeight:0,gap:5,background:D.surface}}>
       {/* 헤더: 썸네일 + 날짜+★ / Lift% */}
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-        <div style={{width:40,height:40,borderRadius:6,overflow:"hidden",background:D.surfaceAlt,flexShrink:0,
+        <div style={{width:36,height:45,borderRadius:6,overflow:"hidden",background:D.surfaceAlt,flexShrink:0,
           border:`1px solid ${D.border}`}}>
           {post?.thumb_url
             ?<InstagramThumb src={post.thumb_url}/>
