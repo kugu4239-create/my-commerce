@@ -7503,7 +7503,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
   const saleRecs=useMemo(()=>{
     if(!loadDate||!filtered.length) return[];
     const snapM=dayjs(loadDate).month();
-    const inRange=m=>{const diff=Math.abs(m-snapM);return diff<=2||diff>=10;};
+    const inRange=m=>{const diff=Math.abs(m-snapM);return diff<=3||diff>=9;};
     const raw=filtered
       .filter(d=>d.noSalesDays>medX&&d.current_stock_qty>medY)
       .filter(d=>d.latest_inbound_date&&inRange(dayjs(d.latest_inbound_date).month()));
@@ -7739,7 +7739,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                 </div>
                 <div style={{marginBottom:4}}>
                   <span style={{color:DC.text,fontWeight:600}}>② 최근 입고 조건</span><br/>
-                  최근 입고일이 스냅샷 기준 ±2개월 이내<br/>
+                  최근 입고일이 스냅샷 기준 ±3개월 이내 (앞 3개월 ~ 뒤 3개월)<br/>
                   <span style={{color:DC.dim,fontSize:12}}>(오래된 재고보다 최근 발주 재고 우선)</span>
                 </div>
                 <div>
