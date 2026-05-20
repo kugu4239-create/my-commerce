@@ -10366,6 +10366,56 @@ function ProductTagger({ postId, tagged, allProducts, onChange }){
 }
 
 // 포스트 등록·관리 모달
+// 썸네일 가져오기/갱신 — Microlink API 호출이 자동 실행 시 실패하는 경우(차단·CORS·일일 한도)
+// 수동 재시도용. 미리보기 + 직접 URL 입력 폴백 포함.
+function ThumbRefreshButton({ post, onChange }) {
+  const [state,setState]=useState("idle"); // idle | loading | ok | fail
+  const [manual,setManual]=useState(false);
+  const [manualUrl,setManualUrl]=useState(post.thumb_url||"");
+  const tryFetch=async()=>{
+    setState("loading");
+    const thumb=await fetchOgImage(post.url);
+    if(thumb){
+      const db=await getSupabase();
+      const {error}=await db.from("instagram_posts").update({thumb_url:thumb}).eq("id",post.id);
+      if(!error){ setState("ok"); onChange(); setTimeout(()=>setState("idle"),1500); return; }
+    }
+    setState("fail");
+  };
+  const saveManual=async()=>{
+    if(!manualUrl.trim()){ setManual(false); return; }
+    setState("loading");
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_posts").update({thumb_url:manualUrl.trim()}).eq("id",post.id);
+    if(!error){ setState("ok"); onChange(); setManual(false); setTimeout(()=>setState("idle"),1500); }
+    else setState("fail");
+  };
+  const hasThumb=!!post.thumb_url;
+  const label=state==="loading"?"불러오는 중...":state==="ok"?"✓ 저장됨":state==="fail"?"실패 — 직접 입력":(hasThumb?"🔄 썸네일 갱신":"📷 썸네일 가져오기");
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+      <button onClick={state==="fail"?()=>setManual(v=>!v):tryFetch}
+        disabled={state==="loading"}
+        title={hasThumb?`현재 썸네일: ${post.thumb_url}`:"캘린더 셀 배경 이미지를 자동으로 가져옵니다"}
+        style={{background:"transparent",border:`1px solid ${state==="fail"?D.red:D.border}`,borderRadius:5,
+          padding:"3px 9px",fontSize:11,cursor:state==="loading"?"wait":"pointer",
+          color:state==="fail"?D.red:state==="ok"?D.green:D.textSub,whiteSpace:"nowrap"}}>
+        {label}
+      </button>
+      {manual&&(
+        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+          <input value={manualUrl} onChange={e=>setManualUrl(e.target.value)}
+            placeholder="이미지 URL 직접 붙여넣기"
+            style={{fontSize:11,padding:"3px 7px",border:`1px solid ${D.border}`,borderRadius:5,width:220}}/>
+          <button onClick={saveManual}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+              padding:"3px 9px",fontSize:11,cursor:"pointer"}}>저장</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose, onChange }){
   // wizard step: 0=URL 입력, 1=URL 완료(임베드 확인) + 상품 매칭, 2=상품 매칭 완료
   const [step,setStep]=useState(0);
@@ -10514,9 +10564,12 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                     style={{fontSize:11,color:D.blue,wordBreak:"break-all"}}>{p.url}</a>
                   {p.caption_memo&&<div style={{fontSize:12,color:D.textSub,marginTop:4}}>{p.caption_memo}</div>}
                 </div>
-                <button onClick={()=>handleDelete(p.id)}
-                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
+                <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"flex-start"}}>
+                  <ThumbRefreshButton post={p} onChange={onChange}/>
+                  <button onClick={()=>handleDelete(p.id)}
+                    style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                      padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red}}>삭제</button>
+                </div>
               </div>
               {/* 인스타그램 공식 임베드 — 임베드 iframe 로드 전후 높이 변동 차단 */}
               <div style={{minHeight:620,overflow:"hidden",marginBottom:8}}>
