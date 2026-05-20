@@ -11249,19 +11249,11 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, onBlockCli
       });
       setSpots(out);
     };
-    compute();
-    if(!gridRef?.current) return;
-    const ro=new ResizeObserver(compute);
-    ro.observe(gridRef.current);
-    window.addEventListener("scroll",compute,true);
-    window.addEventListener("resize",compute);
-    const raf=requestAnimationFrame(compute);
-    return()=>{
-      ro.disconnect();
-      window.removeEventListener("scroll",compute,true);
-      window.removeEventListener("resize",compute);
-      cancelAnimationFrame(raf);
-    };
+    // rAF 루프로 위치 지속 갱신 → 스크롤·임베드 로드 시 들썩임 없음
+    let raf;
+    const loop=()=>{ compute(); raf=requestAnimationFrame(loop); };
+    loop();
+    return()=>cancelAnimationFrame(raf);
   },[gridRef,visibleRibbons,ribbonColor]);
 
   return createPortal(
@@ -11375,20 +11367,11 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
       });
       setPaths(next);
     };
-    compute();
-    if(!gridRef?.current) return;
-    const ro=new ResizeObserver(compute);
-    ro.observe(gridRef.current);
-    const onScroll=()=>compute();
-    window.addEventListener("scroll",onScroll,true);
-    window.addEventListener("resize",compute);
-    const raf=requestAnimationFrame(compute);
-    return()=>{
-      ro.disconnect();
-      window.removeEventListener("scroll",onScroll,true);
-      window.removeEventListener("resize",compute);
-      cancelAnimationFrame(raf);
-    };
+    // rAF 루프로 위치 지속 갱신 → 스크롤·임베드 로드 시 들썩임 없음
+    let raf;
+    const loop=()=>{ compute(); raf=requestAnimationFrame(loop); };
+    loop();
+    return()=>cancelAnimationFrame(raf);
   },[gridRef,ribbons,ribbonColor,visible,portal]);
 
   // 두께 스케일: 판매 수량 → 1.5~7 px
@@ -11417,7 +11400,7 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
           const dim=hovered&&!isHover;
           const w=widthOf(p.ribbon?.qty);
           return (
-            <path key={p.key} d={p.d} stroke="#fff" fill="none"
+            <path key={p.key} d={p.d} stroke={p.color} fill="none"
               strokeWidth={w}
               opacity={dim?0.25:isHover?1:0.95}
               strokeLinecap="round"
@@ -11440,34 +11423,24 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
 // 리본 호버 시 표시되는 모달형 툴팁 카드
 function RibbonTooltip({ x, y, ribbon, color }) {
   if(!ribbon) return null;
-  // 화면 경계 고려 — 우측/하단 넘침 방지
-  const w=280,h=160;
+  const md=iso=>{const[,m,d]=String(iso||"").split("-");return m&&d?`${parseInt(m)}/${parseInt(d)}`:iso;};
+  const w=260,h=110;
   const left=Math.min(x+14,window.innerWidth-w-10);
   const top =Math.min(y+14,window.innerHeight-h-10);
   return (
     <div style={{position:"fixed",left,top,zIndex:2500,
-      width:w,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
-      boxShadow:"0 8px 28px rgba(0,0,0,0.22)",padding:"12px 14px",fontSize:12,color:D.text,
-      pointerEvents:"none",lineHeight:1.6}}>
-      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,
-        paddingBottom:6,borderBottom:`1px solid ${D.border}`}}>
-        <span style={{width:10,height:10,background:color,borderRadius:"50%",display:"inline-block",flexShrink:0}}/>
-        <b style={{color:D.black}}>콘텐츠 → 판매 매칭</b>
+      minWidth:w,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
+      boxShadow:"0 8px 28px rgba(0,0,0,0.22)",padding:"12px 14px",fontSize:13,color:D.text,
+      pointerEvents:"none",lineHeight:1.7}}>
+      <div>
+        <b style={{color:D.black}}>{md(ribbon.fromIso)}</b> [{ribbon.tagName||"—"}] 관련 포스트
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"68px 1fr",gap:4,color:D.textSub}}>
-        <span style={{color:D.textMeta}}>포스트</span><span>{ribbon.fromIso}</span>
-        <span style={{color:D.textMeta}}>소개 상품</span><b style={{color:D.text}}>{ribbon.tagName||"—"}</b>
-        <span style={{color:D.textMeta}}>매칭일</span><span>{ribbon.toIso}</span>
-        <span style={{color:D.textMeta}}>판매 상품</span><b style={{color:D.text}}>{ribbon.product}</b>
-        <span style={{color:D.textMeta}}>당일 순위</span><span>Top {(ribbon.productIdx??0)+1}/{ribbon.productCount||5}</span>
-        <span style={{color:D.textMeta}}>판매 수량</span>
-        <b style={{color:D.blue}}>{(ribbon.qty||0).toLocaleString()}장</b>
+      <div>
+        <b style={{color:D.black}}>{md(ribbon.toIso)}</b> 판매 순위 Top {(ribbon.productIdx??0)+1}
       </div>
-      {ribbon.postUrl&&(
-        <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${D.border}`,fontSize:10,color:D.textMeta,wordBreak:"break-all"}}>
-          🔗 {ribbon.postUrl}
-        </div>
-      )}
+      <div>
+        판매 수량 <b style={{color:color}}>{(ribbon.qty||0).toLocaleString()}장</b>
+      </div>
     </div>
   );
 }
