@@ -10698,6 +10698,64 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return inMonths.length?inMonths[inMonths.length-1].iso:null;
   },[grid]);
 
+  // ── 포스트 임팩트 점수 (0~5★) — Pre/Post Sales Lift ──
+  // 산식: Lift% = (Post14_qty - Pre14_qty) / max(Pre14_qty, 1) × 100
+  //   Pre14_qty  = 포스트 전 14일간 태깅 상품 총 판매 수량
+  //   Post14_qty = 포스트 후 14일간 태깅 상품 총 판매 수량
+  // 별 등급(임계치):
+  //   ≥ +100% → 5★ (매출 2배+)
+  //   +50~99% → 4★
+  //   +20~49% → 3★
+  //   +5~19%  → 2★
+  //   -5~+5%  → 1★ (중립)
+  //   ≤ -5%   → 0★
+  const liftToStars=(lift)=>{
+    if(lift>=100) return 5;
+    if(lift>=50) return 4;
+    if(lift>=20) return 3;
+    if(lift>=5) return 2;
+    if(lift>=-5) return 1;
+    return 0;
+  };
+  const postScores=useMemo(()=>{
+    const map={}; // postId → {stars, lift, preQty, postQty, preDays[], postDays[], tagged, WINDOW}
+    const WINDOW=14;
+    const dayMs=86400000;
+    igPosts.forEach(post=>{
+      const tagged=postProductsMap[post.id]||[];
+      if(!tagged.length){
+        map[post.id]={stars:0,lift:0,preQty:0,postQty:0,preDays:[],postDays:[],tagged:[],WINDOW,empty:true};
+        return;
+      }
+      const baseMs=new Date(post.post_date).getTime();
+      const collect=(offset)=>{ // offset: -14..-1 또는 +1..+14
+        const iso=new Date(baseMs+offset*dayMs).toISOString().slice(0,10);
+        const dd=dailyData[iso];
+        let dQty=0;
+        Object.entries(dd?.products||{}).forEach(([name,qty])=>{
+          if(tagged.some(t=>nameMatches(t,name))) dQty+=qty;
+        });
+        return {iso,qty:dQty};
+      };
+      const preDays=[],postDays=[];
+      for(let i=WINDOW;i>=1;i--) preDays.push(collect(-i));
+      for(let i=1;i<=WINDOW;i++) postDays.push(collect(i));
+      const preQty=preDays.reduce((s,d)=>s+d.qty,0);
+      const postQty=postDays.reduce((s,d)=>s+d.qty,0);
+      const lift=preQty>0?((postQty-preQty)/preQty*100):(postQty>0?100:0);
+      const stars=liftToStars(lift);
+      map[post.id]={stars,lift,preQty,postQty,preDays,postDays,tagged,WINDOW};
+    });
+    return map;
+  },[igPosts,postProductsMap,dailyData]);
+
+  // 임팩트 점수 산식 모달 상태
+  const [scoreModalIso,setScoreModalIso]=useState(null);
+  // 캘린더 그리드 컨테이너 ref — 리본 픽셀 좌표 측정용
+  const gridRef=useRef(null);
+  // 같은 날 다중 포스트 좌우 넘김 — iso → 현재 보여줄 인덱스
+  const [cellPostIdx,setCellPostIdx]=useState({});
+
   // 같은 달 안 ribbons
   const ribbons=useMemo(()=>{
     if(!lastInMonthIso) return [];
@@ -10776,7 +10834,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
       {/* 캘린더 그리드 — iPad 사이즈 (셀 크게) */}
       <Card>
-        <div style={{position:"relative"}}>
+        <div ref={gridRef} style={{position:"relative"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
           {WEEKDAYS.map((w,i)=>(
             <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
@@ -10787,7 +10845,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             // 채널 매출: 매출 큰 순 정렬, 채널당 1줄 mini-bar
             const channels=d?Object.entries(d.channels).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]):[];
             const maxAmt=channels.length?channels[0][1]:1;
-            const posts=postsByDate[c.iso]||[];
+            // 같은 날 포스트는 별점 desc 정렬 — 임팩트 큰 포스트 먼저 보임
+            const postsRaw=postsByDate[c.iso]||[];
+            const posts=[...postsRaw].sort((a,b)=>(postScores[b.id]?.stars||0)-(postScores[a.id]?.stars||0));
+            const curIdx=Math.min(cellPostIdx[c.iso]||0,Math.max(0,posts.length-1));
+            const curPost=posts[curIdx];
             const cm=crossMonthByPostDate[c.iso];
             // 당일 임베드 포스트의 태깅 상품 ∩ 당일 판매 Top → 강조 매칭 set
             const samedayTagged=new Set();
@@ -10807,30 +10869,86 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              {/* IG 포스트 첫 장 썸네일 배경 — DB 캐시(thumb_url) 전용. 없으면 미표시 */}
-              {c.inMonth&&posts.length>0&&posts[0].thumb_url&&(
+              {/* IG 포스트 썸네일 배경 — 현재 인덱스의 포스트 (정렬: 별점 desc) */}
+              {c.inMonth&&posts.length>0&&curPost?.thumb_url&&(
                 <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-                  <InstagramThumb src={posts[0].thumb_url}/>
+                  <InstagramThumb src={curPost.thumb_url}/>
                 </div>
               )}
-              {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 (현재 0.47 — 기존 0.78 대비 40% 더 투명) */}
+              {/* 노이즈 + 반투명 흰색 — 이미지 위 텍스트 가독성 향상 (gritty grain + white film) */}
               {c.inMonth&&posts.length>0&&(
-                <div style={{position:"absolute",inset:0,zIndex:1,
-                  background:"rgba(255,255,255,0.25)",pointerEvents:"none"}}/>
+                <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
+                  background:"rgba(255,255,255,0.30)",
+                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+                  backgroundBlendMode:"overlay",
+                  mixBlendMode:"normal",
+                }}/>
+              )}
+              {/* 같은 날 멀티 포스트 좌우 넘김 화살표 (별점 desc 순) */}
+              {c.inMonth&&posts.length>1&&(
+                <>
+                  <button onClick={e=>{e.stopPropagation();setCellPostIdx(p=>({...p,[c.iso]:(curIdx-1+posts.length)%posts.length}));}}
+                    title={`이전 포스트 (${curIdx+1}/${posts.length})`}
+                    style={{position:"absolute",left:4,top:"50%",transform:"translateY(-50%)",zIndex:3,
+                      background:"rgba(255,255,255,0.9)",border:`1px solid ${D.border}`,borderRadius:14,
+                      width:24,height:24,padding:0,fontSize:13,cursor:"pointer",color:D.text,fontWeight:700,
+                      lineHeight:1,boxShadow:"0 1px 4px rgba(0,0,0,0.15)"}}>‹</button>
+                  <button onClick={e=>{e.stopPropagation();setCellPostIdx(p=>({...p,[c.iso]:(curIdx+1)%posts.length}));}}
+                    title={`다음 포스트 (${curIdx+1}/${posts.length})`}
+                    style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",zIndex:3,
+                      background:"rgba(255,255,255,0.9)",border:`1px solid ${D.border}`,borderRadius:14,
+                      width:24,height:24,padding:0,fontSize:13,cursor:"pointer",color:D.text,fontWeight:700,
+                      lineHeight:1,boxShadow:"0 1px 4px rgba(0,0,0,0.15)"}}>›</button>
+                  <div style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",zIndex:3,
+                    fontSize:9,color:"#000",fontWeight:700,background:"rgba(255,255,255,0.85)",
+                    padding:"1px 7px",borderRadius:8,whiteSpace:"nowrap"}}>
+                    {curIdx+1} / {posts.length}
+                  </div>
+                </>
               )}
               {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
                 display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <span style={{fontSize:14,fontWeight:c.isToday?700:600,
-                    color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
-                    {c.date.getDate()}
-                  </span>
+                  <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:14,fontWeight:c.isToday?700:600,
+                      color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                      {c.date.getDate()}
+                    </span>
+                    {posts.length>0&&(()=>{
+                      // 다수 포스트면 max 점수 사용 (사용자 입장: 최고 임팩트 포스트로 평가)
+                      const stars=posts.reduce((m,p)=>Math.max(m,postScores[p.id]?.stars||0),0);
+                      return (
+                        <button onClick={e=>{e.stopPropagation();setScoreModalIso(c.iso);}}
+                          data-star-iso={c.iso}
+                          title="임팩트 점수 산식 보기"
+                          style={{background:"none",border:"none",padding:0,cursor:"pointer",
+                            fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap",
+                            filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.55))"}}>
+                          <span style={{color:"#fff"}}>{"★".repeat(stars)}</span>
+                          <span style={{color:"rgba(255,255,255,0.40)"}}>{"★".repeat(5-stars)}</span>
+                        </button>
+                      );
+                    })()}
+                  </div>
                   <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    {posts.length>0&&<span title={`${posts.length}개 포스트`}
-                      style={{fontSize:10,color:"#fff",fontWeight:700,
-                        background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
-                        padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                    {posts.length>0&&(
+                      <span title={`${posts.length}개 포스트`}
+                        style={{display:"inline-flex",alignItems:"center",gap:3}}>
+                        {/* 흰색 인스타그램 로고 */}
+                        <svg width="13" height="13" viewBox="0 0 24 24"
+                          style={{filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.55))"}}>
+                          <rect x="3" y="3" width="18" height="18" rx="5" stroke="#fff" strokeWidth="2.2" fill="none"/>
+                          <circle cx="12" cy="12" r="4" stroke="#fff" strokeWidth="2.2" fill="none"/>
+                          <circle cx="17.5" cy="6.5" r="1.3" fill="#fff"/>
+                        </svg>
+                        {/* 흰색 숫자 뱃지 */}
+                        <span style={{fontSize:10,fontWeight:700,color:"#111",
+                          background:"#fff",padding:"0 6px",borderRadius:8,
+                          minWidth:12,textAlign:"center",lineHeight:"16px",
+                          boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}>{posts.length}</span>
+                      </span>
+                    )}
                     {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
                       title={`다음: ${cm.nextYm} (${cm.count}건)`}
                       style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
@@ -10915,40 +11033,9 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             </div>
           );})}
         </div>
-        {/* 리본 SVG 오버레이 — 포스트 → 후속 판매 Top 매칭 */}
-        {ribbons.length>0&&(
-          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",
-              pointerEvents:"none",overflow:"visible"}}
-            viewBox={`0 0 7 ${weeksCount+1}`}
-            preserveAspectRatio="none">
-            {/* 그리드 헤더(요일) 행 1만큼 offset → 셀 row+1 위치 */}
-            {ribbons.map((r,i)=>{
-              const fi=isoToGridIdx[r.fromIso];
-              const ti=isoToGridIdx[r.toIso];
-              if(fi===undefined||ti===undefined) return null;
-              // 시작점: 포스트 셀 우상단(IG 인디케이터 근처)
-              const fx=(fi%7)+0.78;
-              const fy=Math.floor(fi/7)+1.12;
-              // 끝점: 우측 컬럼(판매 top) 행에 정밀하게 — 셀 내 영역(0.62~0.97) 5분할
-              const pIdx=r.productIdx??0;
-              const slot=0.62+(pIdx+0.5)*((0.97-0.62)/5);
-              // 우측 컬럼 시작 = 셀 가로 절반(0.5) + 약간 안쪽(불릿 옆)
-              const tx=(ti%7)+0.55;
-              const ty=Math.floor(ti/7)+1+slot;
-              const midY=(fy+ty)/2;
-              const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
-              const color=ribbonColor(r.postId);
-              const focused=hoveredFromIso===r.fromIso;
-              const dim=hoveredFromIso&&!focused;
-              return (
-                <path key={i} d={path} stroke={color} fill="none"
-                  strokeWidth={focused?2.5:1.8}
-                  opacity={dim?0.08:focused?0.85:0.32}
-                  vectorEffect="non-scaling-stroke"/>
-              );
-            })}
-          </svg>
-        )}
+        {/* 리본 SVG 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트끼리 정확하게 연결 */}
+        <RibbonOverlay gridRef={gridRef} ribbons={ribbons}
+          ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}/>
         </div>
       </Card>
 
@@ -10966,6 +11053,259 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
       {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
         postProductsMap={postProductsMap} allProducts={allProducts}
         onClose={()=>setPostModalDate(null)} onChange={refreshPosts}/>}
+
+      {/* 임팩트 점수 산식 모달 */}
+      {scoreModalIso&&(
+        <ImpactScoreModal iso={scoreModalIso}
+          posts={postsByDate[scoreModalIso]||[]}
+          postScores={postScores}
+          onClose={()=>setScoreModalIso(null)}/>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 리본 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트 끼리 정확 연결
+//   - 시작: 포스트 셀의 ★ 버튼 (data-star-iso)
+//   - 끝  : 매칭된 판매 Top 행 (data-iso + data-pidx)
+// ─────────────────────────────────────────────
+function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso }) {
+  const [paths,setPaths]=useState([]);
+  const [size,setSize]=useState({w:0,h:0});
+
+  useEffect(()=>{
+    const compute=()=>{
+      const container=gridRef?.current;
+      if(!container) return;
+      const cRect=container.getBoundingClientRect();
+      setSize({w:cRect.width,h:cRect.height});
+      const next=[];
+      ribbons.forEach((r,i)=>{
+        const fromEl=container.querySelector(`[data-star-iso="${r.fromIso}"]`);
+        const toEl  =container.querySelector(`[data-iso="${r.toIso}"][data-pidx="${r.productIdx??0}"]`);
+        if(!fromEl||!toEl) return;
+        const fRect=fromEl.getBoundingClientRect();
+        const tRect=toEl.getBoundingClientRect();
+        // 시작점: ★ 버튼 중앙
+        const fx=fRect.left+fRect.width/2-cRect.left;
+        const fy=fRect.top+fRect.height/2-cRect.top;
+        // 끝점: 매칭 상품 행 좌측 인셋(불릿 옆) + 세로 중앙
+        const tx=tRect.left+6-cRect.left;
+        const ty=tRect.top+tRect.height/2-cRect.top;
+        // 부드러운 베지어: 수직 중간에서 휘게
+        const dy=Math.abs(ty-fy);
+        const cy1=fy+Math.max(20,dy*0.45);
+        const cy2=ty-Math.max(20,dy*0.45);
+        const d=`M${fx},${fy} C${fx},${cy1} ${tx},${cy2} ${tx},${ty}`;
+        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i});
+      });
+      setPaths(next);
+    };
+    compute();
+    if(!gridRef?.current) return;
+    const ro=new ResizeObserver(compute);
+    ro.observe(gridRef.current);
+    const onScroll=()=>compute();
+    window.addEventListener("scroll",onScroll,true);
+    window.addEventListener("resize",compute);
+    // 첫 페인트 직후 한 번 더 (폰트 로드 등으로 위치 살짝 어긋날 때 보정)
+    const raf=requestAnimationFrame(compute);
+    return()=>{
+      ro.disconnect();
+      window.removeEventListener("scroll",onScroll,true);
+      window.removeEventListener("resize",compute);
+      cancelAnimationFrame(raf);
+    };
+  },[gridRef,ribbons,ribbonColor]);
+
+  if(!paths.length) return null;
+  return (
+    <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
+        pointerEvents:"none",overflow:"visible"}}>
+      {paths.map(p=>{
+        const focused=hoveredFromIso===p.fromIso;
+        const dim=hoveredFromIso&&!focused;
+        return (
+          <path key={p.key} d={p.d} stroke={p.color} fill="none"
+            strokeWidth={focused?2.5:1.8}
+            opacity={dim?0.08:focused?0.85:0.42}
+            strokeLinecap="round"/>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 임팩트 점수 산식 모달 — 산식 + 업계 근거 + 실제 계산 과정
+// ─────────────────────────────────────────────
+function ImpactScoreModal({ iso, posts, postScores, onClose }) {
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+          width:"min(820px,95vw)",maxHeight:"90vh",overflowY:"auto",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,gap:10}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>임팩트 점수 — Pre/Post Sales Lift
+              <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· {iso}</span>
+            </div>
+            <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
+              포스트 게시 <b>전 14일</b> vs <b>후 14일</b> 태깅 상품 판매 수량 변화율(%)로 5★ 점수 산출 — 인플루언서·콘텐츠 마케팅 측정의 가장 통용되는 방식
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta,flexShrink:0}}>✕ 닫기</button>
+        </div>
+
+        {/* 산식 */}
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"12px 14px",marginBottom:14,fontSize:12,color:D.text,lineHeight:1.7}}>
+          <div style={{fontWeight:700,marginBottom:6}}>산식</div>
+          <div style={{fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,marginBottom:8,color:D.textSub}}>
+            Lift% = (Post14_qty − Pre14_qty) / max(Pre14_qty, 1) × 100<br/>
+            Pre14_qty&nbsp; = 포스트 전 14일간 태깅 상품 총 판매 수량<br/>
+            Post14_qty = 포스트 후 14일간 태깅 상품 총 판매 수량
+          </div>
+          <div style={{fontWeight:700,marginTop:10,marginBottom:6,color:D.text}}>별 등급 (업계 통용 임계치)</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+            <thead><tr style={{color:D.textMeta}}>
+              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>Lift</th>
+              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>의미</th>
+              <th style={{textAlign:"center",padding:"4px 6px",fontWeight:600}}>★</th>
+            </tr></thead>
+            <tbody>
+              {[
+                ["≥ +100%","매출 2배 이상 — 강한 임팩트",5],
+                ["+50 ~ 99%","매우 유의미",4],
+                ["+20 ~ 49%","유의미",3],
+                ["+5 ~ 19%","약한 양의 효과",2],
+                ["−5 ~ +5%","중립 / 변동 범위",1],
+                ["≤ −5%","부정 효과",0],
+              ].map(([range,desc,n])=>(
+                <tr key={range} style={{borderTop:`1px solid ${D.border}`}}>
+                  <td style={{padding:"4px 6px",fontFamily:"'JetBrains Mono','Courier New',monospace",color:D.text}}>{range}</td>
+                  <td style={{padding:"4px 6px",color:D.textSub}}>{desc}</td>
+                  <td style={{padding:"4px 6px",textAlign:"center",letterSpacing:0.5}}>
+                    <span style={{color:"#F2B544"}}>{"★".repeat(n)}</span>
+                    <span style={{color:"#cfcfcf"}}>{"★".repeat(5-n)}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{marginTop:10,padding:"6px 10px",background:`${D.amber}10`,border:`1px solid ${D.amber}40`,borderRadius:4,color:D.text,fontSize:11.5}}>
+            <b>한계</b>: 통제군 없는 단순 Pre/Post 비교라 계절성·외부 이벤트 영향을 분리하지 못합니다. 정확한 ROI 를 보려면 A/B(Lift study) 또는 MMM(Marketing Mix Modeling) 도구를 함께 사용해야 합니다.
+          </div>
+        </div>
+
+        {/* 포스트별 실제 계산 */}
+        {posts.map((post,pi)=>{
+          const s=postScores[post.id];
+          if(!s) return null;
+          return (
+            <div key={post.id} style={{border:`1px solid ${D.border}`,borderRadius:8,padding:"14px 16px",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:12,color:D.textMeta}}>포스트 {pi+1} · {post.post_date}</div>
+                  <a href={post.url} target="_blank" rel="noreferrer"
+                    style={{fontSize:11,color:D.blue,wordBreak:"break-all"}}>{post.url}</a>
+                </div>
+                <div style={{fontSize:18,letterSpacing:1,lineHeight:1,whiteSpace:"nowrap",flexShrink:0}}>
+                  <span style={{color:"#F2B544"}}>{"★".repeat(s.stars)}</span>
+                  <span style={{color:"#cfcfcf"}}>{"★".repeat(5-s.stars)}</span>
+                  <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>{s.stars}/5</span>
+                </div>
+              </div>
+
+              {/* 태깅 상품 */}
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>태깅 상품 ({s.tagged?.length||0}개)</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                  {(s.tagged||[]).map(t=>(
+                    <span key={t} style={{padding:"2px 8px",fontSize:11,background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:10}}>{t}</span>
+                  ))}
+                  {(!s.tagged||s.tagged.length===0)&&<span style={{fontSize:11,color:D.textMeta,fontStyle:"italic"}}>(없음 — 점수 0)</span>}
+                </div>
+              </div>
+
+              {/* 요약 지표 — Pre / Post / Lift */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>Pre14_qty <span style={{color:D.textMeta}}>(D−14 ~ D−1)</span></div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.preQty||0).toLocaleString()}장</div>
+                </div>
+                <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>Post14_qty <span style={{color:D.textMeta}}>(D+1 ~ D+14)</span></div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.postQty||0).toLocaleString()}장</div>
+                </div>
+                <div style={{background:`${(s.lift||0)>=0?D.green:D.red}10`,
+                  border:`1px solid ${(s.lift||0)>=0?D.green:D.red}30`,
+                  borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>Sales Lift</div>
+                  <div style={{fontSize:14,fontWeight:700,color:(s.lift||0)>=0?D.green:D.red}}>
+                    {(s.lift||0)>=0?"+":""}{(s.lift||0).toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* 최종 계산 step */}
+              <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}25`,borderRadius:6,padding:"8px 12px",marginBottom:12,
+                fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:11.5,color:D.text,lineHeight:1.7}}>
+                Lift% = ({(s.postQty||0).toLocaleString()} − {(s.preQty||0).toLocaleString()}) / max({(s.preQty||0).toLocaleString()}, 1) × 100 = <b>{(s.lift||0).toFixed(1)}%</b><br/>
+                ★ = liftToStars({(s.lift||0).toFixed(1)}%) = <b>{s.stars}/5</b>
+              </div>
+
+              {/* Pre / Post 일별 breakdown */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {[
+                  {label:"Pre 14일 (D−14 ~ D−1)",rows:s.preDays||[],sign:-1,total:s.preQty||0},
+                  {label:"Post 14일 (D+1 ~ D+14)",rows:s.postDays||[],sign:1,total:s.postQty||0},
+                ].map((blk,bi)=>(
+                  <div key={bi}>
+                    <div style={{fontSize:11,color:D.textMeta,marginBottom:4,fontWeight:600}}>{blk.label}</div>
+                    <div style={{maxHeight:240,overflowY:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                        <thead style={{background:D.surfaceAlt,position:"sticky",top:0}}>
+                          <tr>
+                            <th style={{padding:"5px 8px",textAlign:"left",fontWeight:600,color:D.textMeta}}>D{blk.sign>0?"+":"−"}i</th>
+                            <th style={{padding:"5px 8px",textAlign:"left",fontWeight:600,color:D.textMeta}}>일자</th>
+                            <th style={{padding:"5px 8px",textAlign:"right",fontWeight:600,color:D.textMeta}}>태깅 qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {blk.rows.map((d,i)=>{
+                            const idx=blk.sign<0?(blk.rows.length-i):(i+1);
+                            return (
+                              <tr key={d.iso} style={{borderTop:`1px solid ${D.border}`}}>
+                                <td style={{padding:"4px 8px",color:D.textMeta}}>D{blk.sign>0?"+":"−"}{idx}</td>
+                                <td style={{padding:"4px 8px",color:D.text}}>{d.iso}</td>
+                                <td style={{padding:"4px 8px",textAlign:"right",
+                                  color:d.qty>0?(blk.sign>0?D.blue:D.textSub):D.textMeta,
+                                  fontWeight:d.qty>0?600:400}}>{d.qty.toLocaleString()}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{borderTop:`2px solid ${D.border}`,background:D.surfaceAlt,fontWeight:700}}>
+                            <td colSpan={2} style={{padding:"5px 8px",color:D.text}}>합계</td>
+                            <td style={{padding:"5px 8px",textAlign:"right",color:blk.sign>0?D.blue:D.text}}>{blk.total.toLocaleString()}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
