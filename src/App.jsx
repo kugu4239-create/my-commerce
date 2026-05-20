@@ -10533,31 +10533,29 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 }
 
 // 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
-// 어트리뷰션 출발 소개 상품 — 리본과 같은 색의 둥근 이름표
-function SourceProductBadge({ name, color="#FFD166" }) {
+// 어트리뷰션 출발 소개 상품 — 흰색 직사각형 라벨 (정상 사이즈)
+function SourceProductBadge({ name }) {
   return (
-    <span data-source-pill data-pill-color={color} style={{
+    <span data-source-pill style={{
       display:"inline-block",
       position:"relative",
       zIndex:3,
-      padding:"4px 11px",
-      fontSize:16,
+      padding:"2px 7px",
+      fontSize:10,
       fontWeight:700,
-      color:"#fff",
-      background:color,
-      borderRadius:14,
-      boxShadow:"0 0 0 2px rgba(255,255,255,0.95), 0 6px 16px rgba(0,0,0,0.45)",
-      lineHeight:1.15,
+      color:"#111",
+      background:"#fff",
+      borderRadius:0,
+      boxShadow:"0 3px 10px rgba(0,0,0,0.45)",
+      lineHeight:1.3,
       whiteSpace:"nowrap",
-      transform:"translateY(-3px)",
-      textShadow:"0 1px 2px rgba(0,0,0,0.35)",
     }}>
       {name}
     </span>
   );
 }
 
-function MatchedProductBadge({ name, qty, color="#FF6B8A" }) {
+function MatchedProductBadge({ name, qty, color="#fff" }) {
   // 손그림 동그라미 + 별 — 항상 다크 오버레이 위에 표시되므로 흰 텍스트 + drop-shadow
   return (
     <span data-match-pill style={{position:"relative",display:"inline-flex",alignItems:"center",gap:3,padding:"1px 4px"}}>
@@ -11109,7 +11107,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                               style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:fg,
                                 position:"relative"}}>
                               {isSource
-                                ?<SourceProductBadge name={name} color={sourceColorMap[`${c.iso}__${name}`]}/>
+                                ?<SourceProductBadge name={name}/>
                                 :<>· {name}</>}
                             </div>
                           );
@@ -11129,7 +11127,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                               position:"relative"}}>
                               {hi
-                                ?<MatchedProductBadge name={p.name} qty={p.qty} color={targetColorMap[`${c.iso}__${j}`]||"#FF6B8A"}/>
+                                ?<MatchedProductBadge name={p.name} qty={p.qty} color="#fff"/>
                                 :<><span style={{overflow:"hidden",textOverflow:"ellipsis",minWidth:0,color:fg}}>• {p.name}</span><span style={{color:fg,flexShrink:0}}>{p.qty}장</span></>}
                             </div>
                           );
@@ -11272,28 +11270,21 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, onBlockCli
       <div onClick={onBlockClick}
         style={{position:"fixed",inset:0,zIndex:1000,
           background:"rgba(0,0,0,0.75)",cursor:"default"}}/>
-      {/* 출발/도착 spotlight 클론 */}
+      {/* 출발/도착 spotlight 클론 — 흰 직사각형 라벨 통일 */}
       {spots.map(s=>(
         <div key={s.key} style={{position:"fixed",
           left:s.rect.left,top:s.rect.top,width:s.rect.width,height:s.rect.height,
           zIndex:1010,pointerEvents:"none",
           display:"flex",alignItems:"center",justifyContent:s.type==="source"?"center":"flex-start"}}>
-          {s.type==="source"?(
-            <span style={{display:"inline-block",padding:"4px 11px",fontSize:16,fontWeight:700,
-              color:"#fff",background:s.color,borderRadius:14,
-              boxShadow:`0 0 0 2px rgba(255,255,255,0.95), 0 0 24px ${s.color}, 0 6px 20px rgba(0,0,0,0.6)`,
-              textShadow:"0 1px 2px rgba(0,0,0,0.35)",whiteSpace:"nowrap",lineHeight:1.15}}>
-              {s.name}
-            </span>
-          ):(
-            <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",
-              fontSize:11,fontWeight:700,color:"#fff",
-              background:`${s.color}E0`,borderRadius:10,
-              boxShadow:`0 0 0 1.5px rgba(255,255,255,0.85), 0 0 18px ${s.color}, 0 4px 14px rgba(0,0,0,0.55)`,
-              textShadow:"0 1px 2px rgba(0,0,0,0.4)",whiteSpace:"nowrap"}}>
-              <span style={{color:"#F2B544"}}>★</span> {s.name} <span style={{opacity:0.9}}>{(s.qty||0)}장</span>
-            </span>
-          )}
+          <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",
+            fontSize:11,fontWeight:700,color:"#111",
+            background:"#fff",borderRadius:0,
+            boxShadow:"0 4px 14px rgba(0,0,0,0.55)",
+            whiteSpace:"nowrap",lineHeight:1.3}}>
+            {s.type==="target"&&<span style={{color:"#F2B544"}}>★</span>}
+            <span>{s.name}</span>
+            {s.type==="target"&&<span style={{color:"#666",fontWeight:500}}>{(s.qty||0)}장</span>}
+          </span>
         </div>
       ))}
     </>,
@@ -11426,7 +11417,7 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
           const dim=hovered&&!isHover;
           const w=widthOf(p.ribbon?.qty);
           return (
-            <path key={p.key} d={p.d} stroke={p.color} fill="none"
+            <path key={p.key} d={p.d} stroke="#fff" fill="none"
               strokeWidth={w}
               opacity={dim?0.25:isHover?1:0.95}
               strokeLinecap="round"
