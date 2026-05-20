@@ -10,11 +10,26 @@ import {
 } from "recharts";
 
 // ─────────────────────────────────────────────
-// NOTE: Supabase 테이블 컬럼 추가 필요:
+// NOTE: Supabase 테이블/컬럼 추가 필요:
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS order_count integer DEFAULT 0;
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_amount integer DEFAULT 0;
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_count integer DEFAULT 0;
 //   ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount integer DEFAULT 0;
+//
+//   -- 콘텐츠 임팩트 (인스타그램 포스트 캘린더):
+//   CREATE TABLE IF NOT EXISTS instagram_posts (
+//     id            serial PRIMARY KEY,
+//     post_date     date    NOT NULL,
+//     url           text    NOT NULL,
+//     caption_memo  text,
+//     created_at    timestamptz DEFAULT now()
+//   );
+//   CREATE INDEX IF NOT EXISTS instagram_posts_date_idx ON instagram_posts (post_date);
+//   CREATE TABLE IF NOT EXISTS instagram_post_products (
+//     post_id      int  NOT NULL REFERENCES instagram_posts(id) ON DELETE CASCADE,
+//     product_name text NOT NULL,
+//     PRIMARY KEY (post_id, product_name)
+//   );
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
@@ -468,7 +483,8 @@ function Alert({ type, msg, ts }) {
   const i = {success:"✓",error:"✕",warn:"⚠",info:"i"}[type];
   return (
     <div style={{ background:`${c}0d`, border:`1px solid ${c}30`, borderRadius:7,
-      padding:"9px 13px", color:c, fontSize:12, marginTop:9, lineHeight:1.5 }}>
+      padding:"9px 13px", color:c, fontSize:12, marginTop:9, lineHeight:1.5,
+      whiteSpace:"pre-line" }}>
       {i} {msg}<UpdatedAt ts={ts}/>
     </div>
   );
@@ -641,6 +657,46 @@ const parseHtmlTable=(text,opts)=>{
   return data;
 };
 
+// ─────────────────────────────────────────────
+// 업로더 공통 — 누구나 알아볼 수 있는 에러 메시지 빌더
+// ─────────────────────────────────────────────
+// 컬럼 누락 에러: 파일에 있는 헤더 + 필요한 컬럼 + 누락된 것 + 해결법까지 함께 표시
+function uploadErrColumns({ missing, required, headers }) {
+  const headerLines = headers?.length
+    ? headers.map(h=>`  • ${h}`).join("\n")
+    : "  (헤더가 비어있음)";
+  return [
+    `필요한 컬럼을 파일에서 찾지 못했습니다.`,
+    ``,
+    `누락된 컬럼: ${missing.join(", ")}`,
+    ``,
+    `현재 파일의 컬럼 헤더 (첫 행):`,
+    headerLines,
+    ``,
+    `이 업로더가 필요로 하는 컬럼:`,
+    required.map(r=>`  • ${r}`).join("\n"),
+    ``,
+    `해결 방법: 파일의 첫 행 헤더에 위 컬럼명을 포함시키세요. 일부 유사 이름은 자동 매칭됩니다(예: '관리번호'→주문번호).`,
+  ].join("\n");
+}
+// 파일 파싱 실패 에러 (포맷 불일치, 헤더 누락 등)
+function uploadErrParse(detail="") {
+  return [
+    `파일을 읽을 수 없습니다.`,
+    detail?`\n원인: ${detail}`:"",
+    ``,
+    `확인 사항:`,
+    `  • CSV 또는 Excel(.xlsx / .xls) 파일이 맞는지`,
+    `  • 첫 행이 컬럼 헤더이고, 그 아래에 1개 이상의 데이터 행이 있는지`,
+    `  • 파일이 손상되지 않았는지 (Excel로 한 번 열어서 다시 저장해보세요)`,
+  ].join("\n");
+}
+// 데이터 갈음 안내 — 업로드 직전에 보여줘야 함
+function uploadReplaceWarn(prevCount, scope) {
+  if(!prevCount||prevCount<=0) return "";
+  return `⚠ 기존 ${prevCount.toLocaleString()}건이 삭제되고 새 데이터로 교체됩니다 (${scope}).`;
+}
+
 const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   const ext=file.name.split(".").pop().toLowerCase();
   if(ext==="xlsx"||ext==="xls"){
@@ -669,7 +725,7 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
           data=parseHtmlTable(text,opts);
         }
 
-        if(!data||!data.length) throw new Error("파일을 파싱할 수 없습니다");
+        if(!data||!data.length) throw new Error(uploadErrParse("Excel/HTML 모두 시도했으나 행을 추출하지 못했습니다"));
         completeCb({data});
       }catch(err){if(errorCb)errorCb(err);}
     };
@@ -679,14 +735,14 @@ const parseAnyFile=(file,opts,completeCb,errorCb)=>{
   }
 };
 
-function DropZone({ onFile, label="파일을 드래그 앤 드롭 또는 클릭하여 선택", fileName="", required="", optional="" }) {
+function DropZone({ onFile, label="파일을 드래그 앤 드롭 또는 클릭하여 선택", fileName="", columns="" }) {
   const [hover,setHover]=useState(false);
   const handle=useCallback(e=>{
     e.preventDefault();
     const file=e.dataTransfer?.files?.[0]||e.target.files?.[0];
     if(file) onFile(file);
   },[onFile]);
-  const cols=[...required.split("·").map(s=>s.trim()).filter(Boolean),...optional.split("·").map(s=>s.trim()).filter(Boolean)].filter(Boolean);
+  const cols=columns.split("·").map(s=>s.trim()).filter(Boolean);
   return (
     <label onDragOver={e=>{e.preventDefault();setHover(true);}}
       onDragLeave={()=>setHover(false)} onDrop={e=>{setHover(false);handle(e);}}
@@ -1172,21 +1228,90 @@ const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ANALYTICS ENGINE
 // ─────────────────────────────────────────────
 function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
-  // 매출 입력 데이터 기반 KPI
+  // ═══════════════════════════════════════════════════════
+  // 데이터 소스 가이드
+  //   - orderRows   : 이지어드민 주문·배송 CSV (loadData에서 store_sales도 channel="오프라인 스토어"로 머지됨)
+  //   - storeRows   : 매장 판매 CSV (StoreUploader) — 오프라인 전용 원본
+  //   - revenueRows : 채널별 일자 매출 CSV (RevenueForm)
+  //   - stockRows   : 입고 CSV
+  // 매장(오프라인) 행은 '배송 KPI'에서 제외하고 별도 storeMetrics로 수집한다.
+  // ═══════════════════════════════════════════════════════
+
+  // 오프라인 채널 식별: 이지어드민 판교점/일산점 행, store_sales 머지 행 모두 포함
+  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+  const isOffline = r => OFFLINE_CHS.has(r.channel||"");
+
+  // ── [총 매출] ──────────────────────────────────────────
+  // 소스: revenues(온라인 채널 일자 매출) + storeSales(매장 실판매금액)
+  // 계산: SUM(amount - refund_amount)  +  매장 (배송 amount 합 - 반품 amount 합)
   const onlineRevenue   = revenueRows.reduce((s,r)=>s+(r.amount||0)-(r.refund_amount||0),0);
   const offlineRevenue  = storeRows.reduce((s,r)=>r.status==="배송"?s+(r.amount||0):r.status==="반품"?s-(r.amount||0):s,0);
   const totalRevenue    = onlineRevenue + offlineRevenue;
+
+  // ── [매출 입력 기반 보조 지표] ────────────────────────
+  // 소스: revenues CSV
+  // 계산: order_count / refund_amount / refund_count 컬럼 단순 합산
   const totalOrderCount = revenueRows.reduce((s,r)=>s+(r.order_count||0),0);
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
-  // 이지어드민 CSV 기반 KPI
-  const totalShipped  = orderRows.filter(r=>r.status==="배송").length;
-  const totalReturned = orderRows.filter(r=>r.status==="반품").length;
-  const returnRate    = totalShipped>0?(totalReturned/totalShipped*100).toFixed(1):"0.0";
-  const totalStock    = stockRows.reduce((s,r)=>s+(r.qty||0),0);
 
-  // 판매처별 집계
+  // ── [배송·반품 KPI] (온라인만, 매장 제외) ─────────────
+  // 소스: 이지어드민 orders CSV — 오프라인 채널(매장 판매 머지 행 포함)은 제외
+  // 계산:
+  //   - 배송 수    = COUNT(DISTINCT order_no||order_id) where status="배송"
+  //   - 반품 수    = COUNT(DISTINCT order_no||order_id) where status="반품"
+  //   - 배송 장수  = SUM(qty) where 배송
+  //   - 반품 장수  = SUM(qty) where 반품
+  //   - 반품률     = 반품 장수 / 배송 장수 * 100 (장수 기준 — 부분 반품/교환 반영)
+  const onlineRows       = orderRows.filter(r=>!isOffline(r));
+  const shippedRows      = onlineRows.filter(r=>r.status==="배송");
+  const returnedRows     = onlineRows.filter(r=>r.status==="반품");
+  const totalShipped     = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalReturned    = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalDeliveredQty= shippedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const totalReturnedQty = returnedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const returnRate       = totalDeliveredQty>0?(totalReturnedQty/totalDeliveredQty*100).toFixed(1):"0.0";
+
+  // ── [주문 KPI] (온라인 전체, 배송 완료 여부 무관) ─────
+  // 소스: 이지어드민 orders CSV (매장 제외)
+  // 계산:
+  //   - 주문 수    = COUNT(DISTINCT order_no||order_id) 모든 상태 포함
+  //   - 주문 장수  = SUM(qty) 모든 상태 포함
+  const totalUniqueOrders = new Set(onlineRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
+  const totalOrderedQty   = onlineRows.reduce((s,r)=>s+(r.qty||1),0);
+
+  // ── [매장 KPI] (store_sales CSV 별도 수집, 배송 카운트로 합산 안 함) ──
+  // 소스: store_sales (StoreUploader 업로드, 기존 파싱 컬럼 유지)
+  // 계산:
+  //   - 매장 매출    = SUM(실판매금액)배송 - SUM(실판매금액)반품  ← offlineRevenue와 동일
+  //   - 매장 주문 수 = COUNT(DISTINCT order_id) where 배송   (일자별 ID 집계의 유니크)
+  //   - 매장 반품 수 = COUNT(DISTINCT order_id) where 반품
+  //   - 판매 장수    = SUM(qty) where 배송
+  //   - 반품 장수    = SUM(qty) where 반품
+  //   - 객단가       = 매장 매출 / 매장 주문 수
+  const storeShippedRows  = storeRows.filter(r=>r.status==="배송");
+  const storeReturnedRows = storeRows.filter(r=>r.status==="반품");
+  const storeRevenue      = offlineRevenue;
+  const storeOrderCount   = new Set(storeShippedRows.map(r=>r.order_id).filter(Boolean)).size;
+  const storeReturnedCount= new Set(storeReturnedRows.map(r=>r.order_id).filter(Boolean)).size;
+  const storeQty          = storeShippedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const storeReturnedQty  = storeReturnedRows.reduce((s,r)=>s+(r.qty||1),0);
+  const storeAOV          = storeOrderCount>0?Math.round(storeRevenue/storeOrderCount):0;
+  const storeMetrics      = {storeRevenue,storeOrderCount,storeReturnedCount,storeQty,storeReturnedQty,storeAOV};
+
+  // ── [재고] ──────────────────────────────────────────
+  // 소스: stock_uploads — 입고 CSV 누적 (필터링은 호출부에서)
+  const totalStock = stockRows.reduce((s,r)=>s+(r.qty||0),0);
+
+  // ─────────────────────────────────────────────────────
+  // 판매처별(채널별) 집계
+  // 1) 매출/주문수/환불수: revenues CSV 단순 합산
+  // 2) 배송/반품 고유 주문번호: 이지어드민 orders CSV에서 channel별 Set 누적
+  // 3) 객단가 소스 금액 맵: 자사몰=payment_amount MAX, 29CM·무신사=sale_price SUM
+  // 4) 오프라인 행(판교점/일산점/매장 머지)은 "오프라인 스토어"로 통합 후 storeMetrics로 덮어씀
+  // ─────────────────────────────────────────────────────
   const byChannel={};
+  // (1) 매출 입력 합산 — 채널별 매출/주문수/환불수
   revenueRows.forEach(r=>{
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
@@ -1194,35 +1319,65 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     byChannel[ch].orderCount+=(r.order_count||0);
     byChannel[ch].refundCount+=(r.refund_count||0);
   });
-  // 채널별 배송 주문 집계: shipped/returned 카운트 + 객단가용 주문금액 맵
-  // chOrderAmt[ch][oid] = 주문금액 (자사몰/무신사: 상품별 합산, 29CM: 최초값만)
-  const chOrderAmt={};  // 객단가 계산용
-  const chOrderIds={};  // uniqueOrders 카운트용 (offline 합산에도 사용)
-  // 29CM은 주문번호당 총금액이 각 행에 중복 표시 → 첫 번째 값만
-  const CH_SUM_ALL=new Set(["자사몰","무신사"]);
+  // (2),(3) 이지어드민 행 순회 — 배송/반품/전체 고유 주문번호 + 장수 + 객단가 금액 맵
+  const chOrderAmt={};      // 채널별 {oid: amount} — 객단가 분자
+  const chOrderIds={};      // 채널별 Set(oid) where 배송 — 객단가 분모 / 배송 카운트
+  const chReturnedIds={};   // 채널별 Set(oid) where 반품 — 반품 카운트
+  const chAllOrderIds={};   // 채널별 Set(oid) 모든 상태 — 판매처 상세의 '주문 수' 컬럼용
+  const chOrderedQty={};    // 채널별 SUM(qty) 모든 상태 — '주문 장수'
+  const chShippedQty={};    // 채널별 SUM(qty) 배송   — '배송 장수' + 반품률 분모
+  const chReturnedQty={};   // 채널별 SUM(qty) 반품   — '반품 장수' + 반품률 분자
+  const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
   orderRows.forEach(r=>{
     const ch=r.channel||"미분류";
+    // 주문번호 키: 신규 order_no 필드 우선, 없으면 order_id 전체(이전 데이터 호환)
+    const oid=r.order_no||r.order_id||"";
+    // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
+    const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
+    const qty=(r.qty||1);
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    if(r.status==="배송") byChannel[ch].shipped++;
-    if(r.status==="반품") byChannel[ch].returned++;
-    if(r.status!=="배송") return;
-    const raw=(r.order_id||"");
-    const oid=raw.split("||")[0]||raw;
+    // 전체 주문 Set: 모든 상태(배송/반품/교환 등) 포함
+    if(oid){
+      if(!chAllOrderIds[ch]) chAllOrderIds[ch]=new Set();
+      chAllOrderIds[ch].add(oid);
+    }
+    chOrderedQty[ch]=(chOrderedQty[ch]||0)+qty;
+    if(status==="반품"){
+      if(oid){
+        if(!chReturnedIds[ch]) chReturnedIds[ch]=new Set();
+        chReturnedIds[ch].add(oid);
+      }
+      chReturnedQty[ch]=(chReturnedQty[ch]||0)+qty;
+    }
+    if(status!=="배송") return;
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
+    chShippedQty[ch]=(chShippedQty[ch]||0)+qty;
     if(!chOrderAmt[ch]) chOrderAmt[ch]={};
-    const amt=r.amount||0;
-    if(CH_SUM_ALL.has(ch)){
-      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+amt; // 개별 금액 합산
+    if(PAYMENT_CH.has(ch)){
+      // 자사몰: 결제금액은 동일 주문의 각 행에 중복 기록 → 덮어쓰기(= 사실상 MAX)
+      const pa=r.payment_amount||r.amount||0;
+      if(pa>0) chOrderAmt[ch][oid]=pa;
     } else {
-      if(chOrderAmt[ch][oid]===undefined) chOrderAmt[ch][oid]=amt; // 29CM: 최초값만
+      // 29CM·무신사: 판매가는 상품별로 다름 → 같은 주문 안에서 상품별 합산
+      const sp=r.sale_price||r.amount||0;
+      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+sp;
     }
   });
-  // 판교점+일산점 → 오프라인 스토어 합산
-  const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+  // 채널 shipped/returned는 라인 수 X → 고유 주문번호 수로 채움
+  Object.keys(byChannel).forEach(ch=>{
+    byChannel[ch].shipped  = (chOrderIds[ch]||new Set()).size;
+    byChannel[ch].returned = (chReturnedIds[ch]||new Set()).size;
+  });
+
+  // (4-a) 오프라인 채널(판교점/일산점/매장 머지 행) → "오프라인 스토어"로 통합
+  // 단, 이 단계에서 만든 값들은 storeRows가 있으면 (4-b)에서 storeMetrics로 덮어씀
   const offlineAgg={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
   const offlineOrderIds=new Set();
-  const offlineBreakdown={};  // 판교점/일산점 개별 보존
+  const offlineReturnedIds=new Set();
+  const offlineAllOrderIds=new Set();
+  let offlineOrderedQty=0, offlineShippedQty=0, offlineReturnedQty=0;
+  const offlineBreakdown={};  // 판교점/일산점 별도 보존(채널별 표 sub-row용)
   let hasOffline=false;
   Object.keys(byChannel).forEach(ch=>{
     if(OFFLINE_CHS.has(ch)){
@@ -1230,52 +1385,86 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       offlineAgg.revenue+=byChannel[ch].revenue;
       offlineAgg.orderCount+=byChannel[ch].orderCount;
       offlineAgg.refundCount+=byChannel[ch].refundCount;
-      offlineAgg.shipped+=byChannel[ch].shipped;
-      offlineAgg.returned+=byChannel[ch].returned;
       (chOrderIds[ch]||new Set()).forEach(id=>offlineOrderIds.add(id));
+      (chReturnedIds[ch]||new Set()).forEach(id=>offlineReturnedIds.add(id));
+      (chAllOrderIds[ch]||new Set()).forEach(id=>offlineAllOrderIds.add(id));
+      offlineOrderedQty +=(chOrderedQty[ch] ||0);
+      offlineShippedQty +=(chShippedQty[ch] ||0);
+      offlineReturnedQty+=(chReturnedQty[ch]||0);
       if(ch!=="오프라인스토어"&&ch!=="오프라인"&&ch!=="오프라인 스토어")
         offlineBreakdown[ch]={...byChannel[ch]};
       delete byChannel[ch];
       delete chOrderIds[ch];
+      delete chReturnedIds[ch];
+      delete chAllOrderIds[ch];
+      delete chOrderedQty[ch];
+      delete chShippedQty[ch];
+      delete chReturnedQty[ch];
     }
   });
   if(hasOffline){
+    offlineAgg.shipped  = offlineOrderIds.size;
+    offlineAgg.returned = offlineReturnedIds.size;
     byChannel["오프라인 스토어"]=offlineAgg;
     chOrderIds["오프라인 스토어"]=offlineOrderIds;
+    chReturnedIds["오프라인 스토어"]=offlineReturnedIds;
+    chAllOrderIds["오프라인 스토어"]=offlineAllOrderIds;
+    chOrderedQty["오프라인 스토어"] =offlineOrderedQty;
+    chShippedQty["오프라인 스토어"] =offlineShippedQty;
+    chReturnedQty["오프라인 스토어"]=offlineReturnedQty;
   }
-  // 매장 판매 CSV 기반 오프라인 매출 및 객단가 주문 ID
+  // (4-b) 매장 판매 CSV가 있으면 storeMetrics로 오프라인 스토어 행 덮어쓰기
+  // 이지어드민 머지 데이터보다 store_sales 원본이 권위 있음
   if(storeRows.length){
+    if(!byChannel["오프라인 스토어"]) byChannel["오프라인 스토어"]={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
+    byChannel["오프라인 스토어"].revenue  = storeRevenue;       // 실판매금액 합 (배송 - 반품)
+    byChannel["오프라인 스토어"].shipped  = storeOrderCount;    // 고유 order_id (배송)
+    byChannel["오프라인 스토어"].returned = storeReturnedCount; // 고유 order_id (반품)
+    // 객단가 분모: 매장 배송 order_id 집합으로 덮어쓰기
+    chOrderIds["오프라인 스토어"] = new Set(storeShippedRows.map(r=>r.order_id).filter(Boolean));
+    // 주문 수 집합: 매장 전체 order_id (배송+반품)로 덮어쓰기 — 매장 데이터가 권위
+    chAllOrderIds["오프라인 스토어"] = new Set(storeRows.map(r=>r.order_id).filter(Boolean));
+    // 장수: 매장 권위 데이터로 덮어쓰기 (주문 장수 = 배송 qty + 반품 qty)
+    chOrderedQty["오프라인 스토어"]  = storeQty + storeReturnedQty;
+    chShippedQty["오프라인 스토어"]  = storeQty;
+    chReturnedQty["오프라인 스토어"] = storeReturnedQty;
+    // 매장별(판교점/일산점) 매출 breakdown
     const storeByStore={};
     storeRows.forEach(r=>{
       const st=r.store_name||"오프라인 스토어";
-      if(!storeByStore[st]) storeByStore[st]={revenue:0,orderIds:new Set()};
-      if(r.status==="배송"){storeByStore[st].revenue+=(r.amount||0);if(r.order_id)storeByStore[st].orderIds.add(r.order_id);}
+      if(!storeByStore[st]) storeByStore[st]={revenue:0};
+      if(r.status==="배송") storeByStore[st].revenue+=(r.amount||0);
       else if(r.status==="반품") storeByStore[st].revenue-=(r.amount||0);
     });
-    let storeTotal=0; const storeAllIds=new Set();
-    Object.values(storeByStore).forEach(d=>{storeTotal+=d.revenue;d.orderIds.forEach(id=>storeAllIds.add(id));});
-    if(!byChannel["오프라인 스토어"]) byChannel["오프라인 스토어"]={name:"오프라인 스토어",revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
-    byChannel["오프라인 스토어"].revenue=storeTotal;
-    const existingIds=chOrderIds["오프라인 스토어"]||new Set();
-    storeAllIds.forEach(id=>existingIds.add(id));
-    chOrderIds["오프라인 스토어"]=existingIds;
-    // store_sales 기반 판교점/일산점 breakdown 덮어쓰기
     Object.entries(storeByStore).forEach(([st,d])=>{
       if(st!=="오프라인 스토어") offlineBreakdown[st]={name:st,revenue:d.revenue};
     });
   }
+  // ── [채널별 정렬 + 점유율/반품률/객단가] ──────────────
+  // 정렬: 매출 desc, 동률이면 배송 수 desc
+  // share         = 채널 매출 / 전체 채널 매출 합 * 100
+  // returnRate    = 채널 반품(주문수) / 채널 배송(주문수) * 100
+  // uniqueOrders  = chOrderIds[ch].size (오프라인은 매장 order_id, 온라인은 배송 oid)
+  // avgOrderValue:
+  //   - 오프라인 스토어: 매장 매출(storeRevenue) / 매장 주문수(uq)
+  //   - 온라인: 채널 chOrderAmt 합 / 주문번호 수 (revenues CSV가 아닌 orders CSV에서 직접 계산)
   const channelList=Object.values(byChannel).sort((a,b)=>b.revenue-a.revenue||b.shipped-a.shipped);
   const totalRev=channelList.reduce((s,c)=>s+c.revenue,0)||1;
   channelList.forEach(c=>{
     c.share=((c.revenue||0)/totalRev*100).toFixed(1);
-    c.returnRate=c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0";
+    // 장수 트래커 → 채널 객체에 노출
+    c.orderedQty  = chOrderedQty[c.name] ||0;  // 주문 장수
+    c.shippedQty  = chShippedQty[c.name] ||0;  // 배송 장수
+    c.returnedQty = chReturnedQty[c.name]||0;  // 반품 장수
+    // 반품률: 장수 기준 (부분 반품/교환 반영)
+    c.returnRate  = c.shippedQty>0?(c.returnedQty/c.shippedQty*100).toFixed(1):"0.0";
     const uq=(chOrderIds[c.name]||new Set()).size||c.shipped;
     c.uniqueOrders=uq;
+    // totalOrders: 모든 상태 포함 고유 주문번호 수 (판매처 상세의 '주문 수' 컬럼)
+    c.totalOrders=(chAllOrderIds[c.name]||new Set()).size||uq;
     if(c.name==="오프라인 스토어"){
-      // 오프라인: store_sales CSV 매출 / unique 주문ID
-      c.avgOrderValue=(uq>0&&c.revenue>0)?Math.round(c.revenue/uq):0;
+      c.avgOrderValue=storeAOV;  // storeRevenue / storeOrderCount
     } else {
-      // 온라인: orders CSV 주문금액 합 / unique 주문번호 수만 사용 (revenues CSV 제외)
       const orderMap=chOrderAmt[c.name]||{};
       const totalAmt=Object.values(orderMap).reduce((s,a)=>s+a,0);
       const orderCount=Object.keys(orderMap).length;
@@ -1283,7 +1472,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     }
   });
 
-  // 월별 배송/반품
+  // ── [월별 배송/반품 추이] ─────────────────────────────
+  // 소스: 이지어드민 orders CSV (매장 포함 — 차트에서 라인이 채널별로 분리됨)
+  // 계산: order_date의 YYYY-MM 단위 그룹 → 배송/반품 라인 카운트, 반품률
+  // (라인 카운트 유지: 차트는 추세 시각화 목적이므로 행 단위로 충분)
   const byMonth={};
   orderRows.forEach(r=>{
     const ym=r.order_date?r.order_date.slice(0,7):null;
@@ -1296,7 +1488,16 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     .sort((a,b)=>a.month>b.month?1:-1)
     .map(m=>({...m,returnRate:m.shipped>0?(m.returned/m.shipped*100).toFixed(1):"0.0"}));
 
-  // 주간 상품 랭킹 (상품명 기준, 옵션 합산)
+  // ── [판매·반품 Top — 주간 상품 랭킹] ──────────────────
+  // 소스: 이지어드민 orders CSV + store_sales(loadData 머지) — 매장 상품도 포함
+  // 계산:
+  //   - 최신 주(latestWeek) 기준 행만 추림
+  //   - 상품명 기준 그룹화(옵션 합산):
+  //       qty      = SUM(qty)                ← 판매 Top 정렬 기준
+  //       orders   = COUNT(행)               ← 반품률 분모
+  //       returned = COUNT(상태=반품 행)     ← 반품 Top 정렬 기준
+  //   - 판매 Top = qty desc 상위 20
+  //   - 반품 Top = returned>0 중 returned desc 상위 20
   const getWeek=ds=>{
     if(!ds) return null;
     const dt=new Date(ds); if(isNaN(dt)) return null;
@@ -1310,7 +1511,6 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const latestWeek=weeks[weeks.length-1];
   const weekRows=latestWeek?orderRows.filter(r=>getWeek(r.order_date)===latestWeek):orderRows;
 
-  // 상품명 기준 합산 (옵션 미구분)
   const byProd={};
   weekRows.forEach(r=>{
     const key=r.product_name||"미분류";
@@ -1325,10 +1525,21 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const weekWorst=[...prodList].filter(p=>p.returned>0).sort((a,b)=>b.returned-a.returned).slice(0,20)
     .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0"}));
 
+  // ── [전체 합산 KPI (온라인 + 매장)] ────────────────────
+  // KPI 카드의 '주문 수' / '주문 장수' 표기용
+  // 배송 KPI는 매장 제외(totalShipped/totalDeliveredQty)지만,
+  // 주문 KPI는 사용자 요청으로 매장까지 합쳐서 단일 숫자로 표시
+  const totalUniqueOrdersAll = totalUniqueOrders + storeOrderCount;
+  const totalOrderedQtyAll   = totalOrderedQty   + storeQty;
+
   return {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
+    totalUniqueOrders,totalOrderedQty,totalDeliveredQty,totalReturnedQty,
+    totalUniqueOrdersAll,totalOrderedQtyAll, // 매장 포함 합산
+    storeMetrics,  // 매장 별도 KPI: revenue/orderCount/returnedCount/qty/returnedQty/aov
     channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
+    chOrderAmt,chAllOrderIds, // 객단가/주문수 모달 소스
   };
 }
 
@@ -1534,6 +1745,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [calOpenFor,setCalOpenFor]=useState(null);
   const [offlineExpanded,setOfflineExpanded]=useState(false);
   const [kpiModal,setKpiModal]=useState(null); // "revenue"|"shipped"|"returnRate"|"stock"
+  const [aovModal,setAovModal]=useState(null); // channel name
+  const [chOrderModal,setChOrderModal]=useState(null); // channel name — 주문 수 소스 모달
   const [delPeriod,setDelPeriod]=useState("all");
   const [delStart,setDelStart]=useState("");
   const [delEnd,setDelEnd]=useState("");
@@ -1853,13 +2066,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         </button>
       </div>
 
-      {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송은 이지어드민 */}
+      {/* KPI 카드 - 총 매출/주문/반품은 매출입력, 배송·주문은 이지어드민 */}
       <div style={{display:"flex",gap:9,marginBottom:20,flexWrap:"wrap",minHeight:82}}>
         <KPI label="총 매출" value={fmtWonShort(stats.totalRevenue)} accent={D.black} onClick={()=>setKpiModal("revenue")}/>
-        <KPI label="배송" value={stats.totalShipped.toLocaleString()+"건"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
-        {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1)+"%":"0.0%"}
-          sub={stats.totalReturned.toLocaleString()+"건"}
-          accent={stats.totalShipped>0&&(stats.totalReturned/stats.totalShipped)>0.1?D.red:D.textSub}
+        <KPI label="주문 수" value={stats.totalUniqueOrdersAll.toLocaleString()+"건"} sub={stats.totalOrderedQtyAll.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
+        <KPI label="배송 수" value={stats.totalShipped.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
+        {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.returnRate+"%"}
+          sub={`${stats.totalReturnedQty.toLocaleString()}장 / ${stats.totalDeliveredQty.toLocaleString()}장`}
+          accent={parseFloat(stats.returnRate)>10?D.red:D.textSub}
           onClick={()=>setKpiModal("returnRate")}/>}
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
       </div>
@@ -1964,7 +2178,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
           <SecTitle ts={ts.orders}>판매처 상세</SecTitle>
           <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
-            {[["revenue","매출"],["share","점유율"],["shipped","배송"],...(!["yd","7d"].includes(period)?[["returned","반품"],["rate","반품률"]]:[]),["aov","객단가"]].map(([k,l])=>(
+            {[["revenue","매출"],["share","점유율"],["orders","주문 수"],["shipped","배송 수"],...(!["yd","7d"].includes(period)?[["returned","반품 수"],["rate","반품률"]]:[]),["aov","객단가"]].map(([k,l])=>(
               <button key={k} onClick={()=>setChSort({key:k,dir:"desc"})}
                 style={{background:chSort.key===k?D.black:"transparent",
                   color:chSort.key===k?"#fff":D.textSub,
@@ -1986,16 +2200,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           };
           const hasRet=!["yd","7d"].includes(period);
           const cols=[
-            {key:"name",   label:"판매처",     left:true, val:c=>c.name,               w:hasRet?"22%":"26%"},
-            {key:"share",  label:"점유율",                val:c=>parseFloat(c.share),  w:hasRet?"8%":"9%"},
-            {key:"revenue",label:"매출",                  val:c=>c.revenue,            w:hasRet?"15%":"18%"},
-            {key:"cmp",    label:"동기간 비교",            val:c=>0,                    w:hasRet?"14%":"17%"},
-            {key:"shipped",label:"배송",                  val:c=>c.shipped,            w:hasRet?"8%":"10%"},
+            {key:"name",   label:"판매처",     left:true, val:c=>c.name,               w:hasRet?"17%":"20%"},
+            {key:"share",  label:"점유율",                val:c=>parseFloat(c.share),  w:"7%"},
+            {key:"revenue",label:"매출",                  val:c=>c.revenue,            w:hasRet?"13%":"16%"},
+            {key:"cmp",    label:"동기간 비교",            val:c=>0,                    w:hasRet?"12%":"15%"},
+            // 주문 수: 모든 상태 고유 주문번호 (건수) + 주문 장수 (병기, 셀 안에 sub)
+            {key:"orders", label:"주문 수",               val:c=>c.totalOrders||0,     w:"10%"},
+            {key:"shipped",label:"배송 수",               val:c=>c.shipped,            w:"10%"},
             ...(hasRet?[
-              {key:"returned",label:"반품",               val:c=>c.returned,           w:"8%"},
-              {key:"rate",   label:"반품률",              val:c=>c.shipped>0?c.returned/c.shipped:0, w:"9%"},
+              {key:"returned",label:"반품 수",            val:c=>c.returned,           w:"9%"},
+              {key:"rate",   label:"반품률",              val:c=>c.shippedQty>0?c.returnedQty/c.shippedQty:0, w:"8%"},
             ]:[]),
-            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"16%":"20%", tooltip:"개발 중인 지표입니다.\n온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다.", wip:true},
+            {key:"aov",    label:"객단가",                val:c=>c.avgOrderValue||0,   w:hasRet?"14%":"17%", tooltip:"개발 중인 지표입니다.\n온라인 채널의 경우 '배송 단위'의 객단가이므로 오늘의 매출과 연관이 없습니다.", wip:true},
           ];
           const sorted=[...stats.channelList].sort((a,b)=>{
             const col=cols.find(c=>c.key===chSort.key);
@@ -2053,11 +2269,31 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
                       </td>
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{(c.shipped||0).toLocaleString()}</td>
-                      {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{(c.returned||0).toLocaleString()}</td>}
+                      {/* 주문 수: 클릭하면 채널별 주문 소스 모달 */}
+                      <td onClick={!c.isSubRow&&c.totalOrders>0?()=>setChOrderModal(c.name):undefined}
+                        style={{textAlign:"right",padding:"7px 9px",
+                          color:!c.isSubRow&&c.totalOrders>0?D.blue:D.textSub,
+                          cursor:!c.isSubRow&&c.totalOrders>0?"pointer":"default",
+                          textDecoration:!c.isSubRow&&c.totalOrders>0?"underline":"none"}}>
+                        {(c.totalOrders||0).toLocaleString()}
+                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.orderedQty||0).toLocaleString()}장</div>
+                      </td>
+                      <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
+                        {(c.shipped||0).toLocaleString()}
+                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.shippedQty||0).toLocaleString()}장</div>
+                      </td>
+                      {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>
+                        {(c.returned||0).toLocaleString()}
+                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.returnedQty||0).toLocaleString()}장</div>
+                      </td>}
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
-                        {c.shipped>0?(c.returned/c.shipped*100).toFixed(1):"0.0"}%</td>}
-                      <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.avgOrderValue>0?fmtWonShort(c.avgOrderValue):"—"}</td>
+                        {c.shippedQty>0?(c.returnedQty/c.shippedQty*100).toFixed(1):"0.0"}%</td>}
+                      <td onClick={c.avgOrderValue>0?()=>setAovModal(c.name):undefined}
+                        style={{textAlign:"right",padding:"7px 9px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                          color:c.avgOrderValue>0?D.blue:"—"===c.avgOrderValue?"transparent":D.textMeta,
+                          cursor:c.avgOrderValue>0?"pointer":"default",
+                          textDecoration:c.avgOrderValue>0?"underline":"none"}}>
+                        {c.avgOrderValue>0?fmtWonShort(c.avgOrderValue):"—"}</td>
                     </tr>
                   );
                 })}
@@ -2066,9 +2302,19 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>100%</td>
                   <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWonShort(stats.totalRevenue)}</td>
                   <td/>
-                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalReturned.toLocaleString()}</td>}
-                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.totalShipped>0?(stats.totalReturned/stats.totalShipped*100).toFixed(1):"0.0"}%</td>}
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>
+                    {stats.totalUniqueOrdersAll.toLocaleString()}
+                    <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalOrderedQtyAll.toLocaleString()}장</div>
+                  </td>
+                  <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
+                    {stats.totalShipped.toLocaleString()}
+                    <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalDeliveredQty.toLocaleString()}장</div>
+                  </td>
+                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>
+                    {stats.totalReturned.toLocaleString()}
+                    <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalReturnedQty.toLocaleString()}장</div>
+                  </td>}
+                  {hasRet&&<td style={{textAlign:"right",padding:"7px 9px"}}>{stats.returnRate}%</td>}
                   <td/>
                 </tr>
               </tbody>
@@ -2182,6 +2428,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)}</div>}
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 이지어드민 CSV (오프라인 제외)</div>
       </Card>
 
       {/* 플랫폼별 선호 옵션 */}
@@ -2306,6 +2553,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)}</div>}
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 이지어드민 CSV (오프라인 제외)</div>
       </Card>
 
       {/* 플랫폼별 반품률 높은 옵션 */}
@@ -2513,70 +2761,102 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           );
         }
 
-        /* ── 배송 ── */
+        /* ── 주문·배송 ── */
         else if(kpiModal==="shipped"){
-          modalTitle="배송 소스";
+          modalTitle="주문·배송 소스";
           const shipped=filteredOrders.filter(r=>r.status==="배송");
           const byCh={};
-          shipped.forEach(r=>{
+          // 주문 수(oids)는 전체 행 기준, 배송 수(shippedOids)는 배송 완료된 고유 주문번호
+          filteredOrders.forEach(r=>{
             const ch=normCh(r.channel);
-            if(!byCh[ch]) byCh[ch]={cnt:0,oids:new Set()};
-            byCh[ch].cnt++;
-            const oid=(r.order_id||"").split("||")[0]||r.order_id||"";
+            if(!byCh[ch]) byCh[ch]={qty:0,oids:new Set(),shippedOids:new Set()};
+            const oid=r.order_no||r.order_id||"";
             if(oid) byCh[ch].oids.add(oid);
           });
-          const chRows=Object.entries(byCh).sort((a,b)=>b[1].cnt-a[1].cnt);
+          shipped.forEach(r=>{
+            const ch=normCh(r.channel);
+            if(!byCh[ch]) byCh[ch]={qty:0,oids:new Set(),shippedOids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byCh[ch].shippedOids.add(oid);
+            byCh[ch].qty+=(r.qty||1);
+          });
+          const chRows=Object.entries(byCh).sort((a,b)=>b[1].shippedOids.size-a[1].shippedOids.size);
           const byDate={};
+          filteredOrders.forEach(r=>{
+            const d=r.order_date||"—";
+            if(!byDate[d]) byDate[d]={qty:0,oids:new Set(),shippedOids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byDate[d].oids.add(oid);
+          });
           shipped.forEach(r=>{
             const d=r.order_date||"—";
-            if(!byDate[d]) byDate[d]=0;
-            byDate[d]++;
+            if(!byDate[d]) byDate[d]={qty:0,oids:new Set(),shippedOids:new Set()};
+            const oid=r.order_no||r.order_id||"";
+            if(oid) byDate[d].shippedOids.add(oid);
+            byDate[d].qty+=(r.qty||1);
           });
           const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1).slice(0,30);
+          const totalQty=shipped.reduce((s,r)=>s+(r.qty||1),0);
           modalContent=(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            <div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: <b>주문·배송 업로드 데이터</b> (이지어드민 CSV) — 매장 판매(오프라인 스토어)는 제외<br/>
+                주문 수 = 전체 고유 주문번호 수 (배송 완료 여부 무관, 장 = 전체 주문 수량) / 배송 수 = 배송 완료된 고유 주문번호 수 (장 = 배송 완료 수량)<br/>
+                매장 판매는 별도 수집: 매출 / 매장 주문 수(고유 ID) / 판매 장수(qty 합) / 객단가
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>채널별</div>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                     <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>채널</th>
-                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
-                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문수(고유)</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문 수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송 수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>장</th>
                   </tr></thead>
                   <tbody>
                     {chRows.map(([ch,d])=>(
                       <tr key={ch} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",fontWeight:600}}>{ch}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.cnt.toLocaleString()}</td>
                         <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{d.oids.size.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{d.shippedOids.size.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{d.qty.toLocaleString()}</td>
                       </tr>
                     ))}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{stats.totalUniqueOrdersAll.toLocaleString()}</td>
                       <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
-                      <td/>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{stats.totalDeliveredQty.toLocaleString()}</td>
                     </tr>
                   </tbody>
                 </table>
+                <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
+                  * 주문 수 합계 = 온라인 + 매장 / 배송 수·장 합계 = 온라인만 (매장 제외)
+                </div>
               </div>
               <div>
-                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>날짜별 (최근 30일)</div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>주문일별 (최근 30일)</div>
                 <div style={{maxHeight:360,overflowY:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
-                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송건수</th>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>주문일</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>주문 수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>장</th>
                   </tr></thead>
                   <tbody>
-                    {dateRows.map(([d,cnt])=>(
+                    {dateRows.map(([d,v])=>(
                       <tr key={d} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green,fontWeight:600}}>{cnt.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green,fontWeight:600}}>{v.oids.size.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{v.qty.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 </div>
+              </div>
               </div>
             </div>
           );
@@ -2752,6 +3032,167 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         );
       })()}
 
+      {/* 객단가 소스 모달 */}
+      {aovModal&&(()=>{
+        const ch=aovModal;
+        const isOffline=ch==="오프라인 스토어";
+        let rows=[];
+        if(isOffline){
+          const offMap={};
+          filteredStoreSales.filter(r=>r.status==="배송"&&r.order_id).forEach(r=>{
+            if(!offMap[r.order_id]) offMap[r.order_id]={order_no:r.order_id,date:r.sale_date,amount:0,store:r.store_name||""};
+            offMap[r.order_id].amount+=(r.amount||0);
+          });
+          rows=Object.values(offMap).sort((a,b)=>a.date<b.date?1:-1);
+        } else {
+          const orderMap=stats.chOrderAmt?.[ch]||{};
+          // order_date lookup from filteredOrders
+          const dateLookup={};
+          filteredOrders.filter(r=>(r.channel||"")===(ch||"")).forEach(r=>{
+            const oid=r.order_no||r.order_id;
+            if(oid&&!dateLookup[oid]) dateLookup[oid]=r.order_date||"";
+          });
+          rows=Object.entries(orderMap).map(([oid,amt])=>({
+            order_no:oid,date:dateLookup[oid]||"—",amount:amt
+          })).sort((a,b)=>a.date<b.date?1:-1);
+        }
+        const totalAmt=rows.reduce((s,r)=>s+(r.amount||0),0);
+        const aov=rows.length>0?Math.round(totalAmt/rows.length):0;
+        const PAYMENT_CH=new Set(["자사몰"]);
+        const amtLabel=isOffline?"실판매금액 합":PAYMENT_CH.has(ch)?"결제금액":"판매가 합";
+        return(
+          <div onClick={()=>setAovModal(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+                width:"min(600px,95vw)",maxHeight:"85vh",overflowY:"auto",
+                boxShadow:"0 8px 40px rgba(0,0,0,0.22)",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:15,color:D.black}}>{ch} 객단가 소스</div>
+                <button onClick={()=>setAovModal(null)}
+                  style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                    padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+              </div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: 주문·배송 업로드 데이터 (이지어드민){isOffline?" / 매장 판매 업로드 데이터":""}<br/>
+                금액 기준: {amtLabel}<br/>
+                객단가 = {totalAmt.toLocaleString()}원 ÷ {rows.length}건 = <b>{fmtWon(aov)}</b>
+              </div>
+              <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${D.border}`}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문번호</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문일</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>{amtLabel}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0,200).map((r,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:200,
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.order_no}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600}}>{(r.amount||0).toLocaleString()}원</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700,background:D.bg}}>
+                    <td style={{padding:"7px"}}>합계 {rows.length}건</td>
+                    <td/>
+                    <td style={{textAlign:"right",padding:"7px"}}>{totalAmt.toLocaleString()}원</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {rows.length>200&&<div style={{fontSize:11,color:D.textMeta,marginTop:8}}>상위 200건만 표시 (전체 {rows.length}건)</div>}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 채널별 주문 수 소스 모달 — 판매처 상세에서 '주문 수' 셀 클릭 시 */}
+      {chOrderModal&&(()=>{
+        const ch=chOrderModal;
+        const isOffline=ch==="오프라인 스토어";
+        // 매장은 storeSales 원본, 온라인은 filteredOrders에서 채널 매칭
+        const sourceLabel = isOffline ? "매장 판매 업로드 데이터 (store_sales)" : "주문·배송 업로드 데이터 (이지어드민 CSV)";
+        const idKey = r => r.order_no || r.order_id || "";
+        const dateKey = r => isOffline ? (r.sale_date||"—") : (r.order_date||"—");
+        const baseRows = isOffline
+          ? filteredStoreSales
+          : filteredOrders.filter(r=>(r.channel||"")===ch);
+        // 주문번호별 그룹화 — 상태별 라인 수/장수/금액 합산
+        const byOid={};
+        baseRows.forEach(r=>{
+          const oid=idKey(r);
+          if(!oid) return;
+          if(!byOid[oid]) byOid[oid]={oid,date:dateKey(r),shippedQty:0,returnedQty:0,otherQty:0,lines:0};
+          byOid[oid].lines++;
+          const q=r.qty||1;
+          if(r.status==="배송") byOid[oid].shippedQty+=q;
+          else if(r.status==="반품") byOid[oid].returnedQty+=q;
+          else byOid[oid].otherQty+=q;
+          // 최신 날짜 채택
+          if(dateKey(r)>byOid[oid].date) byOid[oid].date=dateKey(r);
+        });
+        const rows=Object.values(byOid).sort((a,b)=>a.date<b.date?1:-1);
+        const totalQty=rows.reduce((s,r)=>s+r.shippedQty+r.returnedQty+r.otherQty,0);
+        return(
+          <div onClick={()=>setChOrderModal(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+                width:"min(720px,95vw)",maxHeight:"85vh",overflowY:"auto",
+                boxShadow:"0 8px 40px rgba(0,0,0,0.22)",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:15,color:D.black}}>{ch} 주문 수 소스</div>
+                <button onClick={()=>setChOrderModal(null)}
+                  style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                    padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+              </div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: {sourceLabel}<br/>
+                계산: 모든 상태(배송/반품/교환 등) 포함, COUNT(DISTINCT 주문번호) = <b>{rows.length.toLocaleString()}건</b> · SUM(qty) = <b>{totalQty.toLocaleString()}장</b>
+              </div>
+              <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${D.border}`}}>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문번호</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.textMeta}}>주문일</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.green}}>배송 장수</th>
+                    <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.red}}>반품 장수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0,200).map((r,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:240,
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.oid}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{r.shippedQty||"—"}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:r.returnedQty>0?D.red:D.textMeta}}>{r.returnedQty||"—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700,background:D.bg}}>
+                    <td style={{padding:"7px"}}>합계 {rows.length.toLocaleString()}건</td>
+                    <td/>
+                    <td style={{textAlign:"right",padding:"7px",color:D.green}}>{rows.reduce((s,r)=>s+r.shippedQty,0).toLocaleString()}</td>
+                    <td style={{textAlign:"right",padding:"7px",color:D.red}}>{rows.reduce((s,r)=>s+r.returnedQty,0).toLocaleString()}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {rows.length>200&&<div style={{fontSize:11,color:D.textMeta,marginTop:8}}>상위 200건만 표시 (전체 {rows.length}건)</div>}
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
@@ -2783,7 +3224,7 @@ function InventoryAgingUploader({ onDone }){
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          if(!data.length) throw new Error("데이터가 없습니다");
+          if(!data.length) throw new Error(uploadErrParse("파일에 데이터 행이 없습니다"));
           const cols=Object.keys(data[0]);
           const lc=cols.map(c=>c.toLowerCase().replace(/[\s_]/g,""));
           const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
@@ -2792,8 +3233,16 @@ function InventoryAgingUploader({ onDone }){
           const qtyCol=find("수량","qty","quantity","개수","재고");
           const recCol=find("처음입고일","입고일","최초입고","first","입고");
           const shipCol=find("마지막배송일","최종배송일","마지막출고","last","배송일","출고일");
-          if(!prodCol) throw new Error("상품명 컬럼을 찾을 수 없습니다");
-          if(!recCol)  throw new Error("처음입고일 컬럼을 찾을 수 없습니다");
+          const missingCols=[];
+          if(!prodCol) missingCols.push("상품명");
+          if(!recCol)  missingCols.push("처음입고일");
+          if(missingCols.length){
+            throw new Error(uploadErrColumns({
+              missing:missingCols,
+              required:["상품명","옵션","수량","처음입고일","마지막배송일"],
+              headers:cols,
+            }));
+          }
           const rows=data.map(r=>({
             product_name:String(r[prodCol]||"").trim(),
             option_name:optCol?String(r[optCol]||"").trim():"",
@@ -2802,11 +3251,22 @@ function InventoryAgingUploader({ onDone }){
             last_shipped_date:shipCol&&r[shipCol]?toDate(r[shipCol]):null,
             diagnosis_date:diagDate,
           })).filter(r=>r.product_name&&r.first_received_date);
-          if(!rows.length) throw new Error("유효한 데이터가 없습니다");
+          if(!rows.length) throw new Error("파싱된 행이 0건입니다. '상품명'과 '처음입고일' 둘 다 값이 있는 행이 1개 이상 있어야 합니다.");
           setPreview(rows);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },e=>setResult({type:"error",msg:e.message}));
+      },e=>setResult({type:"error",msg:e.message?.message||String(e.message||e)}));
   },[diagDate]);
+
+  const [existingCount,setExistingCount]=useState(0);
+  // 파일 파싱 후 기존 데이터 수 조회 (갈음 안내용)
+  useEffect(()=>{
+    if(!preview) {setExistingCount(0);return;}
+    (async()=>{
+      const db=await getSupabase();
+      const {count}=await db.from("inventory_aging").select("*",{count:"exact",head:true});
+      setExistingCount(count||0);
+    })();
+  },[preview]);
 
   const handleUpload=async()=>{
     if(!preview?.length) return;
@@ -2819,8 +3279,8 @@ function InventoryAgingUploader({ onDone }){
       if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
     }
     try{localStorage.setItem("merryon_aging_date",diagDate);}catch{}
-    setResult({type:"success",msg:`${preview.length}건 저장 완료`});
-    setPreview(null); setFileName("");
+    setResult({type:"success",msg:`${preview.length}건 저장 완료 (기존 ${existingCount}건 대체)`});
+    setPreview(null); setFileName(""); setExistingCount(0);
     onDone?.();
     setLoading(false);
   };
@@ -2841,8 +3301,7 @@ function InventoryAgingUploader({ onDone }){
         필요 시 <strong>정상재고 1 이상</strong>으로 검색한 애널리틱스용 파일을 업로드해주세요.
       </div>
       <DropZone onFile={handleFile} fileName={fileName} label="재고 파일 업로드"
-        required="상품명 · 처음입고일"
-        optional="옵션 · 수량 · 마지막배송일"/>
+        columns="상품명 · 옵션 · 수량 · 처음입고일 · 마지막배송일"/>
       {(preview||loading)&&(
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:8}}>
           {preview&&<span style={{fontSize:11,color:D.textMeta}}>{preview.length}건 파싱됨</span>}
@@ -2855,7 +3314,8 @@ function InventoryAgingUploader({ onDone }){
           )}
         </div>
       )}
-      {result&&<div style={{marginTop:8,fontSize:11,color:result.type==="error"?D.red:D.green}}>{result.msg}</div>}
+      {preview&&existingCount>0&&<Alert type="warn" msg={uploadReplaceWarn(existingCount,"재고 에이징 전체")}/>}
+      {result&&<Alert type={result.type==="error"?"error":"success"} msg={result.msg}/>}
       {infoOpen&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}
           onClick={()=>setInfoOpen(false)}>
@@ -4322,8 +4782,16 @@ function CSDataInput() {
           const reasonCol=findCol("반품사유","반품","사유","reason","취소");
           const dateCol=findCol("날짜","date","일자","접수일","처리일");
           const chCol=findCol("판매처","채널","channel","플랫폼","mall");
-          if(!prodCol)throw new Error("[상품] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
-          if(!reasonCol)throw new Error("[반품 사유] 컬럼을 찾을 수 없습니다. 헤더 확인: "+cols.join(", "));
+          const missingCs=[];
+          if(!prodCol)   missingCs.push("상품명");
+          if(!reasonCol) missingCs.push("반품사유");
+          if(missingCs.length){
+            throw new Error(uploadErrColumns({
+              missing:missingCs,
+              required:["날짜","판매처","상품명","반품사유"],
+              headers:cols,
+            }));
+          }
 
           const extractReason=raw=>{
             const s=String(raw||"").toLowerCase();
@@ -4424,8 +4892,7 @@ function CSDataInput() {
             선택: [날짜] [판매처]
           </div>
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
-            required="상품명 · 반품사유"
-            optional="날짜 · 판매처"/>
+            columns="날짜 · 판매처 · 상품명 · 반품사유"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
         </div>
       </Card>
@@ -4566,6 +5033,8 @@ function RevenueForm({ onUpdate }) {
     } else {
       dates.push(date);
     }
+    // 갈음 안내용: 삭제 직전 기존 건수 조회
+    const {count:prevCount}=await db.from("revenues").select("*",{count:"exact",head:true}).in("date",dates).eq("channel",ch);
     // DELETE 후 INSERT — UNIQUE 제약 없이도 중복 방지
     const {error:de}=await db.from("revenues").delete().in("date",dates).eq("channel",ch);
     if(de){setResult({type:"error",msg:"기존 삭제 실패: "+de.message});setLoading(false);return;}
@@ -4580,7 +5049,8 @@ function RevenueForm({ onUpdate }) {
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    setResult({type:"success",msg:`${dates.length}일 저장 완료`,ts:ts2});
+    const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
+    setResult({type:"success",msg:`${dates.length}일 저장 완료${replaceNote}`,ts:ts2});
     setAmt("");setOrderCnt("");setRefundAmt("");setRefundCnt("");
     onUpdate(ts2);if(history.length)loadHistory();
     setLoading(false);
@@ -4636,7 +5106,14 @@ function RevenueForm({ onUpdate }) {
       const refAmtCol=find("환불금","refundamount","환불액");
       const refCntCol=find("환불수","환불건","refundcount");
       if(!dateCol||!amtCol){
-        setCsvPreview({error:`필수 컬럼 없음. 헤더: ${cols.join(", ")}`});return;
+        const missingRev=[];
+        if(!dateCol) missingRev.push("날짜");
+        if(!amtCol)  missingRev.push("매출금액");
+        setCsvPreview({error:uploadErrColumns({
+          missing:missingRev,
+          required:["날짜","판매처","매출금액","주문수","환불금","환불수"],
+          headers:cols,
+        })});return;
       }
       const rows=data.filter(r=>r[dateCol]&&toDate(r[dateCol])).map(r=>({
         date:toDate(r[dateCol]),
@@ -4803,8 +5280,7 @@ function RevenueForm({ onUpdate }) {
         <div style={{marginTop:14,borderTop:`1px solid ${D.border}`,paddingTop:14}}>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6}}>CSV 일괄 업로드</div>
           <DropZone onFile={handleCsvFile} label="매출 파일 업로드"
-            required="날짜 · 매출금액"
-            optional="판매처 · 주문수 · 환불금 · 환불수"/>
+            columns="날짜 · 판매처 · 매출금액 · 주문수 · 환불금 · 환불수"/>
           {csvPreview?.error&&<div style={{color:D.red,fontSize:10,marginTop:4}}>{csvPreview.error}</div>}
           {csvPreview&&!csvPreview.error&&(csvPreview.overlaps?.length===0||csvConflictChoice)&&(
             <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center"}}>
@@ -4988,16 +5464,26 @@ function StockUploader({ onUpdate }) {
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
-          const f=detectFields(Object.keys(data[0]||{}));
-          const rows=data.filter(r=>f.product&&r[f.product]).map(r=>({
+          if(!data?.length) throw new Error(uploadErrParse("파일에 데이터 행이 없습니다"));
+          const headers=Object.keys(data[0]||{});
+          const f=detectFields(headers);
+          if(!f.product){
+            throw new Error(uploadErrColumns({
+              missing:["상품명"],
+              required:["상품명","옵션","수량","메모"],
+              headers,
+            }));
+          }
+          const rows=data.filter(r=>r[f.product]).map(r=>({
             product_name:String(r[f.product]||"").trim(),
             option_name:String(r[f.option]||"").trim(),
             qty:toNum(r[f.qty]),
             memo:String(r[f.memo]||"").trim(),
           }));
+          if(!rows.length) throw new Error("파싱된 행이 0건입니다. '상품명' 컬럼에 값이 있는 행이 1개 이상 있어야 합니다.");
           setPreview(rows); setStep(2);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },e=>setResult({type:"error",msg:e.message}));
+      },e=>setResult({type:"error",msg:e?.message||String(e)}));
   },[]);
   const handleUpload=async()=>{
     if(!preview?.length||!dateValid) return;
@@ -5040,8 +5526,7 @@ function StockUploader({ onUpdate }) {
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
             <StatRow items={[{label:"삭제 예정",value:`${existing?.length||0}건`,color:D.red}]}/>
             <DropZone onFile={handleFile} fileName={fileName} label="입고 파일 업로드"
-              required="상품명"
-              optional="옵션 · 수량 · 메모"/>
+              columns="상품명 · 옵션 · 수량 · 메모"/>
             <button onClick={()=>{setStep(0);setExisting(null);}}
               style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,
                 fontSize:11,cursor:"pointer",marginTop:8,padding:"5px"}}>← 기간 다시 선택</button>
@@ -5324,25 +5809,19 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
 }
 
 // ─────────────────────────────────────────────
-// DATA INPUT — 이지어드민 CSV (배송일 기준)
+// DATA INPUT — 이지어드민 CSV (주문일 기준 · 배송일 선택)
 // ─────────────────────────────────────────────
 function EasyAdminUploader({ onUpdate }) {
-  const today=new Date().toISOString().slice(0,10);
-  const [startDate,setStartDate]=useState(today);
-  const [endDate,setEndDate]=useState(today);
+  const [startDate,setStartDate]=useState("");
+  const [endDate,setEndDate]=useState("");
   const [step,setStep]=useState(0);
   const [fileName,setFileName]=useState("");
-  const [parsedFile,setParsedFile]=useState(null); // 파일 파싱 결과 (업로드 전)
-  const [allRows,setAllRows]=useState([]);
+  const [parsedFile,setParsedFile]=useState(null);
   const [inRange,setInRange]=useState([]);
   const [outRows,setOutRows]=useState([]);
   const [dupInfo,setDupInfo]=useState(null);
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
-  const dateValid=startDate&&endDate&&startDate<=endDate;
-
-  // Step 0→1: 기간 확정
-  const confirmDate=()=>{ if(dateValid) setStep(1); };
 
   // Step 1: 파일 선택 (파싱만, 업로드 X)
   const handleFile=useCallback(file=>{
@@ -5353,7 +5832,7 @@ function EasyAdminUploader({ onUpdate }) {
           if(!data.length) throw new Error("데이터가 없습니다");
           const f=detectFields(Object.keys(data[0]));
 
-          // 배송일 컬럼 명시적 우선 탐색 (Unicode 정규화 + exact match 우선)
+          // 컬럼 탐색 (Unicode 정규화 + exact match 우선)
           const allCols=Object.keys(data[0]);
           const nrm=s=>String(s).trim().normalize("NFC");
           const findCol=(...names)=>{
@@ -5363,22 +5842,37 @@ function EasyAdminUploader({ onUpdate }) {
             for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
             return null;
           };
-          const dateCol = findCol("배송일","배송일시","배송날짜","배송완료일","발송일","출고일","출고일시","출고완료일","배송(예정)일","예정배송일","delivery_date")
-                       || findCol("주문일","주문일시","주문날짜","order_date","날짜","date")
-                       || f.date;
+          const orderDateCol = findCol("주문일","주문일시","주문날짜","order_date","날짜","date") || f.date;
+          const deliveryDateCol = findCol("배송일","배송일시","배송날짜","배송완료일","발송일","출고일","출고일시","출고완료일","배송(예정)일","예정배송일","delivery_date");
           const orderIdCol = findCol("주문번호","orderid") || findCol("관리번호","order_id") || f.orderId;
           const channelCol = findCol("판매처","channel","플랫폼","채널") || f.channel;
           const productCol = findCol("상품명","product","품명") || f.product;
           const optionCol  = findCol("옵션명","옵션","option") || f.option;
-          const csCol      = findCol("CS","cs처리","cs상태","cs") || f.cs;
-          const statusCol  = findCol("상태","status") || f.status;
-          const qtyCol     = findCol("주문수량","수량","qty","quantity") || f.qty;
-          const amtCol     = findCol("결제금액","판매금액","주문금액","실판매가","판매가","금액","amount","price") || f.revenue;
+          const csCol          = findCol("CS","cs처리","cs상태","cs") || f.cs;
+          const statusCol      = findCol("상태","status") || f.status;
+          const qtyCol         = findCol("주문수량","수량","qty","quantity") || f.qty;
+          // 판매가 (상품별, 29CM·무신사 AOV용 SUM)
+          const salePriceCol   = findCol("판매가","상품금액","상품판매가","item_price");
+          // 결제금액 (주문 단위, 자사몰 AOV용 — 합산 금지)
+          const paymentAmtCol  = findCol("결제금액","주문금액","결제총액","실결제금액","payment_amount");
+          // amount: 하위 호환용 (기존 차트 소스)
+          const amtCol         = salePriceCol || paymentAmtCol
+                               || findCol("판매금액","실판매가","금액","amount","price") || f.revenue;
 
-          if(!orderIdCol) throw new Error("관리번호 컬럼을 찾을 수 없습니다");
-          if(!dateCol)    throw new Error(`배송일 컬럼을 찾을 수 없습니다 (컬럼: ${allCols.join(", ")})`);
+          // 누락된 필수 컬럼을 한 번에 모아 안내 (한 개씩 throw 대신)
+          const missingCols=[];
+          if(!orderIdCol)      missingCols.push("주문번호");
+          if(!orderDateCol)    missingCols.push("주문일");
+          if(!deliveryDateCol) missingCols.push("배송일");
+          if(missingCols.length){
+            throw new Error(uploadErrColumns({
+              missing:missingCols,
+              required:["주문번호","주문일","배송일","판매처","상품명","옵션","수량","판매가","결제금액","CS처리"],
+              headers:allCols,
+            }));
+          }
 
-          // 관리번호+상품명+옵션 기준 중복 합산
+          // 주문일+주문번호+상품명+옵션 기준 중복 합산 (날짜별 주문 유니크화)
           const grouped={};
           data.filter(r=>{
             if(!r[orderIdCol]) return false;
@@ -5391,45 +5885,66 @@ function EasyAdminUploader({ onUpdate }) {
             const prod=String(r[productCol]||"").trim();
             const opt=String(r[optionCol]||"").trim();
             const ch=normChannel(r[channelCol]);
-            const rawDate=r[dateCol];
-            const dateVal=toDate(rawDate);
+            const orderDateVal=toDate(r[orderDateCol]);
+            const deliveryDateVal=toDate(r[deliveryDateCol]);
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
-            const status=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
+            // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
+            const rawStatus=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
+            const status=(rawStatus==="배송"&&/^CORD/i.test(oid))?"반품":rawStatus;
             const qty=toNum(r[qtyCol])||1;
-            const amt=amtCol?toNum(r[amtCol]):0;
-            // 관리번호+상품명+옵션 조합을 DB key로 사용 → 같은 관리번호 내 여러 상품 허용
-            const dbKey=`${oid}||${prod}||${opt}`;
+            const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
+            const paymentAmtVal = paymentAmtCol ? toNum(r[paymentAmtCol]) : 0;
+            const amt = salePriceVal || paymentAmtVal || (amtCol?toNum(r[amtCol]):0);
+            // 주문일+주문번호+상품명+옵션 조합을 DB key (날짜별+상품별 유니크)
+            const dbKey=`${orderDateVal||""}||${oid}||${prod}||${opt}`;
             if(!grouped[dbKey]){
-              grouped[dbKey]={order_id:dbKey,order_date:dateVal,channel:ch,
-                product_name:prod,option_name:opt,qty:0,amount:0,status,raw_status:csRaw||statusRaw};
+              grouped[dbKey]={order_id:dbKey,order_no:oid,order_date:orderDateVal,
+                delivery_date:deliveryDateVal||null,channel:ch,
+                product_name:prod,option_name:opt,
+                qty:0,amount:0,sale_price:0,payment_amount:0,
+                status,raw_status:csRaw||statusRaw};
             }
             grouped[dbKey].qty+=qty;
-            grouped[dbKey].amount+=amt;
+            grouped[dbKey].amount+=amt;                                        // 하위 호환
+            grouped[dbKey].sale_price+=salePriceVal;                          // 상품별 합산 (29CM·무신사)
+            if(paymentAmtVal) grouped[dbKey].payment_amount=paymentAmtVal;    // 주문 단위, 덮어쓰기 (합산 X)
             grouped[dbKey].status=status;
           });
           const parsed=Object.values(grouped);
           setParsedFile(parsed);
-          const sampleRaw=data[0]?.[dateCol]??"(없음)";
-          const sampleParsed=toDate(sampleRaw)??"파싱실패";
-          setResult({type:"info",msg:`날짜 컬럼: "${dateCol}" · 첫 값: "${sampleRaw}" → ${sampleParsed} | 관리번호: "${orderIdCol}" | ${parsed.length}행 파싱 완료`});
+          // 주문일 min/max 자동 감지
+          const dates=parsed.map(r=>r.order_date).filter(Boolean).sort();
+          const autoStart=dates[0]||"";
+          const autoEnd=dates[dates.length-1]||"";
+          setStartDate(autoStart);
+          setEndDate(autoEnd);
+          const validRows=parsed.filter(r=>r.order_date);
+          const noDateRows=parsed.filter(r=>!r.order_date);
+          setInRange(validRows);
+          setOutRows(noDateRows);
+          setDupInfo({total:validRows.length,newCount:validRows.length,updateCount:0,sameCount:0});
+          setResult({type:"info",msg:`주문일 ${autoStart} ~ ${autoEnd} · ${validRows.length}건 파싱 완료`+(noDateRows.length>0?` (주문일 없는 ${noDateRows.length}건 제외)`:"")+` | 주문번호: "${orderIdCol}" · 배송일: "${deliveryDateCol}"`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
 
-  // Step 1→2: 미리보기 (파싱 결과만 확인, DB 조회 없음)
+  // Step 0→1: 미리보기 (파싱 완료 후 확인)
+  const [existingCount,setExistingCount]=useState(0);
   const handlePreview=async()=>{
     if(!parsedFile?.length) {setResult({type:"error",msg:"파일을 먼저 선택해주세요"});return;}
     setLoading(true);
-    const inR=parsedFile.filter(r=>r.order_date&&r.order_date>=startDate&&r.order_date<=endDate);
-    const outR=parsedFile.filter(r=>!r.order_date||r.order_date<startDate||r.order_date>endDate);
-    setInRange(inR); setOutRows(outR);
-    setDupInfo({total:inR.length,newCount:inR.length,updateCount:0,sameCount:0});
+    try{
+      const db=await getSupabase();
+      const {count}=await db.from("orders").select("*",{count:"exact",head:true})
+        .gte("order_date",startDate).lte("order_date",endDate);
+      setExistingCount(count||0);
+    }catch{}
     setLoading(false);
-    setStep(2);
+    setStep(1);
   };
 
-  // Step 2→3: 확정 업로드 (기간 내 전체 삭제 후 재삽입 → 재업로드 시 완전 교체)
+  // Step 1→2: 확정 업로드 (기간 내 전체 삭제 후 재삽입 → 재업로드 시 완전 교체)
   const handleUpload=async()=>{
     if(!inRange.length) return;
     setLoading(true); setResult(null);
@@ -5448,64 +5963,53 @@ function EasyAdminUploader({ onUpdate }) {
       inserted:inRange.length,updated:0,
       skipped:outRows.length,date_start:startDate,date_end:endDate,
     });
-    setStep(3);
+    setStep(2);
     const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
-    setResult({type:"success",msg:`기간 내 ${inRange.length}건 등록 / 기간 외 ${outRows.length}건 제외${replaceNote}`,ts:ts2});
+    setResult({type:"success",msg:`${inRange.length}건 등록 완료 (${startDate} ~ ${endDate})${replaceNote}`,ts:ts2});
     onUpdate(ts2); setLoading(false);
   };
 
-  const reset=()=>{setStep(0);setAllRows([]);setInRange([]);setOutRows([]);setDupInfo(null);setFileName("");setParsedFile(null);setResult(null);};
+  const reset=()=>{setStep(0);setInRange([]);setOutRows([]);setDupInfo(null);setFileName("");setParsedFile(null);setResult(null);setStartDate("");setEndDate("");};
 
   return (
     <div>
-      <Steps current={step} steps={["배송일 기간","파일 선택","미리보기 확인","완료"]}/>
+      <Steps current={step} steps={["파일 선택","미리보기 확인","완료"]}/>
       <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
         <Card>
           {step===0&&<>
-            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>배송일 기간 선택</div>
-            <CalendarPicker mode="range" rangeStart={startDate} rangeEnd={endDate}
-              onRangeChange={({start,end})=>{setStartDate(start);setEndDate(end||start);}}/>
-            <div style={{color:D.blue,fontSize:10,marginBottom:12,lineHeight:1.7}}>
-              배송일 기준 · 관리번호 기준 upsert<br/>신규→추가 / 기존→상태업데이트
+            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 선택</div>
+            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
+              columns="주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가 · 결제금액 · CS처리"/>
+            {result&&<Alert type={result.type} msg={result.msg}/>}
+            {startDate&&<div style={{color:D.blue,fontSize:11,marginTop:8,lineHeight:1.7}}>
+              감지된 주문일: <b>{startDate}</b> ~ <b>{endDate}</b>
+            </div>}
+            <div style={{marginTop:12}}>
+              <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
+                {loading?"파싱 중...":"미리보기"}
+              </Btn>
             </div>
-            <Btn onClick={confirmDate} disabled={!dateValid} style={{width:"100%"}}>다음</Btn>
           </>}
           {step===1&&<>
-            <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 선택</div>
-            <div style={{color:D.textMeta,fontSize:11,marginBottom:10,lineHeight:1.6}}>
-              배송일 {startDate} ~ {endDate}
-            </div>
-            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
-              required="관리번호 · 배송일(또는 주문일)"
-              optional="판매처 · 상품명 · 옵션 · 수량 · 결제금액 · CS처리"/>
-            {result&&<Alert type={result.type} msg={result.msg}/>}
-            <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
-              <Btn onClick={handlePreview} disabled={!parsedFile||loading} style={{width:"100%"}}>
-                {loading?"분석 중...":"미리보기"}
-              </Btn>
-              <button onClick={()=>setStep(0)}
-                style={{background:"transparent",border:"none",color:D.textMeta,
-                  fontSize:11,cursor:"pointer",padding:"5px"}}>← 기간 다시 선택</button>
-            </div>
-          </>}
-          {step===2&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>미리보기 확인</div>
             {dupInfo&&<StatRow items={[
-              {label:"기간 내 등록",value:`${dupInfo.total}건`,color:D.green},
-              {label:"기간 외 제외",value:`${outRows.length}건`,color:D.textMeta},
+              {label:"업로드 대상",value:`${dupInfo.total}건`,color:D.green},
+              {label:"주문일 없음(제외)",value:`${outRows.length}건`,color:D.textMeta},
             ]}/>}
-            {outRows.length>0&&<Alert type="warn" msg={`기간 밖 ${outRows.length}건 제외`}/>}
+            <div style={{color:D.textMeta,fontSize:11,marginBottom:8}}>주문일 {startDate} ~ {endDate}</div>
+            {existingCount>0&&<Alert type="warn" msg={uploadReplaceWarn(existingCount,`${startDate}~${endDate} 주문일`)}/>}
+            {outRows.length>0&&<Alert type="warn" msg={`주문일 없는 ${outRows.length}건 제외`}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handleUpload} disabled={loading||!inRange.length} style={{width:"100%"}}>
                 {loading?"처리 중...":`확정 업로드 (${dupInfo?.total||0}건)`}
               </Btn>
-              <button onClick={()=>setStep(1)}
+              <button onClick={()=>setStep(0)}
                 style={{background:"transparent",border:"none",color:D.textMeta,
                   fontSize:11,cursor:"pointer",padding:"5px"}}>← 파일 다시 선택</button>
             </div>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
-          {step===3&&<div style={{textAlign:"center"}}>
+          {step===2&&<div style={{textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:8}}>✓</div>
             <div style={{color:D.green,fontWeight:600,marginBottom:10}}>업로드 완료</div>
             {result&&<Alert type={result.type} msg={result.msg} ts={result.ts}/>}
@@ -5525,8 +6029,9 @@ function EasyAdminUploader({ onUpdate }) {
               rows={[...inRange,...outRows]}
               outIdx={new Set(inRange.map((_,i)=>-1).concat(outRows.map((_,i)=>inRange.length+i)).filter(i=>i>=inRange.length))}
               cols={[
-                {key:"order_id",label:"관리번호",color:D.textMeta,maxW:90},
-                {key:"order_date",label:"배송일",color:D.textMeta},
+                {key:"order_no",label:"주문번호",color:D.textMeta,maxW:100},
+                {key:"order_date",label:"주문일",color:D.textMeta},
+                {key:"delivery_date",label:"배송일",color:D.textMeta},
                 {key:"channel",label:"판매처",bold:true},
                 {key:"product_name",label:"상품명",maxW:140},
                 {key:"option_name",label:"옵션",color:D.textMeta},
@@ -5547,13 +6052,14 @@ function EasyAdminUploader({ onUpdate }) {
         placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
         cols={[
-          {key:"order_date",label:"배송일",color:D.textMeta},
+          {key:"order_no",label:"주문번호",color:D.textMeta,maxW:110},
+          {key:"order_date",label:"주문일",color:D.textMeta},
+          {key:"delivery_date",label:"배송일",color:D.textMeta},
           {key:"channel",label:"판매처",bold:true},
           {key:"product_name",label:"상품명",maxW:180},
           {key:"option_name",label:"옵션",color:D.textMeta},
           {key:"qty",label:"수량"},
           {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:D.green,fontWeight:500}}>{v}</span>},
-          {key:"order_id",label:"관리번호",color:D.textMeta,maxW:120},
         ]}
         onChanged={()=>onUpdate(nowStr())}
       />
@@ -5597,6 +6103,18 @@ function StoreUploader({ onUpdate }) {
     setFileName(file.name); setResult(null);
     parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
         try{
+          if(!data?.length) throw new Error(uploadErrParse("파일에 데이터 행이 없습니다"));
+          const headers=Object.keys(data[0]||{});
+          // 필요 컬럼 존재 여부 사전 검증 (StoreUploader는 정확 매칭 사용)
+          const REQ=["구매일자","상품명","수량","실판매금액"];
+          const missing=REQ.filter(c=>!headers.includes(c));
+          if(missing.length){
+            throw new Error(uploadErrColumns({
+              missing,
+              required:["구매일자","매장","상품명","옵션","수량","실판매금액","ID"],
+              headers,
+            }));
+          }
           const rows=data.map(r=>{
             const qty=parseKRW(r["수량"]);
             const amount=parseKRW(r["실판매금액"]);
@@ -5611,11 +6129,12 @@ function StoreUploader({ onUpdate }) {
               status:qty<0?"반품":"배송",
             };
           }).filter(r=>r.sale_date&&r.product_name&&r.qty>0&&r.amount>0);
+          if(!rows.length) throw new Error("파싱된 행이 0건입니다. '구매일자', '상품명', '수량'(>0), '실판매금액'(>0) 모두 값이 있는 행이 1개 이상 있어야 합니다.");
           const dates=[...new Set(rows.map(r=>r.sale_date))].sort();
           setDateRange({start:dates[0]||"",end:dates[dates.length-1]||""});
           setPreview(rows); setStep(1);
         }catch(e){setResult({type:"error",msg:e.message});}
-      },e=>setResult({type:"error",msg:e.message}));
+      },e=>setResult({type:"error",msg:e?.message||String(e)}));
   },[]);
 
   const handleUpload=async()=>{
@@ -5645,13 +6164,11 @@ function StoreUploader({ onUpdate }) {
             <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>매장 판매 CSV 업로드</div>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.7}}>
               POS 시스템 판매 데이터를 업로드합니다.<br/>
-              인식 컬럼: <b>구매일자</b>, <b>상품명</b>, <b>수량</b>, <b>실판매금액</b><br/>
-              <b>매장</b>, <b>옵션</b>, <b>ID</b> (객단가 분모) 선택<br/>
+              인식 컬럼: <b>구매일자 · 매장 · 상품명 · 옵션 · 수량 · 실판매금액 · ID</b><br/>
               실판매금액=0인 행 자동 제외
             </div>
             <DropZone onFile={handleFile} fileName={fileName} label="매장 판매 파일 업로드"
-              required="구매일자 · 상품명 · 수량 · 실판매금액"
-              optional="매장 · 옵션 · ID"/>
+              columns="구매일자 · 매장 · 상품명 · 옵션 · 수량 · 실판매금액 · ID"/>
             {result?.type==="error"&&<Alert type="error" msg={result.msg}/>}
           </>}
           {step===1&&<>
@@ -5797,7 +6314,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const tabs=[
     {key:"revenue",name:"매출 입력",extra:lastDate(revenues,"date")},
     {key:"stock",name:"입고",extra:lastDate(stocks,"upload_date")},
-    {key:"orders",name:"배송",extra:lastDate(orders,"order_date")},
+    {key:"orders",name:"주문·배송",extra:lastDate(orders,"order_date")},
     {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
     {key:"cs",name:"CS"},
     {key:"delete",name:"데이터 삭제"},
@@ -5806,7 +6323,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
-    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필요 컬럼: 주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
@@ -5842,7 +6359,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>onDataChange?.()}/>
           <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="orders" dateField="order_date" label="배송" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="orders" dateField="order_date" label="주문·배송" onDone={()=>onDataChange?.()}/>
           <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매" onDone={()=>onDataChange?.()}/>
         </div>
       )}
@@ -5942,12 +6459,20 @@ function parseInvFile(file,onResult,onError){
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:"YYYY-MM-DD"});
-      if(!raw||raw.length<2){onError("데이터가 없습니다");return;}
+      if(!raw||raw.length<2){onError(uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)"));return;}
       const headers=raw[0].map(h=>String(h||"").trim());
       const colMap=mapInvCols(headers);
+      const FIELD_LABELS={product_name:"상품명",current_stock_qty:"현재고",snapshot_date:"데이터날짜",first_inbound_date:"처음입고일"};
       const required=["product_name","current_stock_qty","snapshot_date","first_inbound_date"];
-      const missing=required.filter(f=>colMap[f]===undefined);
-      if(missing.length>0){onError(`필수 컬럼 누락: ${missing.join(", ")}`);return;}
+      const missing=required.filter(f=>colMap[f]===undefined).map(f=>FIELD_LABELS[f]);
+      if(missing.length>0){
+        onError(uploadErrColumns({
+          missing,
+          required:Object.values(FIELD_LABELS).concat(["옵션","판매가","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"]),
+          headers,
+        }));
+        return;
+      }
       const hasReorder=colMap["_r_weekly"]!==undefined||colMap["_r_avail"]!==undefined;
       const rows=raw.slice(1).map(r=>{
         const get=(f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
@@ -5977,9 +6502,9 @@ function parseInvFile(file,onResult,onError){
         };
       }).filter(r=>r.product_name&&r.snapshot_date&&r.first_inbound_date);
       onResult(rows);
-    }catch(err){onError(String(err));}
+    }catch(err){onError(uploadErrParse(String(err?.message||err)));}
   };
-  reader.onerror=()=>onError("파일 읽기 오류");
+  reader.onerror=()=>onError(uploadErrParse("파일 읽기 도중 시스템 오류가 발생했습니다"));
   reader.readAsArrayBuffer(file);
 }
 
@@ -8985,10 +9510,626 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
 }
 
 // ─────────────────────────────────────────────
+// CONTENT IMPACT — 콘텐츠(인스타그램 포스트) × 매출 attribution 캘린더
+// ─────────────────────────────────────────────
+// Phase 1: 월 셀렉터 + 빈 캘린더 그리드 (스캐폴드)
+// 다음 단계: KPI 카드 → 셀별 매출/판매Top → IG 포스트 등록 → 리본
+// 인스타그램 embed.js 1회 로드 + 새 임베드 process 호출
+function useInstagramEmbedScript(deps){
+  useEffect(()=>{
+    const SRC="https://www.instagram.com/embed.js";
+    let s=document.querySelector(`script[src="${SRC}"]`);
+    if(!s){
+      s=document.createElement("script");
+      s.src=SRC; s.async=true;
+      document.body.appendChild(s);
+    }
+    // 이미 로드된 경우 즉시 process, 아니면 onload 후 process
+    const run=()=>{ try{ window.instgrm?.Embeds?.process(); }catch{} };
+    if(window.instgrm) run();
+    else s.addEventListener("load",run,{once:true});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },deps);
+}
+
+// URL 정규화: 트래킹 파라미터 제거 + permalink 형태로 표준화
+function normalizeIgUrl(raw){
+  const s=String(raw||"").trim();
+  // 인스타그램 URL 패턴: /p/SHORTCODE/, /reel/SHORTCODE/, /tv/SHORTCODE/
+  const m=s.match(/instagram\.com\/(p|reel|tv)\/([A-Za-z0-9_-]+)/i);
+  if(!m) return null;
+  return `https://www.instagram.com/${m[1]}/${m[2]}/`;
+}
+
+// 포스트별 소개 상품 태깅 (chip + 검색 추가)
+function ProductTagger({ postId, tagged, allProducts, onChange }){
+  const [q,setQ]=useState("");
+  const [adding,setAdding]=useState(false);
+
+  const handleAdd=async(name)=>{
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_post_products").insert({post_id:postId,product_name:name});
+    if(!error){ setQ(""); setAdding(false); onChange(); }
+  };
+  const handleRemove=async(name)=>{
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_post_products").delete()
+      .eq("post_id",postId).eq("product_name",name);
+    if(!error) onChange();
+  };
+
+  const candidates=useMemo(()=>{
+    if(!q.trim()) return [];
+    const qLower=q.toLowerCase();
+    return allProducts
+      .filter(p=>!tagged.includes(p)&&p.toLowerCase().includes(qLower))
+      .slice(0,15);
+  },[q,allProducts,tagged]);
+
+  return (
+    <div style={{marginTop:10,paddingTop:10,borderTop:`1px dashed ${D.border}`}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
+        <span style={{fontSize:11,color:D.textMeta,marginRight:4,fontWeight:600}}>소개 상품:</span>
+        {tagged.length===0&&!adding&&<span style={{fontSize:11,color:D.textMeta,fontStyle:"italic"}}>(없음)</span>}
+        {tagged.map(t=>(
+          <span key={t} style={{display:"inline-flex",alignItems:"center",gap:4,
+            padding:"3px 9px",background:D.surfaceAlt,border:`1px solid ${D.border}`,
+            borderRadius:12,fontSize:11,color:D.text}}>
+            {t}
+            <button onClick={()=>handleRemove(t)}
+              style={{background:"none",border:"none",cursor:"pointer",
+                color:D.textMeta,fontSize:11,padding:0,lineHeight:1}}>✕</button>
+          </span>
+        ))}
+        {!adding&&(
+          <button onClick={()=>setAdding(true)}
+            style={{padding:"3px 9px",fontSize:11,background:"transparent",
+              border:`1px dashed ${D.border}`,borderRadius:12,color:D.blue,
+              cursor:"pointer"}}>＋ 상품 추가</button>
+        )}
+      </div>
+      {adding&&(
+        <div style={{position:"relative",marginTop:7}}>
+          <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+            onBlur={()=>setTimeout(()=>{setAdding(false);setQ("");},150)}
+            placeholder="상품명 검색 (예: 코튼, 데님)..."
+            style={{width:"100%",padding:"6px 10px",fontSize:12,
+              border:`1px solid ${D.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+          {candidates.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,
+              background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+              maxHeight:220,overflowY:"auto",zIndex:10,marginTop:2,
+              boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>
+              {candidates.map(c=>(
+                <div key={c} onMouseDown={()=>handleAdd(c)}
+                  style={{padding:"7px 10px",cursor:"pointer",fontSize:12,
+                    color:D.text,borderBottom:`1px solid ${D.border}`}}>
+                  {c}
+                </div>
+              ))}
+            </div>
+          )}
+          {q.trim()&&candidates.length===0&&(
+            <div style={{marginTop:4,fontSize:10,color:D.textMeta}}>
+              매칭되는 상품이 없습니다. 주문/매장 데이터에 등록된 상품명만 검색됩니다.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 포스트 등록·관리 모달
+function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose, onChange }){
+  // wizard step: 0=URL 입력, 1=URL 완료(임베드 확인) + 상품 매칭, 2=상품 매칭 완료
+  const [step,setStep]=useState(0);
+  const [url,setUrl]=useState("");
+  const [memo,setMemo]=useState("");
+  const [newPostId,setNewPostId]=useState(null);
+  const [newPostUrl,setNewPostUrl]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+
+  // 임베드 script 로드 + posts·step 변경 시마다 process
+  useInstagramEmbedScript([posts.length,posts.map(p=>p.url).join("|"),step,newPostUrl]);
+
+  // Step 0 → 1: URL 저장 (Run)
+  const handleRun=async()=>{
+    const norm=normalizeIgUrl(url);
+    if(!norm){ setErr("올바른 인스타그램 포스트 URL이 아닙니다 (https://www.instagram.com/p/... 또는 /reel/...)"); return; }
+    setSaving(true); setErr("");
+    const db=await getSupabase();
+    const {data,error}=await db.from("instagram_posts")
+      .insert({post_date:date,url:norm,caption_memo:memo||null})
+      .select().single();
+    setSaving(false);
+    if(error){ setErr("저장 실패: "+error.message); return; }
+    setNewPostId(data.id);
+    setNewPostUrl(norm);
+    setStep(1);
+    onChange(); // 부모 리스트 갱신
+  };
+  // Step 1 → 2: 상품 매칭 완료 (그냥 step 전환 — 상품은 chip 추가마다 즉시 저장됨)
+  const handleComplete=()=>{ setStep(2); };
+  // 다시 추가하기 (또는 자동 reset)
+  const resetWizard=()=>{
+    setStep(0); setUrl(""); setMemo(""); setNewPostId(null); setNewPostUrl(""); setErr("");
+  };
+  const handleDelete=async(id)=>{
+    if(!confirm("이 포스트를 삭제하시겠습니까?")) return;
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_posts").delete().eq("id",id);
+    if(error){ setErr("삭제 실패: "+error.message); return; }
+    onChange();
+  };
+
+  // wizard 진행률 표시용
+  const stepLabel=["① URL 입력","② 임베드 확인 + 상품 매칭","✓ 완료"];
+
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+          width:"min(720px,95vw)",maxHeight:"85vh",overflowY:"auto",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.25)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div style={{fontWeight:700,fontSize:16,color:D.black}}>{date} · 인스타그램 포스트</div>
+          <button onClick={onClose}
+            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 12px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+        </div>
+
+        {/* 새 포스트 추가 — wizard */}
+        <div style={{background:D.bg,borderRadius:8,padding:"14px 16px",marginBottom:18,
+          border:`1px solid ${D.border}`}}>
+          <div style={{display:"flex",gap:6,marginBottom:12,fontSize:11}}>
+            {stepLabel.map((s,i)=>(
+              <div key={i} style={{flex:1,padding:"5px 8px",borderRadius:5,textAlign:"center",
+                fontWeight:600,
+                background:step===i?D.blue:step>i?`${D.green}20`:D.surface,
+                color:step===i?"#fff":step>i?D.green:D.textMeta,
+                border:`1px solid ${step===i?D.blue:step>i?`${D.green}40`:D.border}`}}>
+                {step>i?"✓ ":""}{s.replace(/^[①②✓]\s/,"")}
+              </div>
+            ))}
+          </div>
+
+          {step===0&&<>
+            <input value={url} onChange={e=>setUrl(e.target.value)}
+              placeholder="https://www.instagram.com/p/..."
+              style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
+                fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
+            <input value={memo} onChange={e=>setMemo(e.target.value)}
+              placeholder="메모 (선택)"
+              style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
+                fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
+            {err&&<Alert type="error" msg={err}/>}
+            <Btn onClick={handleRun} disabled={saving||!url} style={{width:"100%"}}>
+              {saving?"저장 중…":"▶ Run (URL 등록)"}
+            </Btn>
+          </>}
+
+          {step===1&&<>
+            <Alert type="success" msg="✓ URL 등록 완료 — 아래 임베드를 확인하고 소개 상품을 매칭하세요"/>
+            <blockquote className="instagram-media"
+              data-instgrm-permalink={newPostUrl}
+              data-instgrm-version="14"
+              style={{margin:"10px 0",maxWidth:"100%",minWidth:"100%"}}>
+              <a href={newPostUrl} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>포스트 보기</a>
+            </blockquote>
+            <ProductTagger postId={newPostId} tagged={postProductsMap[newPostId]||[]}
+              allProducts={allProducts} onChange={onChange}/>
+            <div style={{display:"flex",gap:7,marginTop:14}}>
+              <Btn onClick={handleComplete} style={{flex:1}}>✓ 완료</Btn>
+              <button onClick={resetWizard}
+                style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+                  padding:"6px 14px",fontSize:12,cursor:"pointer",color:D.textMeta}}>처음부터</button>
+            </div>
+          </>}
+
+          {step===2&&<>
+            <div style={{textAlign:"center",padding:"20px 0"}}>
+              <div style={{fontSize:32,marginBottom:6}}>✓</div>
+              <div style={{color:D.green,fontWeight:700,fontSize:14,marginBottom:4}}>등록 완료</div>
+              <div style={{color:D.textMeta,fontSize:11,marginBottom:14}}>
+                태그된 상품: {(postProductsMap[newPostId]||[]).length}개
+              </div>
+              <Btn onClick={resetWizard}>＋ 다른 포스트 추가</Btn>
+            </div>
+          </>}
+        </div>
+
+        {/* 등록된 포스트 리스트 */}
+        <div style={{fontSize:12,fontWeight:600,color:D.text,marginBottom:10}}>
+          등록된 포스트 ({posts.length})
+        </div>
+        {posts.length===0
+          ? <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center"}}>아직 등록된 포스트가 없습니다.</div>
+          : posts.map(p=>(
+            <div key={p.id} style={{border:`1px solid ${D.border}`,borderRadius:8,padding:14,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <a href={p.url} target="_blank" rel="noreferrer"
+                    style={{fontSize:11,color:D.blue,wordBreak:"break-all"}}>{p.url}</a>
+                  {p.caption_memo&&<div style={{fontSize:12,color:D.textSub,marginTop:4}}>{p.caption_memo}</div>}
+                </div>
+                <button onClick={()=>handleDelete(p.id)}
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
+              </div>
+              {/* 인스타그램 공식 임베드 */}
+              <blockquote className="instagram-media"
+                data-instgrm-permalink={p.url}
+                data-instgrm-version="14"
+                style={{margin:0,maxWidth:"100%",minWidth:"100%"}}>
+                <a href={p.url} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>
+                  포스트 보기
+                </a>
+              </blockquote>
+              {/* 소개 상품 태깅 */}
+              <ProductTagger postId={p.id} tagged={postProductsMap[p.id]||[]}
+                allProducts={allProducts} onChange={onChange}/>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
+  const now=new Date();
+  const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+  const [igPosts,setIgPosts]=useState([]);          // 전체 IG 포스트
+  const [postProducts,setPostProducts]=useState([]); // 포스트별 소개 상품 (post_id, product_name)
+  const [tableMissing,setTableMissing]=useState(false);
+  const [postModalDate,setPostModalDate]=useState(null);  // 모달 열림 상태(iso date)
+  const [postLoadTick,setPostLoadTick]=useState(0);
+
+  // IG 포스트 + 태깅 상품 동시 로딩
+  useEffect(()=>{
+    (async()=>{
+      const db=await getSupabase();
+      const [postsRes,prodsRes]=await Promise.all([
+        db.from("instagram_posts").select("*").order("post_date",{ascending:false}).limit(1000),
+        db.from("instagram_post_products").select("*").limit(5000),
+      ]);
+      if(postsRes.error){
+        // 테이블 미생성 시 안내 (코드 42P01 = undefined_table)
+        if(postsRes.error.code==="42P01"||/relation.*does not exist/i.test(postsRes.error.message||"")){
+          setTableMissing(true);
+        }
+        return;
+      }
+      setIgPosts(postsRes.data||[]);
+      setPostProducts(prodsRes.data||[]);
+      setTableMissing(false);
+    })();
+  },[postLoadTick]);
+  const refreshPosts=()=>setPostLoadTick(t=>t+1);
+
+  // 일자별 포스트 인덱스
+  const postsByDate=useMemo(()=>{
+    const m={};
+    igPosts.forEach(p=>{ if(!m[p.post_date]) m[p.post_date]=[]; m[p.post_date].push(p); });
+    return m;
+  },[igPosts]);
+
+  // 포스트별 태깅 상품 인덱스 (post_id → [product_name])
+  const postProductsMap=useMemo(()=>{
+    const m={};
+    postProducts.forEach(p=>{
+      if(!m[p.post_id]) m[p.post_id]=[];
+      m[p.post_id].push(p.product_name);
+    });
+    return m;
+  },[postProducts]);
+
+  // 검색 가능한 전체 상품 명단 (orders + store_sales의 distinct product_name)
+  const allProducts=useMemo(()=>{
+    const s=new Set();
+    orders.forEach(o=>o.product_name&&s.add(o.product_name));
+    storeSales.forEach(r=>r.product_name&&s.add(r.product_name));
+    return [...s].sort();
+  },[orders,storeSales]);
+
+  // 호버한 포스트 셀의 iso (리본 강조용)
+  const [hoveredFromIso,setHoveredFromIso]=useState(null);
+
+  // 포스트 ID → 색상 (Sankey 팔레트 순환)
+  const ribbonColor=(postId)=>D.SANKEY[Math.abs(postId)%D.SANKEY.length];
+
+  // 이름 매칭: 정확 일치 또는 한쪽이 다른 쪽의 부분 문자열 (대소문자 무시)
+  const nameMatches=(a,b)=>{
+    const al=String(a||"").toLowerCase();
+    const bl=String(b||"").toLowerCase();
+    if(!al||!bl) return false;
+    return al===bl||al.includes(bl)||bl.includes(al);
+  };
+
+  // 월 이동
+  const shiftMonth=(delta)=>{
+    const [y,m]=ym.split("-").map(Number);
+    const d=new Date(y,m-1+delta,1);
+    setYm(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  };
+
+  // ── 일별 데이터 집계 ────────────────────────────
+  // 소스: revenues(온라인 매출) + storeSales(매장) + orders(상품 판매 수량)
+  // 산출: 일자별 { channels:{ch:매출}, total:매출합, topProducts:[상위 3] }
+  const dailyData=useMemo(()=>{
+    const byDate={};
+    const ensure=d=>{if(!byDate[d]) byDate[d]={channels:{},products:{},total:0,topProducts:[]};return byDate[d];};
+    // 온라인 채널 매출 (revenues CSV)
+    revenues.forEach(r=>{
+      if(!r.date) return;
+      const ch=r.channel||"미분류";
+      const net=(r.amount||0)-(r.refund_amount||0);
+      ensure(r.date).channels[ch]=(byDate[r.date].channels[ch]||0)+net;
+    });
+    // 매장 매출 (store_sales)
+    storeSales.forEach(r=>{
+      if(!r.sale_date) return;
+      const amt=r.status==="배송"?(r.amount||0):r.status==="반품"?-(r.amount||0):0;
+      ensure(r.sale_date).channels["오프라인 스토어"]=(byDate[r.sale_date].channels["오프라인 스토어"]||0)+amt;
+    });
+    // 판매 상품 수량 (orders, 배송만)
+    orders.forEach(r=>{
+      if(!r.order_date||r.status!=="배송") return;
+      const name=r.product_name||"미분류";
+      ensure(r.order_date).products[name]=(byDate[r.order_date].products[name]||0)+(r.qty||1);
+    });
+    // 파생 필드
+    Object.values(byDate).forEach(d=>{
+      d.total=Object.values(d.channels).reduce((s,v)=>s+v,0);
+      d.topProducts=Object.entries(d.products)
+        .sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .map(([name,qty])=>({name,qty}));
+    });
+    return byDate;
+  },[orders,revenues,storeSales]);
+
+  // 월 그리드 생성 — 일요일 시작, 월말일이 포함된 마지막 주까지만 표시
+  const grid=useMemo(()=>{
+    const [y,m]=ym.split("-").map(Number);
+    const first=new Date(y,m-1,1);
+    const last=new Date(y,m,0);  // 해당 월 마지막 날
+    const startDay=first.getDay(); // 0=Sun
+    // (월말일이 들어가는 주의 토요일까지) - (첫 주의 일요일) + 1 = 표시할 셀 수
+    const totalDays=startDay+last.getDate();
+    const weeks=Math.ceil(totalDays/7);
+    const cellCount=weeks*7;
+    const cells=[];
+    for(let i=0;i<cellCount;i++){
+      const d=new Date(y,m-1,i-startDay+1);
+      cells.push({
+        date:d,
+        iso:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
+        inMonth:d.getMonth()===m-1,
+        isToday:d.toDateString()===now.toDateString(),
+      });
+    }
+    return cells;
+  },[ym]);
+
+  const monthLabel=(()=>{
+    const [y,m]=ym.split("-").map(Number);
+    return `${y}년 ${m}월`;
+  })();
+  const WEEKDAYS=["일","월","화","수","목","금","토"];
+
+  // ── 리본(attribution) 계산 ────────────────────────
+  // 규칙: 포스트의 소개 상품이 그 후속 날짜의 판매 Top에 들었을 때만 연결
+  // 방향: 포스트 날짜 → 미래 (역방향 X)
+  const isoToGridIdx=useMemo(()=>{
+    const m={};
+    grid.forEach((c,i)=>{m[c.iso]=i;});
+    return m;
+  },[grid]);
+  const lastInMonthIso=useMemo(()=>{
+    const inMonths=grid.filter(c=>c.inMonth);
+    return inMonths.length?inMonths[inMonths.length-1].iso:null;
+  },[grid]);
+
+  // 같은 달 안 ribbons
+  const ribbons=useMemo(()=>{
+    if(!lastInMonthIso) return [];
+    const result=[];
+    igPosts.forEach(post=>{
+      if(post.post_date>lastInMonthIso||post.post_date<(grid[0]?.iso||"")) return;
+      // 단, 시작 셀이 현재 보이는 그리드 안에 있어야 함
+      if(isoToGridIdx[post.post_date]===undefined) return;
+      const tagged=postProductsMap[post.id]||[];
+      if(!tagged.length) return;
+      grid.forEach(cell=>{
+        if(!cell.inMonth) return;
+        if(cell.iso<=post.post_date) return; // 후속 날짜만
+        const d=dailyData[cell.iso];
+        if(!d?.topProducts?.length) return;
+        // tagged 중 하나라도 그날 topProducts에 매칭되면 1개 리본
+        for(const tagName of tagged){
+          const hit=d.topProducts.find(tp=>nameMatches(tagName,tp.name));
+          if(hit){
+            result.push({fromIso:post.post_date,toIso:cell.iso,postId:post.id,product:hit.name});
+            break;
+          }
+        }
+      });
+    });
+    return result;
+  },[igPosts,postProductsMap,grid,dailyData,lastInMonthIso,isoToGridIdx]);
+
+  // 월 넘어가는 매칭 (이번 달 포스트 → 다음 달 이후 판매 Top)
+  const crossMonthByPostDate=useMemo(()=>{
+    if(!lastInMonthIso) return {};
+    const out={}; // post_date(iso) → {nextYm, count}
+    igPosts.forEach(post=>{
+      if(isoToGridIdx[post.post_date]===undefined) return;
+      const tagged=postProductsMap[post.id]||[];
+      if(!tagged.length) return;
+      // dailyData에서 lastInMonthIso 이후의 모든 날짜 검사
+      Object.entries(dailyData).forEach(([iso,d])=>{
+        if(iso<=lastInMonthIso) return;
+        if(!d.topProducts?.length) return;
+        for(const tagName of tagged){
+          if(d.topProducts.find(tp=>nameMatches(tagName,tp.name))){
+            if(!out[post.post_date]) out[post.post_date]={nextYm:iso.slice(0,7),count:0};
+            if(iso.slice(0,7)<out[post.post_date].nextYm) out[post.post_date].nextYm=iso.slice(0,7);
+            out[post.post_date].count++;
+            break;
+          }
+        }
+      });
+    });
+    return out;
+  },[igPosts,postProductsMap,dailyData,lastInMonthIso,isoToGridIdx]);
+
+  const weeksCount=grid.length/7;
+
+  return (
+    <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
+      {/* 월 셀렉터 — 중앙 정렬 */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:24}}>
+        <button onClick={()=>shiftMonth(-1)} data-hf
+          style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,
+            padding:"8px 16px",fontSize:16,cursor:"pointer",color:D.text,fontWeight:600}}>◂</button>
+        <div style={{fontSize:22,fontWeight:700,color:D.black,minWidth:170,textAlign:"center"}}>{monthLabel}</div>
+        <button onClick={()=>shiftMonth(1)} data-hf
+          style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,
+            padding:"8px 16px",fontSize:16,cursor:"pointer",color:D.text,fontWeight:600}}>▸</button>
+        <button onClick={()=>setYm(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`)} data-hf
+          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:8,
+            padding:"7px 14px",fontSize:12,cursor:"pointer",color:D.textMeta,marginLeft:8}}>이번 달</button>
+      </div>
+
+      {/* 캘린더 그리드 — iPad 사이즈 (셀 크게) */}
+      <Card>
+        <div style={{position:"relative"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
+          {WEEKDAYS.map((w,i)=>(
+            <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
+              color:i===0?D.red:i===6?D.blue:D.textMeta,textAlign:"center"}}>{w}</div>
+          ))}
+          {grid.map((c,i)=>{
+            const d=dailyData[c.iso];
+            const channels=d?Object.entries(d.channels).filter(([,v])=>v>0):[];
+            const barTotal=channels.reduce((s,[,v])=>s+v,0)||1;
+            const posts=postsByDate[c.iso]||[];
+            const cm=crossMonthByPostDate[c.iso];
+            return (
+            <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
+              onMouseEnter={posts.length>0?()=>setHoveredFromIso(c.iso):undefined}
+              onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
+              style={{
+              background:c.inMonth?D.surface:D.bg,
+              minHeight:170,padding:"10px 12px",
+              opacity:c.inMonth?1:0.35,
+              position:"relative",
+              cursor:c.inMonth?"pointer":"default",
+              display:"flex",flexDirection:"column"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <span style={{fontSize:14,fontWeight:c.isToday?700:600,
+                  color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                  {c.date.getDate()}
+                </span>
+                <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  {posts.length>0&&<span title={`${posts.length}개 포스트`}
+                    style={{fontSize:10,color:"#fff",fontWeight:700,
+                      background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
+                      padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                  {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
+                    title={`다음: ${cm.nextYm} (${cm.count}건)`}
+                    style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
+                      border:`1px solid ${D.blue}30`,borderRadius:10,padding:"2px 6px",cursor:"pointer"}}>
+                    ▸{parseInt(cm.nextYm.split("-")[1])}월
+                  </button>}
+                  {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
+                    background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+                </div>
+              </div>
+              {/* IG 썸네일 영역 (다음 step에서 채워짐) — 현재는 그래프/Top만 */}
+              {c.inMonth&&d&&d.total>0&&(
+                <>
+                  <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:3}}>
+                    {fmtWonShort(d.total)}
+                  </div>
+                  <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:D.bg,marginBottom:8}}>
+                    {channels.map(([ch,amt])=>(
+                      <div key={ch} title={`${ch} ${fmtWonShort(amt)} (${(amt/barTotal*100).toFixed(0)}%)`}
+                        style={{flex:amt,background:chColor(ch),minWidth:2}}/>
+                    ))}
+                  </div>
+                </>
+              )}
+              {c.inMonth&&d?.topProducts?.length>0&&(
+                <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
+                  {d.topProducts.map((p,j)=>(
+                    <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      • {p.name} <span style={{color:D.textMeta}}>{p.qty}장</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );})}
+        </div>
+        {/* 리본 SVG 오버레이 — 포스트 → 후속 판매 Top 매칭 */}
+        {ribbons.length>0&&(
+          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",
+              pointerEvents:"none",overflow:"visible"}}
+            viewBox={`0 0 7 ${weeksCount+1}`}
+            preserveAspectRatio="none">
+            {/* 그리드 헤더(요일) 행 1만큼 offset → 셀 row+1 위치 */}
+            {ribbons.map((r,i)=>{
+              const fi=isoToGridIdx[r.fromIso];
+              const ti=isoToGridIdx[r.toIso];
+              if(fi===undefined||ti===undefined) return null;
+              const fx=(fi%7)+0.5;
+              const fy=Math.floor(fi/7)+1.5;  // +1 for header row, +0.5 for center
+              const tx=(ti%7)+0.5;
+              const ty=Math.floor(ti/7)+1.5;
+              const midY=(fy+ty)/2;
+              const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
+              const color=ribbonColor(r.postId);
+              const focused=hoveredFromIso===r.fromIso;
+              const dim=hoveredFromIso&&!focused;
+              return (
+                <path key={i} d={path} stroke={color} fill="none"
+                  strokeWidth={focused?2.5:1.8}
+                  opacity={dim?0.08:focused?0.85:0.32}
+                  vectorEffect="non-scaling-stroke"/>
+              );
+            })}
+          </svg>
+        )}
+        </div>
+      </Card>
+
+      {tableMissing&&<Alert type="warn" msg={`Supabase에 instagram_posts 테이블이 없습니다. 아래 SQL을 Supabase Editor에서 실행해주세요:\n\nCREATE TABLE IF NOT EXISTS instagram_posts (\n  id            serial PRIMARY KEY,\n  post_date     date NOT NULL,\n  url           text NOT NULL,\n  caption_memo  text,\n  created_at    timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS instagram_posts_date_idx ON instagram_posts (post_date);`}/>}
+
+      <div style={{marginTop:16,fontSize:11,color:D.textMeta,lineHeight:1.7,background:D.bg,
+        padding:"10px 14px",borderRadius:6,border:`1px dashed ${D.border}`}}>
+        <b>사용법</b><br/>
+        ① 셀 클릭 → 인스타그램 URL 등록 → 모달에서 소개 상품 검색·태깅<br/>
+        ② 소개 상품이 후속 날짜 판매 Top에 들어가면 자동으로 리본 연결 (포스트 셀 호버 시 강조)<br/>
+        ③ 매칭이 다음 달까지 이어지면 셀에 <span style={{color:D.blue,fontWeight:600}}>▸N월</span> 버튼 표시 — 클릭하면 그 달로 이동
+      </div>
+
+      {/* 포스트 등록·관리 모달 */}
+      {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
+        postProductsMap={postProductsMap} allProducts={allProducts}
+        onClose={()=>setPostModalDate(null)} onChange={refreshPosts}/>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","flow","promo","input","compare"];
+  const validPages=["dashboard","flow","promo","input","compare","impact"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
@@ -9085,6 +10226,7 @@ export default function App() {
     {key:"compare",label:"데이터 컴페어"},
     {key:"promo",label:"프로모션 플로우"},
     {key:"flow",label:"물류 플로우"},
+    {key:"impact",label:"콘텐츠 임팩트"},
     {key:"input",label:"데이터 입력"},
   ];
 
@@ -9139,6 +10281,7 @@ export default function App() {
         {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
+        {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
