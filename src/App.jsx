@@ -1516,10 +1516,10 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 계산:
   //   - 최신 주(latestWeek) 기준 행만 추림
   //   - 상품명 기준 그룹화(옵션 합산):
-  //       qty      = SUM(qty)                ← 판매 Top 정렬 기준
-  //       orders   = COUNT(행)               ← 반품률 분모
-  //       returned = COUNT(상태=반품 행)     ← 반품 Top 정렬 기준
-  //   - 판매 Top = qty desc 상위 20
+  //       qty      = SUM(qty)               ← 주문 기준(반품·취소 제외)
+  //       orders   = COUNT(행)
+  //       returned = COUNT(상태=반품 행)    ← 반품 Top 정렬용 (별도 집계)
+  //   - 판매 Top = qty desc 상위 20 (주문 기준)
   //   - 반품 Top = returned>0 중 returned desc 상위 20
   const getWeek=ds=>{
     if(!ds) return null;
@@ -1538,9 +1538,12 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   weekRows.forEach(r=>{
     const key=r.product_name||"미분류";
     if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
+    // 반품 카운트는 모든 행에서 집계 (반품 Top 용)
+    if(r.status==="반품") byProd[key].returned++;
+    // 판매 Top 의 qty/orders 는 주문 기준 — 반품·취소 제외
+    if(r.status==="반품"||r.status==="취소") return;
     byProd[key].qty+=(r.qty||0);
     byProd[key].orders++;
-    if(r.status==="반품") byProd[key].returned++;
   });
   const prodList=Object.values(byProd);
   const weekBest=[...prodList].sort((a,b)=>b.qty-a.qty).slice(0,20)
@@ -1889,8 +1892,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     rows.forEach(r=>{
       const key=r.product_name||"미분류";
       if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
-      byProd[key].qty+=(r.qty||0); byProd[key].orders++;
+      // 반품 카운트는 모든 행에서 집계 (반품률용)
       if(r.status==="반품") byProd[key].returned++;
+      // 판매 Top qty/orders 는 주문 기준 — 반품·취소 제외
+      if(r.status==="반품"||r.status==="취소") return;
+      byProd[key].qty+=(r.qty||0); byProd[key].orders++;
     });
     const totalQty=Object.values(byProd).reduce((s,p)=>s+p.qty,0)||1;
     return Object.values(byProd).sort((a,b)=>b.qty-a.qty).slice(0,20)
@@ -2441,8 +2447,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           <div style={{minHeight:546,overflowY:"auto"}}>
             <RankTable data={bestRows} cols={[
               {key:"name",label:"상품명",maxW:190,bold:true,color:"#2d2d2d"},
-              {key:"qty",label:"배송량",right:true,bold:true,fmt:v=>v.toLocaleString()},
-              {key:"share",label:"배송 점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
+              {key:"qty",label:"주문량",right:true,bold:true,fmt:v=>v.toLocaleString()},
+              {key:"share",label:"주문 점유율",right:true,color:D.textMeta,fmt:v=>v+"%"},
             ]}/>
           </div>
           <ResponsiveContainer width="100%" height={546}>
@@ -2451,7 +2457,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <XAxis type="number" tick={axTick}/>
               <YAxis type="category" dataKey="name" width={180} tick={<NoWrapTick/>}/>
               <Tooltip content={<Tip/>}/>
-              <Bar dataKey="qty" name="배송량" radius={[0,3,3,0]}>
+              <Bar dataKey="qty" name="주문량" radius={[0,3,3,0]}>
                 {bestRows.slice(0,12).map((_,i)=>(
                   <Cell key={i} fill={D.SANKEY[i%D.SANKEY.length]}/>
                 ))}
@@ -10766,7 +10772,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 (현재 0.47 — 기존 0.78 대비 40% 더 투명) */}
               {c.inMonth&&posts.length>0&&(
                 <div style={{position:"absolute",inset:0,zIndex:1,
-                  background:"rgba(255,255,255,0.47)",pointerEvents:"none"}}/>
+                  background:"rgba(255,255,255,0.25)",pointerEvents:"none"}}/>
               )}
               {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
@@ -10826,14 +10832,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   </>
                 )}
                 {c.inMonth&&(samedayTagged.size>0||d?.topProducts?.length>0)&&(
-                  <div style={{marginTop:"auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:9,color:D.textSub,lineHeight:1.6}}>
+                  <div style={{marginTop:"auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:9,color:"#000",lineHeight:1.6}}>
                     {/* 좌측: 소개 상품 (당일 포스트 태깅 상품) */}
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:9,fontWeight:700,color:D.textMeta,letterSpacing:"0.05em",
+                      <div style={{fontSize:9,fontWeight:700,color:"#000",letterSpacing:"0.05em",
                         textTransform:"uppercase",marginBottom:2}}>소개 상품</div>
                       {samedayTagged.size>0
                         ?[...samedayTagged].slice(0,5).map((name,j)=>(
-                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"#000"}}>
                             · {name}
                           </div>
                         ))
@@ -10841,19 +10847,19 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                     </div>
                     {/* 우측: 판매 베스트 (Top 5) — 매칭은 손그림 강조 */}
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:9,fontWeight:700,color:D.textMeta,letterSpacing:"0.05em",
+                      <div style={{fontSize:9,fontWeight:700,color:"#000",letterSpacing:"0.05em",
                         textTransform:"uppercase",marginBottom:2}}>판매 top</div>
                       {d?.topProducts?.length>0
                         ?d.topProducts.map((p,j)=>{
                           const hi=isHighlighted(p.name);
                           return (
                             <div key={j} data-iso={c.iso} data-pidx={j} className="impact-prod-row"
-                              style={{display:"flex",alignItems:"center",gap:3,
+                              style={{display:"flex",alignItems:"center",gap:3,color:"#000",
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                               position:"relative"}}>
                               {hi
                                 ?<MatchedProductBadge name={p.name} qty={p.qty}/>
-                                :<><span style={{overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>• {p.name}</span><span style={{color:D.textMeta,flexShrink:0}}>{p.qty}장</span></>}
+                                :<><span style={{overflow:"hidden",textOverflow:"ellipsis",minWidth:0,color:"#000"}}>• {p.name}</span><span style={{color:"#000",flexShrink:0}}>{p.qty}장</span></>}
                             </div>
                           );
                         })
