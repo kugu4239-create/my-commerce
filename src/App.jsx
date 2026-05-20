@@ -9541,8 +9541,87 @@ function normalizeIgUrl(raw){
   return `https://www.instagram.com/${m[1]}/${m[2]}/`;
 }
 
+// 포스트별 소개 상품 태깅 (chip + 검색 추가)
+function ProductTagger({ postId, tagged, allProducts, onChange }){
+  const [q,setQ]=useState("");
+  const [adding,setAdding]=useState(false);
+
+  const handleAdd=async(name)=>{
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_post_products").insert({post_id:postId,product_name:name});
+    if(!error){ setQ(""); setAdding(false); onChange(); }
+  };
+  const handleRemove=async(name)=>{
+    const db=await getSupabase();
+    const {error}=await db.from("instagram_post_products").delete()
+      .eq("post_id",postId).eq("product_name",name);
+    if(!error) onChange();
+  };
+
+  const candidates=useMemo(()=>{
+    if(!q.trim()) return [];
+    const qLower=q.toLowerCase();
+    return allProducts
+      .filter(p=>!tagged.includes(p)&&p.toLowerCase().includes(qLower))
+      .slice(0,15);
+  },[q,allProducts,tagged]);
+
+  return (
+    <div style={{marginTop:10,paddingTop:10,borderTop:`1px dashed ${D.border}`}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
+        <span style={{fontSize:11,color:D.textMeta,marginRight:4,fontWeight:600}}>소개 상품:</span>
+        {tagged.length===0&&!adding&&<span style={{fontSize:11,color:D.textMeta,fontStyle:"italic"}}>(없음)</span>}
+        {tagged.map(t=>(
+          <span key={t} style={{display:"inline-flex",alignItems:"center",gap:4,
+            padding:"3px 9px",background:D.surfaceAlt,border:`1px solid ${D.border}`,
+            borderRadius:12,fontSize:11,color:D.text}}>
+            {t}
+            <button onClick={()=>handleRemove(t)}
+              style={{background:"none",border:"none",cursor:"pointer",
+                color:D.textMeta,fontSize:11,padding:0,lineHeight:1}}>✕</button>
+          </span>
+        ))}
+        {!adding&&(
+          <button onClick={()=>setAdding(true)}
+            style={{padding:"3px 9px",fontSize:11,background:"transparent",
+              border:`1px dashed ${D.border}`,borderRadius:12,color:D.blue,
+              cursor:"pointer"}}>＋ 상품 추가</button>
+        )}
+      </div>
+      {adding&&(
+        <div style={{position:"relative",marginTop:7}}>
+          <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+            onBlur={()=>setTimeout(()=>{setAdding(false);setQ("");},150)}
+            placeholder="상품명 검색 (예: 코튼, 데님)..."
+            style={{width:"100%",padding:"6px 10px",fontSize:12,
+              border:`1px solid ${D.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+          {candidates.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,
+              background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+              maxHeight:220,overflowY:"auto",zIndex:10,marginTop:2,
+              boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>
+              {candidates.map(c=>(
+                <div key={c} onMouseDown={()=>handleAdd(c)}
+                  style={{padding:"7px 10px",cursor:"pointer",fontSize:12,
+                    color:D.text,borderBottom:`1px solid ${D.border}`}}>
+                  {c}
+                </div>
+              ))}
+            </div>
+          )}
+          {q.trim()&&candidates.length===0&&(
+            <div style={{marginTop:4,fontSize:10,color:D.textMeta}}>
+              매칭되는 상품이 없습니다. 주문/매장 데이터에 등록된 상품명만 검색됩니다.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 포스트 등록·관리 모달
-function IGPostModal({ date, posts, onClose, onChange }){
+function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose, onChange }){
   const [url,setUrl]=useState("");
   const [memo,setMemo]=useState("");
   const [saving,setSaving]=useState(false);
@@ -9625,6 +9704,9 @@ function IGPostModal({ date, posts, onClose, onChange }){
                   포스트 보기
                 </a>
               </blockquote>
+              {/* 소개 상품 태깅 */}
+              <ProductTagger postId={p.id} tagged={postProductsMap[p.id]||[]}
+                allProducts={allProducts} onChange={onChange}/>
             </div>
           ))}
       </div>
@@ -9636,23 +9718,28 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const now=new Date();
   const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
   const [igPosts,setIgPosts]=useState([]);          // 전체 IG 포스트
+  const [postProducts,setPostProducts]=useState([]); // 포스트별 소개 상품 (post_id, product_name)
   const [tableMissing,setTableMissing]=useState(false);
   const [postModalDate,setPostModalDate]=useState(null);  // 모달 열림 상태(iso date)
   const [postLoadTick,setPostLoadTick]=useState(0);
 
-  // IG 포스트 로딩
+  // IG 포스트 + 태깅 상품 동시 로딩
   useEffect(()=>{
     (async()=>{
       const db=await getSupabase();
-      const {data,error}=await db.from("instagram_posts").select("*").order("post_date",{ascending:false}).limit(1000);
-      if(error){
+      const [postsRes,prodsRes]=await Promise.all([
+        db.from("instagram_posts").select("*").order("post_date",{ascending:false}).limit(1000),
+        db.from("instagram_post_products").select("*").limit(5000),
+      ]);
+      if(postsRes.error){
         // 테이블 미생성 시 안내 (코드 42P01 = undefined_table)
-        if(error.code==="42P01"||/relation.*does not exist/i.test(error.message||"")){
+        if(postsRes.error.code==="42P01"||/relation.*does not exist/i.test(postsRes.error.message||"")){
           setTableMissing(true);
         }
         return;
       }
-      setIgPosts(data||[]);
+      setIgPosts(postsRes.data||[]);
+      setPostProducts(prodsRes.data||[]);
       setTableMissing(false);
     })();
   },[postLoadTick]);
@@ -9664,6 +9751,24 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     igPosts.forEach(p=>{ if(!m[p.post_date]) m[p.post_date]=[]; m[p.post_date].push(p); });
     return m;
   },[igPosts]);
+
+  // 포스트별 태깅 상품 인덱스 (post_id → [product_name])
+  const postProductsMap=useMemo(()=>{
+    const m={};
+    postProducts.forEach(p=>{
+      if(!m[p.post_id]) m[p.post_id]=[];
+      m[p.post_id].push(p.product_name);
+    });
+    return m;
+  },[postProducts]);
+
+  // 검색 가능한 전체 상품 명단 (orders + store_sales의 distinct product_name)
+  const allProducts=useMemo(()=>{
+    const s=new Set();
+    orders.forEach(o=>o.product_name&&s.add(o.product_name));
+    storeSales.forEach(r=>r.product_name&&s.add(r.product_name));
+    return [...s].sort();
+  },[orders,storeSales]);
 
   // 월 이동
   const shiftMonth=(delta)=>{
@@ -9825,6 +9930,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
       {/* 포스트 등록·관리 모달 */}
       {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
+        postProductsMap={postProductsMap} allProducts={allProducts}
         onClose={()=>setPostModalDate(null)} onChange={refreshPosts}/>}
     </div>
   );
