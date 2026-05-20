@@ -10783,10 +10783,10 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   <InstagramThumb src={posts[0].thumb_url}/>
                 </div>
               )}
-              {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 */}
+              {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 (현재 0.47 — 기존 0.78 대비 40% 더 투명) */}
               {c.inMonth&&posts.length>0&&(
                 <div style={{position:"absolute",inset:0,zIndex:1,
-                  background:"rgba(255,255,255,0.78)",pointerEvents:"none"}}/>
+                  background:"rgba(255,255,255,0.47)",pointerEvents:"none"}}/>
               )}
               {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
