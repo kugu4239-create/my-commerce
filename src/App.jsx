@@ -10769,6 +10769,16 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const [cellPostIdx,setCellPostIdx]=useState({});
   // 포스트 임팩트 분석 모드 토글 — ON 시: 포스트가 있는 셀이 임팩트 카드로 변형 + 상단에 판매 속도 timeline
   const [impactMode,setImpactMode]=useState(false);
+  // 임팩트 모드 헤더로 스크롤하기 위한 ref + 토글 ON 시 자동 스크롤
+  const impactHeaderRef=useRef(null);
+  useEffect(()=>{
+    if(impactMode&&impactHeaderRef.current){
+      // 약간 지연 후 스크롤 (DOM 렌더 완료 보장)
+      requestAnimationFrame(()=>{
+        impactHeaderRef.current?.scrollIntoView({behavior:"smooth",block:"start"});
+      });
+    }
+  },[impactMode]);
 
   // 월 넘어가는 매칭 (이번 달 포스트 → 다음 달 이후 판매 Top)
   const crossMonthByPostDate=useMemo(()=>{
@@ -10811,7 +10821,9 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     const avgStars=igPosts.length?stars/igPosts.length:0;
     const avgLift=liftN?liftSum/liftN:0;
     // ─ Sales velocity timeline (현재 달 daily qty) ─
-    const monthCells=grid.filter(c=>c.inMonth);
+    // 오늘 이후 또는 데이터 없는 trailing 날짜는 제외 (그래프가 0으로 떨어지지 않도록)
+    const todayIso=dayjs().format("YYYY-MM-DD");
+    const monthCells=grid.filter(c=>c.inMonth&&c.iso<=todayIso);
     const timeline=monthCells.map(c=>({
       iso:c.iso, day:c.date.getDate(),
       qty:(dailyData[c.iso]?.topProducts||[]).reduce((s,p)=>s+(p.qty||0),0),
@@ -10880,7 +10892,9 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     <div style={{padding:"20px 24px",maxWidth:1960,margin:"0 auto"}}>
       {/* 임팩트 모드 상단 분석 패널 — KPI + 속도계 + Sales Velocity Timeline + 태그×매출 산점도 */}
       {impactMode&&impactSummary&&(
-        <ImpactAnalysisHeader summary={impactSummary} monthLabel={monthLabel}/>
+        <div ref={impactHeaderRef} style={{scrollMarginTop:16}}>
+          <ImpactAnalysisHeader summary={impactSummary} monthLabel={monthLabel}/>
+        </div>
       )}
 
       {/* 월 셀렉터 — 중앙 정렬 */}
@@ -11156,17 +11170,63 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           onClose={()=>setScoreModalIso(null)}/>
       )}
 
-      {/* Sticky 포스트 임팩트 분석 토글 */}
+      {/* Sticky 포스트 임팩트 분석 토글 + 토글 하단 sticky 가이드 (모드 ON 시에만) */}
       {igPosts.length>0&&(
-        <button onClick={()=>setImpactMode(v=>!v)}
-          title={impactMode?"포스트 임팩트 분석 모드 끄기 (캘린더 일반 보기)":"포스트 임팩트 분석 모드 켜기 — 포스트 있는 셀이 임팩트 카드로 변형"}
-          style={{position:"fixed",left:"50%",bottom:"20vh",transform:"translateX(-50%)",
-            zIndex:1500,padding:"10px 22px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
-            background:impactMode?D.black:D.surface,color:impactMode?"#fff":D.text,
-            border:`1px solid ${impactMode?D.black:D.border}`,borderRadius:6,cursor:"pointer",
-            boxShadow:"0 4px 14px rgba(0,0,0,0.15)"}}>
-          포스트 임팩트 분석 {impactMode?`ON · ${igPosts.length}개`:"보기"}
-        </button>
+        <div style={{position:"fixed",left:"50%",bottom:"4vh",transform:"translateX(-50%)",
+          zIndex:1500,display:"flex",flexDirection:"column",alignItems:"center",gap:6,
+          maxWidth:"min(720px, 92vw)"}}>
+          <button onClick={()=>setImpactMode(v=>!v)}
+            title={impactMode?"포스트 임팩트 분석 모드 끄기 (캘린더 일반 보기)":"포스트 임팩트 분석 모드 켜기"}
+            style={{padding:"10px 22px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
+              background:impactMode?D.black:D.surface,color:impactMode?"#fff":D.text,
+              border:`1px solid ${impactMode?D.black:D.border}`,borderRadius:6,cursor:"pointer",
+              boxShadow:"0 4px 14px rgba(0,0,0,0.15)"}}>
+            포스트 임팩트 분석 {impactMode?`ON · ${igPosts.length}개`:"보기"}
+          </button>
+          {impactMode&&<ImpactGuideSticky/>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 토글 버튼 하단 sticky 가이드 — 분석 모드의 해석 방법을 간결하게 안내
+function ImpactGuideSticky() {
+  const [expanded,setExpanded]=useState(false);
+  return (
+    <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,
+      boxShadow:"0 4px 14px rgba(0,0,0,0.12)",overflow:"hidden",width:"100%"}}>
+      <button onClick={()=>setExpanded(v=>!v)}
+        style={{width:"100%",background:"transparent",border:"none",padding:"8px 14px",
+          display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
+          cursor:"pointer",fontSize:11,color:D.textSub,lineHeight:1.45,textAlign:"left"}}>
+        <span>
+          <b style={{color:D.text}}>LIFT</b> = 포스트 전 14일 대비 후 14일 태깅 상품 판매 변화율 · 차트는 오른쪽(파랑)이 왼쪽(회색)보다 위에 있을수록 효과 있음
+        </span>
+        <span style={{color:D.textMeta,fontSize:10,flexShrink:0}}>
+          {expanded?"접기 ▴":"자세히 ▾"}
+        </span>
+      </button>
+      {expanded&&(
+        <div style={{borderTop:`1px solid ${D.border}`,padding:"10px 14px",fontSize:11,color:D.text,lineHeight:1.7,
+          display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:10}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:D.textSub,marginBottom:3}}>LIFT (변화율)</div>
+            포스트 게시 전 14일과 후 14일의 태깅 상품 판매량 변화율(%). <b>+30% 이상</b> 매우 좋음 · <b>+10~30%</b> 양호 · <b>±10%</b> 영향 미미 · <b>−10% 이하</b> 역효과
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:D.textSub,marginBottom:3}}>★ 등급</div>
+            LIFT 절댓값 기준 5단계. ★를 클릭하면 일별 판매표 모달이 열립니다.
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:D.textSub,marginBottom:3}}>날짜 카드 안 차트</div>
+            X축 가운데 점선(0) = 포스트 게시일. 왼쪽 회색 = 전 14일, 오른쪽 파랑 = 후 14일.
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:D.textSub,marginBottom:3}}>속도</div>
+            포스트 1회가 하루 평균 만들어낸 추가 판매량(장/일). 카드의 작은 게이지가 직관적 시각화.
+          </div>
+        </div>
       )}
     </div>
   );
@@ -11210,7 +11270,7 @@ function LiftMiniChart({ preDays, postDays, color, height=110 }) {
           <ReferenceLine x={0} stroke={D.black} strokeDasharray="3 3"
             label={{value:"포스트",fontSize:9,fill:D.text,position:"top",offset:6,fontWeight:600}}/>
           <Line type="monotone" dataKey="pre" stroke={D.textMeta} strokeWidth={1.5} dot={false} connectNulls={false}/>
-          <Line type="monotone" dataKey="post" stroke={color} strokeWidth={2} dot={false} connectNulls={false}/>
+          <Line type="monotone" dataKey="post" stroke={D.blue} strokeWidth={2} dot={false} connectNulls={false}/>
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -11235,13 +11295,13 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
   })();
   // 카드별 자동 인사이트 한 줄 (Lift 기반 방향성)
   const insight=(()=>{
-    if(lift>=30) return {text:"강한 견인 — 동일 패턴 재활용 권장",tone:"good"};
-    if(lift>=10) return {text:"양호한 견인 — 후속 콘텐츠 유지",tone:"good"};
-    if(lift>=0)  return {text:"약한 양의 효과 — 콘텐츠 보강 권장",tone:"neutral"};
-    if(lift>=-10) return {text:"효과 미미 — 태깅·캡션 재구성",tone:"neutral"};
-    return {text:"역효과 — 전략 재검토 필요",tone:"bad"};
+    if(lift>=30) return {text:"강한 견인 - 동일 패턴 재구현 추천",tone:"good"};
+    if(lift>=10) return {text:"양호한 견인 - 후속 콘텐츠 유지",tone:"good"};
+    if(lift>=0)  return {text:"약한 양의 효과 - 콘텐츠 보강 필요",tone:"neutral"};
+    if(lift>=-10) return {text:"효과 미미 - 태깅·캡션 재구성",tone:"neutral"};
+    return {text:"역효과 - 전략 재검토",tone:"bad"};
   })();
-  const toneCol={good:"#10b981",bad:"#ef4444",neutral:D.textMeta}[insight.tone];
+  const toneCol={good:"#15803d",bad:"#b91c1c",neutral:D.textSub}[insight.tone];
   return (
     <div style={{position:"relative",zIndex:2,padding:10,
       display:"flex",flexDirection:"column",flex:1,minHeight:0,gap:5,background:D.surface}}>
@@ -11290,8 +11350,9 @@ function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onSt
       {/* mini 속도계 + 인사이트 한 줄 */}
       <div style={{display:"flex",gap:6,alignItems:"center",fontSize:10,
         background:D.surfaceAlt,borderRadius:5,padding:"4px 8px"}}>
-        <span style={{fontWeight:700,color:D.textMeta,letterSpacing:"0.05em"}}>속도</span>
-        <b style={{color:dailyAttr>=0?"#10b981":"#ef4444",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+        <MiniSpeedGauge value={dailyAttr}/>
+        <span style={{fontWeight:600,color:D.textMeta}}>속도</span>
+        <b style={{color:dailyAttr>=0?"#15803d":"#b91c1c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
           {dailyAttr>=0?"+":""}{dailyAttr.toFixed(1)}장/일
         </b>
         <span style={{flex:1,color:toneCol,textAlign:"right",
@@ -11344,115 +11405,64 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
   const attrVelColor=avgAttrVelocity>=0?"#10b981":"#ef4444";
   return (
     <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:10}}>
-      {/* 상단: 모드 안내 + 비전문가용 그래프 해석 가이드 */}
-      <div style={{background:`linear-gradient(135deg, ${D.black} 0%, #2a2a3a 100%)`,color:"#fff",
-        borderRadius:10,padding:"16px 20px"}}>
-        <div style={{fontSize:14,fontWeight:700,letterSpacing:"0.03em",marginBottom:8,
-          display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:18}}>📊</span>
-          포스트 임팩트 분석 모드 · {monthLabel}
-          <span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.5)",marginLeft:4}}>
-            업계 표준 Pre/Post Sales Lift 방식 (CreatorIQ · Klear · Tracksuit 와 동일)
-          </span>
-        </div>
-        <div style={{fontSize:12,color:"rgba(255,255,255,0.85)",lineHeight:1.65,marginBottom:10}}>
-          <b style={{color:"#fff"}}>이 페이지는 무엇을 보여주나요?</b><br/>
-          인스타그램에 어떤 상품을 소개(태깅)한 포스트를 올렸을 때, 그 상품의 판매량이 정말 늘었는지 — 그리고 얼마나 늘었는지를 한눈에 볼 수 있게 해줍니다.
-          포스트가 효과가 있었는지 <b style={{color:"#fff"}}>"감"</b>이 아니라 <b style={{color:"#fff"}}>"숫자"</b>로 판단하세요.
-        </div>
-        {/* 2-column 가이드 */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:10,marginTop:6}}>
-          <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#10b981",letterSpacing:"0.04em",marginBottom:5}}>
-              ① LIFT (가장 중요) — 포스트 효과 측정
-            </div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-              포스트를 올리기 <b style={{color:"#fff"}}>전 14일</b> 동안 그 상품이 평균 몇 장 팔렸는지 vs <b style={{color:"#fff"}}>후 14일</b> 동안 몇 장 팔렸는지의 변화율(%).
-              <br/>
-              <span style={{color:"#10b981"}}>+30% 이상</span> = 콘텐츠 ROI 매우 좋음 / <span style={{color:"#10b981"}}>+10%~30%</span> = 양호 / <span style={{color:"#9ca3af"}}>-10%~+10%</span> = 영향 미미 / <span style={{color:"#ef4444"}}>−10% 이하</span> = 역효과 (전략 재검토)
-            </div>
-          </div>
-          <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#F2B544",letterSpacing:"0.04em",marginBottom:5}}>
-              ② ★ 점수 — LIFT를 5단계 등급으로
-            </div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-              LIFT% 절댓값 기준으로 ★1~5 변환. ★5 = +30% 이상, ★4 = +10~30%, ★3 = ±10% 이내, ★2 = -10~-20%, ★1 = -20% 이하.
-              <br/>
-              ★를 클릭하면 일별 판매표 + 산식 모달을 볼 수 있습니다.
-            </div>
-          </div>
-          <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#3b82f6",letterSpacing:"0.04em",marginBottom:5}}>
-              ③ 셀 안 차트 (날짜별 카드) — 흐름 읽기
-            </div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-              X축 가운데 <b style={{color:"#fff"}}>점선(=0)</b>이 포스트 게시일. 왼쪽 회색 = 포스트 <b>전 14일</b> 판매, 오른쪽 컬러 = 포스트 <b>후 14일</b> 판매. 오른쪽이 왼쪽보다 위로 올라가면 효과 있음.
-              아래 <b style={{color:"#fff"}}>속도</b> = 일평균 추가 판매 장수 / <b style={{color:"#fff"}}>인사이트</b> = 다음 액션 추천.
-            </div>
-          </div>
-          <div style={{background:"rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(255,255,255,0.1)"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#a78bfa",letterSpacing:"0.04em",marginBottom:5}}>
-              ④ 상단 차트 — 월 전체 흐름
-            </div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.78)",lineHeight:1.6}}>
-              <b style={{color:"#fff"}}>판매 속도 흐름</b>: 월 안의 일별 판매 추이. 빨간 점선 = 포스트 발생일. 포스트 직후 곡선이 올라가면 효과 있음.
-              <br/>
-              <b style={{color:"#fff"}}>태그×판매 산점도</b>: 포스트당 태그 상품 수가 늘수록 판매도 늘어나는지 (상관 r ≥ 0.4 면 양의 상관).
-              <br/>
-              <b style={{color:"#fff"}}>속도계</b>: 월 전반 14일 평균 vs 후반 14일 평균 — 판매가 가속 / 감속 중인지.
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI Row — 7 타일 + 속도계 */}
+      {/* KPI Row — 6 타일 + 속도계 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))",gap:8}}>
-        <KpiTile label="포스트" value={`${postCount}`} unit="개"/>
         <KpiTile label="평균 ★" value={avgStars.toFixed(1)} unit="/ 5" badge={
           <span style={{fontSize:10,color:"#F2B544",letterSpacing:0.4}}>
             {"★".repeat(Math.round(avgStars))}{"★".repeat(5-Math.round(avgStars)).split("").map((_,i)=><span key={i} style={{color:"#cfcfcf"}}>★</span>)}
           </span>
         }/>
-        <KpiTile label="평균 LIFT" value={`${avgLift>=0?"+":""}${avgLift.toFixed(1)}%`} valueColor={liftColor}/>
-        <KpiTile label="14일 증분 qty" value={`${totalAttr>=0?"+":""}${totalAttr.toLocaleString()}`} unit="장" valueColor={totalAttr>=0?"#10b981":"#ef4444"}/>
-        <KpiTile label="평균 태그 수" value={avgTagCount.toFixed(1)} unit="개 / 포스트"/>
-        <KpiTile label="최고 LIFT 포스트 태그" value={`${bestPostTagCount}`} unit={bestPost?`개 · ${bestPost.post_date}`:"개"}/>
-        <KpiTile label="평균 어트리뷰션 속도" value={`${avgAttrVelocity>=0?"+":""}${avgAttrVelocity.toFixed(1)}`} unit="장 / 일" valueColor={attrVelColor}/>
+        <KpiTile label="평균 LIFT" value={`${avgLift>=0?"+":""}${avgLift.toFixed(1)}%`} valueColor={liftColor}
+          hint="포스트 전 14일 대비 후 14일 태깅 상품 판매 변화율의 평균"/>
+        <KpiTile label="포스트 후 누적 추가 판매" value={`${totalAttr>=0?"+":""}${totalAttr.toLocaleString()}`} unit="장 (14일)" valueColor={totalAttr>=0?"#10b981":"#ef4444"}
+          hint="모든 포스트의 후 14일 판매량에서 전 14일을 뺀 합계"/>
+        <KpiTile label="평균 태그 상품 수" value={avgTagCount.toFixed(1)} unit="개 / 포스트"
+          hint="포스트 1개당 평균 몇 개의 상품을 소개했는지"/>
+        <KpiTile label="최고 LIFT 포스트의 태그 수" value={`${bestPostTagCount}`} unit={bestPost?`개 · ${bestPost.post_date}`:"개"}
+          hint="가장 효과 좋았던 포스트가 몇 개 상품을 소개했는지"/>
+        <KpiTile label="포스트당 일평균 증분" value={`${avgAttrVelocity>=0?"+":""}${avgAttrVelocity.toFixed(1)}`} unit="장 / 일" valueColor={attrVelColor}
+          hint="포스트 1회가 하루 평균 몇 장의 추가 판매를 만들어냈는지"/>
         <VelocityGauge change={velocityChange} firstAvg={firstAvg} secondAvg={secondAvg}/>
       </div>
 
-      {/* Sales Velocity Timeline + 태그×매출 산점도 — 2열 (lg 폭) */}
+      {/* 당월 일별 판매 흐름 + 태그×판매 산점도 — 2열 (lg 폭) */}
       <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,alignItems:"stretch"}}>
         <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
-            <div style={{fontSize:12,fontWeight:700,color:D.black}}>판매 속도 흐름 (Sales Velocity)</div>
-            <div style={{fontSize:10,color:D.textMeta}}>
-              일별 Top 상품 판매량 합계 · 빨간 점 = 포스트 발생일 ·
-              <b style={{color:velColor,marginLeft:4}}>
-                전반 평균 {Math.round(firstAvg)}장 → 후반 평균 {Math.round(secondAvg)}장 ({velocityChange>=0?"+":""}{velocityChange.toFixed(0)}%)
-              </b>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4,gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:D.black}}>당월 일별 판매량 추이</div>
+              <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
+                Y축: 그날 팔린 Top 상품의 합계 (장) · X축: 일자 · 빨간 점선: 포스트 게시일
+              </div>
+            </div>
+            <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
+              월 전반 평균 <b style={{color:D.text}}>{Math.round(firstAvg)}장</b> → 후반 평균 <b style={{color:D.text}}>{Math.round(secondAvg)}장</b>
+              <br/>
+              <b style={{color:velColor}}>{velocityChange>=0?"+":""}{velocityChange.toFixed(0)}% {velocityChange>=0?"가속":"감속"}</b>
             </div>
           </div>
-          <div style={{height:140}}>
+          <div style={{height:150}}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timeline} margin={{top:6,right:8,left:0,bottom:4}}>
+              <AreaChart data={timeline} margin={{top:8,right:12,left:0,bottom:4}}>
                 <defs>
                   <linearGradient id="velocityGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={D.blue} stopOpacity={0.4}/>
-                    <stop offset="100%" stopColor={D.blue} stopOpacity={0.04}/>
+                    <stop offset="0%" stopColor={D.blue} stopOpacity={0.35}/>
+                    <stop offset="100%" stopColor={D.blue} stopOpacity={0.03}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
-                <XAxis dataKey="day" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"/>
-                <YAxis tick={{fontSize:10,fill:D.textMeta}} width={32}/>
+                <XAxis dataKey="day" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"
+                  label={{value:"일",fontSize:10,fill:D.textMeta,position:"insideBottomRight",offset:-2}}/>
+                <YAxis tick={{fontSize:10,fill:D.textMeta}} width={36}
+                  label={{value:"판매량 (장)",fontSize:10,fill:D.textMeta,angle:-90,position:"insideLeft",offset:8,style:{textAnchor:"middle"}}}/>
                 <Tooltip
                   contentStyle={{fontSize:11,padding:"6px 10px",borderRadius:5}}
-                  formatter={(v,k,row)=>[`${v}장${row.payload?.hasPost?" · 포스트 있음":""}`,"판매량"]}
+                  formatter={(v,k,row)=>[`${v}장${row.payload?.hasPost?" · 포스트 게시일":""}`,"판매량"]}
                   labelFormatter={(day)=>`${day}일`}/>
                 <Area type="monotone" dataKey="qty" stroke={D.blue} strokeWidth={2} fill="url(#velocityGrad)"/>
                 {timeline.filter(t=>t.hasPost).map(t=>(
-                  <ReferenceLine key={t.iso} x={t.day} stroke={D.red} strokeWidth={1.5} strokeDasharray="2 2"/>
+                  <ReferenceLine key={t.iso} x={t.day} stroke={D.red} strokeWidth={1.2} strokeDasharray="3 3"
+                    label={{value:"포스트",fontSize:8,fill:D.red,position:"top"}}/>
                 ))}
               </AreaChart>
             </ResponsiveContainer>
@@ -11460,36 +11470,43 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
         </Card>
 
         <Card>
-          <div style={{fontSize:12,fontWeight:700,color:D.black,marginBottom:6}}>태그 상품 수 × 판매량
-            <span style={{fontSize:10,color:D.textMeta,fontWeight:500,marginLeft:6}}>상관 r = <b style={{color:correlation>=0.4?"#10b981":correlation<=-0.2?"#ef4444":D.text}}>{correlation.toFixed(2)}</b></span>
+          <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:2}}>태그 상품 수와 판매량의 관계</div>
+          <div style={{fontSize:10,color:D.textMeta,marginBottom:6,lineHeight:1.45}}>
+            한 점 = 한 포스트. 우측으로 갈수록 태깅 상품이 많고, 위로 갈수록 판매가 많음.
+            <br/>
+            상관계수 r = <b style={{color:correlation>=0.4?"#15803d":correlation<=-0.2?"#b91c1c":D.text}}>{correlation.toFixed(2)}</b>
+            <span style={{color:D.textMeta,marginLeft:4}}>
+              (+1 강한 양 · 0 무관 · −1 강한 음)
+            </span>
           </div>
           {tagScatter.length>=2?(
-            <div style={{height:120}}>
+            <div style={{height:130}}>
               <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{top:6,right:8,bottom:18,left:0}}>
+                <ScatterChart margin={{top:6,right:10,bottom:24,left:8}}>
                   <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
                   <XAxis dataKey="tagCount" type="number" name="태그수"
                     tick={{fontSize:10,fill:D.textMeta}}
-                    label={{value:"태그 상품 수",fontSize:9,fill:D.textMeta,position:"insideBottom",offset:-8}}/>
+                    label={{value:"포스트당 태그 상품 수 (개)",fontSize:10,fill:D.textMeta,position:"insideBottom",offset:-12}}/>
                   <YAxis dataKey="postQty" type="number" name="판매량"
-                    tick={{fontSize:10,fill:D.textMeta}} width={32}/>
+                    tick={{fontSize:10,fill:D.textMeta}} width={40}
+                    label={{value:"판매량 (장)",fontSize:10,fill:D.textMeta,angle:-90,position:"insideLeft",offset:14,style:{textAnchor:"middle"}}}/>
                   <Tooltip
                     cursor={{strokeDasharray:"3 3"}}
                     contentStyle={{fontSize:11,padding:"6px 10px",borderRadius:5}}
-                    formatter={(v,k)=>[k==="postQty"?`${v}장`:`${v}개`,k==="postQty"?"판매량":"태그수"]}
+                    formatter={(v,k)=>[k==="postQty"?`${v}장`:`${v}개`,k==="postQty"?"판매량":"태그 상품 수"]}
                     labelFormatter={()=>""}/>
-                  <Scatter data={tagScatter} fill={D.blue}/>
+                  <Scatter data={tagScatter} fill={D.blue} shape="circle"/>
                 </ScatterChart>
               </ResponsiveContainer>
             </div>
           ):(
-            <div style={{height:120,display:"flex",alignItems:"center",justifyContent:"center",
+            <div style={{height:130,display:"flex",alignItems:"center",justifyContent:"center",
               fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
               산점도 표시를 위해 2개 이상의 태깅된 포스트가 필요합니다
             </div>
           )}
           <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
-            태그당 평균 <b style={{color:D.text}}>{avgQtyPerTag.toFixed(1)}장</b> · 포스트당 평균 태그수 <b style={{color:D.text}}>{tagScatter.length?(tagScatter.reduce((s,x)=>s+x.tagCount,0)/tagScatter.length).toFixed(1):"0"}</b>
+            태그 1개당 평균 판매 <b style={{color:D.text}}>{avgQtyPerTag.toFixed(1)}장</b>
           </div>
         </Card>
       </div>
@@ -11498,17 +11515,46 @@ function ImpactAnalysisHeader({ summary, monthLabel }) {
 }
 
 // KPI Tile — 라벨 + 값 + 단위
-function KpiTile({ label, value, unit, valueColor, badge }) {
+function KpiTile({ label, value, unit, valueColor, badge, hint }) {
   return (
-    <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,padding:"10px 12px"}}>
-      <div style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.06em",
-        textTransform:"uppercase",marginBottom:4}}>{label}</div>
+    <div title={hint||undefined}
+      style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,padding:"12px 14px",
+        display:"flex",flexDirection:"column",gap:4}}>
+      <div style={{fontSize:11,color:D.textSub,fontWeight:600,lineHeight:1.35}}>{label}</div>
       <div style={{display:"flex",alignItems:"baseline",gap:3}}>
-        <span style={{fontSize:20,fontWeight:800,color:valueColor||D.black,lineHeight:1}}>{value}</span>
+        <span style={{fontSize:20,fontWeight:700,color:valueColor||D.black,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{value}</span>
         {unit&&<span style={{fontSize:10,color:D.textMeta}}>{unit}</span>}
       </div>
-      {badge&&<div style={{marginTop:4}}>{badge}</div>}
+      {badge&&<div style={{marginTop:2}}>{badge}</div>}
+      {hint&&<div style={{fontSize:10,color:D.textMeta,lineHeight:1.4,marginTop:2}}>{hint}</div>}
     </div>
+  );
+}
+
+// 카드용 미니 속도계 — 단일 포스트의 일평균 증분 qty 를 작은 반원 게이지로
+function MiniSpeedGauge({ value }) {
+  // -5 ~ +5 장/일 범위로 정규화. 좌끝 -90°, 우끝 +90°
+  const clamped=Math.max(-5,Math.min(5,value));
+  const angle=(clamped/5)*90;
+  const color=value>=1?"#15803d":value>=0?"#3b82f6":value>=-1?"#b45309":"#b91c1c";
+  const r=12,cx=14,cy=14;
+  return (
+    <svg viewBox="0 0 28 18" width={28} height={18} style={{flexShrink:0}}>
+      <path d={`M ${cx-r},${cy} A ${r},${r} 0 0 1 ${cx+r},${cy}`}
+        stroke={D.border} strokeWidth={2} fill="none" strokeLinecap="round"/>
+      {(()=>{
+        const t=(angle+90)/180;
+        const endA=-90+t*180;
+        const rad=endA*Math.PI/180;
+        const ex=cx+r*Math.cos(rad),ey=cy+r*Math.sin(rad);
+        const large=t>0.5?1:0;
+        return <path d={`M ${cx-r},${cy} A ${r},${r} 0 ${large} 1 ${ex},${ey}`}
+          stroke={color} strokeWidth={2} fill="none" strokeLinecap="round"/>;
+      })()}
+      <line x1={cx} y1={cy} x2={cx+(r-2)*Math.cos((angle-90)*Math.PI/180)} y2={cy+(r-2)*Math.sin((angle-90)*Math.PI/180)}
+        stroke={D.black} strokeWidth={1.4} strokeLinecap="round"/>
+      <circle cx={cx} cy={cy} r={1.5} fill={D.black}/>
+    </svg>
   );
 }
 
@@ -11557,21 +11603,20 @@ function VelocityGauge({ change, firstAvg, secondAvg }) {
 // 페이지 하단 자동 인사이트 — 방향성 있는 추천 문구
 // ─────────────────────────────────────────────
 function ImpactInsightsFooter({ insights }) {
-  const toneCol={good:"#10b981",bad:"#ef4444",neutral:D.text};
-  const toneBg={good:"#10b98112",bad:"#ef444412",neutral:D.surfaceAlt};
-  const toneIcon={good:"↑",bad:"↓",neutral:"→"};
+  const toneCol={good:D.text,bad:D.text,neutral:D.text};
+  const toneAccent={good:"#15803d",bad:"#b91c1c",neutral:D.textMeta};
+  const toneIcon={good:"▲",bad:"▼",neutral:"·"};
   return (
     <Card style={{marginTop:16}}>
-      <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:10,
-        display:"flex",alignItems:"center",gap:6}}>
-        <span style={{fontSize:14}}>💡</span> 자동 인사이트 · 방향성 추천
+      <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:10,letterSpacing:"0.02em"}}>
+        분석 인사이트
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {insights.map((ins,i)=>(
           <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",
-            background:toneBg[ins.tone]||D.surfaceAlt,borderLeft:`3px solid ${toneCol[ins.tone]}`,
-            borderRadius:6,padding:"8px 12px",fontSize:12,lineHeight:1.55,color:D.text}}>
-            <span style={{color:toneCol[ins.tone],fontSize:14,fontWeight:800,lineHeight:1.1}}>
+            background:D.surface,borderLeft:`2px solid ${toneAccent[ins.tone]}`,
+            padding:"7px 12px",fontSize:12,lineHeight:1.55,color:toneCol[ins.tone]}}>
+            <span style={{color:toneAccent[ins.tone],fontSize:10,fontWeight:700,lineHeight:1.4,marginTop:1}}>
               {toneIcon[ins.tone]||"·"}
             </span>
             <span>{ins.text}</span>
