@@ -2657,7 +2657,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               const s=delPeriod==="custom"&&delStart?delStart:"2000-01-01";
               const e=delPeriod==="custom"&&delEnd?delEnd:"2099-12-31";
               await Promise.all([
-                db.from("orders").delete().gte("order_date",s).lte("order_date",e),
+                // order_headers 삭제 시 order_items도 FK CASCADE로 함께 정리됨
+                db.from("order_headers").delete().gte("order_date",s).lte("order_date",e),
                 db.from("stock_uploads").delete().gte("upload_date",s).lte("upload_date",e),
                 db.from("revenues").delete().gte("date",s).lte("date",e),
                 db.from("store_sales").delete().gte("sale_date",s).lte("sale_date",e),
@@ -3123,6 +3124,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 </table>
                 </div>
               </div>
+            </div>
             </div>
           );
         }
@@ -5770,7 +5772,14 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
 const HIST_PAGE=200;
-function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색", idField="id", refreshKey=0 }) {
+function DataHistoryPanel({
+  table, dateField, searchFields, cols, editableCols=[], onChanged,
+  placeholder="날짜·품목 검색", idField="id", refreshKey=0,
+  // 보조 테이블 join (예: order_items + order_headers)
+  joinTable=null, joinOn=null, joinFields=[],
+  // 컬럼별 edit 대상 테이블/키 라우팅 (지정 안 된 컬럼은 기본 table+idField)
+  editTableMap={}, editTableKey={},
+}) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
@@ -5785,20 +5794,43 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
     (async()=>{
       setLoading(true);
       const db=await getSupabase();
-      let all=[];let from=0;const PAGE=1000;
-      while(true){
-        const {data,error}=await db.from(table).select("*")
-          .order(dateField,{ascending:false}).range(from,from+PAGE-1);
-        if(error||!data||data.length===0) break;
-        all=all.concat(data);
-        if(data.length<PAGE) break;
-        from+=PAGE;
+      const PAGE=1000;
+      const fetchAll=async(tbl,orderCol,asc)=>{
+        let all=[];let from=0;
+        while(true){
+          const {data,error}=await db.from(tbl).select("*")
+            .order(orderCol,{ascending:asc}).range(from,from+PAGE-1);
+          if(error||!data||data.length===0) break;
+          all=all.concat(data);
+          if(data.length<PAGE) break;
+          from+=PAGE;
+        }
+        return all;
+      };
+      // join이 있으면 main은 idField asc로 로딩 후 dateField로 client sort (dateField가 join쪽일 수 있어)
+      const mainSortCol = joinTable ? idField : dateField;
+      const mainAsc     = joinTable ? true : false;
+      const mainAll=await fetchAll(table,mainSortCol,mainAsc);
+      let merged=mainAll;
+      if(joinTable&&joinOn){
+        const jAll=await fetchAll(joinTable,joinOn,true);
+        const jMap={};
+        jAll.forEach(j=>{jMap[j[joinOn]]=j;});
+        const fields=joinFields.length?joinFields:Object.keys(jAll[0]||{});
+        merged=mainAll.map(r=>{
+          const j=jMap[r[joinOn]]||{};
+          const enriched={...r};
+          fields.forEach(f=>{enriched[f]=j[f]!==undefined?j[f]:enriched[f];});
+          return enriched;
+        });
+        // dateField 기준 client-side desc 정렬
+        merged.sort((a,b)=>String(b[dateField]||"").localeCompare(String(a[dateField]||"")));
       }
-      setRows(all);
+      setRows(merged);
       setLoading(false);
     })();
   // refreshKey 변경 시에도 재로딩 (외부에서 삭제·업로드 발생 시)
-  },[table,dateField,refreshKey]);
+  },[table,dateField,joinTable,joinOn,refreshKey]);
 
   const filtered=filter
     ?rows.filter(r=>[...searchFields,dateField].some(f=>String(r[f]||"").includes(filter)))
@@ -5829,8 +5861,21 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
   const saveEdit=async()=>{
     if(!editCell) return;
     const db=await getSupabase();
-    const {error}=await db.from(table).update({[editCell.field]:editVal}).eq(idField,editCell.id);
-    if(!error) setRows(rows=>rows.map(r=>r[idField]===editCell.id?{...r,[editCell.field]:editVal}:r));
+    // 컬럼별 edit 대상 테이블/키 라우팅
+    const targetTable=editTableMap[editCell.field]||table;
+    const targetKey  =targetTable===table?idField:(editTableKey[editCell.field]||joinOn);
+    const row=rows.find(r=>r[idField]===editCell.id);
+    const keyVal=row?row[targetKey]:editCell.id;
+    const {error}=await db.from(targetTable).update({[editCell.field]:editVal}).eq(targetKey,keyVal);
+    if(!error){
+      // 같은 joinOn 값을 공유하는 모든 행에 반영 (header 편집 시)
+      setRows(rs=>rs.map(r=>{
+        const same=targetTable===table
+          ?r[idField]===editCell.id
+          :r[targetKey]===keyVal;
+        return same?{...r,[editCell.field]:editVal}:r;
+      }));
+    }
     setEditCell(null);
   };
 
@@ -6045,14 +6090,14 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
 
-  // Step 0→1: 미리보기 (파싱 완료 후 확인)
+  // Step 0→1: 미리보기 (파싱 완료 후 확인) — 기존 헤더(주문 단위) 개수 조회
   const [existingCount,setExistingCount]=useState(0);
   const handlePreview=async()=>{
     if(!parsedFile?.length) {setResult({type:"error",msg:"파일을 먼저 선택해주세요"});return;}
     setLoading(true);
     try{
       const db=await getSupabase();
-      const {count}=await db.from("orders").select("*",{count:"exact",head:true})
+      const {count}=await db.from("order_headers").select("*",{count:"exact",head:true})
         .gte("order_date",startDate).lte("order_date",endDate);
       setExistingCount(count||0);
     }catch{}
@@ -6060,28 +6105,80 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
     setStep(1);
   };
 
-  // Step 1→2: 확정 업로드 (기간 내 전체 삭제 후 재삽입 → 재업로드 시 완전 교체)
+  // Step 1→2: 확정 업로드 — order_headers + order_items 두 테이블에 분리 적재
+  //   1) 기간 내 헤더 삭제 → CASCADE로 items 동반 삭제
+  //   2) 기간 외 동일 order_no 충돌 헤더 삭제 → CASCADE
+  //   3) headers insert → 4) items insert (FK 충족)
   const handleUpload=async()=>{
     if(!inRange.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    const {count:prevCount}=await db.from("orders").select("*",{count:"exact",head:true}).gte("order_date",startDate).lte("order_date",endDate);
-    const {error:delErr}=await db.from("orders").delete().gte("order_date",startDate).lte("order_date",endDate);
-    if(delErr){setResult({type:"error",msg:"삭제 실패: "+delErr.message});setLoading(false);return;}
-    for(let i=0;i<inRange.length;i+=500){
-      const {error}=await db.from("orders").upsert(inRange.slice(i,i+500),{onConflict:"order_id"});
-      if(error){setResult({type:"error",msg:"삽입 실패: "+error.message});setLoading(false);return;}
+    const {count:prevCount}=await db.from("order_headers").select("*",{count:"exact",head:true})
+      .gte("order_date",startDate).lte("order_date",endDate);
+
+    // 헤더/아이템 분리 — 스키마:
+    //   order_headers: order_no, order_date, channel, payment_amount
+    //   order_items  : order_no, product_name, option_name, qty, sale_price, status, delivery_date, raw_status
+    const headersMap={};
+    const itemsList=[];
+    inRange.forEach(r=>{
+      if(!headersMap[r.order_no]){
+        headersMap[r.order_no]={
+          order_no:r.order_no,
+          order_date:r.order_date,
+          channel:r.channel,
+          payment_amount:r.payment_amount||0,
+        };
+      } else if((r.payment_amount||0)>0){
+        // 동일 order_no 다중 행: payment_amount 양수 우선
+        headersMap[r.order_no].payment_amount=r.payment_amount;
+      }
+      itemsList.push({
+        order_no:r.order_no,
+        product_name:r.product_name||"미분류",
+        option_name:r.option_name||"",
+        qty:r.qty||0,
+        sale_price:r.sale_price||0,
+        status:r.status,
+        delivery_date:r.delivery_date||null,
+        raw_status:r.raw_status||null,
+      });
+    });
+    const newOrderNos=Object.keys(headersMap);
+
+    // 1) 기간 내 헤더 삭제
+    const {error:delErr1}=await db.from("order_headers").delete()
+      .gte("order_date",startDate).lte("order_date",endDate);
+    if(delErr1){setResult({type:"error",msg:"기간 삭제 실패: "+delErr1.message});setLoading(false);return;}
+    // 2) 기간 밖 충돌(같은 order_no, 다른 날짜) 헤더 삭제
+    if(newOrderNos.length){
+      for(let i=0;i<newOrderNos.length;i+=500){
+        const {error:delErr2}=await db.from("order_headers").delete()
+          .in("order_no",newOrderNos.slice(i,i+500));
+        if(delErr2){setResult({type:"error",msg:"충돌 삭제 실패: "+delErr2.message});setLoading(false);return;}
+      }
+    }
+    // 3) headers insert
+    const headersList=Object.values(headersMap);
+    for(let i=0;i<headersList.length;i+=500){
+      const {error}=await db.from("order_headers").insert(headersList.slice(i,i+500));
+      if(error){setResult({type:"error",msg:"헤더 삽입 실패: "+error.message});setLoading(false);return;}
+    }
+    // 4) items insert (FK는 headers가 먼저 있어야 충족)
+    for(let i=0;i<itemsList.length;i+=500){
+      const {error}=await db.from("order_items").insert(itemsList.slice(i,i+500));
+      if(error){setResult({type:"error",msg:"아이템 삽입 실패: "+error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
     await db.from("upload_logs").insert({
       upload_type:"orders",file_name:fileName,
       row_count:parsedFile?.length||0,
-      inserted:inRange.length,updated:0,
+      inserted:itemsList.length,updated:0,
       skipped:outRows.length,date_start:startDate,date_end:endDate,
     });
     setStep(2);
-    const replaceNote=prevCount>0?` (기존 ${prevCount}건 대체됨)`:"";
-    setResult({type:"success",msg:`${inRange.length}건 등록 완료 (${startDate} ~ ${endDate})${replaceNote}`,ts:ts2});
+    const replaceNote=prevCount>0?` (기존 주문 ${prevCount}건 대체됨)`:"";
+    setResult({type:"success",msg:`${itemsList.length}건 등록 완료 (${startDate} ~ ${endDate})${replaceNote}`,ts:ts2});
     onUpdate(ts2); setLoading(false);
   };
 
@@ -6163,9 +6260,13 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
         </Card>
       </div>
       <DataHistoryPanel
-        table="orders" dateField="order_date" idField="order_id"
+        table="order_items" dateField="order_date" idField="item_id"
+        joinTable="order_headers" joinOn="order_no"
+        joinFields={["order_date","channel","payment_amount"]}
+        editTableMap={{channel:"order_headers"}}
+        editTableKey={{channel:"order_no"}}
         refreshKey={histRefreshKey}
-        searchFields={["product_name","channel","order_id","option_name"]}
+        searchFields={["product_name","channel","order_no","option_name"]}
         placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
         cols={[
@@ -6480,7 +6581,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>{onDataChange?.();bumpHist();}}/>
           <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고" onDone={()=>{onDataChange?.();bumpHist();}}/>
-          <DataDeleteSection table="orders" dateField="order_date" label="주문·배송" onDone={()=>{onDataChange?.();bumpHist();}}/>
+          <DataDeleteSection table="order_headers" dateField="order_date" label="주문·배송" onDone={()=>{onDataChange?.();bumpHist();}}/>
           <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매" onDone={()=>{onDataChange?.();bumpHist();}}/>
         </div>
       )}
@@ -10286,8 +10387,9 @@ export default function App() {
       return rows;
     }
 
-    const [allOrders,allStocks,allRevRaw,allStoreSales,tsRes]=await Promise.all([
-      fetchAll("orders","order_date",true),
+    const [allHeaders,allItems,allStocks,allRevRaw,allStoreSales,tsRes]=await Promise.all([
+      fetchAll("order_headers","order_date",true),
+      fetchAll("order_items","item_id",true),
       fetchAll("stock_uploads","upload_date",false),
       fetchAll("revenues","date",false),
       fetchAll("store_sales","sale_date",true),
@@ -10298,6 +10400,30 @@ export default function App() {
     const revMap={};
     allRevRaw.forEach(r=>{const k=`${r.date}__${r.channel}`;if(!revMap[k]||r.id>revMap[k].id)revMap[k]=r;});
     const allRevenues=Object.values(revMap);
+
+    // order_headers ⨝ order_items → 기존 orders 단일 행 모양으로 머지
+    // (Dashboard/analyze/LogisticsFlow 등 소비처가 같은 필드를 그대로 참조)
+    // 스키마: headers={order_no,order_date,channel,payment_amount}, items={item_id,order_no,product_name,option_name,qty,sale_price,status,delivery_date,raw_status}
+    const headerMap={};
+    allHeaders.forEach(h=>{headerMap[h.order_no]=h;});
+    const allOrders=allItems.map(it=>{
+      const h=headerMap[it.order_no]||{};
+      return {
+        order_no:it.order_no,
+        order_date:h.order_date||null,
+        delivery_date:it.delivery_date||null,   // items에 위치
+        channel:h.channel||"",
+        payment_amount:h.payment_amount||0,
+        product_name:it.product_name,
+        option_name:it.option_name,
+        qty:it.qty,
+        sale_price:it.sale_price,                // amount 컬럼 없음 — analyze()의 r.amount는 자동 폴백 처리됨
+        status:it.status,
+        raw_status:it.raw_status,
+        // 하위 호환 합성 키 (기존 코드의 r.order_id 폴백용)
+        order_id:`${h.order_date||""}||${it.order_no}||${it.product_name||""}||${it.option_name||""}`,
+      };
+    });
 
     // store_sales → 주문 호환 rows (채널은 "오프라인 스토어"로 정규화)
     const storeOrderRows=allStoreSales.map(r=>({
