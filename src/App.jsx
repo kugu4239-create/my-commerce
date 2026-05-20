@@ -9510,6 +9510,41 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     setYm(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
   };
 
+  // ── 일별 데이터 집계 ────────────────────────────
+  // 소스: revenues(온라인 매출) + storeSales(매장) + orders(상품 판매 수량)
+  // 산출: 일자별 { channels:{ch:매출}, total:매출합, topProducts:[상위 3] }
+  const dailyData=useMemo(()=>{
+    const byDate={};
+    const ensure=d=>{if(!byDate[d]) byDate[d]={channels:{},products:{},total:0,topProducts:[]};return byDate[d];};
+    // 온라인 채널 매출 (revenues CSV)
+    revenues.forEach(r=>{
+      if(!r.date) return;
+      const ch=r.channel||"미분류";
+      const net=(r.amount||0)-(r.refund_amount||0);
+      ensure(r.date).channels[ch]=(byDate[r.date].channels[ch]||0)+net;
+    });
+    // 매장 매출 (store_sales)
+    storeSales.forEach(r=>{
+      if(!r.sale_date) return;
+      const amt=r.status==="배송"?(r.amount||0):r.status==="반품"?-(r.amount||0):0;
+      ensure(r.sale_date).channels["오프라인 스토어"]=(byDate[r.sale_date].channels["오프라인 스토어"]||0)+amt;
+    });
+    // 판매 상품 수량 (orders, 배송만)
+    orders.forEach(r=>{
+      if(!r.order_date||r.status!=="배송") return;
+      const name=r.product_name||"미분류";
+      ensure(r.order_date).products[name]=(byDate[r.order_date].products[name]||0)+(r.qty||1);
+    });
+    // 파생 필드
+    Object.values(byDate).forEach(d=>{
+      d.total=Object.values(d.channels).reduce((s,v)=>s+v,0);
+      d.topProducts=Object.entries(d.products)
+        .sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .map(([name,qty])=>({name,qty}));
+    });
+    return byDate;
+  },[orders,revenues,storeSales]);
+
   // 월 그리드 생성 — 일요일 시작, 월말일이 포함된 마지막 주까지만 표시
   const grid=useMemo(()=>{
     const [y,m]=ym.split("-").map(Number);
@@ -9562,7 +9597,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
               color:i===0?D.red:i===6?D.blue:D.textMeta,textAlign:"center"}}>{w}</div>
           ))}
-          {grid.map((c,i)=>(
+          {grid.map((c,i)=>{
+            const d=dailyData[c.iso];
+            const channels=d?Object.entries(d.channels).filter(([,v])=>v>0):[];
+            const barTotal=channels.reduce((s,[,v])=>s+v,0)||1;
+            return (
             <div key={i} style={{
               background:c.inMonth?D.surface:D.bg,
               minHeight:170,padding:"10px 12px",
@@ -9577,16 +9616,37 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                 {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
                   background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
               </div>
-              {/* 다음 단계: 매출 mini-bar, IG 썸네일, 판매 Top */}
+              {/* IG 썸네일 영역 (다음 step에서 채워짐) — 현재는 그래프/Top만 */}
+              {c.inMonth&&d&&d.total>0&&(
+                <>
+                  <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:3}}>
+                    {fmtWonShort(d.total)}
+                  </div>
+                  <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:D.bg,marginBottom:8}}>
+                    {channels.map(([ch,amt])=>(
+                      <div key={ch} title={`${ch} ${fmtWonShort(amt)} (${(amt/barTotal*100).toFixed(0)}%)`}
+                        style={{flex:amt,background:chColor(ch),minWidth:2}}/>
+                    ))}
+                  </div>
+                </>
+              )}
+              {c.inMonth&&d?.topProducts?.length>0&&(
+                <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
+                  {d.topProducts.map((p,j)=>(
+                    <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      • {p.name} <span style={{color:D.textMeta}}>{p.qty}장</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
+          );})}
         </div>
       </Card>
 
       <div style={{marginTop:16,fontSize:11,color:D.textMeta,lineHeight:1.7,background:D.bg,
         padding:"10px 14px",borderRadius:6,border:`1px dashed ${D.border}`}}>
-        <b>Phase 1 진행 중</b> — 현재는 빈 캘린더만 표시됩니다.<br/>
-        다음 단계: ① 상단 KPI 카드 → ② 셀별 매출/판매Top → ③ IG 포스트 등록 모달 → ④ 리본 연결
+        <b>다음 단계</b> — ① IG 포스트 등록 모달 → ② oEmbed 썸네일 → ③ 상품 매칭 검색 → ④ 리본 연결
       </div>
     </div>
   );
