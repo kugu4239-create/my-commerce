@@ -10186,6 +10186,22 @@ function useInstagramEmbedScript(deps){
   },deps);
 }
 
+// 인스타그램 포스트 썸네일 — Microlink API 로 og:image 를 받아 <img> 로 표시
+// 캘린더 셀 배경처럼 가볍게 깔 때 사용 (실제 embed iframe 보다 빠르고 안정적)
+function InstagramThumb({ url }) {
+  const [err,setErr]=useState(false);
+  if(err||!url) return null;
+  // Microlink: embed=image.url → 헤더 og:image 를 직접 이미지로 반환
+  const src=`https://api.microlink.io/?url=${encodeURIComponent(url)}&embed=image.url`;
+  return (
+    <img src={src} alt="" loading="lazy" decoding="async"
+      referrerPolicy="no-referrer"
+      onError={()=>setErr(true)}
+      style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+    />
+  );
+}
+
 // 인스타그램 임베드 — dangerouslySetInnerHTML 로 React reconcile 영역 밖에 두어
 // embed.js 가 내부 DOM 을 iframe 으로 교체해도 NotFoundError 가 안 나도록 처리
 function InstagramEmbed({ url, style }) {
@@ -10726,13 +10742,10 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              {/* IG 임베드 배경: 셀에 직접 가시화. 비율은 transform scale로 압축 */}
+              {/* IG 포스트 첫 장 썸네일 배경 — Microlink og:image */}
               {c.inMonth&&posts.length>0&&(
                 <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
-                  <div style={{transform:"scale(0.32)",transformOrigin:"top left",
-                    width:"312.5%",height:"312.5%"}}>
-                    <InstagramEmbed url={posts[0].url}/>
-                  </div>
+                  <InstagramThumb url={posts[0].url}/>
                 </div>
               )}
               {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 */}
