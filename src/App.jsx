@@ -855,13 +855,20 @@ function DataDeleteSection({ table, dateField, label, onDone }) {
   const handleDelete = async () => {
     setLoading(true);
     const db = await getSupabase();
-    const { error } = await db.from(table).delete().gte(dateField,start).lte(dateField,end);
+    // .select()를 붙여서 실제로 삭제된 행을 받아옴 (RLS 등으로 0건이 삭제되면 알 수 있음)
+    const { data, error } = await db.from(table).delete()
+      .gte(dateField,start).lte(dateField,end).select();
     setLoading(false);
-    if (error) { setResult({type:"error",msg:error.message}); setStep(0); }
-    else {
-      setResult({type:"success",msg:`${start} ~ ${end} 데이터 삭제 완료`});
-      setStep(0); onDone?.();
+    if (error) { setResult({type:"error",msg:`삭제 실패: ${error.message}`}); setStep(0); return; }
+    const affected = (data||[]).length;
+    if (affected===0) {
+      setResult({type:"warn",msg:`삭제된 행 0건 — 해당 기간에 데이터가 없거나 Supabase RLS 정책에 의해 차단되었을 수 있습니다.`});
+      setStep(0);
+      return;
     }
+    setResult({type:"success",msg:`${start} ~ ${end} · ${affected.toLocaleString()}건 삭제 완료`});
+    setStep(0);
+    onDone?.();
   };
 
   return (
@@ -2878,7 +2885,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>이지어드민 주문 CSV</b> (orders, status="배송") — 매장 판매(오프라인 스토어)는 별도 수집되어 배송 카운트에서 제외<br/>
+                소스: <b>이지어드민 주문 CSV</b> (orders, status="배송")<br/>
                 <b>배송 건</b> = COUNT(DISTINCT 주문번호) where status="배송"<br/>
                 <b>배송 수량(장)</b> = SUM(qty) where status="배송"
               </div>
@@ -2899,11 +2906,6 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         <td style={{textAlign:"right",padding:"5px 7px",color:D.textMeta}}>{d.qty.toLocaleString()}</td>
                       </tr>
                     ))}
-                    <tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta,fontStyle:"italic"}}>
-                      <td style={{padding:"5px 7px"}}>오프라인 스토어</td>
-                      <td style={{textAlign:"right",padding:"5px 7px"}}>0</td>
-                      <td style={{textAlign:"right",padding:"5px 7px"}}>0</td>
-                    </tr>
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
                       <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalShipped.toLocaleString()}</td>
@@ -2911,9 +2913,6 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     </tr>
                   </tbody>
                 </table>
-                <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
-                  * 매장 판매는 인도 시점에 즉시 완료되므로 별도 '주문 건/주문 수량'으로 수집됩니다 (주문 모달 참고)
-                </div>
               </div>
               <div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>주문일별 (최근 30일)</div>
@@ -5065,7 +5064,7 @@ function CSDataInput() {
 // ─────────────────────────────────────────────
 const REVENUE_CHANNELS = ["자사몰","29CM","무신사"];
 
-function RevenueForm({ onUpdate }) {
+function RevenueForm({ onUpdate, histRefreshKey=0 }) {
   const today=new Date().toISOString().slice(0,10);
   const [date,setDate]=useState(today);
   const [dateMode,setDateMode]=useState("single"); // "single"|"range"
@@ -5493,7 +5492,7 @@ function RevenueForm({ onUpdate }) {
 // ─────────────────────────────────────────────
 // DATA INPUT — 입고 CSV
 // ─────────────────────────────────────────────
-function StockUploader({ onUpdate }) {
+function StockUploader({ onUpdate, histRefreshKey=0 }) {
   const today=new Date().toISOString().slice(0,10);
   const [startDate,setStartDate]=useState(today);
   const [endDate,setEndDate]=useState(today);
@@ -5741,7 +5740,7 @@ function StockUploader({ onUpdate }) {
 // 공통 업로드 내역 패널 (Supabase 테이블 기반)
 // ─────────────────────────────────────────────
 const HIST_PAGE=200;
-function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색", idField="id" }) {
+function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[], onChanged, placeholder="날짜·품목 검색", idField="id", refreshKey=0 }) {
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const [filter,setFilter]=useState("");
@@ -5768,7 +5767,8 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
       setRows(all);
       setLoading(false);
     })();
-  },[table,dateField]);
+  // refreshKey 변경 시에도 재로딩 (외부에서 삭제·업로드 발생 시)
+  },[table,dateField,refreshKey]);
 
   const filtered=filter
     ?rows.filter(r=>[...searchFields,dateField].some(f=>String(r[f]||"").includes(filter)))
@@ -5897,7 +5897,7 @@ function DataHistoryPanel({ table, dateField, searchFields, cols, editableCols=[
 // ─────────────────────────────────────────────
 // DATA INPUT — 이지어드민 CSV (주문일 기준 · 배송일 선택)
 // ─────────────────────────────────────────────
-function EasyAdminUploader({ onUpdate }) {
+function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
   const [startDate,setStartDate]=useState("");
   const [endDate,setEndDate]=useState("");
   const [step,setStep]=useState(0);
@@ -6134,6 +6134,7 @@ function EasyAdminUploader({ onUpdate }) {
       </div>
       <DataHistoryPanel
         table="orders" dateField="order_date" idField="order_id"
+        refreshKey={histRefreshKey}
         searchFields={["product_name","channel","order_id","option_name"]}
         placeholder="날짜·상품명·판매처 검색"
         editableCols={["channel","status","product_name","option_name"]}
@@ -6156,7 +6157,7 @@ function EasyAdminUploader({ onUpdate }) {
 // ─────────────────────────────────────────────
 // DATA INPUT — 매장 판매 CSV
 // ─────────────────────────────────────────────
-function StoreUploader({ onUpdate }) {
+function StoreUploader({ onUpdate, histRefreshKey=0 }) {
   const [step,setStep]=useState(0);
   const [fileName,setFileName]=useState("");
   const [preview,setPreview]=useState(null);
@@ -6318,6 +6319,7 @@ function StoreUploader({ onUpdate }) {
       </div>
       <DataHistoryPanel
         table="store_sales" dateField="sale_date"
+        refreshKey={histRefreshKey}
         searchFields={["product_name","store_name"]}
         placeholder="날짜·상품명·매장 검색"
         editableCols={["store_name","product_name","option_name","amount","status"]}
@@ -6391,6 +6393,9 @@ function GuideSection({tabKey,desc,isDark}){
 
 function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], storeSales=[] }) {
   const [tab,setTab]=useState("revenue");
+  // 업로드 내역 패널들에 강제 새로고침 신호 (삭제/업로드 발생 시 증가)
+  const [histRefreshKey,setHistRefreshKey]=useState(0);
+  const bumpHist=()=>setHistRefreshKey(k=>k+1);
 
   const lastDate=(arr,field)=>{
     const d=arr.map(r=>r[field]).filter(Boolean).sort().at(-1);
@@ -6436,17 +6441,17 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
         <GuideSection tabKey={tab} desc={GUIDES[tab]} isDark={false}/>
       )}
 
-      {tab==="revenue"&&<RevenueForm onUpdate={ts=>onUpdate("revenue",ts)}/>}
-      {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)}/>}
-      {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();}}/>}
-      {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("store",ts);onDataChange?.();}}/>}
+      {tab==="revenue"&&<RevenueForm onUpdate={ts=>onUpdate("revenue",ts)} histRefreshKey={histRefreshKey}/>}
+      {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)} histRefreshKey={histRefreshKey}/>}
+      {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
+      {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("store",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
       {tab==="cs"&&<CSDataInput/>}
       {tab==="delete"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
-          <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="orders" dateField="order_date" label="주문·배송" onDone={()=>onDataChange?.()}/>
-          <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매" onDone={()=>onDataChange?.()}/>
+          <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>{onDataChange?.();bumpHist();}}/>
+          <DataDeleteSection table="stock_uploads" dateField="upload_date" label="입고" onDone={()=>{onDataChange?.();bumpHist();}}/>
+          <DataDeleteSection table="orders" dateField="order_date" label="주문·배송" onDone={()=>{onDataChange?.();bumpHist();}}/>
+          <DataDeleteSection table="store_sales" dateField="sale_date" label="매장 판매" onDone={()=>{onDataChange?.();bumpHist();}}/>
         </div>
       )}
     </div>
