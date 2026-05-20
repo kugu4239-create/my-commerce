@@ -10205,6 +10205,40 @@ async function fetchOgImage(postUrl){
   }catch{ return null; }
 }
 
+// 사용자가 업로드한 이미지를 캘린더 셀 사이즈에 맞게 다운스케일 + JPEG 압축
+// 원본 2~5MB → 50~150KB (Supabase Storage 무료 1GB 안에 1만+ 포스트 가능)
+async function resizeImageForUpload(file, maxSize=800, quality=0.82) {
+  const dataUrl=await new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onload=()=>res(fr.result); fr.onerror=rej;
+    fr.readAsDataURL(file);
+  });
+  const img=await new Promise((res,rej)=>{
+    const i=new Image();
+    i.onload=()=>res(i); i.onerror=rej;
+    i.src=dataUrl;
+  });
+  const scale=Math.min(1, maxSize/Math.max(img.width,img.height));
+  const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+  const canvas=document.createElement("canvas");
+  canvas.width=w; canvas.height=h;
+  canvas.getContext("2d").drawImage(img,0,0,w,h);
+  const blob=await new Promise(res=>canvas.toBlob(res,"image/jpeg",quality));
+  return blob;
+}
+
+// Supabase Storage 의 ig-thumbs 버킷에 업로드 → public URL 반환
+async function uploadIgThumb(postId, blob) {
+  const db=await getSupabase();
+  const path=`post-${postId}-${Date.now()}.jpg`;
+  const {error}=await db.storage.from("ig-thumbs").upload(path,blob,{
+    contentType:"image/jpeg", upsert:true,
+  });
+  if(error) throw new Error(error.message);
+  const {data}=db.storage.from("ig-thumbs").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 // 인스타그램 포스트 썸네일 — DB에 캐시된 thumb_url 만 사용 (외부 호출 X)
 //   thumb_url 누락 포스트는 빈 셀 — IGPostModal '썸네일 새로고침' 버튼으로 보충 가능
 function InstagramThumb({ src }) {
@@ -10366,6 +10400,54 @@ function ProductTagger({ postId, tagged, allProducts, onChange }){
 }
 
 // 포스트 등록·관리 모달
+// 사진 직접 업로드 — Microlink 차단/실패에 영향받지 않는 확실한 폴백
+//   카메라 롤/갤러리/스크린샷 → 클라이언트 리사이즈 → Supabase Storage 업로드 → thumb_url 저장
+function ThumbUploadButton({ post, onChange }) {
+  const [state,setState]=useState("idle"); // idle | loading | ok | fail
+  const [errMsg,setErrMsg]=useState("");
+  const inputRef=useRef(null);
+  const onPick=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    setState("loading"); setErrMsg("");
+    try{
+      const blob=await resizeImageForUpload(file);
+      const url=await uploadIgThumb(post.id, blob);
+      const db=await getSupabase();
+      const {error}=await db.from("instagram_posts").update({thumb_url:url}).eq("id",post.id);
+      if(error) throw new Error(error.message);
+      setState("ok");
+      onChange();
+      setTimeout(()=>setState("idle"),1500);
+    }catch(ex){
+      setState("fail");
+      setErrMsg(String(ex?.message||ex));
+    }finally{
+      if(inputRef.current) inputRef.current.value="";
+    }
+  };
+  const label=state==="loading"?"업로드 중..."
+    :state==="ok"?"✓ 업로드됨"
+    :state==="fail"?"실패 — 다시"
+    :"📷 사진 업로드";
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-end"}}>
+      <button onClick={()=>inputRef.current?.click()}
+        disabled={state==="loading"}
+        title="갤러리/카메라 롤/스크린샷에서 사진을 골라 캘린더 셀 배경으로 사용합니다 (자동 리사이즈)"
+        style={{background:"transparent",border:`1px solid ${state==="fail"?D.red:D.border}`,borderRadius:5,
+          padding:"3px 9px",fontSize:11,cursor:state==="loading"?"wait":"pointer",
+          color:state==="fail"?D.red:state==="ok"?D.green:D.textSub,whiteSpace:"nowrap"}}>
+        {label}
+      </button>
+      <input ref={inputRef} type="file" accept="image/*" onChange={onPick} style={{display:"none"}}/>
+      {state==="fail"&&errMsg&&(
+        <div style={{fontSize:10,color:D.red,maxWidth:220,textAlign:"right"}}>{errMsg}</div>
+      )}
+    </div>
+  );
+}
+
 // 썸네일 가져오기/갱신 — Microlink API 호출이 자동 실행 시 실패하는 경우(차단·CORS·일일 한도)
 // 수동 재시도용. 미리보기 + 직접 URL 입력 폴백 포함.
 function ThumbRefreshButton({ post, onChange }) {
@@ -10565,6 +10647,7 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                   {p.caption_memo&&<div style={{fontSize:12,color:D.textSub,marginTop:4}}>{p.caption_memo}</div>}
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"flex-start"}}>
+                  <ThumbUploadButton post={p} onChange={onChange}/>
                   <ThumbRefreshButton post={p} onChange={onChange}/>
                   <button onClick={()=>handleDelete(p.id)}
                     style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
