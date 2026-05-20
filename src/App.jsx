@@ -7085,6 +7085,7 @@ const INV_COL_ALIASES={
   product_name:           ["상품명","product_name","상품"],
   option_name:            ["옵션","option_name","옵션명"],
   selling_price:          ["판매가","selling_price","가격","price"],
+  supply_price:           ["공급가","supply_price","원가","cost","cost_price","sup_price"],
   current_stock_qty:      ["현재고","current_stock_qty","재고","현재재고"],
   first_inbound_date:     ["처음입고일","first_inbound_date","최초입고일"],
   first_inbound_qty:      ["처음입고수량","first_inbound_qty","최초입고수량"],
@@ -7131,7 +7132,7 @@ function parseInvFile(file,onResult,onError){
       if(missing.length>0){
         onError(uploadErrColumns({
           missing,
-          required:Object.values(FIELD_LABELS).concat(["옵션","판매가","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"]),
+          required:Object.values(FIELD_LABELS).concat(["옵션","판매가","공급가","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"]),
           headers,
         }));
         return;
@@ -7147,6 +7148,7 @@ function parseInvFile(file,onResult,onError){
           product_name:get("product_name"),
           option_name:get("option_name")||"",
           selling_price:parseInt(get("selling_price").replace(/[^0-9]/g,""),10)||0,
+          supply_price:parseInt(get("supply_price").replace(/[^0-9]/g,""),10)||0,
           current_stock_qty:getNum("current_stock_qty"),
           first_inbound_date:getDate("first_inbound_date"),
           first_inbound_qty:getNum("first_inbound_qty"),
@@ -7303,7 +7305,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           <div style={{marginBottom:6}}>
             <span style={{color:"#7EC8A4",fontWeight:700,fontSize:13}}>인벤토리 트렌드</span>
             <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
-              {["상품명","옵션","판매가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
+              {["상품명","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
                 <span key={c} style={{background:"rgba(126,200,164,0.1)",border:"1px solid rgba(126,200,164,0.25)",
                   borderRadius:4,padding:"1px 6px",fontSize:12,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
               ))}
@@ -7617,14 +7619,47 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     if(!allDiscountRecs.length) return;
     const XLSX=await getXLSX();
     const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.json_to_sheet(allDiscountRecs.map(d=>({
-      상품명:d.product_name,옵션:d.option_name,판매가:d.selling_price,
-      현재고:d.current_stock_qty,재고금액:d.currentInventoryValue,
-      미판매일수:d.noSalesDays,SKU기간:d.skuAge,
-      판매효율:d.sellThroughProxy,Aging상태:INV_AGING_DEFS[d.agingKey]?.label,
-      제안범위:d.inZone?"범위 내":"범위 외",
-      권장할인율:`${d.recommendedDiscount}%`,
-    })));
+    // 사용자가 엑셀에서 「권장할인율(%)」 셀을 수정하면 「세일 후 가격」·「세일 후 원가율」 이 자동
+    // 재계산되도록 수식 셀로 저장. (json_to_sheet 의 plain value 가 아니라 cell.f 사용)
+    const header=[
+      "상품명","옵션","판매가","공급가","현재고","재고금액",
+      "미판매일수","SKU기간","판매효율","Aging상태","제안범위",
+      "권장할인율(%)","세일 후 가격","세일 후 원가율(%)",
+    ];
+    const aoa=[header];
+    allDiscountRecs.forEach(d=>{
+      aoa.push([
+        d.product_name||"", d.option_name||"",
+        d.selling_price||0, d.supply_price||0,
+        d.current_stock_qty||0, d.currentInventoryValue||0,
+        d.noSalesDays||0, d.skuAge||0,
+        d.sellThroughProxy||0, INV_AGING_DEFS[d.agingKey]?.label||"",
+        d.inZone?"범위 내":"범위 외",
+        d.recommendedDiscount||0,
+        null, // 세일 후 가격 → formula 로 채움
+        null, // 원가율 → formula 로 채움
+      ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    // 각 데이터 행에 수식 주입 (1-based, 헤더가 1행)
+    for(let i=0;i<allDiscountRecs.length;i++){
+      const r=i+2; // Excel row number (2부터)
+      const priceAddr=`C${r}`;        // 판매가
+      const costAddr =`D${r}`;        // 공급가
+      const discAddr =`L${r}`;        // 권장할인율(%)
+      const saleAddr =`M${r}`;        // 세일 후 가격
+      const rateAddr =`N${r}`;        // 세일 후 원가율(%)
+      // 세일 후 가격 = 판매가 * (1 - 할인율/100)
+      ws[saleAddr]={t:"n",f:`${priceAddr}*(1-${discAddr}/100)`,z:"#,##0"};
+      // 세일 후 원가율 = 공급가 / 세일 후 가격 * 100  (분모 0 보호)
+      ws[rateAddr]={t:"n",f:`IFERROR(${costAddr}/${saleAddr}*100,0)`,z:"0.0"};
+    }
+    // 컬럼 폭 보정
+    ws["!cols"]=[
+      {wch:24},{wch:14},{wch:10},{wch:10},{wch:8},{wch:12},
+      {wch:9},{wch:8},{wch:8},{wch:9},{wch:9},
+      {wch:13},{wch:13},{wch:16},
+    ];
     XLSX.utils.book_append_sheet(wb,ws,"세일추천");
     XLSX.writeFile(wb,`sale_rec_${loadDate||"unknown"}.xlsx`);
   };
@@ -7857,7 +7892,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{borderBottom:`1px solid ${DC.border}`}}>
-                    {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율"].map(h=>(
+                    {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율","세일 후 원가율"].map(h=>(
                       <th key={h} style={{padding:"5px 7px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
                         fontWeight:600,color:DC.text,fontSize:12,whiteSpace:"nowrap"}}>
                         {h}
@@ -7892,6 +7927,17 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                         </td>
                         <td style={{padding:"5px 7px",textAlign:"center"}}>
                           <span style={{fontWeight:800,fontSize:13,color:d.inZone?"#C87B7B":DC.sub}}>{d.recommendedDiscount}%</span>
+                        </td>
+                        <td style={{padding:"5px 7px",textAlign:"center",color:DC.text}}>
+                          {(()=>{
+                            const sp=d.selling_price||0;
+                            const cp=d.supply_price||0;
+                            const after=sp*(1-(d.recommendedDiscount||0)/100);
+                            if(!cp||!after) return <span style={{color:DC.dim}}>—</span>;
+                            const rate=cp/after*100;
+                            const col=rate>=90?"#C87B7B":rate>=70?"#D9A53A":"#7EC8A4";
+                            return <span style={{fontWeight:700,color:col}}>{rate.toFixed(1)}%</span>;
+                          })()}
                         </td>
                       </tr>
                     );
