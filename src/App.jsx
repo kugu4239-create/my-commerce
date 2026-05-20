@@ -11023,7 +11023,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                         textTransform:"uppercase",marginBottom:2}}>소개 상품</div>
                       {samedayTagged.size>0
                         ?[...samedayTagged].slice(0,5).map((name,j)=>(
-                          <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:fg}}>
+                          <div key={j} data-tag-iso={c.iso} data-tag-name={name}
+                            style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:fg}}>
                             · {name}
                           </div>
                         ))
@@ -11085,18 +11086,16 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           onClose={()=>setScoreModalIso(null)}/>
       )}
 
-      {/* Sticky 리본 토글 — 뷰포트 하단 20% 중앙 */}
+      {/* Sticky 어트리뷰션 토글 — 뷰포트 하단 20% 중앙 */}
       {ribbons.length>0&&(
         <button onClick={()=>setRibbonsOn(v=>!v)}
-          title={ribbonsOn?"리본 끄기":"리본 켜기 (판매 수량에 따라 두께)"}
+          title={ribbonsOn?"어트리뷰션 라인 끄기":"어트리뷰션 라인 켜기 (판매 수량에 비례한 두께)"}
           style={{position:"fixed",left:"50%",bottom:"20vh",transform:"translateX(-50%)",
-            zIndex:1500,padding:"10px 22px",fontSize:13,fontWeight:700,
-            background:ribbonsOn?D.blue:D.surface,color:ribbonsOn?"#fff":D.text,
-            border:`1.5px solid ${ribbonsOn?D.blue:D.border}`,borderRadius:24,cursor:"pointer",
-            boxShadow:"0 6px 20px rgba(0,0,0,0.18)",
-            display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:14,lineHeight:1}}>{ribbonsOn?"🎀":"🔗"}</span>
-          {ribbonsOn?`리본 ON · ${ribbons.length}개`:"리본 보기"}
+            zIndex:1500,padding:"9px 20px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
+            background:ribbonsOn?D.black:D.surface,color:ribbonsOn?"#fff":D.text,
+            border:`1px solid ${ribbonsOn?D.black:D.border}`,borderRadius:6,cursor:"pointer",
+            boxShadow:"0 4px 14px rgba(0,0,0,0.15)"}}>
+          어트리뷰션 {ribbonsOn?`ON · ${ribbons.length}`:"보기"}
         </button>
       )}
     </div>
@@ -11185,44 +11184,23 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible 
     <>
       <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
           pointerEvents:"none",overflow:"visible"}}>
-        <defs>
-          <filter id="ribbon-glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="1.5" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <marker id="ribbon-arrow" viewBox="0 0 10 10" refX="9" refY="5"
-            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
-          </marker>
-        </defs>
         {ordered.map(p=>{
           const isHover=hovered?.key===p.key;
           const dim=hovered&&!isHover;
           const w=widthOf(p.ribbon?.qty);
           return (
-            <g key={p.key} style={{color:p.color}}>
-              {/* 흰 외곽으로 가시성 */}
-              <path d={p.d} stroke="#fff" fill="none"
-                strokeWidth={w+2.5}
-                opacity={dim?0.05:0.55}
-                strokeLinecap="round"/>
-              {/* 본 라인 */}
-              <path d={p.d} stroke={p.color} fill="none"
-                strokeWidth={w}
-                opacity={dim?0.18:isHover?1:0.85}
-                strokeLinecap="round"
-                filter="url(#ribbon-glow)"
-                markerEnd="url(#ribbon-arrow)"
-                pointerEvents="stroke"
-                style={{cursor:"pointer"}}
-                onMouseEnter={e=>setHovered({key:p.key,ribbon:p.ribbon,color:p.color,x:e.clientX,y:e.clientY})}
-                onMouseMove={e=>setHovered(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
-                onMouseLeave={()=>setHovered(null)}/>
-            </g>
+            <path key={p.key} d={p.d} stroke={p.color} fill="none"
+              strokeWidth={w}
+              opacity={dim?0.15:isHover?1:0.7}
+              strokeLinecap="round"
+              pointerEvents="stroke"
+              style={{cursor:"pointer"}}
+              onMouseEnter={e=>setHovered({key:p.key,ribbon:p.ribbon,color:p.color,x:e.clientX,y:e.clientY})}
+              onMouseMove={e=>setHovered(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
+              onMouseLeave={()=>setHovered(null)}/>
           );
         })}
       </svg>
-      {/* 호버 툴팁 (모달형) */}
       {hovered&&(
         <RibbonTooltip x={hovered.x} y={hovered.y} ribbon={hovered.ribbon} color={hovered.color}/>
       )}
