@@ -10195,43 +10195,14 @@ function useInstagramEmbedScript(deps){
   },deps);
 }
 
-// IG 포스트에서 썸네일 URL 추출 — 여러 폴백 chain
-//   1. Microlink JSON 시도
-//   2. IG 임베드 페이지 HTML → og:image 파싱 (CORS proxy 경유)
-//   3. r.jina.ai 시도
-//   하나라도 성공하면 즉시 반환. 모두 실패 시 null.
+// Microlink JSON 으로 og:image URL 받아옴 (DB 캐시용)
+//   - 실패/CORS 에러는 null 반환 → 호출부에서 폴백 처리
 async function fetchOgImage(postUrl){
-  // 1. Microlink
   try{
     const res=await fetch(`https://api.microlink.io/?url=${encodeURIComponent(postUrl)}`);
     const json=await res.json();
-    const img=json?.data?.image?.url;
-    if(img) return img;
-  }catch{}
-  // 2. IG 임베드 페이지 HTML → og:image (CORS proxy 경유)
-  try{
-    // /p/CODE/ 또는 /reel/CODE/ → /p/CODE/embed/ 변환 (임베드 페이지가 og:image 가짐)
-    const match=postUrl.match(/instagram\.com\/(?:p|reel)\/([^/?#]+)/);
-    if(match){
-      const embedUrl=`https://www.instagram.com/p/${match[1]}/embed/captioned/`;
-      const proxyUrl=`https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`;
-      const res=await fetch(proxyUrl);
-      const html=await res.text();
-      const og=html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
-      if(og?.[1]) return og[1].replace(/&amp;/g,"&");
-      // IG 임베드는 og:image가 없을 수 있음 → display_url 직접 추출
-      const disp=html.match(/"display_url":"([^"]+)"/);
-      if(disp?.[1]) return disp[1].replace(/\\u0026/g,"&").replace(/\\\//g,"/");
-    }
-  }catch{}
-  // 3. r.jina.ai (Reader API — IG 페이지를 markdown으로 변환, 이미지 URL 추출)
-  try{
-    const res=await fetch(`https://r.jina.ai/${postUrl}`);
-    const txt=await res.text();
-    const m=txt.match(/!\[[^\]]*\]\((https:\/\/[^\s)]+\.(?:jpg|jpeg|png|webp)[^\s)]*)\)/i);
-    if(m?.[1]) return m[1];
-  }catch{}
-  return null;
+    return json?.data?.image?.url||null;
+  }catch{ return null; }
 }
 
 // 인스타그램 포스트 썸네일 — DB에 캐시된 thumb_url 만 사용 (외부 호출 X)
