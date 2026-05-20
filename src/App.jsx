@@ -1250,6 +1250,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 오프라인 채널 식별: 이지어드민 판교점/일산점 행, store_sales 머지 행 모두 포함
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
   const isOffline = r => OFFLINE_CHS.has(r.channel||"");
+  // MERRYON OVERSEA 채널은 판매처 상세/판매처별 매출/매출 점유율에서 제외
+  const EXCL_CHS=new Set(["MERRYONOVERSEA","MERRYON OVERSEA","Merryon Oversea"]);
+  const isExcl = r => EXCL_CHS.has(String(r.channel||"").trim());
 
   // ── [총 매출] ──────────────────────────────────────────
   // 소스: revenues(온라인 채널 일자 매출) + storeSales(매장 실판매금액)
@@ -1328,8 +1331,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 4) 오프라인 행(판교점/일산점/매장 머지)은 "오프라인 스토어"로 통합 후 storeMetrics로 덮어씀
   // ─────────────────────────────────────────────────────
   const byChannel={};
-  // (1) 매출 입력 합산 — 채널별 매출/주문수/환불수
+  // (1) 매출 입력 합산 — 채널별 매출/주문수/환불수 (MERRYON OVERSEA 제외)
   revenueRows.forEach(r=>{
+    if(isExcl(r)) return;
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     byChannel[ch].revenue+=(r.amount||0)-(r.refund_amount||0);
@@ -1346,6 +1350,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const chReturnedQty={};   // 채널별 SUM(qty) 반품   — '반품 장수' + 반품률 분자
   const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
   orderRows.forEach(r=>{
+    if(isExcl(r)) return; // MERRYON OVERSEA 제외
     const ch=r.channel||"미분류";
     // 주문번호 키: 신규 order_no 필드 우선, 없으면 order_id 전체(이전 데이터 호환)
     const oid=r.order_no||r.order_id||"";
@@ -4929,7 +4934,8 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     }
     return Object.values(map).sort((a,b)=>a.date>b.date?1:-1).map(p=>({
       ...p,
-      prev:p.date<promoStart?p.revenue:null,
+      // 경계일(promoStart)에 prev/promo 둘 다 값을 줘서 두 라인을 시각적으로 잇는다
+      prev:p.date<=promoStart?p.revenue:null,
       promo:p.date>=promoStart?p.revenue:null,
     }));
   },[ch,prevStart,prevEnd,promoStart,promoEnd,revenues,storeSales]);
@@ -5005,14 +5011,14 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
             일별 매출 — 직전 동일기간(점선) → 프로모션 기간(실선)
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={dailyRevenue} margin={{top:10,right:20,left:0,bottom:0}}>
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={dailyRevenue} margin={{top:30,right:24,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
               <XAxis dataKey="date" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"/>
               <YAxis tick={{fontSize:10,fill:D.textMeta}} tickFormatter={v=>fmtWonShort(v)}/>
               <Tooltip formatter={(v)=>v==null?"":fmtWon(v)} labelFormatter={d=>d}/>
               <ReferenceLine x={promoStart} stroke={D.red} strokeDasharray="4 3"
-                label={{value:"프로모션 시작",position:"top",fill:D.red,fontSize:10}}/>
+                label={{value:"프로모션 시작",position:"insideTop",offset:-18,fill:D.red,fontSize:11,fontWeight:600}}/>
               <Line type="monotone" dataKey="prev"  name="직전 매출"  stroke={D.textMeta} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false}/>
               <Line type="monotone" dataKey="promo" name="프로모션 매출" stroke={chColor(ch)||D.blue} strokeWidth={2} dot={false} connectNulls={false}/>
             </LineChart>
@@ -6547,6 +6553,8 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
           const rows=data.map(r=>{
             const qty=parseKRW(r["수량"]);
             const amount=parseKRW(r["실판매금액"]);
+            // 음수 qty 또는 음수 amount(괄호·-) 둘 다 반품 신호
+            const isReturn=qty<0||amount<0;
             return{
               sale_date:(r["구매일자"]||"").trim().slice(0,10),
               store_name:(r["매장"]||"").trim(),
@@ -6555,7 +6563,9 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
               qty:Math.abs(qty),
               amount:Math.abs(amount),
               order_id:(r["ID"]||"").trim(),
-              status:qty<0?"반품":"배송",
+              // DB값은 기존 호환을 위해 '배송' 유지 (분석/필터 코드 다수에서 사용)
+              // 매장 UI 표시는 '판매'로 변환 (StoreUploader 화면 / DataHistoryPanel fmt)
+              status:isReturn?"반품":"배송",
             };
           }).filter(r=>r.sale_date&&r.product_name&&r.qty>0&&r.amount>0);
           if(!rows.length) throw new Error("파싱된 행이 0건입니다. '구매일자', '상품명', '수량'(>0), '실판매금액'(>0) 모두 값이 있는 행이 1개 이상 있어야 합니다.");
@@ -6652,7 +6662,8 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
                 {key:"option_name",label:"옵션",color:D.textMeta},
                 {key:"qty",label:"수량",bold:true},
                 {key:"amount",label:"금액"},
-                {key:"status",label:"상태",color:D.textMeta},
+                // 매장 UI에서는 '배송' → '판매' 로 표시 (DB값은 유지)
+                {key:"status",label:"상태",color:D.textMeta,fmt:v=>v==="배송"?"판매":v},
                 {key:"order_id",label:"주문ID",color:D.textMeta},
               ]}/>
             </>
@@ -6672,7 +6683,7 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
           {key:"option_name",label:"옵션",color:D.textMeta},
           {key:"qty",label:"수량"},
           {key:"amount",label:"금액"},
-          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:D.green,fontWeight:500}}>{v}</span>},
+          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:D.green,fontWeight:500}}>{v==="배송"?"판매":v}</span>},
           {key:"order_id",label:"주문ID",color:D.textMeta,maxW:100},
         ]}
         onChanged={()=>onUpdate(nowStr())}
