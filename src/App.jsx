@@ -10705,35 +10705,43 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   //   QtyScore = min(QtyShare / 0.10, 1)  — 점유율 10% 이상 만점
   //   별 = round(Score × 5)
   const postScores=useMemo(()=>{
-    const map={}; // postId → {stars, hitRate, qtyShare, hitDays, taggedQty, totalQty}
+    const map={}; // postId → {stars, hitRate, qtyShare, hitDays, taggedQty, totalQty, days[]}
     const WINDOW=14;
     const dayMs=86400000;
     igPosts.forEach(post=>{
       const tagged=postProductsMap[post.id]||[];
-      if(!tagged.length){ map[post.id]={stars:0,hitRate:0,qtyShare:0,hitDays:0,taggedQty:0,totalQty:0,empty:true}; return; }
+      if(!tagged.length){ map[post.id]={stars:0,hitRate:0,qtyShare:0,hitDays:0,taggedQty:0,totalQty:0,days:[],empty:true,WINDOW}; return; }
       const startMs=new Date(post.post_date).getTime();
       let hitDays=0,taggedQty=0,totalQty=0;
+      const days=[];
       for(let i=1;i<=WINDOW;i++){
         const iso=new Date(startMs+i*dayMs).toISOString().slice(0,10);
-        const dd=dailyData[iso]; if(!dd) continue;
+        const dd=dailyData[iso];
         // hit: 일별 Top5 에 태깅 상품이 1개라도 있는지
-        const hit=(dd.topProducts||[]).some(tp=>tagged.some(t=>nameMatches(t,tp.name)));
+        const topHitNames=(dd?.topProducts||[]).filter(tp=>tagged.some(t=>nameMatches(t,tp.name))).map(tp=>tp.name);
+        const hit=topHitNames.length>0;
         if(hit) hitDays++;
         // qty share: 전체 일별 products 에서 태깅 매칭만 합산
-        Object.entries(dd.products||{}).forEach(([name,qty])=>{
-          totalQty+=qty;
-          if(tagged.some(t=>nameMatches(t,name))) taggedQty+=qty;
+        let dTagged=0,dTotal=0;
+        Object.entries(dd?.products||{}).forEach(([name,qty])=>{
+          dTotal+=qty;
+          if(tagged.some(t=>nameMatches(t,name))) dTagged+=qty;
         });
+        taggedQty+=dTagged; totalQty+=dTotal;
+        days.push({iso,hit,topHitNames,taggedQty:dTagged,totalQty:dTotal});
       }
       const hitRate=hitDays/WINDOW;
       const qtyShare=totalQty>0?taggedQty/totalQty:0;
       const qtyScore=Math.min(qtyShare/0.10,1);
       const score=0.5*hitRate+0.5*qtyScore;
       const stars=Math.max(0,Math.min(5,Math.round(score*5)));
-      map[post.id]={stars,hitRate,qtyShare,hitDays,taggedQty,totalQty};
+      map[post.id]={stars,hitRate,qtyShare,qtyScore,score,hitDays,taggedQty,totalQty,days,WINDOW,tagged};
     });
     return map;
   },[igPosts,postProductsMap,dailyData]);
+
+  // 임팩트 점수 산식 모달 상태
+  const [scoreModalIso,setScoreModalIso]=useState(null);
 
   // 같은 달 안 ribbons
   const ribbons=useMemo(()=>{
@@ -10867,15 +10875,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                     {posts.length>0&&(()=>{
                       // 다수 포스트면 max 점수 사용 (사용자 입장: 최고 임팩트 포스트로 평가)
                       const stars=posts.reduce((m,p)=>Math.max(m,postScores[p.id]?.stars||0),0);
-                      const info=posts.map(p=>postScores[p.id]).filter(Boolean);
-                      const hitRateMax=info.length?Math.max(...info.map(x=>x.hitRate||0)):0;
-                      const qtyShareMax=info.length?Math.max(...info.map(x=>x.qtyShare||0)):0;
-                      const tip=`임팩트 점수 ${stars}/5 ★\n· HitRate(14일 Top5 진입 일수) ${(hitRateMax*100).toFixed(0)}%\n· QtyShare(태깅 상품 판매 점유율) ${(qtyShareMax*100).toFixed(1)}%\n공식: 0.5·HitRate + 0.5·min(QtyShare/0.10, 1)`;
                       return (
-                        <span title={tip} style={{fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap"}}>
+                        <button onClick={e=>{e.stopPropagation();setScoreModalIso(c.iso);}}
+                          title="임팩트 점수 산식 보기"
+                          style={{background:"none",border:"none",padding:0,cursor:"pointer",
+                            fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap"}}>
                           <span style={{color:"#F2B544"}}>{"★".repeat(stars)}</span>
                           <span style={{color:"#cfcfcf"}}>{"★".repeat(5-stars)}</span>
-                        </span>
+                        </button>
                       );
                     })()}
                   </div>
@@ -11019,6 +11026,175 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
       {postModalDate&&<IGPostModal date={postModalDate} posts={postsByDate[postModalDate]||[]}
         postProductsMap={postProductsMap} allProducts={allProducts}
         onClose={()=>setPostModalDate(null)} onChange={refreshPosts}/>}
+
+      {/* 임팩트 점수 산식 모달 */}
+      {scoreModalIso&&(
+        <ImpactScoreModal iso={scoreModalIso}
+          posts={postsByDate[scoreModalIso]||[]}
+          postScores={postScores}
+          onClose={()=>setScoreModalIso(null)}/>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 임팩트 점수 산식 모달 — 산식 + 업계 근거 + 실제 계산 과정
+// ─────────────────────────────────────────────
+function ImpactScoreModal({ iso, posts, postScores, onClose }) {
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+          width:"min(820px,95vw)",maxHeight:"90vh",overflowY:"auto",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,gap:10}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>임팩트 점수 산식
+              <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· {iso}</span>
+            </div>
+            <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
+              포스트 후 14일 동안 태깅 상품이 일별 판매 Top5 에 얼마나 들어갔고, 전체 판매 수량의 몇 % 를 차지했는지로 5★ 점수 산출
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta,flexShrink:0}}>✕ 닫기</button>
+        </div>
+
+        {/* 산식 + 업계 근거 */}
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"12px 14px",marginBottom:14,fontSize:12,color:D.text,lineHeight:1.7}}>
+          <div style={{fontWeight:700,marginBottom:6}}>산식</div>
+          <div style={{fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,marginBottom:8,color:D.textSub}}>
+            Score = 0.5 × HitRate + 0.5 × QtyScore<br/>
+            HitRate&nbsp;&nbsp;= (14일 중 태깅 상품이 일별 Top5 에 1개라도 든 일수) / 14<br/>
+            QtyShare&nbsp;= (14일 태깅 상품 총 qty) / (14일 전체 상품 qty)<br/>
+            QtyScore&nbsp;= min(QtyShare / 0.10, 1.0)<br/>
+            ★ = round(Score × 5), 0~5
+          </div>
+          <div style={{fontWeight:700,marginTop:10,marginBottom:6,color:D.text}}>산식 출처 — 솔직히</div>
+          <div style={{color:D.textSub,fontSize:11.5,lineHeight:1.7}}>
+            <b>이 공식 자체는 업계 표준이 아닙니다.</b> 본 앱 데이터에 맞춰 만든 단순화 버전이며, 구성요소만 다음 업계 관행에서 차용했습니다:
+            <ul style={{margin:"6px 0 0 18px",padding:0}}>
+              <li><b>14일 attribution window</b> — Meta Ads / Pinterest Ads 기본 click-attribution 윈도우 (✅ 그대로 차용)</li>
+              <li><b>HitRate@N</b> — Netflix·Amazon·Spotify 추천 시스템 평가 지표 (⚠️ "추천 결과"가 아닌 "판매 Top5"를 정답으로 변형)</li>
+              <li><b>Sales-Lift Share</b> — Nielsen MMM·Tracksuit·Brand24 의 인플루언서/PR 효과 평가 (✅ QtyShare로 반영)</li>
+              <li><b>Weighted multi-signal scoring</b> — HubSpot Lead Score / Salesforce Einstein 의 가중합 패턴 (✅ 0.5/0.5 적용)</li>
+            </ul>
+            <div style={{marginTop:8,padding:"6px 10px",background:`${D.amber}10`,border:`1px solid ${D.amber}40`,borderRadius:4,color:D.text}}>
+              <b>더 엄밀히 평가하려면</b>: Lift study(A/B), Marketing Mix Modeling(Meta Robyn 등), Conversion attribution model 도구를 사용해야 합니다. 본 점수는 데이터 추적 없이 빠르게 콘텐츠 효과를 가늠하는 <b>실용적 근사치</b>입니다.
+            </div>
+          </div>
+        </div>
+
+        {/* 포스트별 실제 계산 */}
+        {posts.map((post,pi)=>{
+          const s=postScores[post.id];
+          if(!s) return null;
+          return (
+            <div key={post.id} style={{border:`1px solid ${D.border}`,borderRadius:8,padding:"14px 16px",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:12,color:D.textMeta}}>포스트 {pi+1} · {post.post_date}</div>
+                  <a href={post.url} target="_blank" rel="noreferrer"
+                    style={{fontSize:11,color:D.blue,wordBreak:"break-all"}}>{post.url}</a>
+                </div>
+                <div style={{fontSize:18,letterSpacing:1,lineHeight:1,whiteSpace:"nowrap",flexShrink:0}}>
+                  <span style={{color:"#F2B544"}}>{"★".repeat(s.stars)}</span>
+                  <span style={{color:"#cfcfcf"}}>{"★".repeat(5-s.stars)}</span>
+                  <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>{s.stars}/5</span>
+                </div>
+              </div>
+
+              {/* 태깅 상품 */}
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>태깅 상품 ({s.tagged?.length||0}개)</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                  {(s.tagged||[]).map(t=>(
+                    <span key={t} style={{padding:"2px 8px",fontSize:11,background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:10}}>{t}</span>
+                  ))}
+                  {(!s.tagged||s.tagged.length===0)&&<span style={{fontSize:11,color:D.textMeta,fontStyle:"italic"}}>(없음 — 점수 0)</span>}
+                </div>
+              </div>
+
+              {/* 요약 지표 */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>HitRate</div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>
+                    {s.hitDays}/{s.WINDOW} <span style={{fontSize:11,color:D.textMeta,fontWeight:400}}>= {(s.hitRate*100).toFixed(0)}%</span>
+                  </div>
+                </div>
+                <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>QtyShare</div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>
+                    {s.taggedQty.toLocaleString()} / {s.totalQty.toLocaleString()} <span style={{fontSize:11,color:D.textMeta,fontWeight:400}}>= {(s.qtyShare*100).toFixed(1)}%</span>
+                  </div>
+                </div>
+                <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>QtyScore</div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>
+                    {(s.qtyScore||0).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* 최종 계산 step */}
+              <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}25`,borderRadius:6,padding:"8px 12px",marginBottom:12,
+                fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:11.5,color:D.text,lineHeight:1.7}}>
+                Score = 0.5 × {s.hitRate.toFixed(2)} + 0.5 × {(s.qtyScore||0).toFixed(2)} = <b>{(s.score||0).toFixed(3)}</b><br/>
+                ★ = round({(s.score||0).toFixed(3)} × 5) = <b>{s.stars}/5</b>
+              </div>
+
+              {/* 일별 breakdown */}
+              <div>
+                <div style={{fontSize:11,color:D.textMeta,marginBottom:4,fontWeight:600}}>14일 일별 breakdown</div>
+                <div style={{maxHeight:240,overflowY:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead style={{background:D.surfaceAlt,position:"sticky",top:0}}>
+                      <tr>
+                        <th style={{padding:"5px 8px",textAlign:"left",fontWeight:600,color:D.textMeta}}>D+i</th>
+                        <th style={{padding:"5px 8px",textAlign:"left",fontWeight:600,color:D.textMeta}}>일자</th>
+                        <th style={{padding:"5px 8px",textAlign:"center",fontWeight:600,color:D.textMeta}}>Top5 hit</th>
+                        <th style={{padding:"5px 8px",textAlign:"left",fontWeight:600,color:D.textMeta}}>매칭된 상품</th>
+                        <th style={{padding:"5px 8px",textAlign:"right",fontWeight:600,color:D.textMeta}}>태깅 qty</th>
+                        <th style={{padding:"5px 8px",textAlign:"right",fontWeight:600,color:D.textMeta}}>전체 qty</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(s.days||[]).map((d,i)=>(
+                        <tr key={d.iso} style={{borderTop:`1px solid ${D.border}`}}>
+                          <td style={{padding:"4px 8px",color:D.textMeta}}>D+{i+1}</td>
+                          <td style={{padding:"4px 8px",color:D.text}}>{d.iso}</td>
+                          <td style={{padding:"4px 8px",textAlign:"center"}}>
+                            {d.hit?<span style={{color:D.green,fontWeight:700}}>✓</span>:<span style={{color:D.textMeta}}>—</span>}
+                          </td>
+                          <td style={{padding:"4px 8px",color:D.textSub,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {(d.topHitNames||[]).join(", ")||"—"}
+                          </td>
+                          <td style={{padding:"4px 8px",textAlign:"right",color:d.taggedQty>0?D.blue:D.textMeta,fontWeight:d.taggedQty>0?600:400}}>{d.taggedQty.toLocaleString()}</td>
+                          <td style={{padding:"4px 8px",textAlign:"right",color:D.textMeta}}>{d.totalQty.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{borderTop:`2px solid ${D.border}`,background:D.surfaceAlt,fontWeight:700}}>
+                        <td colSpan={2} style={{padding:"5px 8px",color:D.text}}>합계</td>
+                        <td style={{padding:"5px 8px",textAlign:"center",color:D.green}}>{s.hitDays}일</td>
+                        <td style={{padding:"5px 8px"}}/>
+                        <td style={{padding:"5px 8px",textAlign:"right",color:D.blue}}>{s.taggedQty.toLocaleString()}</td>
+                        <td style={{padding:"5px 8px",textAlign:"right",color:D.text}}>{s.totalQty.toLocaleString()}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
