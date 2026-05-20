@@ -10974,7 +10974,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   </div>
                 </>
               )}
-              {/* 임팩트 모드 + 포스트 있는 셀: PR1 카드 스타일로 morph (썸네일 + ★ + Lift% + 차트 + 속도 + 인사이트 + 태그칩) */}
+              {/* 임팩트 모드 + 포스트 있는 셀: PR1 카드 스타일로 morph */}
               {impactMode&&posts.length>0&&curPost?(
                 <ImpactCellMorph post={curPost} score={postScores[curPost.id]}
                   tags={postProductsMap[curPost.id]||[]}
@@ -10984,6 +10984,16 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   onEditClick={()=>setPostModalDate(c.iso)}
                   color={postColor(curPost.id)}
                   cm={cm} setYm={setYm}/>
+              ):impactMode?(
+                /* 임팩트 모드 + 포스트 없는 셀: 빈 셀 — 날짜만 옅게 표시 */
+                <div style={{position:"relative",zIndex:2,padding:"10px 12px",
+                  display:"flex",alignItems:"flex-start",flex:1}}>
+                  <span style={{fontSize:14,fontWeight:c.isToday?700:500,
+                    color:c.isToday?D.blue:i%7===0?`${D.red}66`:i%7===6?`${D.blue}66`:D.textMeta,
+                    opacity:c.inMonth?0.6:0.25}}>
+                    {c.date.getDate()}
+                  </span>
+                </div>
               ):(
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
                 display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
