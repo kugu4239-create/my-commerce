@@ -9705,10 +9705,10 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
         )}
       </div>
 
-      {/* Inventory Uploader — 라이트 카드 */}
-      <div style={{background:LC.card,border:`1px solid ${LC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
-        <div style={{fontWeight:600,fontSize:16,color:LC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
-        <InventoryUploader DC={LC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
+      {/* Inventory Uploader — 다크 카드 */}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
+        <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
+        <InventoryUploader DC={DC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
       </div>
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
