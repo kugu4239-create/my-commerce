@@ -3901,10 +3901,176 @@ function DateButtonPicker({value,onChange}){
   );
 }
 
+// ─────────────────────────────────────────────
+// 프로모션 할인율 그리드 — Editor + 표시 컴포넌트
+// 저장 구조: { products: [{group,rate,start,end}], coupons: [{rate,start,end}] }
+// ─────────────────────────────────────────────
+function emptyProductRow(){return{group:"",rate:"",start:"",end:""};}
+function emptyCouponRow(){return{rate:"",start:"",end:""};}
+function normalizePlan(p){
+  return {
+    products: Array.isArray(p?.products)?p.products:[],
+    coupons:  Array.isArray(p?.coupons)?p.coupons:[],
+  };
+}
+
+function DiscountPlanEditor({ value, onChange }) {
+  const plan=normalizePlan(value);
+  // 기본: 상품 3행 / 쿠폰 1행 (실제 입력값이 없으면 보이게)
+  const products=plan.products.length?plan.products:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
+  const coupons =plan.coupons.length ?plan.coupons :[emptyCouponRow()];
+
+  const commit=(next)=>onChange({
+    products: next.products.filter(r=>r.group||r.rate||r.start||r.end),
+    coupons:  next.coupons.filter(r=>r.rate||r.start||r.end),
+  });
+
+  const setProducts=(arr)=>commit({products:arr,coupons});
+  const setCoupons =(arr)=>commit({products,coupons:arr});
+
+  const cellInp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+    padding:"5px 8px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box",
+    fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
+  const lbl={fontSize:11,color:D.textMeta,marginBottom:4,fontWeight:600};
+  const head={fontSize:11,color:D.textMeta,fontWeight:600,padding:"4px 6px",textAlign:"left"};
+
+  return (
+    <div style={{border:`1px solid ${D.border}`,borderRadius:6,padding:"10px 12px",background:D.surfaceAlt}}>
+      <div style={{fontWeight:700,fontSize:13,color:D.black,marginBottom:8}}>할인율</div>
+
+      {/* 상품 할인 */}
+      <div style={{marginBottom:12}}>
+        <div style={lbl}>상품 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 + 기간</span></div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr>
+            <th style={{...head,width:"34%"}}>상품군</th>
+            <th style={{...head,width:"14%"}}>할인율(%)</th>
+            <th style={{...head,width:"22%"}}>시작</th>
+            <th style={{...head,width:"22%"}}>종료</th>
+            <th style={{...head,width:"8%"}}/>
+          </tr></thead>
+          <tbody>
+            {products.map((row,i)=>(
+              <tr key={i}>
+                <td style={{padding:"3px 4px"}}>
+                  <input value={row.group} onChange={e=>{const n=[...products];n[i]={...row,group:e.target.value};setProducts(n);}}
+                    style={cellInp} placeholder="예: 신상품, 전체"/>
+                </td>
+                <td style={{padding:"3px 4px"}}>
+                  <input type="number" value={row.rate} onChange={e=>{const n=[...products];n[i]={...row,rate:e.target.value};setProducts(n);}}
+                    style={cellInp} placeholder="0" min="0" max="100"/>
+                </td>
+                <td style={{padding:"3px 4px"}}>
+                  <input type="date" value={row.start} onChange={e=>{const n=[...products];n[i]={...row,start:e.target.value};setProducts(n);}} style={cellInp}/>
+                </td>
+                <td style={{padding:"3px 4px"}}>
+                  <input type="date" value={row.end} onChange={e=>{const n=[...products];n[i]={...row,end:e.target.value};setProducts(n);}} style={cellInp}/>
+                </td>
+                <td style={{padding:"3px 4px",textAlign:"right"}}>
+                  <button onClick={()=>{const n=products.filter((_,j)=>j!==i);setProducts(n.length?n:[emptyProductRow()]);}}
+                    style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button onClick={()=>setProducts([...products,emptyProductRow()])}
+          style={{marginTop:6,background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
+            padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 행 추가</button>
+      </div>
+
+      {/* 쿠폰 */}
+      <div>
+        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용)</span></div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr>
+            <th style={{...head,width:"14%"}}>할인율(%)</th>
+            <th style={{...head,width:"22%"}}>시작</th>
+            <th style={{...head,width:"22%"}}>종료</th>
+            <th style={{...head,width:"8%"}}/>
+          </tr></thead>
+          <tbody>
+            {coupons.map((row,i)=>(
+              <tr key={i}>
+                <td style={{padding:"3px 4px"}}>
+                  <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
+                    style={cellInp} placeholder="0" min="0" max="100"/>
+                </td>
+                <td style={{padding:"3px 4px"}}>
+                  <input type="date" value={row.start} onChange={e=>{const n=[...coupons];n[i]={...row,start:e.target.value};setCoupons(n);}} style={cellInp}/>
+                </td>
+                <td style={{padding:"3px 4px"}}>
+                  <input type="date" value={row.end} onChange={e=>{const n=[...coupons];n[i]={...row,end:e.target.value};setCoupons(n);}} style={cellInp}/>
+                </td>
+                <td style={{padding:"3px 4px",textAlign:"right"}}>
+                  <button onClick={()=>{const n=coupons.filter((_,j)=>j!==i);setCoupons(n.length?n:[emptyCouponRow()]);}}
+                    style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button onClick={()=>setCoupons([...coupons,emptyCouponRow()])}
+          style={{marginTop:6,background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
+            padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 행 추가</button>
+      </div>
+    </div>
+  );
+}
+
+// 표 셀에 표시되는 컴팩트 보기 — 상품 할인 행 + 쿠폰 행 + 총 할인율 범위
+function DiscountPlanView({ plan }) {
+  const p=normalizePlan(plan);
+  const hasAny=p.products.length||p.coupons.length;
+  if(!hasAny) return <span style={{color:D.textMeta,fontSize:11}}>—</span>;
+  // 총 할인율 = 1 - (1 - 상품) × (1 - 쿠폰)
+  // 기간별 compound 계산: 모든 일자에 대해 매일 적용 가능 할인 중 max 한 개씩 골라 compound
+  const dateSet=new Set();
+  [...p.products,...p.coupons].forEach(r=>{
+    if(!r.start||!r.end) return;
+    const s=new Date(r.start);const e=new Date(r.end);
+    for(let dt=s;dt<=e;dt=new Date(dt.getTime()+86400000)){
+      dateSet.add(dt.toISOString().slice(0,10));
+    }
+  });
+  const dates=[...dateSet].sort();
+  const perDay=dates.map(d=>{
+    const pr=p.products.filter(r=>r.start<=d&&r.end>=d).map(r=>+r.rate||0);
+    const cr=p.coupons .filter(r=>r.start<=d&&r.end>=d).map(r=>+r.rate||0);
+    const maxP=pr.length?Math.max(...pr):0;
+    const maxC=cr.length?Math.max(...cr):0;
+    const total=Math.round((1-(1-maxP/100)*(1-maxC/100))*1000)/10; // %, 소수1자리
+    return {date:d,product:maxP,coupon:maxC,total};
+  });
+  const maxTotal=perDay.length?Math.max(...perDay.map(d=>d.total)):0;
+  return (
+    <div style={{fontSize:11,lineHeight:1.55,minWidth:140}}>
+      {p.products.map((r,i)=>(
+        <div key={"p"+i} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          · {r.group||"전체"} <b style={{color:D.text}}>{r.rate||0}%</b>{" "}
+          <span style={{color:D.textMeta}}>{r.start?.slice(5)}~{r.end?.slice(5)}</span>
+        </div>
+      ))}
+      {p.coupons.map((r,i)=>(
+        <div key={"c"+i} style={{color:D.blue,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          🎟 쿠폰 <b>{r.rate||0}%</b>{" "}
+          <span style={{color:D.textMeta}}>{r.start?.slice(5)}~{r.end?.slice(5)}</span>
+        </div>
+      ))}
+      {maxTotal>0&&(
+        <div style={{marginTop:4,padding:"2px 6px",background:`${D.red}10`,color:D.red,
+          borderRadius:4,fontWeight:600,display:"inline-block"}}>
+          최대 총 {maxTotal}%
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]}});
   const today=new Date().toISOString().slice(0,10);
   const [impactModal,setImpactModal]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
@@ -3968,7 +4134,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promoCalOpen,setPromoCalOpen]=useState(null);
   const [editingPromoId,setEditingPromoId]=useState(null);
   const [editPromoForm,setEditPromoForm]=useState({});
-  const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||""});};
+  const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]}});};
   const savePromoEdit=()=>{
     patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content});
     setEditingPromoId(null);
@@ -3990,7 +4156,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       const db=await getSupabase();
       const{data,error}=await db.from("promotions").select("*").order("start_date",{ascending:true});
       if(!error&&data){
-        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[])}));
+        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]}}));
         if(rows.length>0){
           setPromos(rows);setPromosCache(rows);
         } else if(local.length>0){
@@ -4010,7 +4176,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     setPromos(prev=>{const next=[...prev,newP];setPromosCache(next);return next;});
     const db=await getSupabase();
     await db.from("promotions").insert(newP);
-    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[]});
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]}});
     setShowForm(false);
   };
   const delPromo=async id=>{
@@ -4266,6 +4432,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 )}
               </div>
             </div>
+          </div>
+          <div style={{marginTop:14}}>
+            <DiscountPlanEditor value={form.discount_plan}
+              onChange={v=>setForm(f=>({...f,discount_plan:v}))}/>
           </div>
         </Card>
       )}
@@ -4566,7 +4736,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                {["채널","프로모션명","기간","상세 내용","첨부 파일","","",""].map((h,i)=>(
+                {["채널","프로모션명","기간","상세 내용","할인율","첨부 파일","","",""].map((h,i)=>(
                   <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
                     color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
@@ -4583,7 +4753,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
                 if(isEditing) return (
                   <tr key={p.id}>
-                    <td colSpan={7} style={{padding:"10px 8px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
+                    <td colSpan={8} style={{padding:"10px 8px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
                         <div>
                           <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션명</div>
@@ -4621,6 +4791,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                         <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
                         <textarea value={editPromoForm.content} onChange={e=>setEditPromoForm(f=>({...f,content:e.target.value}))}
                           style={{...inp3,resize:"vertical",minHeight:60,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등"/>
+                      </div>
+                      <div style={{marginBottom:8}}>
+                        <DiscountPlanEditor value={editPromoForm.discount_plan}
+                          onChange={v=>setEditPromoForm(f=>({...f,discount_plan:v}))}/>
                       </div>
                       <div style={{display:"flex",gap:6}}>
                         <button onClick={savePromoEdit}
@@ -4664,6 +4838,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       })}
                     </td>
                     <td {...td} style={{...td.style,maxWidth:200,color:ended?"#bbb":D.textSub,whiteSpace:"pre-wrap"}}>{p.content||p.memo||"—"}</td>
+                    <td {...td} style={{...td.style,verticalAlign:"top",minWidth:170,maxWidth:220}}>
+                      <DiscountPlanView plan={p.discount_plan}/>
+                    </td>
                     <td {...td} style={{...td.style,minWidth:160}}>
                       <div
                         onDragOver={e=>{e.preventDefault();setTableFileDragOver(p.id);}}
@@ -4849,7 +5026,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             <thead>
               <tr style={{background:D.surfaceAlt}}>
                 <th style={{padding:"4px 6px",width:22}}/>
-                {["채널","프로모션명","기간","가린 시각",""].map((h,i)=>(
+                {["채널","프로모션명","기간","할인율","가린 시각",""].map((h,i)=>(
                   <th key={i} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,
                     color:D.textSub,borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
@@ -4871,6 +5048,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   </td>
                   <td style={{padding:"4px 8px",color:D.text,fontWeight:500}}>{h.name}</td>
                   <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{h.start_date?.slice(0,10)} ~ {h.end_date?.slice(0,10)}</td>
+                  <td style={{padding:"4px 8px",verticalAlign:"top",minWidth:170,maxWidth:220}}>
+                    <DiscountPlanView plan={h.discount_plan}/>
+                  </td>
                   <td style={{padding:"4px 8px",fontSize:11}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
                   <td style={{padding:"4px 8px"}}>
                     <button onClick={()=>setImpactModal(h)}
