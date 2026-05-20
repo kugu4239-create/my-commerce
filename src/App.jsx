@@ -991,7 +991,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
   if (!data.prods.length) return (
     <div style={{ textAlign:"center", padding:80, color:D.textMeta, fontSize:13 }}>
-      입고 CSV 또는 이지어드민 CSV를 업로드하면<br/>상품별 물류 흐름이 표시됩니다
+      입고 또는 주문·배송 업로드 데이터를 등록하면<br/>상품별 물류 흐름이 표시됩니다
     </div>
   );
 
@@ -2433,7 +2433,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankBestPeriod,rankBestCustomStart,rankBestCustomEnd)}</div>}
-        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 이지어드민 CSV (오프라인 제외)</div>
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 주문·배송 업로드 데이터 (오프라인 제외)</div>
       </Card>
 
       {/* 플랫폼별 선호 옵션 */}
@@ -2558,7 +2558,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)}</div>}
-        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 이지어드민 CSV (오프라인 제외)</div>
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 주문·배송 업로드 데이터 (오프라인 제외)</div>
       </Card>
 
       {/* 플랫폼별 반품률 높은 옵션 */}
@@ -2801,7 +2801,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>이지어드민 주문 CSV</b> (orders, 모든 상태) + <b>매장 판매 CSV</b> (store_sales, 모든 상태)<br/>
+                소스: <b>주문·배송 업로드 데이터</b> (orders, 모든 상태) + <b>매장 판매 CSV</b> (store_sales, 모든 상태)<br/>
                 <b>주문 건</b> = COUNT(DISTINCT 주문번호) — 배송/반품/교환 등 상태 무관<br/>
                 <b>주문 수량(장)</b> = SUM(qty) — 모든 상태 포함
               </div>
@@ -2885,7 +2885,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>이지어드민 주문 CSV</b> (orders, status="배송")<br/>
+                소스: <b>주문·배송 업로드 데이터</b> (orders, status="배송")<br/>
                 <b>배송 건</b> = COUNT(DISTINCT 주문번호) where status="배송"<br/>
                 <b>배송 수량(장)</b> = SUM(qty) where status="배송"
               </div>
@@ -2967,7 +2967,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>이지어드민 주문 CSV</b> (status="배송"·"반품") — 매장은 제외<br/>
+                소스: <b>주문·배송 업로드 데이터</b> (status="배송"·"반품") — 매장은 제외<br/>
                 <b>반품률</b> = <b>반품 수량(장) ÷ 배송 수량(장)</b> × 100 (동기간 내, 장수 단위)<br/>
                 ※ 반품은 배송 완료 이후부터 접수되므로 단기간(어제·7일) 기준은 0%에 가깝게 보일 수 있습니다. 최근 한달·3개월이 더 정확.
               </div>
@@ -3161,7 +3161,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               </div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: 주문·배송 업로드 데이터 (이지어드민){isOffline?" / 매장 판매 업로드 데이터":""}<br/>
+                소스: 주문·배송 업로드 데이터{isOffline?" / 매장 판매 업로드 데이터":""}<br/>
                 금액 기준: {amtLabel}<br/>
                 객단가 = {totalAmt.toLocaleString()}원 ÷ {rows.length}건 = <b>{fmtWon(aov)}</b>
               </div>
@@ -3202,7 +3202,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         const ch=chOrderModal;
         const isOffline=ch==="오프라인 스토어";
         // 매장은 storeSales 원본, 온라인은 filteredOrders에서 채널 매칭
-        const sourceLabel = isOffline ? "매장 판매 업로드 데이터 (store_sales)" : "주문·배송 업로드 데이터 (이지어드민 CSV)";
+        const sourceLabel = isOffline ? "매장 판매 업로드 데이터" : "주문·배송 업로드 데이터";
         const idKey = r => r.order_no || r.order_id || "";
         const dateKey = r => isOffline ? (r.sale_date||"—") : (r.order_date||"—");
         const baseRows = isOffline
@@ -6064,7 +6064,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
         <Card>
           {step===0&&<>
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 선택</div>
-            <DropZone onFile={handleFile} fileName={fileName} label="이지어드민 파일 선택"
+            <DropZone onFile={handleFile} fileName={fileName} label="주문·배송 파일 선택"
               columns="주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가 · 결제금액 · CS처리"/>
             {result&&<Alert type={result.type} msg={result.msg}/>}
             {startDate&&<div style={{color:D.blue,fontSize:11,marginTop:8,lineHeight:1.7}}>
