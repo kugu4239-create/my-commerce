@@ -2223,13 +2223,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             return <span style={{fontSize:10,fontWeight:700,color:D.black,marginLeft:3}}>{up?"▲":"▼"}{Math.abs(pct).toFixed(1)}%</span>;
           };
           const hasRet=!["yd","7d"].includes(period);
+          const ORDERS_TIP="주문 이후 취소된 수량도 집계한 데이터입니다. 총 인입 주문 수 집계용으로 매출 데이터와 별개의 로직입니다.";
           const cols=[
             {key:"name",   label:"판매처",     left:true, val:c=>c.name,               w:hasRet?"17%":"20%"},
             {key:"share",  label:"점유율",                val:c=>parseFloat(c.share),  w:"7%"},
             {key:"revenue",label:"매출",                  val:c=>c.revenue,            w:hasRet?"13%":"16%"},
             {key:"cmp",    label:"동기간 비교",            val:c=>0,                    w:hasRet?"12%":"15%"},
             // 주문 수: 모든 상태 고유 주문번호 (건수) + 주문 장수 (병기, 셀 안에 sub)
-            {key:"orders", label:"주문 건",               val:c=>c.totalOrders||0,     w:"10%"},
+            {key:"orders", label:"주문 건",               val:c=>c.totalOrders||0,     w:"10%", tooltip:ORDERS_TIP},
             {key:"shipped",label:"배송 건",               val:c=>c.shipped,            w:"10%"},
             ...(hasRet?[
               {key:"returned",label:"반품 수량(장)",       val:c=>c.returnedQty||0,     w:"10%"},
@@ -2293,13 +2294,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         {!c.isSubRow&&prevPeriod?fmtChg(c.revenue,prev)||<span style={{color:D.textMeta,fontSize:10}}>—</span>:<span style={{color:D.textMeta,fontSize:10}}>—</span>}
                         {!c.isSubRow&&prevPeriod&&<div style={{fontSize:9,color:"#bbb",marginTop:1}}>{prevPeriod.start}~{prevPeriod.end}</div>}
                       </td>
-                      {/* 주문 수: 클릭하면 채널별 주문 소스 모달 */}
+                      {/* 주문 수: 클릭하면 채널별 주문 소스 모달, hover 시 안내 툴팁 */}
                       <td onClick={!c.isSubRow&&c.totalOrders>0?()=>setChOrderModal(c.name):undefined}
                         style={{textAlign:"right",padding:"7px 9px",
                           color:!c.isSubRow&&c.totalOrders>0?D.blue:D.textSub,
                           cursor:!c.isSubRow&&c.totalOrders>0?"pointer":"default",
                           textDecoration:!c.isSubRow&&c.totalOrders>0?"underline":"none"}}>
-                        {(c.totalOrders||0).toLocaleString()}
+                        <InfoTip text={ORDERS_TIP}>
+                          <span>{(c.totalOrders||0).toLocaleString()}</span>
+                        </InfoTip>
                         <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.orderedQty||0).toLocaleString()}장</div>
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
@@ -2326,7 +2329,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <td style={{textAlign:"right",padding:"7px 9px"}}>{fmtWonShort(stats.totalRevenue)}</td>
                   <td/>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.textSub}}>
-                    {stats.totalUniqueOrdersAll.toLocaleString()}
+                    <InfoTip text={ORDERS_TIP}>
+                      <span>{stats.totalUniqueOrdersAll.toLocaleString()}</span>
+                    </InfoTip>
                     <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{stats.totalOrderedQtyAll.toLocaleString()}장</div>
                   </td>
                   <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
