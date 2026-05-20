@@ -9976,6 +9976,20 @@ function useInstagramEmbedScript(deps){
   },deps);
 }
 
+// 인스타그램 임베드 — dangerouslySetInnerHTML 로 React reconcile 영역 밖에 두어
+// embed.js 가 내부 DOM 을 iframe 으로 교체해도 NotFoundError 가 안 나도록 처리
+function InstagramEmbed({ url, style }) {
+  const safeUrl=String(url||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const css=`margin:0;max-width:100%;min-width:100%;${style||""}`;
+  return (
+    <div dangerouslySetInnerHTML={{__html:
+      `<blockquote class="instagram-media" data-instgrm-permalink="${safeUrl}" data-instgrm-version="14" style="${css}">`
+      +`<a href="${safeUrl}" target="_blank" rel="noreferrer" style="color:#888;font-size:11px">포스트 보기</a>`
+      +`</blockquote>`
+    }}/>
+  );
+}
+
 // URL 정규화: 트래킹 파라미터 제거 + permalink 형태로 표준화
 function normalizeIgUrl(raw){
   const s=String(raw||"").trim();
@@ -10158,12 +10172,7 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 
           {step===1&&<>
             <Alert type="success" msg="✓ URL 등록 완료 — 아래 임베드를 확인하고 소개 상품을 매칭하세요"/>
-            <blockquote className="instagram-media"
-              data-instgrm-permalink={newPostUrl}
-              data-instgrm-version="14"
-              style={{margin:"10px 0",maxWidth:"100%",minWidth:"100%"}}>
-              <a href={newPostUrl} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>포스트 보기</a>
-            </blockquote>
+            <InstagramEmbed url={newPostUrl} style="margin:10px 0;"/>
             <ProductTagger postId={newPostId} tagged={postProductsMap[newPostId]||[]}
               allProducts={allProducts} onChange={onChange}/>
             <div style={{display:"flex",gap:7,marginTop:14}}>
@@ -10205,14 +10214,7 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                     padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
               </div>
               {/* 인스타그램 공식 임베드 */}
-              <blockquote className="instagram-media"
-                data-instgrm-permalink={p.url}
-                data-instgrm-version="14"
-                style={{margin:0,maxWidth:"100%",minWidth:"100%"}}>
-                <a href={p.url} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>
-                  포스트 보기
-                </a>
-              </blockquote>
+              <InstagramEmbed url={p.url}/>
               {/* 소개 상품 태깅 */}
               <ProductTagger postId={p.id} tagged={postProductsMap[p.id]||[]}
                 allProducts={allProducts} onChange={onChange}/>
