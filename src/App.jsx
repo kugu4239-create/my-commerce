@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 // XLSX and papaparse are lazy-loaded on first use to keep initial bundle small
 const getXLSX = () => import("xlsx").then(m => m);
@@ -10615,11 +10616,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return [...s].sort();
   },[orders,storeSales]);
 
-  // 호버한 포스트 셀의 iso (리본 강조용)
-  const [hoveredFromIso,setHoveredFromIso]=useState(null);
-
-  // 포스트 ID → 색상 (Sankey 팔레트 순환)
-  const ribbonColor=(postId)=>D.SANKEY[Math.abs(postId)%D.SANKEY.length];
+  // 포스트 ID → 색상 (Sankey 팔레트 순환) — 임팩트 카드 morph 셀 라인 컬러로 재사용
+  const postColor=(postId)=>D.SANKEY[Math.abs(postId)%D.SANKEY.length];
 
   // 이름 매칭: 정확 일치 또는 한쪽이 다른 쪽의 부분 문자열 (대소문자 무시)
   const nameMatches=(a,b)=>{
@@ -10768,49 +10766,20 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
   // 임팩트 점수 산식 모달 상태
   const [scoreModalIso,setScoreModalIso]=useState(null);
-  // 캘린더 그리드 컨테이너 ref — 리본 픽셀 좌표 측정용
-  const gridRef=useRef(null);
   // 같은 날 다중 포스트 좌우 넘김 — iso → 현재 보여줄 인덱스
   const [cellPostIdx,setCellPostIdx]=useState({});
-  // 리본 표시 토글 — 기본 OFF (요청)
-  const [ribbonsOn,setRibbonsOn]=useState(false);
-
-  // 같은 달 안 ribbons
-  const ribbons=useMemo(()=>{
-    if(!lastInMonthIso) return [];
-    const result=[];
-    igPosts.forEach(post=>{
-      if(post.post_date>lastInMonthIso||post.post_date<(grid[0]?.iso||"")) return;
-      // 단, 시작 셀이 현재 보이는 그리드 안에 있어야 함
-      if(isoToGridIdx[post.post_date]===undefined) return;
-      const tagged=postProductsMap[post.id]||[];
-      if(!tagged.length) return;
-      grid.forEach(cell=>{
-        if(!cell.inMonth) return;
-        if(cell.iso<=post.post_date) return; // 후속 날짜만
-        const d=dailyData[cell.iso];
-        if(!d?.topProducts?.length) return;
-        // tagged 중 하나라도 그날 topProducts에 매칭되면 1개 리본
-        for(const tagName of tagged){
-          const hitIdx=d.topProducts.findIndex(tp=>nameMatches(tagName,tp.name));
-          if(hitIdx>=0){
-            const hit=d.topProducts[hitIdx];
-            result.push({
-              fromIso:post.post_date,toIso:cell.iso,postId:post.id,
-              product:hit.name,
-              productIdx:hitIdx,
-              productCount:d.topProducts.length,
-              qty:hit.qty||0,
-              tagName,
-              postUrl:post.url,
-            });
-            break;
-          }
-        }
+  // 포스트 임팩트 분석 모드 토글 — ON 시: 포스트가 있는 셀이 임팩트 카드로 변형 + 상단에 판매 속도 timeline
+  const [impactMode,setImpactMode]=useState(false);
+  // 임팩트 모드 헤더로 스크롤하기 위한 ref + 토글 ON 시 자동 스크롤
+  const impactHeaderRef=useRef(null);
+  useEffect(()=>{
+    if(impactMode&&impactHeaderRef.current){
+      // 약간 지연 후 스크롤 (DOM 렌더 완료 보장)
+      requestAnimationFrame(()=>{
+        impactHeaderRef.current?.scrollIntoView({behavior:"smooth",block:"start"});
       });
-    });
-    return result;
-  },[igPosts,postProductsMap,grid,dailyData,lastInMonthIso,isoToGridIdx]);
+    }
+  },[impactMode]);
 
   // 월 넘어가는 매칭 (이번 달 포스트 → 다음 달 이후 판매 Top)
   const crossMonthByPostDate=useMemo(()=>{
@@ -10839,8 +10808,153 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
   const weeksCount=grid.length/7;
 
+  // 임팩트 모드 분석 요약 — KPI + sales velocity timeline + 인사이트 + 태그×매출 산점도 데이터
+  const impactSummary=useMemo(()=>{
+    if(!impactMode) return null;
+    // ─ KPI ─
+    let stars=0,liftSum=0,liftN=0,totalAttr=0;
+    igPosts.forEach(p=>{
+      const s=postScores[p.id]; if(!s) return;
+      stars+=s.stars||0;
+      if(typeof s.lift==="number"){ liftSum+=s.lift; liftN++; }
+      totalAttr+=(s.postQty||0)-(s.preQty||0);
+    });
+    const avgStars=igPosts.length?stars/igPosts.length:0;
+    const avgLift=liftN?liftSum/liftN:0;
+    // ─ Sales velocity timeline (현재 달 daily qty) ─
+    // 오늘 이후 또는 데이터 없는 trailing 날짜는 제외 (그래프가 0으로 떨어지지 않도록)
+    const todayIso=dayjs().format("YYYY-MM-DD");
+    const monthCells=grid.filter(c=>c.inMonth&&c.iso<=todayIso);
+    const timeline=monthCells.map(c=>({
+      iso:c.iso, day:c.date.getDate(),
+      qty:(dailyData[c.iso]?.topProducts||[]).reduce((s,p)=>s+(p.qty||0),0),
+      hasPost:(postsByDate[c.iso]||[]).length>0,
+    }));
+    // ─ 속도계: 후반 1/2 평균 vs 전반 1/2 평균 → ±% 가속/감속 ─
+    const half=Math.floor(timeline.length/2);
+    const firstAvg=half?timeline.slice(0,half).reduce((s,d)=>s+d.qty,0)/half:0;
+    const secondAvg=(timeline.length-half)?timeline.slice(half).reduce((s,d)=>s+d.qty,0)/(timeline.length-half):0;
+    const velocityChange=firstAvg?((secondAvg-firstAvg)/firstAvg)*100:0;
+    // ─ 최고 임팩트 포스트 ─
+    let bestPost=null,bestLift=-Infinity;
+    igPosts.forEach(p=>{
+      const s=postScores[p.id]; if(!s||typeof s.lift!=="number") return;
+      if(s.lift>bestLift){ bestLift=s.lift; bestPost=p; }
+    });
+    // ─ 태그 상품 수 × 판매량 산점도 + 상관 r ─
+    const tagScatter=igPosts.map(p=>{
+      const s=postScores[p.id]||{};
+      const tagCount=(postProductsMap[p.id]||[]).length;
+      return {tagCount,postQty:s.postQty||0,iso:p.post_date,lift:s.lift||0};
+    }).filter(x=>x.tagCount>0);
+    let correlation=0;
+    if(tagScatter.length>=3){
+      const mx=tagScatter.reduce((s,x)=>s+x.tagCount,0)/tagScatter.length;
+      const my=tagScatter.reduce((s,x)=>s+x.postQty,0)/tagScatter.length;
+      let num=0,dx2=0,dy2=0;
+      tagScatter.forEach(x=>{const dx=x.tagCount-mx,dy=x.postQty-my;num+=dx*dy;dx2+=dx*dx;dy2+=dy*dy;});
+      correlation=(dx2&&dy2)?num/Math.sqrt(dx2*dy2):0;
+    }
+    const totalTags=tagScatter.reduce((s,x)=>s+x.tagCount,0);
+    const totalQty=tagScatter.reduce((s,x)=>s+x.postQty,0);
+    const avgQtyPerTag=totalTags?totalQty/totalTags:0;
+    // ─ 평균 태그 상품 수 (전체 포스트 기준, 태그 없는 포스트 포함) ─
+    const avgTagCount=igPosts.length?igPosts.reduce((s,p)=>s+(postProductsMap[p.id]||[]).length,0)/igPosts.length:0;
+    // ─ LIFT가 가장 활발한 포스트의 태그 상품 수 ─
+    const bestPostTagCount=bestPost?(postProductsMap[bestPost.id]||[]).length:0;
+    // ─ 평균 어트리뷰션 속도 = 포스트 1회당 일평균 추가 판매 qty (장/일) ─
+    //   각 포스트의 (postQty - preQty) / 14 의 평균
+    const velList=igPosts.map(p=>{const s=postScores[p.id];return s?((s.postQty||0)-(s.preQty||0))/14:null;}).filter(v=>v!==null);
+    const avgAttrVelocity=velList.length?velList.reduce((s,v)=>s+v,0)/velList.length:0;
+    // ─ 포스트별 LIFT 랭킹 (best → worst) ─
+    const postRanking=igPosts.map(p=>{
+      const s=postScores[p.id]||{};
+      const tags=postProductsMap[p.id]||[];
+      // 베스트 매칭 상품
+      const m=s.postPerProduct||{};
+      const list=Object.entries(m).sort(([,a],[,b])=>b-a);
+      const bestProduct=list.length&&list[0][1]>0?list[0][0]:null;
+      return {iso:p.post_date,id:p.id,lift:s.lift||0,stars:s.stars||0,
+        postQty:s.postQty||0,preQty:s.preQty||0,bestProduct,tagCount:tags.length};
+    }).filter(x=>x.tagCount>0).sort((a,b)=>b.lift-a.lift);
+    // ─ 포스트별 "전체 매출" 영향 랭킹 — 태깅되지 않은 상품 포함, 전체 매출(원) 기준 ─
+    const dayMs=24*60*60*1000;
+    const overallRanking=igPosts.map(p=>{
+      const baseDate=new Date(p.post_date);
+      let pre=0, post=0;
+      for(let i=1;i<=14;i++){
+        const preIso=new Date(baseDate.getTime()-i*dayMs).toISOString().slice(0,10);
+        const postIso=new Date(baseDate.getTime()+i*dayMs).toISOString().slice(0,10);
+        pre+=(dailyData[preIso]?.total||0);
+        post+=(dailyData[postIso]?.total||0);
+      }
+      const lift=pre?((post-pre)/pre)*100:0;
+      return {iso:p.post_date,id:p.id,lift,preRev:pre,postRev:post,delta:post-pre};
+    }).sort((a,b)=>b.lift-a.lift);
+    // ─ Cohort 평균 곡선 — 모든 포스트의 D-14 ~ D+14 평균 판매량 + 효과 정점 day ─
+    const cohortDays=Array.from({length:29},(_,i)=>i-14); // -14..0..14
+    const cohort=cohortDays.map(d=>{
+      const vals=[];
+      igPosts.forEach(p=>{
+        const s=postScores[p.id]; if(!s) return;
+        if(d<0){
+          const idx=(s.preDays||[]).length+d;
+          if(idx>=0&&idx<(s.preDays||[]).length) vals.push(s.preDays[idx].qty||0);
+        } else if(d===0){
+          // 게시일 — 보간을 위해 pre 마지막 + post 첫 평균
+          const pl=s.preDays?.length?s.preDays[s.preDays.length-1].qty||0:0;
+          const p0=s.postDays?.length?s.postDays[0].qty||0:0;
+          vals.push((pl+p0)/2);
+        } else {
+          const idx=d-1;
+          if(idx>=0&&idx<(s.postDays||[]).length) vals.push(s.postDays[idx].qty||0);
+        }
+      });
+      return {d, avg:vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:0, n:vals.length};
+    });
+    // 효과 정점: D>0 중 평균 최대인 day
+    const postCohort=cohort.filter(c=>c.d>0&&c.n>0);
+    const peakDay=postCohort.length?postCohort.reduce((a,b)=>a.avg>b.avg?a:b).d:0;
+    const peakAvg=postCohort.length?Math.max(...postCohort.map(c=>c.avg)):0;
+    // 전 평균 (D-14..D-1)
+    const preCohort=cohort.filter(c=>c.d<0&&c.n>0);
+    const preAvg=preCohort.length?preCohort.reduce((s,c)=>s+c.avg,0)/preCohort.length:0;
+    // 후 평균 (D+1..D+14)
+    const postCohortAvg=postCohort.length?postCohort.reduce((s,c)=>s+c.avg,0)/postCohort.length:0;
+    // ─ 자동 인사이트 텍스트 (방향성 있는) ─
+    const insights=[];
+    if(avgLift>=15) insights.push({tone:"good",text:`평균 Lift +${avgLift.toFixed(0)}% — 콘텐츠 ROI가 매우 강력합니다. 유사한 포스팅 방식을 다음 달에도 유지하세요.`});
+    else if(avgLift>=5) insights.push({tone:"good",text:`평균 Lift +${avgLift.toFixed(0)}% — 포스팅이 판매를 견인 중. 상위 임팩트 포스트를 재활용해 성과를 증폭하세요.`});
+    else if(avgLift<=-5) insights.push({tone:"bad",text:`평균 Lift ${avgLift.toFixed(0)}% — 포스팅 후 오히려 판매가 줄었습니다. 태깅 상품·캡션·해시태그 전략을 재검토하세요.`});
+    else insights.push({tone:"neutral",text:`평균 Lift ${avgLift>=0?"+":""}${avgLift.toFixed(0)}% — 영향이 크지 않습니다. 포스트 빈도·CTA를 강화해 lift를 끌어올리세요.`});
+    if(velocityChange>=10) insights.push({tone:"good",text:`이번 달 후반 판매 속도가 전반 대비 +${velocityChange.toFixed(0)}% 가속 중 — 모멘텀이 살아있을 때 추가 포스트로 견인하세요.`});
+    else if(velocityChange<=-10) insights.push({tone:"bad",text:`판매 속도 ${velocityChange.toFixed(0)}% 감속 — 신규 포스트·프로모션으로 흐름을 빠르게 회복하세요.`});
+    if(bestPost){
+      const bs=postScores[bestPost.id]||{};
+      insights.push({tone:"good",text:`최고 임팩트: ${bestPost.post_date} (Lift ${bs.lift>=0?"+":""}${(bs.lift||0).toFixed(0)}%, ${bs.postQty||0}장) — 동일한 구도·태깅 패턴을 다시 시도하세요.`});
+    }
+    if(tagScatter.length>=3){
+      if(correlation>=0.4) insights.push({tone:"good",text:`태그 상품 수↑ → 판매량↑ 강한 양의 상관 (r=${correlation.toFixed(2)}). 포스트당 태깅 상품을 더 적극적으로 늘려보세요.`});
+      else if(correlation<=-0.2) insights.push({tone:"bad",text:`태그가 많을수록 오히려 판매↓ (r=${correlation.toFixed(2)}) — 핵심 1~2 상품에만 집중 노출하는 게 효율적입니다.`});
+      else insights.push({tone:"neutral",text:`태그 수와 판매량 사이 뚜렷한 패턴 없음 (r=${correlation.toFixed(2)}) — 태깅보다 콘텐츠 품질이 결정적입니다.`});
+    }
+    return {postCount:igPosts.length,avgStars,avgLift,totalAttr,
+      timeline,velocityChange,firstAvg,secondAvg,
+      bestPost,bestPostTagCount,tagScatter,correlation,avgQtyPerTag,
+      avgTagCount,avgAttrVelocity,
+      postRanking,overallRanking,cohort,peakDay,peakAvg,preAvg,postCohortAvg,
+      insights};
+  },[impactMode,igPosts,postScores,postProductsMap,grid,dailyData,postsByDate]);
+
   return (
     <div style={{padding:"20px 24px",maxWidth:1960,margin:"0 auto"}}>
+      {/* 임팩트 모드 상단 분석 패널 — KPI + 속도계 + Sales Velocity Timeline + 태그×매출 산점도 */}
+      {impactMode&&impactSummary&&(
+        <div ref={impactHeaderRef} style={{scrollMarginTop:16}}>
+          <ImpactAnalysisHeader summary={impactSummary} monthLabel={monthLabel}/>
+        </div>
+      )}
+
       {/* 월 셀렉터 — 중앙 정렬 */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:24}}>
         <button onClick={()=>shiftMonth(-1)} data-hf
@@ -10857,7 +10971,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
       {/* 캘린더 그리드 — iPad 사이즈 (셀 크게) */}
       <Card>
-        <div ref={gridRef} style={{position:"relative"}}>
+        <div style={{position:"relative"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
           {WEEKDAYS.map((w,i)=>(
             <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
@@ -10888,8 +11002,6 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             const ts=hasBg?"0 1px 2px rgba(0,0,0,0.6)":"none"; // text-shadow for legibility
             return (
             <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
-              onMouseEnter={posts.length>0?()=>setHoveredFromIso(c.iso):undefined}
-              onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
               style={{
               background:c.inMonth?D.surface:D.bg,
               aspectRatio:"4 / 5",minHeight:252,padding:0,
@@ -10897,20 +11009,16 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              {/* IG 포스트 썸네일 배경 — 현재 인덱스의 포스트 (정렬: 별점 desc) */}
-              {c.inMonth&&posts.length>0&&curPost?.thumb_url&&(
+              {/* IG 포스트 썸네일 배경 — 임팩트 모드에서는 셀 morph가 자체 썸네일을 가지므로 표시 안 함 */}
+              {!impactMode&&c.inMonth&&posts.length>0&&curPost?.thumb_url&&(
                 <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
                   <InstagramThumb src={curPost.thumb_url}/>
                 </div>
               )}
-              {/* 노이즈 + 반투명 검정 — 이미지 위 흰 텍스트 가독성 향상 (dark film + grain) */}
-              {c.inMonth&&posts.length>0&&(
+              {/* 반투명 검정 레이어 — 흰 텍스트 가독성 확보 */}
+              {!impactMode&&c.inMonth&&posts.length>0&&(
                 <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
-                  background:"rgba(0,0,0,0.45)",
-                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
-                  backgroundBlendMode:"overlay",
-                  mixBlendMode:"normal",
-                }}/>
+                  background:"rgba(0,0,0,0.42)"}}/>
               )}
               {/* 같은 날 멀티 포스트 좌우 넘김 화살표 (별점 desc 순) */}
               {c.inMonth&&posts.length>1&&(
@@ -10934,7 +11042,27 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   </div>
                 </>
               )}
-              {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
+              {/* 임팩트 모드 + 포스트 있는 셀: PR1 카드 스타일로 morph */}
+              {impactMode&&posts.length>0&&curPost?(
+                <ImpactCellMorph post={curPost} score={postScores[curPost.id]}
+                  tags={postProductsMap[curPost.id]||[]}
+                  dateNum={c.date.getDate()} isToday={c.isToday}
+                  postsCount={posts.length}
+                  onStarClick={()=>setScoreModalIso(c.iso)}
+                  onEditClick={()=>setPostModalDate(c.iso)}
+                  color={postColor(curPost.id)}
+                  cm={cm} setYm={setYm}/>
+              ):impactMode?(
+                /* 임팩트 모드 + 포스트 없는 셀: 빈 셀 — 날짜만 옅게 표시 */
+                <div style={{position:"relative",zIndex:2,padding:"10px 12px",
+                  display:"flex",alignItems:"flex-start",flex:1}}>
+                  <span style={{fontSize:14,fontWeight:c.isToday?700:500,
+                    color:c.isToday?D.blue:i%7===0?`${D.red}66`:i%7===6?`${D.blue}66`:D.textMeta,
+                    opacity:c.inMonth?0.6:0.25}}>
+                    {c.date.getDate()}
+                  </span>
+                </div>
+              ):(
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
                 display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
@@ -11060,24 +11188,27 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   </div>
                 )}
               </div>
+              )}
             </div>
           );})}
         </div>
-        {/* 리본 SVG 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트끼리 정확하게 연결 */}
-        <RibbonOverlay gridRef={gridRef} ribbons={ribbons}
-          ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}
-          visible={ribbonsOn}/>
         </div>
       </Card>
 
       {tableMissing&&<Alert type="warn" msg={`Supabase에 instagram_posts 테이블이 없습니다. 아래 SQL을 Supabase Editor에서 실행해주세요:\n\nCREATE TABLE IF NOT EXISTS instagram_posts (\n  id            serial PRIMARY KEY,\n  post_date     date NOT NULL,\n  url           text NOT NULL,\n  caption_memo  text,\n  created_at    timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS instagram_posts_date_idx ON instagram_posts (post_date);`}/>}
 
+      {/* 임팩트 모드 하단 자동 인사이트 — 방향성 있는 추천 문구 */}
+      {impactMode&&impactSummary&&impactSummary.insights.length>0&&(
+        <ImpactInsightsFooter insights={impactSummary.insights}/>
+      )}
+
       <div style={{marginTop:16,fontSize:11,color:D.textMeta,lineHeight:1.7,background:D.bg,
         padding:"10px 14px",borderRadius:6,border:`1px dashed ${D.border}`}}>
         <b>사용법</b><br/>
         ① 셀 클릭 → 인스타그램 URL 등록 → 모달에서 소개 상품 검색·태깅<br/>
-        ② 소개 상품이 후속 날짜 판매 Top에 들어가면 자동으로 리본 연결 (포스트 셀 호버 시 강조)<br/>
-        ③ 매칭이 다음 달까지 이어지면 셀에 <span style={{color:D.blue,fontWeight:600}}>▸N월</span> 버튼 표시 — 클릭하면 그 달로 이동
+        ② 하단 중앙 토글로 <b style={{color:D.text}}>포스트 임팩트 분석</b> ON → 상단에 KPI + 판매 속도 timeline + 속도계 + 태그×매출 산점도 + 자동 인사이트 표시. 포스트가 있는 셀은 임팩트 카드로 변형됩니다.<br/>
+        ③ 매칭이 다음 달까지 이어지면 셀에 <span style={{color:D.blue,fontWeight:600}}>▸N월</span> 버튼 표시 — 클릭하면 그 달로 이동<br/>
+        <span style={{color:D.text}}>★ 임팩트 점수</span>: 포스팅 후 14일 vs 전 14일 태깅 상품 판매 변화율을 5★ 등급으로 변환 — ★를 클릭하면 산식·일별 표 모달
       </div>
 
       {/* 포스트 등록·관리 모달 */}
@@ -11093,160 +11224,618 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           onClose={()=>setScoreModalIso(null)}/>
       )}
 
-      {/* Sticky 어트리뷰션 토글 — 뷰포트 하단 20% 중앙 */}
-      {ribbons.length>0&&(
-        <button onClick={()=>setRibbonsOn(v=>!v)}
-          title={ribbonsOn?"어트리뷰션 라인 끄기":"어트리뷰션 라인 켜기 (판매 수량에 비례한 두께)"}
-          style={{position:"fixed",left:"50%",bottom:"20vh",transform:"translateX(-50%)",
-            zIndex:1500,padding:"9px 20px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
-            background:ribbonsOn?D.black:D.surface,color:ribbonsOn?"#fff":D.text,
-            border:`1px solid ${ribbonsOn?D.black:D.border}`,borderRadius:6,cursor:"pointer",
-            boxShadow:"0 4px 14px rgba(0,0,0,0.15)"}}>
-          어트리뷰션 {ribbonsOn?`ON · ${ribbons.length}`:"보기"}
-        </button>
+      {/* Sticky 포스트 임팩트 분석 토글 + 토글 하단 sticky 가이드 (모드 ON 시에만) */}
+      {igPosts.length>0&&(
+        <div style={{position:"fixed",left:"50%",bottom:"4vh",transform:"translateX(-50%)",
+          zIndex:1500,display:"flex",flexDirection:"column",alignItems:"center",gap:6,
+          maxWidth:"min(720px, 92vw)"}}>
+          <button onClick={()=>setImpactMode(v=>!v)}
+            title={impactMode?"포스트 임팩트 분석 모드 끄기 (캘린더 일반 보기)":"포스트 임팩트 분석 모드 켜기"}
+            style={{padding:"10px 22px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
+              background:D.black,color:"#fff",
+              border:`1px solid ${impactMode?"#fff":D.black}`,borderRadius:6,cursor:"pointer",
+              boxShadow:"0 4px 14px rgba(0,0,0,0.25)",
+              display:"inline-flex",alignItems:"center",gap:8}}>
+            <span style={{width:7,height:7,borderRadius:"50%",
+              background:impactMode?"#22c55e":"rgba(255,255,255,0.35)",
+              boxShadow:impactMode?"0 0 6px #22c55e":"none"}}/>
+            포스트 임팩트 분석 {impactMode?`ON · ${igPosts.length}개`:"OFF"}
+          </button>
+          {impactMode&&<ImpactGuideSticky monthLabel={monthLabel}/>}
+        </div>
       )}
     </div>
   );
 }
 
-// ─────────────────────────────────────────────
-// 리본 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트 끼리 정확 연결
-//   - 시작: 포스트 셀의 ★ 버튼 (data-star-iso)
-//   - 끝  : 매칭된 판매 Top 행 (data-iso + data-pidx)
-// ─────────────────────────────────────────────
-function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible }) {
-  const [paths,setPaths]=useState([]);
-  const [size,setSize]=useState({w:0,h:0});
-  const [hovered,setHovered]=useState(null); // {ribbon, x, y}
+// 토글 버튼 하단 sticky 가이드 — 분석 모드의 해석 방법을 간결하게 안내
+function ImpactGuideSticky({ monthLabel }) {
+  return (
+    <div style={{
+      background:D.surface,color:D.text,
+      border:`1px solid ${D.border}`,
+      borderRadius:10,padding:"14px 18px",
+      boxShadow:"0 6px 20px rgba(0,0,0,0.18)",
+      width:"min(1280px, 94vw)",maxHeight:"58vh",overflowY:"auto"
+    }}>
+      <div style={{fontSize:13,fontWeight:700,letterSpacing:"0.03em",marginBottom:8,
+        display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap",color:D.black,textAlign:"center"}}>
+        포스트 임팩트 분석 모드 · {monthLabel}
+        <span style={{fontSize:11,fontWeight:500,color:D.textMeta,marginLeft:2}}>
+          업계 표준 Pre/Post Sales Lift 방식
+        </span>
+      </div>
+      <div style={{fontSize:12,color:D.textSub,lineHeight:1.65,marginBottom:10,textAlign:"center"}}>
+        <b style={{color:D.text}}>이 페이지는 무엇을 보여주나요?</b><br/>
+        인스타그램에 어떤 상품을 소개(태깅)한 포스트를 올렸을 때, 그 상품의 판매량이 정말 늘었는지 — 그리고 얼마나 늘었는지를 한눈에 볼 수 있게 해줍니다.
+        포스트가 효과가 있었는지 <b style={{color:D.text}}>"숫자"</b>로 판단하세요.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:8,marginTop:6}}>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#15803d",letterSpacing:"0.04em",marginBottom:5}}>
+            ① LIFT (가장 중요) — 포스트 효과 측정
+          </div>
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            포스트 게시 <b style={{color:D.text}}>전 14일</b>의 태깅 상품 평균 판매량과 <b style={{color:D.text}}>후 14일</b>의 평균 판매량의 변화율(%).
+            <br/>
+            <span style={{color:"#15803d"}}>+30% 이상</span> 매우 좋음 / <span style={{color:"#15803d"}}>+10~30%</span> 양호 / <span style={{color:D.textMeta}}>−10~+10%</span> 영향 미미 / <span style={{color:"#b91c1c"}}>−10% 이하</span> 역효과
+          </div>
+        </div>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#b45309",letterSpacing:"0.04em",marginBottom:5}}>
+            ② ★ 점수 — LIFT를 5단계 등급으로
+          </div>
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            LIFT% 절댓값 기준 ★1~5 변환. ★5 = +30% 이상, ★4 = +10~30%, ★3 = ±10% 이내, ★2 = −10~−20%, ★1 = −20% 이하.
+            <br/>
+            ★를 클릭하면 일별 판매표 + 산식 모달을 볼 수 있습니다.
+          </div>
+        </div>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#1d4ed8",letterSpacing:"0.04em",marginBottom:5}}>
+            ③ 셀 안 차트 (날짜별 카드) — 흐름 읽기
+          </div>
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            X축 가운데 <b style={{color:D.text}}>점선(=0)</b>이 포스트 게시일. 왼쪽 회색 = 포스트 <b>전 14일</b> 판매, 오른쪽 컬러 = 포스트 <b>후 14일</b> 판매. 오른쪽이 왼쪽보다 위로 올라가면 효과 있음.
+            아래 <b style={{color:D.text}}>속도</b> = 일평균 추가 판매 장수 / <b style={{color:D.text}}>인사이트</b> = 다음 액션 추천.
+          </div>
+        </div>
+        <div style={{background:D.surfaceAlt,borderRadius:8,padding:"10px 12px",border:`1px solid ${D.border}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#6d28d9",letterSpacing:"0.04em",marginBottom:5}}>
+            ④ 상단 차트 — 월 전체 흐름
+          </div>
+          <div style={{fontSize:11,color:D.textSub,lineHeight:1.6}}>
+            <b style={{color:D.text}}>포스트별 임팩트 랭킹 (태깅 상품)</b>: 태깅한 상품의 LIFT(%)를 best→worst 정렬.
+            <br/>
+            <b style={{color:D.text}}>포스트별 전체 매출 영향</b>: 태깅 안 한 상품 포함, 전체 매출(원)의 전 14일 vs 후 14일 변화율.
+            <br/>
+            <b style={{color:D.text}}>모든 포스트 평균 효과 곡선</b>: D-14 ~ D+14 일별 평균 판매량. 효과 정점일(D+N)이 표시됩니다.
+            <br/>
+            <b style={{color:D.text}}>속도계</b>: 월 전반 14일 평균 vs 후반 14일 평균 — 판매가 가속 / 감속 중인지.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  useEffect(()=>{
-    if(!visible){ setPaths([]); return; }
-    const compute=()=>{
-      const container=gridRef?.current;
-      if(!container) return;
-      const cRect=container.getBoundingClientRect();
-      setSize({w:cRect.width,h:cRect.height});
-      const next=[];
-      ribbons.forEach((r,i)=>{
-        // 시작점 우선순위: 1) 소개 상품 텍스트(tag-name) → 2) ★ 버튼 폴백
-        const tagSafe=String(r.tagName||"").replace(/"/g,'\\"');
-        const fromEl=
-          (r.tagName&&container.querySelector(`[data-tag-iso="${r.fromIso}"][data-tag-name="${tagSafe}"]`))
-          ||container.querySelector(`[data-star-iso="${r.fromIso}"]`);
-        const toEl  =container.querySelector(`[data-iso="${r.toIso}"][data-pidx="${r.productIdx??0}"]`);
-        if(!fromEl||!toEl) return;
-        const fRect=fromEl.getBoundingClientRect();
-        const tRect=toEl.getBoundingClientRect();
-        const fromOnText=fromEl.hasAttribute("data-tag-iso");
-        const fx=(fromOnText?fRect.right-4:fRect.left+fRect.width/2)-cRect.left;
-        const fy=fRect.top+fRect.height/2-cRect.top;
-        const tx=tRect.left+6-cRect.left;
-        const ty=tRect.top+tRect.height/2-cRect.top;
-        const dx=Math.abs(tx-fx);
-        const dy=Math.abs(ty-fy);
-        const cx1=fx+Math.max(20,dx*0.35);
-        const cy1=fy+Math.max(10,dy*0.45);
-        const cx2=tx-Math.max(20,dx*0.35);
-        const cy2=ty-Math.max(10,dy*0.45);
-        const d=`M${fx},${fy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`;
-        next.push({d,color:ribbonColor(r.postId),fromIso:r.fromIso,key:i,ribbon:r,tx,ty});
-      });
-      setPaths(next);
-    };
-    compute();
-    if(!gridRef?.current) return;
-    const ro=new ResizeObserver(compute);
-    ro.observe(gridRef.current);
-    const onScroll=()=>compute();
-    window.addEventListener("scroll",onScroll,true);
-    window.addEventListener("resize",compute);
-    const raf=requestAnimationFrame(compute);
-    return()=>{
-      ro.disconnect();
-      window.removeEventListener("scroll",onScroll,true);
-      window.removeEventListener("resize",compute);
-      cancelAnimationFrame(raf);
-    };
-  },[gridRef,ribbons,ribbonColor,visible]);
+// Pre/Post 14일 일별 qty mini Lift 차트
+function LiftMiniChart({ preDays, postDays, color, height=110 }) {
+  const data=useMemo(()=>{
+    const out=[];
+    const pre=Array.isArray(preDays)?preDays:[];
+    const post=Array.isArray(postDays)?postDays:[];
+    pre.forEach((d,i)=>out.push({d:-pre.length+i,iso:d.iso,pre:d.qty||0,post:null}));
+    // 경계점에서 라인 연결을 위해 D=0 가상 분기 (pre 끝 값을 post 시작에도)
+    const preLast=pre.length?pre[pre.length-1].qty||0:0;
+    out.push({d:0,iso:"D",pre:preLast,post:preLast});
+    post.forEach((d,i)=>out.push({d:i+1,iso:d.iso,pre:null,post:d.qty||0}));
+    return out;
+  },[preDays,postDays]);
+  const total=(preDays||[]).reduce((s,d)=>s+(d.qty||0),0)+(postDays||[]).reduce((s,d)=>s+(d.qty||0),0);
+  if(total===0){
+    return (
+      <div style={{height,display:"flex",alignItems:"center",justifyContent:"center",
+        background:D.surfaceAlt,borderRadius:6,fontSize:11,color:D.textMeta,
+        border:`1px solid ${D.border}`}}>
+        판매 데이터 없음
+      </div>
+    );
+  }
+  return (
+    <div style={{height}}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{top:18,right:8,bottom:4,left:4}}>
+          <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
+          <XAxis dataKey="d" tick={{fontSize:9,fill:D.textMeta}}
+            ticks={[-14,-7,0,7,14]} type="number" domain={[-14,14]}/>
+          <YAxis hide={true}/>
+          <Tooltip
+            contentStyle={{fontSize:11,padding:"4px 8px",borderRadius:5}}
+            formatter={(v)=>v===null?"":`${v}장`}
+            labelFormatter={(d)=>{const row=data.find(x=>x.d===d);return row?row.iso:`D${d>=0?"+":""}${d}`;}}/>
+          <ReferenceLine x={0} stroke={D.black} strokeDasharray="3 3"
+            label={{value:"포스트",fontSize:9,fill:D.text,position:"top",offset:6,fontWeight:600}}/>
+          <Line type="monotone" dataKey="pre" stroke={D.textMeta} strokeWidth={1.5} dot={false} connectNulls={false}/>
+          <Line type="monotone" dataKey="post" stroke="#7BB7E5" strokeWidth={2} dot={false} connectNulls={false}/>
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
-  // 두께 스케일: 판매 수량 → 1.5~7 px
-  const maxQty=useMemo(()=>{
-    let m=0;
-    paths.forEach(p=>{ if((p.ribbon?.qty||0)>m) m=p.ribbon.qty; });
-    return m||1;
-  },[paths]);
-  const widthOf=(qty)=>{
-    const base=1.5,top=7;
-    return base+(top-base)*Math.min(1,(qty||0)/maxQty);
+// ─────────────────────────────────────────────
+// 셀 morph — 캘린더 날짜 셀을 PR1 PostImpactCard 스타일로 치환
+//   썸네일 + 날짜 + ★ + Lift% + LiftMiniChart + mini 속도 + 인사이트 한 줄 + 태그 칩
+// ─────────────────────────────────────────────
+function ImpactCellMorph({ post, score, tags, dateNum, isToday, postsCount, onStarClick, onEditClick, color, cm, setYm }) {
+  const stars=score?.stars||0;
+  const lift=score?.lift||0;
+  const liftCol=lift>=0?"#10b981":"#ef4444";
+  // 카드별 속도계: 일평균 attribution qty (post 14일 - pre 14일) / 14
+  const dailyAttr=((score?.postQty||0)-(score?.preQty||0))/14;
+  // 베스트 매칭 상품 — postPerProduct 가장 높은 항목
+  const bestProduct=(()=>{
+    const m=score?.postPerProduct||{};
+    const list=Object.entries(m).sort(([,a],[,b])=>b-a);
+    return list.length&&list[0][1]>0?list[0][0]:null;
+  })();
+  // 카드별 자동 인사이트 한 줄 (Lift 기반 방향성)
+  const insight=(()=>{
+    if(lift>=30) return {text:"강한 견인 - 동일 패턴 재구현 추천",tone:"good"};
+    if(lift>=10) return {text:"양호한 견인 - 후속 콘텐츠 유지",tone:"good"};
+    if(lift>=0)  return {text:"약한 양의 효과 - 콘텐츠 보강 필요",tone:"neutral"};
+    if(lift>=-10) return {text:"효과 미미 - 태깅·캡션 재구성",tone:"neutral"};
+    return {text:"역효과 - 전략 재검토",tone:"bad"};
+  })();
+  const toneCol={good:"#15803d",bad:"#b91c1c",neutral:D.textSub}[insight.tone];
+  return (
+    <div style={{position:"relative",zIndex:2,padding:10,
+      display:"flex",flexDirection:"column",flex:1,minHeight:0,gap:5,background:D.surface}}>
+      {/* 헤더: 썸네일 + 날짜+★ / Lift% */}
+      <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+        <div style={{width:40,height:40,borderRadius:6,overflow:"hidden",background:D.surfaceAlt,flexShrink:0,
+          border:`1px solid ${D.border}`}}>
+          {post?.thumb_url
+            ?<InstagramThumb src={post.thumb_url}/>
+            :<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:D.textMeta}}>—</div>}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:11,color:D.textMeta,marginBottom:2,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+            <span style={{width:6,height:6,background:color,borderRadius:"50%",display:"inline-block"}}/>
+            <b style={{color:D.text,fontWeight:700,fontSize:12}}>{dateNum}일</b>
+            {isToday&&<span style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}15`,padding:"1px 5px",borderRadius:8}}>오늘</span>}
+            {postsCount>1&&<span style={{fontSize:9,color:D.textMeta}}>· {postsCount}개</span>}
+          </div>
+          <button onClick={e=>{e.stopPropagation();onStarClick();}}
+            title="임팩트 점수 산식 보기"
+            style={{background:"none",border:"none",padding:0,cursor:"pointer",
+              fontSize:11,letterSpacing:0.4,lineHeight:1,color:"#F2B544",whiteSpace:"nowrap"}}>
+            <span>{"★".repeat(stars)}</span>
+            <span style={{color:"#cfcfcf"}}>{"★".repeat(5-stars)}</span>
+          </button>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontSize:9,color:D.textMeta,fontWeight:700,letterSpacing:"0.05em"}}>LIFT</div>
+          <div style={{fontSize:16,fontWeight:800,color:liftCol,lineHeight:1.1}}>
+            {lift>=0?"+":""}{lift.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+      {/* 차트 또는 CTA */}
+      {tags.length>0&&score
+        ?<div style={{flex:1,minHeight:80}}>
+            <LiftMiniChart preDays={score.preDays||[]} postDays={score.postDays||[]} color={color} height={"100%"}/>
+          </div>
+        :<div onClick={e=>{e.stopPropagation();onEditClick();}}
+            style={{flex:1,minHeight:80,display:"flex",alignItems:"center",justifyContent:"center",
+              background:D.surfaceAlt,borderRadius:6,fontSize:10,color:D.textSub,
+              border:`1px dashed ${D.border}`,cursor:"pointer"}}>
+            태깅 상품 없음 — 클릭하여 연결
+          </div>}
+      {/* mini 속도계 + 인사이트 한 줄 (속도 hover popover 안내) */}
+      <div style={{display:"flex",gap:6,alignItems:"center",fontSize:10,
+        background:D.surfaceAlt,borderRadius:5,padding:"4px 8px"}}>
+        <SpeedHoverInfo value={dailyAttr} score={score}>
+          <MiniSpeedGauge value={dailyAttr}/>
+          <span style={{fontWeight:600,color:D.textMeta}}>속도</span>
+          <b style={{color:dailyAttr>=0?"#15803d":"#b91c1c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+            {dailyAttr>=0?"+":""}{dailyAttr.toFixed(1)}장/일
+          </b>
+        </SpeedHoverInfo>
+        <span style={{flex:1,color:toneCol,textAlign:"right",
+          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          {insight.text}
+        </span>
+      </div>
+      {/* 푸터 — 베스트/태그 칩 + cm 버튼 + ✎ */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:3,alignItems:"center",minHeight:20}}>
+        {bestProduct&&(
+          <span style={{fontSize:9,fontWeight:700,color:"#10b981",
+            background:"#10b98112",border:"1px solid #10b98133",
+            padding:"2px 6px",borderRadius:10,maxWidth:120,
+            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            🏆 {bestProduct}
+          </span>
+        )}
+        {tags.filter(t=>t!==bestProduct).slice(0,2).map(t=>(
+          <span key={t} style={{fontSize:9,color:D.textSub,background:D.surfaceAlt,
+            border:`1px solid ${D.border}`,padding:"2px 6px",borderRadius:10,
+            maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t}</span>
+        ))}
+        {tags.length>3&&<span style={{fontSize:9,color:D.textMeta}}>+{tags.length-3}</span>}
+        <span style={{flex:1}}/>
+        {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
+          title={`다음: ${cm.nextYm} (${cm.count}건)`}
+          style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
+            border:`1px solid ${D.blue}30`,borderRadius:8,padding:"1px 5px",cursor:"pointer"}}>
+          ▸{parseInt(cm.nextYm.split("-")[1])}월
+        </button>}
+        <button onClick={e=>{e.stopPropagation();onEditClick();}}
+          title="포스트 수정"
+          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+            padding:"1px 6px",fontSize:11,cursor:"pointer",color:D.textMeta,lineHeight:1}}>
+          ✎
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 포스트 임팩트 분석 모드 상단 패널 — KPI · 속도계 · Sales Velocity Timeline · 태그×매출 산점도
+// ─────────────────────────────────────────────
+function ImpactAnalysisHeader({ summary, monthLabel }) {
+  const {avgStars,avgLift,velocityChange,firstAvg,secondAvg,
+    bestPost,bestPostTagCount,avgTagCount,avgAttrVelocity,
+    postRanking,overallRanking,cohort,peakDay,peakAvg,preAvg,postCohortAvg}=summary;
+  const liftColor=avgLift>=0?"#10b981":"#ef4444";
+  const attrVelColor=avgAttrVelocity>=0?"#10b981":"#ef4444";
+  const cohortLiftPct=preAvg?((postCohortAvg-preAvg)/preAvg)*100:0;
+  return (
+    <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:10}}>
+      {/* KPI Row — 6 타일 + 속도계 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))",gap:8}}>
+        <KpiTile label="평균 임팩트 점수 ★" value={avgStars.toFixed(1)} unit="/ 5" badge={
+          <span style={{fontSize:10,color:"#F2B544",letterSpacing:0.4}}>
+            {"★".repeat(Math.round(avgStars))}{"★".repeat(5-Math.round(avgStars)).split("").map((_,i)=><span key={i} style={{color:"#cfcfcf"}}>★</span>)}
+          </span>
+        }/>
+        <KpiTile label="평균 LIFT" value={`${avgLift>=0?"+":""}${avgLift.toFixed(1)}%`} valueColor={liftColor}
+          hint="포스트 전 14일 대비 후 14일 태깅 상품 판매 변화율의 평균"/>
+        <KpiTile label="평균 태그 상품 수" value={avgTagCount.toFixed(1)} unit="개 / 포스트"
+          hint="포스트 1개당 평균 몇 개의 상품을 소개했는지"/>
+        <KpiTile label="최고 LIFT 포스트의 태그 수" value={`${bestPostTagCount}`} unit={bestPost?`개 · ${bestPost.post_date}`:"개"}
+          hint="가장 효과 좋았던 포스트가 몇 개 상품을 소개했는지"/>
+        <KpiTile label="포스트당 태깅 상품 일평균 추가 판매" value={`${avgAttrVelocity>=0?"+":""}${avgAttrVelocity.toFixed(1)}`} unit="장 / 일" valueColor={attrVelColor}
+          hint="포스트 1회가 태깅한 상품을 하루 평균 몇 장 더 팔게 만들었는지 (포스트 후 14일 일평균 − 전 14일 일평균)"/>
+        <VelocityGauge change={velocityChange} firstAvg={firstAvg} secondAvg={secondAvg}/>
+      </div>
+
+      {/* 포스트별 랭킹 2종 — 태깅 상품 LIFT + 전체 매출 영향 */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,alignItems:"stretch"}}>
+        <Card>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:D.black}}>포스트별 임팩트 랭킹 (태깅 상품)</div>
+              <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
+                각 막대 = 한 포스트가 태깅한 상품의 LIFT(%). 위에서부터 효과가 좋았던 순.
+              </div>
+            </div>
+            <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
+              총 {postRanking.length}개 태깅 포스트
+            </div>
+          </div>
+          {postRanking.length>0?(
+            <div style={{maxHeight:280,overflowY:"auto",paddingRight:4}}>
+              {(()=>{
+                const maxAbs=Math.max(30,...postRanking.map(r=>Math.abs(r.lift)));
+                return postRanking.map(r=>{
+                  const w=Math.min(100,(Math.abs(r.lift)/maxAbs)*100);
+                  const col=r.lift>=30?"#15803d":r.lift>=10?"#22c55e":r.lift>=0?"#7BB7E5":r.lift>=-10?"#b45309":"#b91c1c";
+                  return (
+                    <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",
+                      fontSize:11,borderBottom:`1px dashed ${D.border}`}}>
+                      <span style={{minWidth:74,color:D.textSub,fontVariantNumeric:"tabular-nums"}}>{r.iso}</span>
+                      <span title={r.bestProduct||""}
+                        style={{flex:"0 0 32%",color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {r.bestProduct||<span style={{color:D.textMeta}}>—</span>}
+                      </span>
+                      <div style={{flex:1,position:"relative",height:14,display:"flex",alignItems:"center"}}>
+                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:D.border}}/>
+                        <div style={{position:"absolute",
+                          [r.lift>=0?"left":"right"]:"50%",
+                          width:`${w/2}%`,height:8,background:col,borderRadius:2}}/>
+                      </div>
+                      <span style={{minWidth:56,textAlign:"right",fontWeight:700,color:col,
+                        fontVariantNumeric:"tabular-nums"}}>
+                        {r.lift>=0?"+":""}{r.lift.toFixed(0)}%
+                      </span>
+                      <span style={{minWidth:18,color:"#F2B544",fontSize:9,letterSpacing:0.3,textAlign:"right"}}>
+                        {"★".repeat(r.stars)}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          ):(
+            <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
+              태깅된 포스트가 없습니다 — 포스트 셀의 ✎ 버튼으로 상품을 연결하세요
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:D.black}}>포스트별 전체 매출 영향</div>
+              <div style={{fontSize:10,color:D.textMeta,marginTop:2}}>
+                태깅 안 한 상품 포함 <b style={{color:D.text}}>전체 매출(원)</b>의 전 14일 vs 후 14일 변화율. 포스트가 매장 전체에 미친 영향.
+              </div>
+            </div>
+            <div style={{fontSize:10,color:D.textSub,textAlign:"right"}}>
+              총 {overallRanking.length}개 포스트
+            </div>
+          </div>
+          {overallRanking.length>0?(
+            <div style={{maxHeight:280,overflowY:"auto",paddingRight:4}}>
+              {(()=>{
+                const maxAbs=Math.max(20,...overallRanking.map(r=>Math.abs(r.lift)));
+                return overallRanking.map(r=>{
+                  const w=Math.min(100,(Math.abs(r.lift)/maxAbs)*100);
+                  const col=r.lift>=20?"#15803d":r.lift>=5?"#22c55e":r.lift>=0?"#7BB7E5":r.lift>=-5?"#b45309":"#b91c1c";
+                  return (
+                    <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",
+                      fontSize:11,borderBottom:`1px dashed ${D.border}`}}>
+                      <span style={{minWidth:74,color:D.textSub,fontVariantNumeric:"tabular-nums"}}>{r.iso}</span>
+                      <span style={{flex:"0 0 32%",color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                        fontVariantNumeric:"tabular-nums",fontSize:10}}
+                        title={`전 14일 ${r.preRev.toLocaleString()}원 → 후 14일 ${r.postRev.toLocaleString()}원`}>
+                        {fmtWonShort(r.delta)} {r.delta>=0?"↑":"↓"}
+                      </span>
+                      <div style={{flex:1,position:"relative",height:14,display:"flex",alignItems:"center"}}>
+                        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,background:D.border}}/>
+                        <div style={{position:"absolute",
+                          [r.lift>=0?"left":"right"]:"50%",
+                          width:`${w/2}%`,height:8,background:col,borderRadius:2}}/>
+                      </div>
+                      <span style={{minWidth:56,textAlign:"right",fontWeight:700,color:col,
+                        fontVariantNumeric:"tabular-nums"}}>
+                        {r.lift>=0?"+":""}{r.lift.toFixed(0)}%
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          ):(
+            <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
+              포스트가 없습니다
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Cohort 평균 효과 곡선 — full width */}
+      <div>
+        <Card>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:D.black}}>모든 포스트 평균 효과 곡선</div>
+              <div style={{fontSize:10,color:D.textMeta,marginTop:2,lineHeight:1.45}}>
+                D-14 ~ D+14 일별 평균 판매량을 모든 포스트 기준으로 합친 곡선. 효과가 보통 며칠 만에 정점에 도달하는지 보세요.
+              </div>
+            </div>
+          </div>
+          {cohort.some(c=>c.n>0)?(
+            <>
+              <div style={{height:140}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={cohort} margin={{top:14,right:10,left:0,bottom:4}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
+                    <XAxis dataKey="d" tick={{fontSize:10,fill:D.textMeta}} ticks={[-14,-7,0,7,14]}
+                      type="number" domain={[-14,14]}/>
+                    <YAxis tick={{fontSize:10,fill:D.textMeta}} width={36}
+                      label={{value:"평균 (장)",fontSize:9,fill:D.textMeta,angle:-90,position:"insideLeft",offset:10,style:{textAnchor:"middle"}}}/>
+                    <Tooltip
+                      contentStyle={{fontSize:11,padding:"6px 10px",borderRadius:5}}
+                      formatter={(v)=>[`${v.toFixed(1)}장`,"평균 판매"]}
+                      labelFormatter={(d)=>`D${d>0?"+":""}${d}`}/>
+                    <ReferenceLine x={0} stroke={D.black} strokeDasharray="3 3"
+                      label={{value:"포스트일",fontSize:9,fill:D.text,position:"top",fontWeight:600,offset:4}}/>
+                    {peakDay>0&&<ReferenceLine x={peakDay} stroke="#15803d" strokeDasharray="2 2"
+                      label={{value:`정점 D+${peakDay}`,fontSize:9,fill:"#15803d",position:"top",offset:4}}/>}
+                    <Line type="monotone" dataKey="avg" stroke="#7BB7E5" strokeWidth={2.5} dot={{r:2,fill:"#7BB7E5"}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{fontSize:11,color:D.textSub,marginTop:6,lineHeight:1.55,
+                background:D.surfaceAlt,borderRadius:5,padding:"6px 10px"}}>
+                <b style={{color:D.text}}>효과 정점</b>: D+{peakDay}일 ({peakAvg.toFixed(1)}장)
+                · <b style={{color:D.text}}>전 평균</b> {preAvg.toFixed(1)}장
+                → <b style={{color:D.text}}>후 평균</b> {postCohortAvg.toFixed(1)}장
+                ({cohortLiftPct>=0?"+":""}{cohortLiftPct.toFixed(0)}%)
+              </div>
+            </>
+          ):(
+            <div style={{height:140,display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:11,color:D.textMeta,background:D.surfaceAlt,borderRadius:6}}>
+              평균 곡선 표시를 위해 태깅된 포스트가 필요합니다
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// KPI Tile — 라벨 + 값 + 단위
+function KpiTile({ label, value, unit, valueColor, badge, hint }) {
+  return (
+    <div title={hint||undefined}
+      style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,padding:"12px 14px",
+        display:"flex",flexDirection:"column",gap:4}}>
+      <div style={{fontSize:11,color:D.textSub,fontWeight:600,lineHeight:1.35}}>{label}</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:3}}>
+        <span style={{fontSize:20,fontWeight:700,color:valueColor||D.black,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{value}</span>
+        {unit&&<span style={{fontSize:10,color:D.textMeta}}>{unit}</span>}
+      </div>
+      {badge&&<div style={{marginTop:2}}>{badge}</div>}
+      {hint&&<div style={{fontSize:10,color:D.textMeta,lineHeight:1.4,marginTop:2}}>{hint}</div>}
+    </div>
+  );
+}
+
+// 속도 hover 시 깔끔한 설명 popover (portal로 viewport에 떠 있게)
+function SpeedHoverInfo({ value, score, children }) {
+  const [pos,setPos]=useState(null); // {x,y}
+  const ref=useRef(null);
+  const onEnter=()=>{
+    const r=ref.current?.getBoundingClientRect();
+    if(r) setPos({x:r.left+r.width/2, y:r.top});
   };
-
-  if(!visible||!paths.length) return null;
-
-  // 호버된 리본은 정렬상 가장 위에 그리도록 paths 끝으로
-  const ordered=hovered
-    ?[...paths.filter(p=>p.key!==hovered.key),...paths.filter(p=>p.key===hovered.key)]
-    :paths;
-
+  const onLeave=()=>setPos(null);
+  const pre=score?.preQty||0;
+  const post=score?.postQty||0;
+  const delta=post-pre;
   return (
     <>
-      <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
-          pointerEvents:"none",overflow:"visible"}}>
-        {ordered.map(p=>{
-          const isHover=hovered?.key===p.key;
-          const dim=hovered&&!isHover;
-          const w=widthOf(p.ribbon?.qty);
-          return (
-            <path key={p.key} d={p.d} stroke={p.color} fill="none"
-              strokeWidth={w}
-              opacity={dim?0.15:isHover?1:0.7}
-              strokeLinecap="round"
-              pointerEvents="stroke"
-              style={{cursor:"pointer"}}
-              onMouseEnter={e=>setHovered({key:p.key,ribbon:p.ribbon,color:p.color,x:e.clientX,y:e.clientY})}
-              onMouseMove={e=>setHovered(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
-              onMouseLeave={()=>setHovered(null)}/>
-          );
-        })}
-      </svg>
-      {hovered&&(
-        <RibbonTooltip x={hovered.x} y={hovered.y} ribbon={hovered.ribbon} color={hovered.color}/>
+      <div ref={ref} onMouseEnter={onEnter} onMouseLeave={onLeave}
+        style={{display:"flex",alignItems:"center",gap:6,cursor:"help"}}>
+        {children}
+      </div>
+      {pos&&createPortal(
+        <div style={{position:"fixed",left:pos.x,top:pos.y-8,transform:"translate(-50%, -100%)",
+          zIndex:3500,pointerEvents:"none",
+          background:D.black,color:"#fff",padding:"10px 14px",borderRadius:8,
+          width:260,fontSize:11,lineHeight:1.6,
+          boxShadow:"0 8px 24px rgba(0,0,0,0.22)"}}>
+          <div style={{fontWeight:700,fontSize:12,marginBottom:6,letterSpacing:"0.02em"}}>
+            속도란?
+          </div>
+          <div style={{color:"rgba(255,255,255,0.85)"}}>
+            태깅한 상품이 <b style={{color:"#fff"}}>포스트 이후</b> 하루 평균 몇 장 더 팔렸는지.
+            <br/>
+            <span style={{color:"rgba(255,255,255,0.6)"}}>= (후 14일 일평균 − 전 14일 일평균)</span>
+          </div>
+          <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.15)",
+            display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:11}}>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>전 14일 합</span>
+            <b style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{pre.toLocaleString()}장</b>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>후 14일 합</span>
+            <b style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{post.toLocaleString()}장</b>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>증감</span>
+            <b style={{textAlign:"right",color:delta>=0?"#7BB7E5":"#fca5a5",fontVariantNumeric:"tabular-nums"}}>
+              {delta>=0?"+":""}{delta.toLocaleString()}장
+            </b>
+            <span style={{color:"rgba(255,255,255,0.55)"}}>일평균</span>
+            <b style={{textAlign:"right",color:value>=0?"#7BB7E5":"#fca5a5",fontVariantNumeric:"tabular-nums"}}>
+              {value>=0?"+":""}{value.toFixed(2)}장/일
+            </b>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );
 }
 
-// 리본 호버 시 표시되는 모달형 툴팁 카드
-function RibbonTooltip({ x, y, ribbon, color }) {
-  if(!ribbon) return null;
-  // 화면 경계 고려 — 우측/하단 넘침 방지
-  const w=280,h=160;
-  const left=Math.min(x+14,window.innerWidth-w-10);
-  const top =Math.min(y+14,window.innerHeight-h-10);
+// 카드용 미니 속도계 — 단일 포스트의 일평균 증분 qty 를 작은 반원 게이지로 (반으로 줄임)
+function MiniSpeedGauge({ value }) {
+  // -5 ~ +5 장/일 범위로 정규화. 좌끝 -90°, 우끝 +90°
+  const clamped=Math.max(-5,Math.min(5,value));
+  const angle=(clamped/5)*90;
+  const color=value>=1?"#15803d":value>=0?"#3b82f6":value>=-1?"#b45309":"#b91c1c";
+  const r=6,cx=7,cy=7;
   return (
-    <div style={{position:"fixed",left,top,zIndex:2500,
-      width:w,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
-      boxShadow:"0 8px 28px rgba(0,0,0,0.22)",padding:"12px 14px",fontSize:12,color:D.text,
-      pointerEvents:"none",lineHeight:1.6}}>
-      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,
-        paddingBottom:6,borderBottom:`1px solid ${D.border}`}}>
-        <span style={{width:10,height:10,background:color,borderRadius:"50%",display:"inline-block",flexShrink:0}}/>
-        <b style={{color:D.black}}>콘텐츠 → 판매 매칭</b>
+    <svg viewBox="0 0 14 9" width={14} height={9} style={{flexShrink:0}}>
+      <path d={`M ${cx-r},${cy} A ${r},${r} 0 0 1 ${cx+r},${cy}`}
+        stroke={D.border} strokeWidth={1.2} fill="none" strokeLinecap="round"/>
+      {(()=>{
+        const t=(angle+90)/180;
+        const endA=-90+t*180;
+        const rad=endA*Math.PI/180;
+        const ex=cx+r*Math.cos(rad),ey=cy+r*Math.sin(rad);
+        const large=t>0.5?1:0;
+        return <path d={`M ${cx-r},${cy} A ${r},${r} 0 ${large} 1 ${ex},${ey}`}
+          stroke={color} strokeWidth={1.2} fill="none" strokeLinecap="round"/>;
+      })()}
+      <line x1={cx} y1={cy} x2={cx+(r-1)*Math.cos((angle-90)*Math.PI/180)} y2={cy+(r-1)*Math.sin((angle-90)*Math.PI/180)}
+        stroke={D.black} strokeWidth={0.9} strokeLinecap="round"/>
+      <circle cx={cx} cy={cy} r={0.9} fill={D.black}/>
+    </svg>
+  );
+}
+
+// 속도계 게이지 — 가속/감속 % 시각화 (반원 게이지)
+function VelocityGauge({ change, firstAvg, secondAvg }) {
+  // -50% ~ +50% 범위로 정규화. needle angle = -90deg (좌끝) ~ +90deg (우끝)
+  const clamped=Math.max(-50,Math.min(50,change));
+  const angle=(clamped/50)*90; // deg
+  const color=change>=10?"#10b981":change>=0?"#3b82f6":change>=-10?"#f59e0b":"#ef4444";
+  const label=change>=20?"매우 빠름":change>=5?"가속":change>=-5?"보합":change>=-20?"감속":"매우 느림";
+  // SVG arc: 반원 (180°). center (50,50), radius 38
+  const r=38, cx=50, cy=50;
+  return (
+    <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:8,padding:"8px 10px",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative"}}>
+      <div style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.06em",
+        textTransform:"uppercase",marginBottom:2,alignSelf:"flex-start"}}>판매 속도</div>
+      <svg viewBox="0 0 100 62" width="100%" style={{maxWidth:120}}>
+        {/* 배경 호 */}
+        <path d={`M ${cx-r},${cy} A ${r},${r} 0 0 1 ${cx+r},${cy}`}
+          stroke={D.border} strokeWidth={6} fill="none" strokeLinecap="round"/>
+        {/* 컬러 호 — 현재까지 */}
+        {(()=>{
+          const t=(angle+90)/180; // 0..1
+          const endAngle=-90+t*180;
+          const rad=endAngle*Math.PI/180;
+          const ex=cx+r*Math.cos(rad), ey=cy+r*Math.sin(rad);
+          const largeArc=t>0.5?1:0;
+          return <path d={`M ${cx-r},${cy} A ${r},${r} 0 ${largeArc} 1 ${ex},${ey}`}
+            stroke={color} strokeWidth={6} fill="none" strokeLinecap="round"/>;
+        })()}
+        {/* needle */}
+        <line x1={cx} y1={cy} x2={cx+(r-4)*Math.cos((angle-90)*Math.PI/180)} y2={cy+(r-4)*Math.sin((angle-90)*Math.PI/180)}
+          stroke={D.black} strokeWidth={2} strokeLinecap="round"/>
+        <circle cx={cx} cy={cy} r={3} fill={D.black}/>
+      </svg>
+      <div style={{display:"flex",alignItems:"baseline",gap:4,marginTop:-4}}>
+        <span style={{fontSize:16,fontWeight:800,color}}>{change>=0?"+":""}{change.toFixed(0)}%</span>
+        <span style={{fontSize:9,color:D.textMeta,fontWeight:600}}>{label}</span>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"68px 1fr",gap:4,color:D.textSub}}>
-        <span style={{color:D.textMeta}}>포스트</span><span>{ribbon.fromIso}</span>
-        <span style={{color:D.textMeta}}>소개 상품</span><b style={{color:D.text}}>{ribbon.tagName||"—"}</b>
-        <span style={{color:D.textMeta}}>매칭일</span><span>{ribbon.toIso}</span>
-        <span style={{color:D.textMeta}}>판매 상품</span><b style={{color:D.text}}>{ribbon.product}</b>
-        <span style={{color:D.textMeta}}>당일 순위</span><span>Top {(ribbon.productIdx??0)+1}/{ribbon.productCount||5}</span>
-        <span style={{color:D.textMeta}}>판매 수량</span>
-        <b style={{color:D.blue}}>{(ribbon.qty||0).toLocaleString()}장</b>
-      </div>
-      {ribbon.postUrl&&(
-        <div style={{marginTop:8,paddingTop:6,borderTop:`1px solid ${D.border}`,fontSize:10,color:D.textMeta,wordBreak:"break-all"}}>
-          🔗 {ribbon.postUrl}
-        </div>
-      )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 페이지 하단 자동 인사이트 — 방향성 있는 추천 문구
+// ─────────────────────────────────────────────
+function ImpactInsightsFooter({ insights }) {
+  const toneCol={good:D.text,bad:D.text,neutral:D.text};
+  const toneAccent={good:"#15803d",bad:"#b91c1c",neutral:D.textMeta};
+  const toneIcon={good:"▲",bad:"▼",neutral:"·"};
+  return (
+    <Card style={{marginTop:16}}>
+      <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:10,letterSpacing:"0.02em"}}>
+        분석 인사이트
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {insights.map((ins,i)=>(
+          <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",
+            background:D.surface,borderLeft:`2px solid ${toneAccent[ins.tone]}`,
+            padding:"7px 12px",fontSize:12,lineHeight:1.55,color:toneCol[ins.tone]}}>
+            <span style={{color:toneAccent[ins.tone],fontSize:10,fontWeight:700,lineHeight:1.4,marginTop:1}}>
+              {toneIcon[ins.tone]||"·"}
+            </span>
+            <span>{ins.text}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
