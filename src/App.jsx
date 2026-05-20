@@ -4818,7 +4818,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     <td {...td} style={{...td.style,fontWeight:600}}>
                       {p.name}
                       {ended&&<span style={{marginLeft:6,fontSize:11,fontWeight:500,color:D.red}}>종료된 프로모션</span>}
-                      {ended&&(
+                      {/* 시작일이 지난(진행중 또는 종료된) 프로모션은 임팩트 분석 진입 가능 */}
+                      {p.start_date&&p.start_date.slice(0,10)<=today&&(
                         <button onClick={()=>setImpactModal(p)}
                           style={{marginLeft:8,background:D.black,color:"#fff",border:"none",borderRadius:5,
                             padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
@@ -5078,9 +5079,17 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 // ─────────────────────────────────────────────
 function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
   const ch=promo.platform;
-  const promoStart=String(promo.start_date||"").slice(0,10);
-  const promoEnd=String(promo.end_date||"").slice(0,10);
   const dayMs=86400000;
+  const todayStr=new Date().toISOString().slice(0,10);
+  const yesterdayStr=new Date(Date.now()-dayMs).toISOString().slice(0,10);
+  const promoStart=String(promo.start_date||"").slice(0,10);
+  const promoEndRaw=String(promo.end_date||"").slice(0,10);
+  // 진행중 프로모션: 종료일이 미래 → 분석 종료일은 어제로 클램프
+  //   - 어제가 시작일보다 이르면(시작 당일) 시작일로 클램프
+  const isOngoing=promoEndRaw>todayStr;
+  const promoEnd=isOngoing
+    ?(yesterdayStr>=promoStart?yesterdayStr:promoStart)
+    :promoEndRaw;
   const dur=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs); // 일 수 (포함 길이 = dur+1)
   const lenDays=dur+1;
   const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
@@ -5157,10 +5166,31 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
           <div>
-            <div style={{fontWeight:700,fontSize:16,color:D.black}}>{promo.name} <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span></div>
-            <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
-              <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
-              {ch} · 프로모션 {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span> · 직전 동일기간 {prevStart} ~ {prevEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span>
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>
+              {promo.name}
+              <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span>
+              {isOngoing&&(
+                <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:"#fff",
+                  background:D.green,padding:"2px 7px",borderRadius:10,verticalAlign:"middle"}}>
+                  진행중
+                </span>
+              )}
+            </div>
+            {/* 기간 표기 — 진행중일 경우 분석기간이 어제까지로 클램프됨을 명확히 표시 */}
+            <div style={{fontSize:11,color:D.textMeta,marginTop:5,lineHeight:1.7}}>
+              <div>
+                <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
+                <b style={{color:D.text,fontWeight:600}}>{ch}</b>
+                {isOngoing&&<span style={{marginLeft:6,color:D.textSub}}>· 프로모션 종료일 {promoEndRaw} (현재 진행 중)</span>}
+              </div>
+              <div>
+                <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>분석 기간</span>
+                {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일{isOngoing?", 시작일 ~ 어제":""})</span>
+              </div>
+              <div>
+                <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>직전 동일기간</span>
+                {prevStart} ~ {prevEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
@@ -10436,6 +10466,10 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const [postModalDate,setPostModalDate]=useState(null);  // 모달 열림 상태(iso date)
   const [postLoadTick,setPostLoadTick]=useState(0);
 
+  // 캘린더 셀에 embed iframe 이 실제로 렌더되도록 process() 호출 트리거
+  //   deps: igPosts 가 바뀌면 다시 process
+  useInstagramEmbedScript([ym, igPosts.length, igPosts.map(p=>p.url).join("|")]);
+
   // IG 포스트 + 태깅 상품 동시 로딩
   useEffect(()=>{
     (async()=>{
@@ -10523,17 +10557,19 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
       const amt=r.status==="배송"?(r.amount||0):r.status==="반품"?-(r.amount||0):0;
       ensure(r.sale_date).channels["오프라인 스토어"]=(byDate[r.sale_date].channels["오프라인 스토어"]||0)+amt;
     });
-    // 판매 상품 수량 (orders, 배송만)
+    // 판매 상품 수량 — 주문 기준(배송 여부 무관)
+    //   반품·취소는 제외 (실제로 무효화된 주문이므로)
     orders.forEach(r=>{
-      if(!r.order_date||r.status!=="배송") return;
+      if(!r.order_date) return;
+      if(r.status==="반품"||r.status==="취소") return;
       const name=r.product_name||"미분류";
       ensure(r.order_date).products[name]=(byDate[r.order_date].products[name]||0)+(r.qty||1);
     });
-    // 파생 필드
+    // 파생 필드 — Top 5
     Object.values(byDate).forEach(d=>{
       d.total=Object.values(d.channels).reduce((s,v)=>s+v,0);
       d.topProducts=Object.entries(d.products)
-        .sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .sort((a,b)=>b[1]-a[1]).slice(0,5)
         .map(([name,qty])=>({name,qty}));
     });
     return byDate;
@@ -10598,9 +10634,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         if(!d?.topProducts?.length) return;
         // tagged 중 하나라도 그날 topProducts에 매칭되면 1개 리본
         for(const tagName of tagged){
-          const hit=d.topProducts.find(tp=>nameMatches(tagName,tp.name));
-          if(hit){
-            result.push({fromIso:post.post_date,toIso:cell.iso,postId:post.id,product:hit.name});
+          const hitIdx=d.topProducts.findIndex(tp=>nameMatches(tagName,tp.name));
+          if(hitIdx>=0){
+            result.push({
+              fromIso:post.post_date,toIso:cell.iso,postId:post.id,
+              product:d.topProducts[hitIdx].name,
+              productIdx:hitIdx,
+              productCount:d.topProducts.length,
+            });
             break;
           }
         }
@@ -10720,6 +10761,15 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                     </button>}
                     {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
                       background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+                    {/* 임베드 수정/삭제 진입 버튼 — 모달 안에서 삭제·수정 가능 */}
+                    {c.inMonth&&posts.length>0&&(
+                      <button onClick={e=>{e.stopPropagation();setPostModalDate(c.iso);}}
+                        title="임베드 포스트 수정/삭제"
+                        style={{fontSize:11,color:D.textSub,background:"rgba(255,255,255,0.85)",
+                          border:`1px solid ${D.border}`,borderRadius:5,padding:"1px 6px",cursor:"pointer",lineHeight:1}}>
+                        ✎
+                      </button>
+                    )}
                   </div>
                 </div>
                 {c.inMonth&&d&&d.total>0&&(
@@ -10749,10 +10799,13 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                 )}
                 {c.inMonth&&d?.topProducts?.length>0&&(
                   <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
+                    <div style={{fontSize:9,fontWeight:700,color:D.textMeta,letterSpacing:"0.05em",
+                      textTransform:"uppercase",marginBottom:2}}>판매 top</div>
                     {d.topProducts.map((p,j)=>{
                       const hi=isHighlighted(p.name);
                       return (
-                        <div key={j} style={{display:"flex",alignItems:"center",gap:3,
+                        <div key={j} data-iso={c.iso} data-pidx={j} className="impact-prod-row"
+                          style={{display:"flex",alignItems:"center",gap:3,
                           whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                           position:"relative"}}>
                           {hi
@@ -10778,11 +10831,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               const fi=isoToGridIdx[r.fromIso];
               const ti=isoToGridIdx[r.toIso];
               if(fi===undefined||ti===undefined) return null;
-              const fx=(fi%7)+0.5;
-              const fy=Math.floor(fi/7)+1.5;  // +1 for header row, +0.5 for center
-              const tx=(ti%7)+0.5;
-              // 끝점을 셀 하단(베스트 상품 영역)에 바싹 붙여 매칭 시각화 강화
-              const ty=Math.floor(ti/7)+1.88;
+              // 시작점: 포스트 셀 우상단(IG 인디케이터 근처)
+              const fx=(fi%7)+0.78;
+              const fy=Math.floor(fi/7)+1.12;
+              // 끝점: 매칭된 상품 행에 정밀하게 — 셀 내 'Top' 영역(0.62~0.97) 5분할
+              const pIdx=r.productIdx??0;
+              const slot=0.62+(pIdx+0.5)*((0.97-0.62)/5);
+              const tx=(ti%7)+0.12; // 행 시작(불릿 옆)
+              const ty=Math.floor(ti/7)+1+slot;
               const midY=(fy+ty)/2;
               const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
               const color=ribbonColor(r.postId);
