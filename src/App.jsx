@@ -1250,6 +1250,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 오프라인 채널 식별: 이지어드민 판교점/일산점 행, store_sales 머지 행 모두 포함
   const OFFLINE_CHS=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
   const isOffline = r => OFFLINE_CHS.has(r.channel||"");
+  // MERRYON OVERSEA 채널은 판매처 상세/판매처별 매출/매출 점유율에서 제외
+  const EXCL_CHS=new Set(["MERRYONOVERSEA","MERRYON OVERSEA","Merryon Oversea"]);
+  const isExcl = r => EXCL_CHS.has(String(r.channel||"").trim());
 
   // ── [총 매출] ──────────────────────────────────────────
   // 소스: revenues(온라인 채널 일자 매출) + storeSales(매장 실판매금액)
@@ -1328,8 +1331,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   // 4) 오프라인 행(판교점/일산점/매장 머지)은 "오프라인 스토어"로 통합 후 storeMetrics로 덮어씀
   // ─────────────────────────────────────────────────────
   const byChannel={};
-  // (1) 매출 입력 합산 — 채널별 매출/주문수/환불수
+  // (1) 매출 입력 합산 — 채널별 매출/주문수/환불수 (MERRYON OVERSEA 제외)
   revenueRows.forEach(r=>{
+    if(isExcl(r)) return;
     const ch=r.channel||"미분류";
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     byChannel[ch].revenue+=(r.amount||0)-(r.refund_amount||0);
@@ -1346,6 +1350,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const chReturnedQty={};   // 채널별 SUM(qty) 반품   — '반품 장수' + 반품률 분자
   const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
   orderRows.forEach(r=>{
+    if(isExcl(r)) return; // MERRYON OVERSEA 제외
     const ch=r.channel||"미분류";
     // 주문번호 키: 신규 order_no 필드 우선, 없으면 order_id 전체(이전 데이터 호환)
     const oid=r.order_no||r.order_id||"";
@@ -4900,6 +4905,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   const lenDays=dur+1;
   const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
   const prevEnd=new Date(new Date(promoStart).getTime()-dayMs).toISOString().slice(0,10);
+  const modalCardRef=useRef(null);
 
   // 채널 매출 소스: 자사몰/29CM/무신사 → revenues, 오프라인 스토어 → storeSales
   const dailyRevenue=useMemo(()=>{
@@ -4928,7 +4934,8 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     }
     return Object.values(map).sort((a,b)=>a.date>b.date?1:-1).map(p=>({
       ...p,
-      prev:p.date<promoStart?p.revenue:null,
+      // 경계일(promoStart)에 prev/promo 둘 다 값을 줘서 두 라인을 시각적으로 잇는다
+      prev:p.date<=promoStart?p.revenue:null,
       promo:p.date>=promoStart?p.revenue:null,
     }));
   },[ch,prevStart,prevEnd,promoStart,promoEnd,revenues,storeSales]);
@@ -4964,21 +4971,24 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
         display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()}
+      <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
         style={{background:D.surface,borderRadius:14,padding:"24px 28px",
           width:"min(900px,95vw)",maxHeight:"90vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
           <div>
             <div style={{fontWeight:700,fontSize:16,color:D.black}}>{promo.name} <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span></div>
             <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
               <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
-              {ch} · 프로모션 {promoStart} ~ {promoEnd} · 직전 동일기간 {prevStart} ~ {prevEnd}
+              {ch} · 프로모션 {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span> · 직전 동일기간 {prevStart} ~ {prevEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span>
             </div>
           </div>
-          <button onClick={onClose}
-            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
-              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <CaptureBtn cardRef={modalCardRef} filename={`임팩트분석_${promo.name}_${promoStart}_${promoEnd}`} DC={{border:D.border,sub:D.textMeta}}/>
+            <button onClick={onClose}
+              style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+          </div>
         </div>
 
         {/* 매출 요약 */}
@@ -5001,14 +5011,14 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
             일별 매출 — 직전 동일기간(점선) → 프로모션 기간(실선)
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={dailyRevenue} margin={{top:10,right:20,left:0,bottom:0}}>
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={dailyRevenue} margin={{top:30,right:24,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
               <XAxis dataKey="date" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"/>
               <YAxis tick={{fontSize:10,fill:D.textMeta}} tickFormatter={v=>fmtWonShort(v)}/>
               <Tooltip formatter={(v)=>v==null?"":fmtWon(v)} labelFormatter={d=>d}/>
               <ReferenceLine x={promoStart} stroke={D.red} strokeDasharray="4 3"
-                label={{value:"프로모션 시작",position:"top",fill:D.red,fontSize:10}}/>
+                label={{value:"프로모션 시작",position:"insideTop",offset:-18,fill:D.red,fontSize:11,fontWeight:600}}/>
               <Line type="monotone" dataKey="prev"  name="직전 매출"  stroke={D.textMeta} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false}/>
               <Line type="monotone" dataKey="promo" name="프로모션 매출" stroke={chColor(ch)||D.blue} strokeWidth={2} dot={false} connectNulls={false}/>
             </LineChart>
@@ -6543,6 +6553,8 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
           const rows=data.map(r=>{
             const qty=parseKRW(r["수량"]);
             const amount=parseKRW(r["실판매금액"]);
+            // 음수 qty 또는 음수 amount(괄호·-) 둘 다 반품 신호
+            const isReturn=qty<0||amount<0;
             return{
               sale_date:(r["구매일자"]||"").trim().slice(0,10),
               store_name:(r["매장"]||"").trim(),
@@ -6551,7 +6563,9 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
               qty:Math.abs(qty),
               amount:Math.abs(amount),
               order_id:(r["ID"]||"").trim(),
-              status:qty<0?"반품":"배송",
+              // DB값은 기존 호환을 위해 '배송' 유지 (분석/필터 코드 다수에서 사용)
+              // 매장 UI 표시는 '판매'로 변환 (StoreUploader 화면 / DataHistoryPanel fmt)
+              status:isReturn?"반품":"배송",
             };
           }).filter(r=>r.sale_date&&r.product_name&&r.qty>0&&r.amount>0);
           if(!rows.length) throw new Error("파싱된 행이 0건입니다. '구매일자', '상품명', '수량'(>0), '실판매금액'(>0) 모두 값이 있는 행이 1개 이상 있어야 합니다.");
@@ -6648,7 +6662,8 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
                 {key:"option_name",label:"옵션",color:D.textMeta},
                 {key:"qty",label:"수량",bold:true},
                 {key:"amount",label:"금액"},
-                {key:"status",label:"상태",color:D.textMeta},
+                // 매장 UI에서는 '배송' → '판매' 로 표시 (DB값은 유지)
+                {key:"status",label:"상태",color:D.textMeta,fmt:v=>v==="배송"?"판매":v},
                 {key:"order_id",label:"주문ID",color:D.textMeta},
               ]}/>
             </>
@@ -6668,7 +6683,7 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
           {key:"option_name",label:"옵션",color:D.textMeta},
           {key:"qty",label:"수량"},
           {key:"amount",label:"금액"},
-          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:D.green,fontWeight:500}}>{v}</span>},
+          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:D.green,fontWeight:500}}>{v==="배송"?"판매":v}</span>},
           {key:"order_id",label:"주문ID",color:D.textMeta,maxW:100},
         ]}
         onChanged={()=>onUpdate(nowStr())}
@@ -9961,6 +9976,20 @@ function useInstagramEmbedScript(deps){
   },deps);
 }
 
+// 인스타그램 임베드 — dangerouslySetInnerHTML 로 React reconcile 영역 밖에 두어
+// embed.js 가 내부 DOM 을 iframe 으로 교체해도 NotFoundError 가 안 나도록 처리
+function InstagramEmbed({ url, style }) {
+  const safeUrl=String(url||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const css=`margin:0;max-width:100%;min-width:100%;${style||""}`;
+  return (
+    <div dangerouslySetInnerHTML={{__html:
+      `<blockquote class="instagram-media" data-instgrm-permalink="${safeUrl}" data-instgrm-version="14" style="${css}">`
+      +`<a href="${safeUrl}" target="_blank" rel="noreferrer" style="color:#888;font-size:11px">포스트 보기</a>`
+      +`</blockquote>`
+    }}/>
+  );
+}
+
 // URL 정규화: 트래킹 파라미터 제거 + permalink 형태로 표준화
 function normalizeIgUrl(raw){
   const s=String(raw||"").trim();
@@ -10143,12 +10172,7 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 
           {step===1&&<>
             <Alert type="success" msg="✓ URL 등록 완료 — 아래 임베드를 확인하고 소개 상품을 매칭하세요"/>
-            <blockquote className="instagram-media"
-              data-instgrm-permalink={newPostUrl}
-              data-instgrm-version="14"
-              style={{margin:"10px 0",maxWidth:"100%",minWidth:"100%"}}>
-              <a href={newPostUrl} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>포스트 보기</a>
-            </blockquote>
+            <InstagramEmbed url={newPostUrl} style="margin:10px 0;"/>
             <ProductTagger postId={newPostId} tagged={postProductsMap[newPostId]||[]}
               allProducts={allProducts} onChange={onChange}/>
             <div style={{display:"flex",gap:7,marginTop:14}}>
@@ -10190,14 +10214,7 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
                     padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.red,flexShrink:0}}>삭제</button>
               </div>
               {/* 인스타그램 공식 임베드 */}
-              <blockquote className="instagram-media"
-                data-instgrm-permalink={p.url}
-                data-instgrm-version="14"
-                style={{margin:0,maxWidth:"100%",minWidth:"100%"}}>
-                <a href={p.url} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>
-                  포스트 보기
-                </a>
-              </blockquote>
+              <InstagramEmbed url={p.url}/>
               {/* 소개 상품 태깅 */}
               <ProductTagger postId={p.id} tagged={postProductsMap[p.id]||[]}
                 allProducts={allProducts} onChange={onChange}/>
@@ -10205,6 +10222,28 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
           ))}
       </div>
     </div>
+  );
+}
+
+// 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
+function MatchedProductBadge({ name, qty }) {
+  // 손그림 동그라미: 살짝 비대칭 SVG ellipse 두 겹 (offset 다르게 → wobble 느낌)
+  return (
+    <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:3,padding:"1px 4px"}}>
+      {/* 별 스티커 */}
+      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 0 1px #fff)"}}>★</span>
+      <span style={{fontWeight:700,color:D.black,position:"relative",zIndex:1}}>{name}</span>
+      <span style={{color:D.textMeta,position:"relative",zIndex:1}}>{qty}장</span>
+      {/* 손그림 동그라미 — absolute fill, SVG inline */}
+      <svg viewBox="0 0 100 30" preserveAspectRatio="none"
+        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0}}>
+        {/* 손으로 그린 듯한 비대칭 타원 두 겹 */}
+        <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
+          fill="none" stroke="#E94A6B" strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
+        <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
+          fill="none" stroke="#E94A6B" strokeWidth="0.9" strokeLinecap="round" opacity="0.5"/>
+      </svg>
+    </span>
   );
 }
 
@@ -10443,64 +10482,108 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           ))}
           {grid.map((c,i)=>{
             const d=dailyData[c.iso];
-            const channels=d?Object.entries(d.channels).filter(([,v])=>v>0):[];
-            const barTotal=channels.reduce((s,[,v])=>s+v,0)||1;
+            // 채널 매출: 매출 큰 순 정렬, 채널당 1줄 mini-bar
+            const channels=d?Object.entries(d.channels).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]):[];
+            const maxAmt=channels.length?channels[0][1]:1;
             const posts=postsByDate[c.iso]||[];
             const cm=crossMonthByPostDate[c.iso];
+            // 당일 임베드 포스트의 태깅 상품 ∩ 당일 판매 Top → 강조 매칭 set
+            const samedayTagged=new Set();
+            posts.forEach(p=>(postProductsMap[p.id]||[]).forEach(n=>samedayTagged.add(n)));
+            const isHighlighted=name=>{
+              for(const t of samedayTagged) if(nameMatches(t,name)) return true;
+              return false;
+            };
             return (
             <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
               onMouseEnter={posts.length>0?()=>setHoveredFromIso(c.iso):undefined}
               onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
               style={{
               background:c.inMonth?D.surface:D.bg,
-              minHeight:170,padding:"10px 12px",
+              minHeight:210,padding:0,
               opacity:c.inMonth?1:0.35,
-              position:"relative",
+              position:"relative",overflow:"hidden",
               cursor:c.inMonth?"pointer":"default",
               display:"flex",flexDirection:"column"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                <span style={{fontSize:14,fontWeight:c.isToday?700:600,
-                  color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
-                  {c.date.getDate()}
-                </span>
-                <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {posts.length>0&&<span title={`${posts.length}개 포스트`}
-                    style={{fontSize:10,color:"#fff",fontWeight:700,
-                      background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
-                      padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
-                  {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
-                    title={`다음: ${cm.nextYm} (${cm.count}건)`}
-                    style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
-                      border:`1px solid ${D.blue}30`,borderRadius:10,padding:"2px 6px",cursor:"pointer"}}>
-                    ▸{parseInt(cm.nextYm.split("-")[1])}월
-                  </button>}
-                  {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
-                    background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+              {/* IG 임베드 배경: 셀에 직접 가시화. 비율은 transform scale로 압축 */}
+              {c.inMonth&&posts.length>0&&(
+                <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
+                  <div style={{transform:"scale(0.32)",transformOrigin:"top left",
+                    width:"312.5%",height:"312.5%"}}>
+                    <InstagramEmbed url={posts[0].url}/>
+                  </div>
                 </div>
-              </div>
-              {/* IG 썸네일 영역 (다음 step에서 채워짐) — 현재는 그래프/Top만 */}
-              {c.inMonth&&d&&d.total>0&&(
-                <>
-                  <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:3}}>
-                    {fmtWonShort(d.total)}
-                  </div>
-                  <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:D.bg,marginBottom:8}}>
-                    {channels.map(([ch,amt])=>(
-                      <div key={ch} title={`${ch} ${fmtWonShort(amt)} (${(amt/barTotal*100).toFixed(0)}%)`}
-                        style={{flex:amt,background:chColor(ch),minWidth:2}}/>
-                    ))}
-                  </div>
-                </>
               )}
-              {c.inMonth&&d?.topProducts?.length>0&&(
-                <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
-                  {d.topProducts.map((p,j)=>(
-                    <div key={j} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      • {p.name} <span style={{color:D.textMeta}}>{p.qty}장</span>
+              {/* 반투명 흰색 레이어: 임베드 위에 깔아 가독성 확보 */}
+              {c.inMonth&&posts.length>0&&(
+                <div style={{position:"absolute",inset:0,zIndex:1,
+                  background:"rgba(255,255,255,0.78)",pointerEvents:"none"}}/>
+              )}
+              {/* 콘텐츠 레이어 — 임베드/오버레이 위 */}
+              <div style={{position:"relative",zIndex:2,padding:"10px 12px",
+                display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                  <span style={{fontSize:14,fontWeight:c.isToday?700:600,
+                    color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                    {c.date.getDate()}
+                  </span>
+                  <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    {posts.length>0&&<span title={`${posts.length}개 포스트`}
+                      style={{fontSize:10,color:"#fff",fontWeight:700,
+                        background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
+                        padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                    {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
+                      title={`다음: ${cm.nextYm} (${cm.count}건)`}
+                      style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
+                        border:`1px solid ${D.blue}30`,borderRadius:10,padding:"2px 6px",cursor:"pointer"}}>
+                      ▸{parseInt(cm.nextYm.split("-")[1])}월
+                    </button>}
+                    {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
+                      background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
+                  </div>
+                </div>
+                {c.inMonth&&d&&d.total>0&&(
+                  <>
+                    <div style={{fontSize:11,fontWeight:700,color:D.text,marginBottom:6}}>
+                      {fmtWonShort(d.total)}
                     </div>
-                  ))}
-                </div>
-              )}
+                    {/* 채널별 1줄 미니 바 — 매출 큰 순 */}
+                    <div style={{marginBottom:8}}>
+                      {channels.slice(0,4).map(([ch,amt])=>(
+                        <div key={ch} title={`${ch} ${fmtWonShort(amt)}`}
+                          style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
+                          <span style={{fontSize:9,color:chColor(ch),fontWeight:600,
+                            minWidth:34,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                            {ch.length>3?ch.slice(0,3):ch}
+                          </span>
+                          <div style={{flex:1,height:4,background:`${D.border}80`,borderRadius:2,overflow:"hidden"}}>
+                            <div style={{width:`${Math.max(4,amt/maxAmt*100)}%`,height:"100%",background:chColor(ch),borderRadius:2}}/>
+                          </div>
+                          <span style={{fontSize:9,color:D.textMeta,minWidth:36,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>
+                            {fmtWonShort(amt)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {c.inMonth&&d?.topProducts?.length>0&&(
+                  <div style={{fontSize:9,color:D.textSub,lineHeight:1.6,marginTop:"auto"}}>
+                    {d.topProducts.map((p,j)=>{
+                      const hi=isHighlighted(p.name);
+                      return (
+                        <div key={j} style={{display:"flex",alignItems:"center",gap:3,
+                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                          position:"relative"}}>
+                          {hi
+                            ?<MatchedProductBadge name={p.name} qty={p.qty}/>
+                            :<><span>• {p.name}</span><span style={{color:D.textMeta}}>{p.qty}장</span></>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           );})}
         </div>
@@ -10518,7 +10601,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               const fx=(fi%7)+0.5;
               const fy=Math.floor(fi/7)+1.5;  // +1 for header row, +0.5 for center
               const tx=(ti%7)+0.5;
-              const ty=Math.floor(ti/7)+1.5;
+              // 끝점을 셀 하단(베스트 상품 영역)에 바싹 붙여 매칭 시각화 강화
+              const ty=Math.floor(ti/7)+1.88;
               const midY=(fy+ty)/2;
               const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
               const color=ribbonColor(r.postId);
