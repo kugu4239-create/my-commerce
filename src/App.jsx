@@ -10525,21 +10525,20 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 
 // 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
 function MatchedProductBadge({ name, qty }) {
-  // 손그림 동그라미: 살짝 비대칭 SVG ellipse 두 겹 (offset 다르게 → wobble 느낌)
+  // 손그림 동그라미 + 별 — 항상 다크 오버레이 위에 표시되므로 흰 텍스트 + drop-shadow
   return (
     <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:3,padding:"1px 4px"}}>
       {/* 별 스티커 */}
-      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 0 1px #fff)"}}>★</span>
-      <span style={{fontWeight:700,color:D.black,position:"relative",zIndex:1}}>{name}</span>
-      <span style={{color:D.textMeta,position:"relative",zIndex:1}}>{qty}장</span>
+      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.6))"}}>★</span>
+      <span style={{fontWeight:700,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,0.6)",position:"relative",zIndex:1}}>{name}</span>
+      <span style={{color:"#fff",opacity:0.85,textShadow:"0 1px 2px rgba(0,0,0,0.6)",position:"relative",zIndex:1}}>{qty}장</span>
       {/* 손그림 동그라미 — absolute fill, SVG inline */}
       <svg viewBox="0 0 100 30" preserveAspectRatio="none"
-        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0}}>
-        {/* 손으로 그린 듯한 비대칭 타원 두 겹 */}
+        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.5))"}}>
         <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
-          fill="none" stroke="#E94A6B" strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
+          fill="none" stroke="#FF6B8A" strokeWidth="1.8" strokeLinecap="round" opacity="0.95"/>
         <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
-          fill="none" stroke="#E94A6B" strokeWidth="0.9" strokeLinecap="round" opacity="0.5"/>
+          fill="none" stroke="#FF6B8A" strokeWidth="1.0" strokeLinecap="round" opacity="0.6"/>
       </svg>
     </span>
   );
