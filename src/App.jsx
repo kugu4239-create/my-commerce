@@ -9622,24 +9622,39 @@ function ProductTagger({ postId, tagged, allProducts, onChange }){
 
 // 포스트 등록·관리 모달
 function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose, onChange }){
+  // wizard step: 0=URL 입력, 1=URL 완료(임베드 확인) + 상품 매칭, 2=상품 매칭 완료
+  const [step,setStep]=useState(0);
   const [url,setUrl]=useState("");
   const [memo,setMemo]=useState("");
+  const [newPostId,setNewPostId]=useState(null);
+  const [newPostUrl,setNewPostUrl]=useState("");
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
 
-  // 임베드 script 로드 + posts 변경 시마다 process
-  useInstagramEmbedScript([posts.length,posts.map(p=>p.url).join("|")]);
+  // 임베드 script 로드 + posts·step 변경 시마다 process
+  useInstagramEmbedScript([posts.length,posts.map(p=>p.url).join("|"),step,newPostUrl]);
 
-  const handleAdd=async()=>{
+  // Step 0 → 1: URL 저장 (Run)
+  const handleRun=async()=>{
     const norm=normalizeIgUrl(url);
     if(!norm){ setErr("올바른 인스타그램 포스트 URL이 아닙니다 (https://www.instagram.com/p/... 또는 /reel/...)"); return; }
     setSaving(true); setErr("");
     const db=await getSupabase();
-    const {error}=await db.from("instagram_posts").insert({post_date:date,url:norm,caption_memo:memo||null});
+    const {data,error}=await db.from("instagram_posts")
+      .insert({post_date:date,url:norm,caption_memo:memo||null})
+      .select().single();
     setSaving(false);
     if(error){ setErr("저장 실패: "+error.message); return; }
-    setUrl(""); setMemo("");
-    onChange();
+    setNewPostId(data.id);
+    setNewPostUrl(norm);
+    setStep(1);
+    onChange(); // 부모 리스트 갱신
+  };
+  // Step 1 → 2: 상품 매칭 완료 (그냥 step 전환 — 상품은 chip 추가마다 즉시 저장됨)
+  const handleComplete=()=>{ setStep(2); };
+  // 다시 추가하기 (또는 자동 reset)
+  const resetWizard=()=>{
+    setStep(0); setUrl(""); setMemo(""); setNewPostId(null); setNewPostUrl(""); setErr("");
   };
   const handleDelete=async(id)=>{
     if(!confirm("이 포스트를 삭제하시겠습니까?")) return;
@@ -9648,6 +9663,9 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
     if(error){ setErr("삭제 실패: "+error.message); return; }
     onChange();
   };
+
+  // wizard 진행률 표시용
+  const stepLabel=["① URL 입력","② 임베드 확인 + 상품 매칭","✓ 완료"];
 
   return (
     <div onClick={onClose}
@@ -9664,23 +9682,70 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
               padding:"4px 12px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
         </div>
 
-        {/* 새 포스트 추가 폼 */}
-        <div style={{background:D.bg,borderRadius:8,padding:"14px 16px",marginBottom:18}}>
-          <div style={{fontSize:12,fontWeight:600,color:D.text,marginBottom:8}}>새 포스트 추가</div>
-          <input value={url} onChange={e=>setUrl(e.target.value)}
-            placeholder="https://www.instagram.com/p/..."
-            style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
-              fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
-          <input value={memo} onChange={e=>setMemo(e.target.value)}
-            placeholder="메모 (선택)"
-            style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
-              fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
-          {err&&<Alert type="error" msg={err}/>}
-          <Btn onClick={handleAdd} disabled={saving||!url}>{saving?"저장 중...":"추가"}</Btn>
+        {/* 새 포스트 추가 — wizard */}
+        <div style={{background:D.bg,borderRadius:8,padding:"14px 16px",marginBottom:18,
+          border:`1px solid ${D.border}`}}>
+          <div style={{display:"flex",gap:6,marginBottom:12,fontSize:11}}>
+            {stepLabel.map((s,i)=>(
+              <div key={i} style={{flex:1,padding:"5px 8px",borderRadius:5,textAlign:"center",
+                fontWeight:600,
+                background:step===i?D.blue:step>i?`${D.green}20`:D.surface,
+                color:step===i?"#fff":step>i?D.green:D.textMeta,
+                border:`1px solid ${step===i?D.blue:step>i?`${D.green}40`:D.border}`}}>
+                {step>i?"✓ ":""}{s.replace(/^[①②✓]\s/,"")}
+              </div>
+            ))}
+          </div>
+
+          {step===0&&<>
+            <input value={url} onChange={e=>setUrl(e.target.value)}
+              placeholder="https://www.instagram.com/p/..."
+              style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
+                fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
+            <input value={memo} onChange={e=>setMemo(e.target.value)}
+              placeholder="메모 (선택)"
+              style={{width:"100%",padding:"8px 12px",border:`1px solid ${D.border}`,borderRadius:6,
+                fontSize:13,marginBottom:8,boxSizing:"border-box"}}/>
+            {err&&<Alert type="error" msg={err}/>}
+            <Btn onClick={handleRun} disabled={saving||!url} style={{width:"100%"}}>
+              {saving?"저장 중…":"▶ Run (URL 등록)"}
+            </Btn>
+          </>}
+
+          {step===1&&<>
+            <Alert type="success" msg="✓ URL 등록 완료 — 아래 임베드를 확인하고 소개 상품을 매칭하세요"/>
+            <blockquote className="instagram-media"
+              data-instgrm-permalink={newPostUrl}
+              data-instgrm-version="14"
+              style={{margin:"10px 0",maxWidth:"100%",minWidth:"100%"}}>
+              <a href={newPostUrl} target="_blank" rel="noreferrer" style={{color:D.textMeta,fontSize:11}}>포스트 보기</a>
+            </blockquote>
+            <ProductTagger postId={newPostId} tagged={postProductsMap[newPostId]||[]}
+              allProducts={allProducts} onChange={onChange}/>
+            <div style={{display:"flex",gap:7,marginTop:14}}>
+              <Btn onClick={handleComplete} style={{flex:1}}>✓ 완료</Btn>
+              <button onClick={resetWizard}
+                style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+                  padding:"6px 14px",fontSize:12,cursor:"pointer",color:D.textMeta}}>처음부터</button>
+            </div>
+          </>}
+
+          {step===2&&<>
+            <div style={{textAlign:"center",padding:"20px 0"}}>
+              <div style={{fontSize:32,marginBottom:6}}>✓</div>
+              <div style={{color:D.green,fontWeight:700,fontSize:14,marginBottom:4}}>등록 완료</div>
+              <div style={{color:D.textMeta,fontSize:11,marginBottom:14}}>
+                태그된 상품: {(postProductsMap[newPostId]||[]).length}개
+              </div>
+              <Btn onClick={resetWizard}>＋ 다른 포스트 추가</Btn>
+            </div>
+          </>}
         </div>
 
         {/* 등록된 포스트 리스트 */}
-        <div style={{fontSize:12,fontWeight:600,color:D.text,marginBottom:10}}>등록된 포스트 ({posts.length})</div>
+        <div style={{fontSize:12,fontWeight:600,color:D.text,marginBottom:10}}>
+          등록된 포스트 ({posts.length})
+        </div>
         {posts.length===0
           ? <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center"}}>아직 등록된 포스트가 없습니다.</div>
           : posts.map(p=>(
