@@ -10797,6 +10797,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const [cellPostIdx,setCellPostIdx]=useState({});
   // 리본 표시 토글 — 기본 OFF (요청)
   const [ribbonsOn,setRibbonsOn]=useState(false);
+  // 호버된 ribbon — RibbonOverlay/AttributionSpotlight 가 함께 dim 처리
+  const [hoveredRibbon,setHoveredRibbon]=useState(null);
   // 어트리뷰션 ON 상태에서 비-리본 영역 클릭 시 토스트 + 토글 버튼 글로우
   const [attrBlockedToast,setAttrBlockedToast]=useState(null);
   useEffect(()=>{
@@ -11145,10 +11147,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         {ribbonsOn&&(
           <>
             <AttributionSpotlight gridRef={gridRef} visibleRibbons={visibleRibbons}
-              ribbonColor={ribbonColor}
+              ribbonColor={ribbonColor} hoveredRibbon={hoveredRibbon}
               onBlockClick={()=>setAttrBlockedToast({msg:"OFF으로 전환 시 다른 요소 선택이 가능합니다",t:Date.now()})}/>
             <RibbonOverlay gridRef={gridRef} ribbons={visibleRibbons}
               ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}
+              hoveredRibbon={hoveredRibbon} setHoveredRibbon={setHoveredRibbon}
               visible={true} portal={true}/>
           </>
         )}
@@ -11215,7 +11218,16 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 // ─────────────────────────────────────────────
 // 어트리뷰션 spotlight — 전체 화면 dim + 출발/도착 클론을 portal 로 띄움
 // ─────────────────────────────────────────────
-function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, onBlockClick }) {
+function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredRibbon, onBlockClick }) {
+  // 호버 시 활성 키 (출발 + 도착) → 그 외 클론은 dim
+  const activeKeys=useMemo(()=>{
+    if(!hoveredRibbon?.ribbon) return null;
+    const r=hoveredRibbon.ribbon;
+    return new Set([
+      `s_${r.fromIso}__${r.tagName||""}`,
+      `t_${r.toIso}__${r.productIdx??0}`,
+    ]);
+  },[hoveredRibbon]);
   const [spots,setSpots]=useState([]);
   useEffect(()=>{
     const compute=()=>{
@@ -11262,32 +11274,39 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, onBlockCli
       <div onClick={onBlockClick}
         style={{position:"fixed",inset:0,zIndex:1000,
           background:"rgba(0,0,0,0.75)",cursor:"default"}}/>
-      {/* 출발/도착 spotlight 클론 — 흰 직사각형 라벨 통일 */}
-      {spots.map(s=>(
-        <div key={s.key} style={{position:"fixed",
-          left:s.rect.left,top:s.rect.top,width:s.rect.width,height:s.rect.height,
-          zIndex:1010,pointerEvents:"none",
-          display:"flex",alignItems:"center",justifyContent:s.type==="source"?"center":"flex-start"}}>
-          <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",
-            fontSize:11,fontWeight:700,color:"#111",
-            background:"#fff",borderRadius:0,
-            boxShadow:"0 4px 14px rgba(0,0,0,0.55)",
-            whiteSpace:"nowrap",lineHeight:1.3}}>
-            {s.type==="target"&&<span style={{color:"#F2B544"}}>★</span>}
-            <span>{s.name}</span>
-            {s.type==="target"&&<span style={{color:"#666",fontWeight:500}}>{(s.qty||0)}장</span>}
-          </span>
-        </div>
-      ))}
+      {/* 출발/도착 spotlight 클론 — 흰 직사각형 라벨 통일. 호버 시 다른 클론 dim */}
+      {spots.map(s=>{
+        const isActive=!activeKeys||activeKeys.has(s.key);
+        return (
+          <div key={s.key} style={{position:"fixed",
+            left:s.rect.left,top:s.rect.top,width:s.rect.width,height:s.rect.height,
+            zIndex:1010,pointerEvents:"none",
+            opacity:isActive?1:0.18,transition:"opacity 0.15s ease",
+            display:"flex",alignItems:"center",justifyContent:s.type==="source"?"center":"flex-start"}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",
+              fontSize:11,fontWeight:700,color:"#111",
+              background:"#fff",borderRadius:0,
+              boxShadow:"0 4px 14px rgba(0,0,0,0.55)",
+              whiteSpace:"nowrap",lineHeight:1.3}}>
+              {s.type==="target"&&<span style={{color:"#F2B544"}}>★</span>}
+              <span>{s.name}</span>
+              {s.type==="target"&&<span style={{color:"#666",fontWeight:500}}>{(s.qty||0)}장</span>}
+            </span>
+          </div>
+        );
+      })}
     </>,
     document.body
   );
 }
 
-function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible, zIndex, portal }) {
+function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible, zIndex, portal, hoveredRibbon, setHoveredRibbon }) {
   const [paths,setPaths]=useState([]);
   const [size,setSize]=useState({w:0,h:0});
-  const [hovered,setHovered]=useState(null); // {ribbon, x, y}
+  // 부모가 hover state 를 lift up — 없으면 로컬 (하위 호환)
+  const [localHovered,setLocalHovered]=useState(null);
+  const hovered=hoveredRibbon!==undefined?hoveredRibbon:localHovered;
+  const setHovered=setHoveredRibbon||setLocalHovered;
 
   useEffect(()=>{
     if(!visible){ setPaths([]); return; }
