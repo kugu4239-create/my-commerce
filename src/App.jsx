@@ -10575,6 +10575,14 @@ function MatchedProductBadge({ name, qty, color="#fff" }) {
   );
 }
 
+// 상품명 매칭 — 모듈 공용 (대소문자 무시, 부분 일치 포함)
+function nameMatches(a,b){
+  const al=String(a||"").toLowerCase();
+  const bl=String(b||"").toLowerCase();
+  if(!al||!bl) return false;
+  return al===bl||al.includes(bl)||bl.includes(al);
+}
+
 function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const now=new Date();
   const [ym,setYm]=useState(()=>`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
@@ -10645,12 +10653,6 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const ribbonColor=(postId)=>D.SANKEY[Math.abs(postId)%D.SANKEY.length];
 
   // 이름 매칭: 정확 일치 또는 한쪽이 다른 쪽의 부분 문자열 (대소문자 무시)
-  const nameMatches=(a,b)=>{
-    const al=String(a||"").toLowerCase();
-    const bl=String(b||"").toLowerCase();
-    if(!al||!bl) return false;
-    return al===bl||al.includes(bl)||bl.includes(al);
-  };
 
   // 월 이동
   const shiftMonth=(delta)=>{
@@ -10797,8 +10799,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const [cellPostIdx,setCellPostIdx]=useState({});
   // 리본 표시 토글 — 기본 OFF (요청)
   const [ribbonsOn,setRibbonsOn]=useState(false);
-  // 호버된 ribbon — RibbonOverlay/AttributionSpotlight 가 함께 dim 처리
-  const [hoveredRibbon,setHoveredRibbon]=useState(null);
+  // 호버된 상품명 — 이름표 단위 hover, 동명 라벨 일괄 강조 + 표 모달
+  const [hoveredHover,setHoveredHover]=useState(null); // {name, x, y}
   // 어트리뷰션 ON 상태에서 비-리본 영역 클릭 시 토스트 + 토글 버튼 글로우
   const [attrBlockedToast,setAttrBlockedToast]=useState(null);
   useEffect(()=>{
@@ -11147,12 +11149,15 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         {ribbonsOn&&(
           <>
             <AttributionSpotlight gridRef={gridRef} visibleRibbons={visibleRibbons}
-              ribbonColor={ribbonColor} hoveredRibbon={hoveredRibbon}
+              ribbonColor={ribbonColor} hoveredHover={hoveredHover} setHoveredHover={setHoveredHover}
               onBlockClick={()=>setAttrBlockedToast({msg:"OFF으로 전환 시 다른 요소 선택이 가능합니다",t:Date.now()})}/>
             <RibbonOverlay gridRef={gridRef} ribbons={visibleRibbons}
               ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}
-              hoveredRibbon={hoveredRibbon} setHoveredRibbon={setHoveredRibbon}
+              hoveredHover={hoveredHover}
               visible={true} portal={true}/>
+            {hoveredHover&&<ProductHoverModal hover={hoveredHover}
+              visibleRibbons={visibleRibbons} igPosts={igPosts}
+              postProductsMap={postProductsMap}/>}
           </>
         )}
         </div>
@@ -11218,16 +11223,8 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 // ─────────────────────────────────────────────
 // 어트리뷰션 spotlight — 전체 화면 dim + 출발/도착 클론을 portal 로 띄움
 // ─────────────────────────────────────────────
-function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredRibbon, onBlockClick }) {
-  // 호버 시 활성 키 (출발 + 도착) → 그 외 클론은 dim
-  const activeKeys=useMemo(()=>{
-    if(!hoveredRibbon?.ribbon) return null;
-    const r=hoveredRibbon.ribbon;
-    return new Set([
-      `s_${r.fromIso}__${r.tagName||""}`,
-      `t_${r.toIso}__${r.productIdx??0}`,
-    ]);
-  },[hoveredRibbon]);
+function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredHover, setHoveredHover, onBlockClick }) {
+  // 라벨 hover: 동일/유사 상품명 라벨은 모두 활성, 그 외 dim
   const [spots,setSpots]=useState([]);
   useEffect(()=>{
     const compute=()=>{
@@ -11274,20 +11271,23 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredRib
       <div onClick={onBlockClick}
         style={{position:"fixed",inset:0,zIndex:1000,
           background:"rgba(0,0,0,0.75)",cursor:"default"}}/>
-      {/* 출발/도착 spotlight 클론 — 흰 직사각형 라벨 통일. 호버 시 다른 클론 dim */}
+      {/* 출발/도착 spotlight 클론 — 흰 직사각형. hover 가능, 동명 라벨 일괄 강조 */}
       {spots.map(s=>{
-        const isActive=!activeKeys||activeKeys.has(s.key);
+        const isActive=!hoveredHover||nameMatches(s.name,hoveredHover.name);
         return (
           <div key={s.key} style={{position:"fixed",
             left:s.rect.left,top:s.rect.top,width:s.rect.width,height:s.rect.height,
-            zIndex:1010,pointerEvents:"none",
+            zIndex:1010,pointerEvents:"auto",cursor:"pointer",
             opacity:isActive?1:0.18,transition:"opacity 0.15s ease",
-            display:"flex",alignItems:"center",justifyContent:s.type==="source"?"center":"flex-start"}}>
+            display:"flex",alignItems:"center",justifyContent:s.type==="source"?"center":"flex-start"}}
+            onMouseEnter={e=>setHoveredHover({name:s.name,type:s.type,x:e.clientX,y:e.clientY})}
+            onMouseMove={e=>setHoveredHover(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
+            onMouseLeave={()=>setHoveredHover(null)}>
             <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",
               fontSize:11,fontWeight:700,color:"#111",
               background:"#fff",borderRadius:0,
               boxShadow:"0 4px 14px rgba(0,0,0,0.55)",
-              whiteSpace:"nowrap",lineHeight:1.3}}>
+              whiteSpace:"nowrap",lineHeight:1.3,pointerEvents:"none"}}>
               {s.type==="target"&&<span style={{color:"#F2B544"}}>★</span>}
               <span>{s.name}</span>
               {s.type==="target"&&<span style={{color:"#666",fontWeight:500}}>{(s.qty||0)}장</span>}
@@ -11300,13 +11300,9 @@ function AttributionSpotlight({ gridRef, visibleRibbons, ribbonColor, hoveredRib
   );
 }
 
-function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible, zIndex, portal, hoveredRibbon, setHoveredRibbon }) {
+function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible, zIndex, portal, hoveredHover }) {
   const [paths,setPaths]=useState([]);
   const [size,setSize]=useState({w:0,h:0});
-  // 부모가 hover state 를 lift up — 없으면 로컬 (하위 호환)
-  const [localHovered,setLocalHovered]=useState(null);
-  const hovered=hoveredRibbon!==undefined?hoveredRibbon:localHovered;
-  const setHovered=setHoveredRibbon||setLocalHovered;
 
   useEffect(()=>{
     if(!visible){ setPaths([]); return; }
@@ -11406,40 +11402,114 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible,
 
   if(!visible||!paths.length) return null;
 
-  // 호버된 리본은 정렬상 가장 위에 그리도록 paths 끝으로
-  const ordered=hovered
-    ?[...paths.filter(p=>p.key!==hovered.key),...paths.filter(p=>p.key===hovered.key)]
-    :paths;
+  // hoveredHover 시 매칭되는 ribbon (tagName / product 가 hover name 과 nameMatches) 만 진하게
+  const isActive=(r)=>{
+    if(!hoveredHover) return true;
+    return nameMatches(r.tagName,hoveredHover.name)||nameMatches(r.product,hoveredHover.name);
+  };
 
   const svgNode=(
     <svg style={{position:portal?"fixed":"absolute",top:0,left:0,width:size.w,height:size.h,
         pointerEvents:"none",overflow:"visible",zIndex:portal?1020:(zIndex??1)}}>
-        {ordered.map(p=>{
-          const isHover=hovered?.key===p.key;
-          const dim=hovered&&!isHover;
+        {paths.map(p=>{
+          const active=isActive(p.ribbon);
           const w=widthOf(p.ribbon?.qty);
           return (
             <path key={p.key} d={p.d} stroke={p.color} fill="none"
               strokeWidth={w}
-              opacity={dim?0.25:isHover?1:0.95}
+              opacity={hoveredHover?(active?1:0.12):0.95}
               strokeLinecap="round"
-              pointerEvents="stroke"
-              style={{cursor:"pointer"}}
-              onMouseEnter={e=>setHovered({key:p.key,ribbon:p.ribbon,color:p.color,x:e.clientX,y:e.clientY})}
-              onMouseMove={e=>setHovered(h=>h?{...h,x:e.clientX,y:e.clientY}:h)}
-              onMouseLeave={()=>setHovered(null)}/>
+              pointerEvents="none"/>
           );
         })}
       </svg>
   );
-  const tipNode=hovered?<RibbonTooltip x={hovered.x} y={hovered.y} ribbon={hovered.ribbon} color={hovered.color}/>:null;
   if(portal){
-    return createPortal(<>{svgNode}{tipNode}</>,document.body);
+    return createPortal(svgNode,document.body);
   }
-  return (<>{svgNode}{tipNode}</>);
+  return svgNode;
 }
 
-// 리본 호버 시 표시되는 모달형 툴팁 카드
+// 이름표 hover 시 모달형 표 — 상품 소개일/결과 일목요연 정리
+function ProductHoverModal({ hover, visibleRibbons, igPosts, postProductsMap }) {
+  if(!hover) return null;
+  const md=iso=>{const[,m,d]=String(iso||"").split("-");return m&&d?`${parseInt(m)}/${parseInt(d)}`:iso;};
+  // 소개일: 해당 상품을 태깅한 모든 (postDate, postUrl) — visibleRibbons 의 fromIso 외에도 igPosts/postProductsMap 에서 직접 수집
+  const intros=[];
+  const seenIntro=new Set();
+  igPosts.forEach(p=>{
+    const tags=postProductsMap[p.id]||[];
+    if(tags.some(t=>nameMatches(t,hover.name))){
+      const k=`${p.post_date}__${p.id}`;
+      if(seenIntro.has(k)) return; seenIntro.add(k);
+      intros.push({date:p.post_date,url:p.url});
+    }
+  });
+  intros.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  // 결과: visibleRibbons 중 매칭되는 모든 (toIso, productIdx, product, qty)
+  const results=[];
+  const seenRes=new Set();
+  visibleRibbons.forEach(r=>{
+    if(!(nameMatches(r.tagName,hover.name)||nameMatches(r.product,hover.name))) return;
+    const k=`${r.toIso}__${r.productIdx}`;
+    if(seenRes.has(k)) return; seenRes.add(k);
+    results.push({date:r.toIso,rank:(r.productIdx??0)+1,qty:r.qty||0,product:r.product});
+  });
+  results.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+
+  const w=320;
+  const left=Math.min(hover.x+14,window.innerWidth-w-10);
+  const top =Math.min(hover.y+14,window.innerHeight-300);
+  return createPortal(
+    <div style={{position:"fixed",left,top,zIndex:2500,
+      width:w,maxWidth:"95vw",background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
+      boxShadow:"0 12px 36px rgba(0,0,0,0.32)",padding:"14px 16px",fontSize:12,color:D.text,
+      pointerEvents:"none",lineHeight:1.55}}>
+      <div style={{fontWeight:700,fontSize:14,color:D.black,marginBottom:8,
+        paddingBottom:8,borderBottom:`1px solid ${D.border}`,wordBreak:"break-all"}}>
+        {hover.name}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:4,alignItems:"start"}}>
+        <div style={{color:D.textMeta,fontWeight:600,paddingTop:2}}>소개일</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+          {intros.length===0
+            ?<span style={{color:D.textMeta}}>—</span>
+            :intros.map(i=>(
+              <span key={i.date} style={{padding:"2px 8px",background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:10,fontWeight:600,color:D.text}}>{md(i.date)}</span>
+            ))}
+        </div>
+      </div>
+      <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${D.border}`}}>
+        <div style={{color:D.textMeta,fontWeight:600,marginBottom:6}}>결과 (판매 Top)</div>
+        {results.length===0?(
+          <div style={{color:D.textMeta,fontStyle:"italic"}}>— 매칭된 판매 Top 없음</div>
+        ):(
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{color:D.textMeta,borderBottom:`1px solid ${D.border}`}}>
+                <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>일자</th>
+                <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>순위</th>
+                <th style={{textAlign:"right",padding:"4px 6px",fontWeight:600}}>수량</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map(r=>(
+                <tr key={`${r.date}__${r.rank}`} style={{borderBottom:`1px solid ${D.border}`}}>
+                  <td style={{padding:"4px 6px",fontWeight:600,color:D.black}}>{md(r.date)}</td>
+                  <td style={{padding:"4px 6px",color:D.textSub}}>Top {r.rank}</td>
+                  <td style={{padding:"4px 6px",textAlign:"right",color:D.blue,fontWeight:700}}>{r.qty.toLocaleString()}장</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// 리본 호버 시 표시되는 모달형 툴팁 카드 (deprecated — ProductHoverModal 사용)
 function RibbonTooltip({ x, y, ribbon, color }) {
   if(!ribbon) return null;
   const md=iso=>{const[,m,d]=String(iso||"").split("-");return m&&d?`${parseInt(m)}/${parseInt(d)}`:iso;};
