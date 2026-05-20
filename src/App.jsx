@@ -10934,14 +10934,10 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   <InstagramThumb src={curPost.thumb_url}/>
                 </div>
               )}
-              {/* 노이즈 + 반투명 검정 — 이미지 위 흰 텍스트 가독성 향상 (dark film + grain) */}
+              {/* 반투명 검정 오버레이 — 이미지 위 흰 텍스트 가독성 (노이즈 제거) */}
               {c.inMonth&&posts.length>0&&(
                 <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none",
-                  background:"rgba(0,0,0,0.45)",
-                  backgroundImage:`url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
-                  backgroundBlendMode:"overlay",
-                  mixBlendMode:"normal",
-                }}/>
+                  background:"rgba(0,0,0,0.45)"}}/>
               )}
               {/* 같은 날 멀티 포스트 좌우 넘김 화살표 (별점 desc 순) */}
               {c.inMonth&&posts.length>1&&(
