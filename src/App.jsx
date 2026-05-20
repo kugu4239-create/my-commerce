@@ -10698,6 +10698,43 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return inMonths.length?inMonths[inMonths.length-1].iso:null;
   },[grid]);
 
+  // ── 포스트 임팩트 점수 (0~5★) ─────────────────────────
+  // 산식: Score = 0.5·HitRate + 0.5·QtyScore
+  //   HitRate  = (포스트 후 14일 중 태깅 상품이 일별 Top5 에 1개라도 든 일수) / 14
+  //   QtyShare = (14일 태깅 상품 총 qty) / (14일 전체 상품 qty)
+  //   QtyScore = min(QtyShare / 0.10, 1)  — 점유율 10% 이상 만점
+  //   별 = round(Score × 5)
+  const postScores=useMemo(()=>{
+    const map={}; // postId → {stars, hitRate, qtyShare, hitDays, taggedQty, totalQty}
+    const WINDOW=14;
+    const dayMs=86400000;
+    igPosts.forEach(post=>{
+      const tagged=postProductsMap[post.id]||[];
+      if(!tagged.length){ map[post.id]={stars:0,hitRate:0,qtyShare:0,hitDays:0,taggedQty:0,totalQty:0,empty:true}; return; }
+      const startMs=new Date(post.post_date).getTime();
+      let hitDays=0,taggedQty=0,totalQty=0;
+      for(let i=1;i<=WINDOW;i++){
+        const iso=new Date(startMs+i*dayMs).toISOString().slice(0,10);
+        const dd=dailyData[iso]; if(!dd) continue;
+        // hit: 일별 Top5 에 태깅 상품이 1개라도 있는지
+        const hit=(dd.topProducts||[]).some(tp=>tagged.some(t=>nameMatches(t,tp.name)));
+        if(hit) hitDays++;
+        // qty share: 전체 일별 products 에서 태깅 매칭만 합산
+        Object.entries(dd.products||{}).forEach(([name,qty])=>{
+          totalQty+=qty;
+          if(tagged.some(t=>nameMatches(t,name))) taggedQty+=qty;
+        });
+      }
+      const hitRate=hitDays/WINDOW;
+      const qtyShare=totalQty>0?taggedQty/totalQty:0;
+      const qtyScore=Math.min(qtyShare/0.10,1);
+      const score=0.5*hitRate+0.5*qtyScore;
+      const stars=Math.max(0,Math.min(5,Math.round(score*5)));
+      map[post.id]={stars,hitRate,qtyShare,hitDays,taggedQty,totalQty};
+    });
+    return map;
+  },[igPosts,postProductsMap,dailyData]);
+
   // 같은 달 안 ribbons
   const ribbons=useMemo(()=>{
     if(!lastInMonthIso) return [];
@@ -10822,10 +10859,26 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
               <div style={{position:"relative",zIndex:2,padding:"10px 12px",
                 display:"flex",flexDirection:"column",flex:1,minHeight:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <span style={{fontSize:14,fontWeight:c.isToday?700:600,
-                    color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
-                    {c.date.getDate()}
-                  </span>
+                  <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:14,fontWeight:c.isToday?700:600,
+                      color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
+                      {c.date.getDate()}
+                    </span>
+                    {posts.length>0&&(()=>{
+                      // 다수 포스트면 max 점수 사용 (사용자 입장: 최고 임팩트 포스트로 평가)
+                      const stars=posts.reduce((m,p)=>Math.max(m,postScores[p.id]?.stars||0),0);
+                      const info=posts.map(p=>postScores[p.id]).filter(Boolean);
+                      const hitRateMax=info.length?Math.max(...info.map(x=>x.hitRate||0)):0;
+                      const qtyShareMax=info.length?Math.max(...info.map(x=>x.qtyShare||0)):0;
+                      const tip=`임팩트 점수 ${stars}/5 ★\n· HitRate(14일 Top5 진입 일수) ${(hitRateMax*100).toFixed(0)}%\n· QtyShare(태깅 상품 판매 점유율) ${(qtyShareMax*100).toFixed(1)}%\n공식: 0.5·HitRate + 0.5·min(QtyShare/0.10, 1)`;
+                      return (
+                        <span title={tip} style={{fontSize:11,letterSpacing:0.5,lineHeight:1,whiteSpace:"nowrap"}}>
+                          <span style={{color:"#F2B544"}}>{"★".repeat(stars)}</span>
+                          <span style={{color:"#cfcfcf"}}>{"★".repeat(5-stars)}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
                     {posts.length>0&&<span title={`${posts.length}개 포스트`}
                       style={{fontSize:10,color:"#fff",fontWeight:700,
