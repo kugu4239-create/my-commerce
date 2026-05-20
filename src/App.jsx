@@ -10525,21 +10525,20 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 
 // 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
 function MatchedProductBadge({ name, qty }) {
-  // 손그림 동그라미: 살짝 비대칭 SVG ellipse 두 겹 (offset 다르게 → wobble 느낌)
+  // 손그림 동그라미 + 별 — 항상 다크 오버레이 위에 표시되므로 흰 텍스트 + drop-shadow
   return (
     <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:3,padding:"1px 4px"}}>
       {/* 별 스티커 */}
-      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 0 1px #fff)"}}>★</span>
-      <span style={{fontWeight:700,color:D.black,position:"relative",zIndex:1}}>{name}</span>
-      <span style={{color:D.textMeta,position:"relative",zIndex:1}}>{qty}장</span>
+      <span style={{fontSize:11,color:"#F2B544",lineHeight:1,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.6))"}}>★</span>
+      <span style={{fontWeight:700,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,0.6)",position:"relative",zIndex:1}}>{name}</span>
+      <span style={{color:"#fff",opacity:0.85,textShadow:"0 1px 2px rgba(0,0,0,0.6)",position:"relative",zIndex:1}}>{qty}장</span>
       {/* 손그림 동그라미 — absolute fill, SVG inline */}
       <svg viewBox="0 0 100 30" preserveAspectRatio="none"
-        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0}}>
-        {/* 손으로 그린 듯한 비대칭 타원 두 겹 */}
+        style={{position:"absolute",inset:-3,width:"calc(100% + 6px)",height:"calc(100% + 6px)",pointerEvents:"none",zIndex:0,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.5))"}}>
         <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
-          fill="none" stroke="#E94A6B" strokeWidth="1.6" strokeLinecap="round" opacity="0.85"/>
+          fill="none" stroke="#FF6B8A" strokeWidth="1.8" strokeLinecap="round" opacity="0.95"/>
         <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
-          fill="none" stroke="#E94A6B" strokeWidth="0.9" strokeLinecap="round" opacity="0.5"/>
+          fill="none" stroke="#FF6B8A" strokeWidth="1.0" strokeLinecap="round" opacity="0.6"/>
       </svg>
     </span>
   );
@@ -11404,8 +11403,13 @@ export default function App() {
       };
     });
 
+    // 매장 반품은 DB에 저장만 두고 집계 로직에서는 제외 (요청사항)
+    //   - DataHistoryPanel 은 Supabase 직접 조회라 반품 행 그대로 보임
+    //   - 여기서 한 번 필터 → analyze/Dashboard/PromoFlow/ContentImpact 모두 영향 0
+    const activeStoreSales=allStoreSales.filter(r=>r.status!=="반품");
+
     // store_sales → 주문 호환 rows (채널은 "오프라인 스토어"로 정규화)
-    const storeOrderRows=allStoreSales.map(r=>({
+    const storeOrderRows=activeStoreSales.map(r=>({
       order_date:r.sale_date,
       channel:"오프라인 스토어",
       product_name:r.product_name,
@@ -11415,14 +11419,14 @@ export default function App() {
       order_id:r.order_id,
     }));
     // 예약거래는 매장 CSV(store_sales)로 별도 집계 — store_sales가 있으면 orders의 예약거래 행 제외 (이중 합산 방지)
-    const hasStoreSales=allStoreSales.length>0;
+    const hasStoreSales=activeStoreSales.length>0;
     const baseOrders=hasStoreSales
       ?allOrders.filter(o=>String(o.channel||"").trim()!=="예약거래")
       :allOrders;
     setOrders([...baseOrders.map(o=>({...o,channel:normChannel(o.channel)})),...storeOrderRows]);
     setStocks(allStocks);
     setRevenues(allRevenues);
-    setStoreSales(allStoreSales);
+    setStoreSales(activeStoreSales);
     const tsData=tsRes?.data;
     if(tsData&&tsData.length>0){
       const t=tsData[0];
