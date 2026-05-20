@@ -10532,6 +10532,23 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 }
 
 // 손그림 동그라미 + 별로 강조하는 매칭 상품 라벨
+// 어트리뷰션 출발 소개 상품 — 손그림 동그라미 (옐로우)
+function SourceProductBadge({ name }) {
+  return (
+    <span style={{position:"relative",display:"inline-block",padding:"1px 6px"}}>
+      <span style={{position:"relative",zIndex:1,fontWeight:700,color:"#fff",
+        textShadow:"0 1px 2px rgba(0,0,0,0.6)"}}>· {name}</span>
+      <svg viewBox="0 0 100 30" preserveAspectRatio="none"
+        style={{position:"absolute",inset:-2,width:"calc(100% + 4px)",height:"calc(100% + 4px)",pointerEvents:"none",zIndex:0,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.5))"}}>
+        <path d="M 8 17 C 5 9, 25 4, 50 5 C 78 6, 96 12, 94 18 C 92 24, 70 27, 45 26 C 18 25, 6 21, 10 16"
+          fill="none" stroke="#FFD166" strokeWidth="2.2" strokeLinecap="round" opacity="0.95"/>
+        <path d="M 12 18 C 10 12, 28 7, 52 8 C 76 9, 92 14, 90 19"
+          fill="none" stroke="#FFD166" strokeWidth="1.1" strokeLinecap="round" opacity="0.65"/>
+      </svg>
+    </span>
+  );
+}
+
 function MatchedProductBadge({ name, qty }) {
   // 손그림 동그라미 + 별 — 항상 다크 오버레이 위에 표시되므로 흰 텍스트 + drop-shadow
   return (
@@ -10774,6 +10791,13 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   const [cellPostIdx,setCellPostIdx]=useState({});
   // 리본 표시 토글 — 기본 OFF (요청)
   const [ribbonsOn,setRibbonsOn]=useState(false);
+  // 어트리뷰션 ON 상태에서 비-리본 영역 클릭 시 토스트 + 토글 버튼 글로우
+  const [attrBlockedToast,setAttrBlockedToast]=useState(null);
+  useEffect(()=>{
+    if(!attrBlockedToast) return;
+    const t=setTimeout(()=>setAttrBlockedToast(null),2600);
+    return()=>clearTimeout(t);
+  },[attrBlockedToast]);
 
   // 같은 달 안 ribbons
   const ribbons=useMemo(()=>{
@@ -10811,6 +10835,13 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     });
     return result;
   },[igPosts,postProductsMap,grid,dailyData,lastInMonthIso,isoToGridIdx]);
+
+  // 어트리뷰션 출발점이 되는 (fromIso, tagName) Set — 어트리뷰션 ON 시 해당 소개 상품에 동그라미
+  const activeRibbonTags=useMemo(()=>{
+    const s=new Set();
+    ribbons.forEach(r=>{ if(r.tagName) s.add(`${r.fromIso}__${r.tagName}`); });
+    return s;
+  },[ribbons]);
 
   // 월 넘어가는 매칭 (이번 달 포스트 → 다음 달 이후 판매 Top)
   const crossMonthByPostDate=useMemo(()=>{
@@ -11029,12 +11060,18 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                       <div style={{fontSize:9,fontWeight:700,color:fg,letterSpacing:"0.05em",
                         textTransform:"uppercase",marginBottom:2}}>소개 상품</div>
                       {samedayTagged.size>0
-                        ?[...samedayTagged].slice(0,5).map((name,j)=>(
-                          <div key={j} data-tag-iso={c.iso} data-tag-name={name}
-                            style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:fg}}>
-                            · {name}
-                          </div>
-                        ))
+                        ?[...samedayTagged].slice(0,5).map((name,j)=>{
+                          const isSource=ribbonsOn&&activeRibbonTags.has(`${c.iso}__${name}`);
+                          return (
+                            <div key={j} data-tag-iso={c.iso} data-tag-name={name}
+                              style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:fg,
+                                position:"relative"}}>
+                              {isSource
+                                ?<SourceProductBadge name={name}/>
+                                :<>· {name}</>}
+                            </div>
+                          );
+                        })
                         :<div style={{color:fgMeta,opacity:0.7}}>—</div>}
                     </div>
                     {/* 우측: 판매 베스트 (Top 5) — 매칭은 손그림 강조 */}
@@ -11064,9 +11101,15 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
           );})}
         </div>
         {/* 리본 SVG 오버레이 — DOM 측정 기반 픽셀 좌표로 텍스트끼리 정확하게 연결 */}
+        {/* 어트리뷰션 ON 시: 셀 클릭 차단(리본만 hover/click 가능). 비-리본 영역 클릭 → 토스트 + 버튼 글로우 */}
+        {ribbonsOn&&(
+          <div onClick={()=>setAttrBlockedToast({msg:"OFF으로 전환 시 다른 요소 선택이 가능합니다",t:Date.now()})}
+            style={{position:"absolute",inset:0,zIndex:40,cursor:"default",
+              background:"transparent"}}/>
+        )}
         <RibbonOverlay gridRef={gridRef} ribbons={ribbons}
           ribbonColor={ribbonColor} hoveredFromIso={hoveredFromIso}
-          visible={ribbonsOn}/>
+          visible={ribbonsOn} zIndex={50}/>
         </div>
       </Card>
 
@@ -11095,15 +11138,28 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
       {/* Sticky 어트리뷰션 토글 — 뷰포트 하단 20% 중앙 */}
       {ribbons.length>0&&(
-        <button onClick={()=>setRibbonsOn(v=>!v)}
+        <button onClick={()=>{setRibbonsOn(v=>!v);setAttrBlockedToast(null);}}
           title={ribbonsOn?"어트리뷰션 라인 끄기":"어트리뷰션 라인 켜기 (판매 수량에 비례한 두께)"}
           style={{position:"fixed",left:"50%",bottom:"20vh",transform:"translateX(-50%)",
             zIndex:1500,padding:"9px 20px",fontSize:12,fontWeight:600,letterSpacing:"0.02em",
             background:ribbonsOn?D.black:D.surface,color:ribbonsOn?"#fff":D.text,
             border:`1px solid ${ribbonsOn?D.black:D.border}`,borderRadius:6,cursor:"pointer",
-            boxShadow:"0 4px 14px rgba(0,0,0,0.15)"}}>
+            boxShadow:attrBlockedToast
+              ?"0 0 0 4px rgba(192,192,192,0.55), 0 0 24px rgba(192,192,192,0.7), 0 4px 14px rgba(0,0,0,0.15)"
+              :"0 4px 14px rgba(0,0,0,0.15)",
+            transition:"box-shadow 0.25s ease"}}>
           어트리뷰션 {ribbonsOn?`ON · ${ribbons.length}`:"보기"}
         </button>
+      )}
+
+      {/* 토스트 — 어트리뷰션 ON 시 비-리본 영역 클릭 시 */}
+      {attrBlockedToast&&(
+        <div style={{position:"fixed",left:"50%",bottom:"calc(20vh + 60px)",transform:"translateX(-50%)",
+          zIndex:1600,background:"#222",color:"#fff",padding:"10px 18px",borderRadius:8,
+          fontSize:12,fontWeight:500,boxShadow:"0 6px 24px rgba(0,0,0,0.32)",pointerEvents:"none",
+          whiteSpace:"nowrap"}}>
+          {attrBlockedToast.msg}
+        </div>
       )}
     </div>
   );
@@ -11114,7 +11170,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 //   - 시작: 포스트 셀의 ★ 버튼 (data-star-iso)
 //   - 끝  : 매칭된 판매 Top 행 (data-iso + data-pidx)
 // ─────────────────────────────────────────────
-function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible }) {
+function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible, zIndex }) {
   const [paths,setPaths]=useState([]);
   const [size,setSize]=useState({w:0,h:0});
   const [hovered,setHovered]=useState(null); // {ribbon, x, y}
@@ -11190,7 +11246,7 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible 
   return (
     <>
       <svg style={{position:"absolute",top:0,left:0,width:size.w,height:size.h,
-          pointerEvents:"none",overflow:"visible"}}>
+          pointerEvents:"none",overflow:"visible",zIndex:zIndex??1}}>
         {ordered.map(p=>{
           const isHover=hovered?.key===p.key;
           const dim=hovered&&!isHover;
@@ -11198,7 +11254,7 @@ function RibbonOverlay({ gridRef, ribbons, ribbonColor, hoveredFromIso, visible 
           return (
             <path key={p.key} d={p.d} stroke={p.color} fill="none"
               strokeWidth={w}
-              opacity={dim?0.15:isHover?1:0.7}
+              opacity={dim?0.25:isHover?1:0.95}
               strokeLinecap="round"
               pointerEvents="stroke"
               style={{cursor:"pointer"}}
