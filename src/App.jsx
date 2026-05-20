@@ -4900,6 +4900,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   const lenDays=dur+1;
   const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
   const prevEnd=new Date(new Date(promoStart).getTime()-dayMs).toISOString().slice(0,10);
+  const modalCardRef=useRef(null);
 
   // 채널 매출 소스: 자사몰/29CM/무신사 → revenues, 오프라인 스토어 → storeSales
   const dailyRevenue=useMemo(()=>{
@@ -4964,21 +4965,24 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
         display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()}
+      <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
         style={{background:D.surface,borderRadius:14,padding:"24px 28px",
           width:"min(900px,95vw)",maxHeight:"90vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
           <div>
             <div style={{fontWeight:700,fontSize:16,color:D.black}}>{promo.name} <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 임팩트 분석</span></div>
             <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
               <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
-              {ch} · 프로모션 {promoStart} ~ {promoEnd} · 직전 동일기간 {prevStart} ~ {prevEnd}
+              {ch} · 프로모션 {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span> · 직전 동일기간 {prevStart} ~ {prevEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일)</span>
             </div>
           </div>
-          <button onClick={onClose}
-            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
-              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <CaptureBtn cardRef={modalCardRef} filename={`임팩트분석_${promo.name}_${promoStart}_${promoEnd}`} DC={{border:D.border,sub:D.textMeta}}/>
+            <button onClick={onClose}
+              style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+          </div>
         </div>
 
         {/* 매출 요약 */}
