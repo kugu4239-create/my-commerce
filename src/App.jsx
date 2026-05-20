@@ -1277,7 +1277,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalReturned    = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalDeliveredQty= shippedRows.reduce((s,r)=>s+(r.qty||1),0);
   const totalReturnedQty = returnedRows.reduce((s,r)=>s+(r.qty||1),0);
-  const returnRate       = totalDeliveredQty>0?(totalReturnedQty/totalDeliveredQty*100).toFixed(1):"0.0";
+  // returnRate는 storeQty/storeReturnedQty 정의 후 아래에서 매장 포함 통합 계산
 
   // ── [주문 KPI] (온라인 전체, 배송 완료 여부 무관) ─────
   // 소스: 이지어드민 orders CSV (매장 제외)
@@ -1305,6 +1305,13 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const storeReturnedQty  = storeReturnedRows.reduce((s,r)=>s+(r.qty||1),0);
   const storeAOV          = storeOrderCount>0?Math.round(storeRevenue/storeOrderCount):0;
   const storeMetrics      = {storeRevenue,storeOrderCount,storeReturnedCount,storeQty,storeReturnedQty,storeAOV};
+
+  // ── [통합 반품률] (온라인 + 매장) ─────────────────────
+  // 반품률 = (온라인 반품 qty + 매장 반품 qty) ÷ (온라인 배송 qty + 매장 배송 qty) × 100
+  // 매장 자체 배송 카운트는 KPI '배송 건'에는 제외되지만, 반품률 계산에는 매장 반품/배송 qty를 포함
+  const totalDeliveredQtyAll = totalDeliveredQty + storeQty;
+  const totalReturnedQtyAll  = totalReturnedQty  + storeReturnedQty;
+  const returnRate           = totalDeliveredQtyAll>0?(totalReturnedQtyAll/totalDeliveredQtyAll*100).toFixed(1):"0.0";
 
   // ── [재고] ──────────────────────────────────────────
   // 소스: stock_uploads — 입고 CSV 누적 (필터링은 호출부에서)
@@ -1544,7 +1551,8 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     totalRevenue,totalOrderCount,totalRefundAmt,totalRefundCount,returnRate,
     totalShipped,totalReturned,totalStock,
     totalUniqueOrders,totalOrderedQty,totalDeliveredQty,totalReturnedQty,
-    totalUniqueOrdersAll,totalOrderedQtyAll, // 매장 포함 합산
+    totalUniqueOrdersAll,totalOrderedQtyAll,                 // 매장 포함 합산 (주문)
+    totalDeliveredQtyAll,totalReturnedQtyAll,                // 매장 포함 합산 (반품률 분모/분자)
     storeMetrics,  // 매장 별도 KPI: revenue/orderCount/returnedCount/qty/returnedQty/aov
     channelList,offlineBreakdown,monthlyData,weekBest,weekWorst,latestWeek,weekRows,
     chOrderAmt,chAllOrderIds, // 객단가/주문수 모달 소스
@@ -2079,7 +2087,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <KPI label="주문 건" value={stats.totalUniqueOrdersAll.toLocaleString()+"건"} sub={stats.totalOrderedQtyAll.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("order")}/>
         <KPI label="배송 건" value={stats.totalShipped.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.returnRate+"%"}
-          sub={`${stats.totalReturnedQty.toLocaleString()}장 / ${stats.totalDeliveredQty.toLocaleString()}장`}
+          sub={`${stats.totalReturnedQtyAll.toLocaleString()}장 / ${stats.totalDeliveredQtyAll.toLocaleString()}장`}
           accent={parseFloat(stats.returnRate)>10?D.red:D.textSub}
           onClick={()=>setKpiModal("returnRate")}/>}
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
@@ -2945,9 +2953,19 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             else if(r.status==="반품") byCh[ch].returnedQty+=q;
           });
           const chRows=Object.entries(byCh).sort((a,b)=>b[1].returnedQty-a[1].returnedQty);
-          // top return products — 반품 수량(장) 기준
+          // 매장 반품률 — 매장 판매 데이터에서 별도 계산 (배송 카운트와 무관)
+          const storeShippedQty =filteredStoreSales.filter(r=>r.status==="배송").reduce((s,r)=>s+(r.qty||1),0);
+          const storeReturnedQty=filteredStoreSales.filter(r=>r.status==="반품").reduce((s,r)=>s+(r.qty||1),0);
+          const storeRate=storeShippedQty>0?(storeReturnedQty/storeShippedQty*100):0;
+          const hasStore=storeShippedQty>0||storeReturnedQty>0;
+          // top return products — 반품 수량(장) 기준 (온라인 + 매장)
           const byProd={};
           filteredOrders.filter(r=>!isOff(r)&&r.status==="반품").forEach(r=>{
+            const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
+            if(!byProd[k]) byProd[k]=0;
+            byProd[k]+=(r.qty||1);
+          });
+          filteredStoreSales.filter(r=>r.status==="반품").forEach(r=>{
             const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
             if(!byProd[k]) byProd[k]=0;
             byProd[k]+=(r.qty||1);
@@ -2957,9 +2975,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>주문·배송 업로드 데이터</b> (status="배송"·"반품") — 매장은 제외<br/>
-                <b>반품률</b> = <b>반품 수량(장) ÷ 배송 수량(장)</b> × 100 (동기간 내, 장수 단위)<br/>
-                ※ 반품은 배송 완료 이후부터 접수되므로 단기간(어제·7일) 기준은 0%에 가깝게 보일 수 있습니다. 최근 한달·3개월이 더 정확.
+                소스: <b>주문·배송 업로드 데이터</b> (온라인 채널, status="배송"·"반품") · <b>매장 판매 데이터</b> (오프라인 스토어, status="배송"·"반품")<br/>
+                <b>반품률</b> = <b>반품 수량(장) ÷ 배송 수량(장)</b> × 100 (동기간 내, 장수 단위 · 온라인과 매장 각각 별도 계산)<br/>
+                ※ 반품은 배송 완료 이후부터 접수되므로 단기간(어제·7일) 기준은 0%에 가깝게 보일 수 있습니다. 최근 한달·3개월이 더 정확합니다.
               </div>
             <div style={{display:"grid",gridTemplateColumns:["yd","7d"].includes(period)?"1fr":"1fr 1fr",gap:20}}>
               <div>
@@ -2983,10 +3001,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         </tr>
                       );
                     })}
+                    {hasStore&&(
+                      <tr style={{borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
+                        <td style={{padding:"5px 7px",fontWeight:600}}>오프라인 스토어</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{storeShippedQty.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{storeReturnedQty.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",fontWeight:700,color:storeRate>10?D.red:D.textSub}}>{storeRate.toFixed(1)}%</td>
+                      </tr>
+                    )}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalDeliveredQty.toLocaleString()}</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{stats.totalReturnedQty.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalDeliveredQtyAll.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{stats.totalReturnedQtyAll.toLocaleString()}</td>
                       <td style={{textAlign:"right",padding:"5px 7px"}}>{stats.returnRate}%</td>
                     </tr>
                   </tbody>
@@ -3036,6 +3062,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           });
           const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
           modalContent=(
+            <div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
+                background:D.bg,borderRadius:6,padding:"8px 12px"}}>
+                소스: <b>입고 업로드 데이터</b> (stock_uploads)<br/>
+                <b>입고 수량</b> = SUM(qty) 업로드 행 전체<br/>
+                <b>SKU수</b> = COUNT(행) — 업로드된 상품·옵션 라인 수
+              </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>업로드 날짜별</div>
