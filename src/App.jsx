@@ -1312,12 +1312,14 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const storeAOV          = storeOrderCount>0?Math.round(storeRevenue/storeOrderCount):0;
   const storeMetrics      = {storeRevenue,storeOrderCount,storeReturnedCount,storeQty,storeReturnedQty,storeAOV};
 
-  // ── [통합 반품률] (온라인 + 매장) ─────────────────────
-  // 반품률 = (온라인 반품 qty + 매장 반품 qty) ÷ (온라인 배송 qty + 매장 배송 qty) × 100
-  // 매장 자체 배송 카운트는 KPI '배송 건'에는 제외되지만, 반품률 계산에는 매장 반품/배송 qty를 포함
-  const totalDeliveredQtyAll = totalDeliveredQty + storeQty;
+  // ── [반품률] (온라인 전용) ─────────────────────────────
+  // 반품률 = 온라인 반품 qty ÷ 온라인 배송 qty × 100
+  // 매장 배송 qty 는 분모에서 제외 (매장은 주문 수량 KPI 에만 합산)
+  //   - 매장 반품도 집계 제외 (loadData 에서 status='반품' 필터링됨)
+  //   - 노출용 두 합산 값(totalDeliveredQtyAll/totalReturnedQtyAll)은 매장 0 이라 totalDeliveredQty/totalReturnedQty 와 동일
+  const totalDeliveredQtyAll = totalDeliveredQty + storeQty;       // 모달 등 노출용 (값은 변동 가능)
   const totalReturnedQtyAll  = totalReturnedQty  + storeReturnedQty;
-  const returnRate           = totalDeliveredQtyAll>0?(totalReturnedQtyAll/totalDeliveredQtyAll*100).toFixed(1):"0.0";
+  const returnRate           = totalDeliveredQty>0?(totalReturnedQty/totalDeliveredQty*100).toFixed(1):"0.0";
 
   // ── [재고] ──────────────────────────────────────────
   // 소스: stock_uploads — 입고 CSV 누적 (필터링은 호출부에서)
@@ -2101,7 +2103,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <KPI label="주문 건" value={stats.totalUniqueOrdersAll.toLocaleString()+"건"} sub={stats.totalOrderedQtyAll.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("order")}/>
         <KPI label="배송 건" value={stats.totalShipped.toLocaleString()+"건"} sub={stats.totalDeliveredQty.toLocaleString()+"장"} accent={D.green} onClick={()=>setKpiModal("shipped")}/>
         {!["yd","7d"].includes(period)&&<KPI label="반품률" value={stats.returnRate+"%"}
-          sub={`${stats.totalReturnedQtyAll.toLocaleString()}장 / ${stats.totalDeliveredQtyAll.toLocaleString()}장`}
+          sub={`${stats.totalReturnedQty.toLocaleString()}장 / ${stats.totalDeliveredQty.toLocaleString()}장`}
           accent={parseFloat(stats.returnRate)>10?D.red:D.textSub}
           onClick={()=>setKpiModal("returnRate")}/>}
         <KPI label="입고 수량" value={stats.totalStock.toLocaleString()+"개"} accent={D.blue} onClick={()=>setKpiModal("stock")}/>
@@ -3037,9 +3039,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                       </tr>
                     )}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
-                      <td style={{padding:"5px 7px"}}>합계</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalDeliveredQtyAll.toLocaleString()}</td>
-                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{stats.totalReturnedQtyAll.toLocaleString()}</td>
+                      <td style={{padding:"5px 7px"}}>합계 (반품률 = 온라인만)</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.green}}>{stats.totalDeliveredQty.toLocaleString()}</td>
+                      <td style={{textAlign:"right",padding:"5px 7px",color:D.red}}>{stats.totalReturnedQty.toLocaleString()}</td>
                       <td style={{textAlign:"right",padding:"5px 7px"}}>{stats.returnRate}%</td>
                     </tr>
                   </tbody>
