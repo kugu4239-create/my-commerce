@@ -7,7 +7,7 @@
     <link rel="preload" as="style" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"/>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" media="print" onload="this.media='all'"/>
     <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"/></noscript>
-    <meta name="viewport" content="width=1920, initial-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=1920, initial-scale=1.0, minimum-scale=0.1, maximum-scale=5" />
     <meta name="google" content="notranslate"/>
     <meta http-equiv="Content-Language" content="ko"/>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
@@ -22,7 +22,8 @@
       }
     </style>
     <script>
-      /* PC 1920px 기준 디자인을 화면 너비에 비례 축소 — 모바일/태블릿 동일 비율 유지 */
+      /* PC 1920px 기준 디자인을 화면 너비에 비례 축소 — 모바일·태블릿 동일 비율 유지
+         user-scalable=yes 로 사파리 핀치 줌아웃·줌인 허용. minimum/maximum 범위만 넓게 둠. */
       (function () {
         var DESIGN = 1920;
         var vw = window.innerWidth || screen.width;
@@ -33,8 +34,8 @@
             meta.setAttribute('content',
               'width=' + DESIGN +
               ',initial-scale=' + s.toFixed(6) +
-              ',maximum-scale=' + s.toFixed(6) +
-              ',user-scalable=no'
+              ',minimum-scale=' + (s * 0.3).toFixed(6) +
+              ',maximum-scale=5'
             );
           }
         }
