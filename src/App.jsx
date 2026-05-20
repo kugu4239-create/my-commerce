@@ -3124,6 +3124,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 </div>
               </div>
             </div>
+            </div>
           );
         }
 
