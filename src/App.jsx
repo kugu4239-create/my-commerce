@@ -6050,9 +6050,13 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
             const deliveryDateVal=toDate(r[deliveryDateCol]);
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
-            // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
+            // 상태 추론 우선순위: CS → 상태 → 기본 "배송"
             const rawStatus=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
-            const status=(rawStatus==="배송"&&/^CORD/i.test(oid))?"반품":rawStatus;
+            // 1) 배송일 없으면 실제 배송 전 → "주문" (CS가 비어 있어도 동일)
+            // 2) CORD prefix = 29CM 취소 주문 → 반품으로 강제
+            let status=rawStatus;
+            if(status==="배송"&&!deliveryDateVal) status="주문";
+            if(status==="배송"&&/^CORD/i.test(oid)) status="반품";
             const qty=toNum(r[qtyCol])||1;
             const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
             const paymentAmtVal = paymentAmtCol ? toNum(r[paymentAmtCol]) : 0;
@@ -6250,7 +6254,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
                 {key:"option_name",label:"옵션",color:D.textMeta},
                 {key:"qty",label:"수량",bold:true},
                 {key:"status",label:"상태",fmt:v=>(
-                  <span style={{color:v==="반품"?D.red:v==="교환"?D.amber:D.green,fontWeight:500}}>{v}</span>
+                  <span style={{color:v==="반품"?D.red:v==="교환"?D.amber:v==="주문"?D.textMeta:D.green,fontWeight:500}}>{v}</span>
                 )},
               ]}
             />
@@ -6277,7 +6281,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
           {key:"product_name",label:"상품명",maxW:180},
           {key:"option_name",label:"옵션",color:D.textMeta},
           {key:"qty",label:"수량"},
-          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:D.green,fontWeight:500}}>{v}</span>},
+          {key:"status",label:"상태",fmt:v=><span style={{color:v==="반품"?D.red:v==="교환"?D.amber:v==="주문"?D.textMeta:D.green,fontWeight:500}}>{v}</span>},
         ]}
         onChanged={()=>onUpdate(nowStr())}
       />
