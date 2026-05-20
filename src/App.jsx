@@ -10947,7 +10947,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   },[impactMode,igPosts,postScores,postProductsMap,grid,dailyData,postsByDate]);
 
   return (
-    <div style={{padding:"20px 24px",maxWidth:1880,margin:"0 auto"}}>
+    <div style={{padding:"20px 24px",maxWidth:1960,margin:"0 auto"}}>
       {/* 임팩트 모드 상단 분석 패널 — KPI + 속도계 + Sales Velocity Timeline + 태그×매출 산점도 */}
       {impactMode&&impactSummary&&(
         <div ref={impactHeaderRef} style={{scrollMarginTop:16}}>
