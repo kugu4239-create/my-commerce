@@ -10605,6 +10605,10 @@ function IGPostModal({ date, posts, postProductsMap={}, allProducts=[], onClose,
 
           {step===1&&<>
             <Alert type="success" msg="✓ URL 등록 완료 — 아래 임베드를 확인하고 소개 상품을 매칭하세요"/>
+            <div style={{fontSize:11,color:D.textSub,background:`${D.blue}10`,
+              border:`1px solid ${D.blue}30`,borderRadius:6,padding:"8px 12px",margin:"8px 0",lineHeight:1.55}}>
+              ℹ️ <b style={{color:D.text}}>사진이 캘린더에 추가되지 않을 경우</b>, 아래 <b style={{color:D.text}}>등록된 포스트</b> 카드의 <b style={{color:D.text}}>📷 사진 업로드</b> 버튼을 눌러 사진 캡쳐본을 직접 업로드해주세요.
+            </div>
             <div style={{minHeight:620,overflow:"hidden",margin:"10px 0"}}>
               <InstagramEmbed url={newPostUrl}/>
             </div>
