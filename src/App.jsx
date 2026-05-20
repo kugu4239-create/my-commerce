@@ -10237,12 +10237,29 @@ function normalizeIgUrl(raw){
 function ProductTagger({ postId, tagged, allProducts, onChange }){
   const [q,setQ]=useState("");
   const [adding,setAdding]=useState(false);
+  const [selected,setSelected]=useState(()=>new Set());
 
-  const handleAdd=async(name)=>{
-    const db=await getSupabase();
-    const {error}=await db.from("instagram_post_products").insert({post_id:postId,product_name:name});
-    if(!error){ setQ(""); setAdding(false); onChange(); }
+  const toggle=(name)=>{
+    setSelected(prev=>{
+      const next=new Set(prev);
+      if(next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
   };
+
+  const handleBatchAdd=async()=>{
+    if(selected.size===0) return;
+    const db=await getSupabase();
+    const rows=[...selected].map(name=>({post_id:postId,product_name:name}));
+    const {error}=await db.from("instagram_post_products").insert(rows);
+    if(!error){
+      setSelected(new Set());
+      setQ("");
+      onChange();
+      // adding mode 유지 → 검색창 그대로 두고 다른 상품 계속 추가 가능
+    }
+  };
+
   const handleRemove=async(name)=>{
     const db=await getSupabase();
     const {error}=await db.from("instagram_post_products").delete()
@@ -10250,12 +10267,14 @@ function ProductTagger({ postId, tagged, allProducts, onChange }){
     if(!error) onChange();
   };
 
+  const closeAdd=()=>{ setAdding(false); setQ(""); setSelected(new Set()); };
+
   const candidates=useMemo(()=>{
     if(!q.trim()) return [];
     const qLower=q.toLowerCase();
     return allProducts
       .filter(p=>!tagged.includes(p)&&p.toLowerCase().includes(qLower))
-      .slice(0,15);
+      .slice(0,20);
   },[q,allProducts,tagged]);
 
   return (
@@ -10281,29 +10300,54 @@ function ProductTagger({ postId, tagged, allProducts, onChange }){
         )}
       </div>
       {adding&&(
-        <div style={{position:"relative",marginTop:7}}>
-          <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-            onBlur={()=>setTimeout(()=>{setAdding(false);setQ("");},150)}
-            placeholder="상품명 검색 (예: 코튼, 데님)..."
-            style={{width:"100%",padding:"6px 10px",fontSize:12,
-              border:`1px solid ${D.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+        <div style={{marginTop:7,padding:"8px 10px",background:D.surfaceAlt,
+          border:`1px solid ${D.border}`,borderRadius:8}}>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+              onKeyDown={e=>{
+                if(e.key==="Escape") closeAdd();
+                if(e.key==="Enter"&&selected.size>0){ e.preventDefault(); handleBatchAdd(); }
+              }}
+              placeholder="상품명 검색 (예: 코튼, 데님). 여러 개 체크 후 한 번에 추가"
+              style={{flex:1,padding:"6px 10px",fontSize:12,
+                border:`1px solid ${D.border}`,borderRadius:6,boxSizing:"border-box",background:D.surface}}/>
+            <button onClick={closeAdd}
+              style={{padding:"5px 10px",fontSize:11,background:"transparent",
+                border:`1px solid ${D.border}`,borderRadius:6,color:D.textMeta,cursor:"pointer"}}>닫기</button>
+          </div>
           {candidates.length>0&&(
-            <div style={{position:"absolute",top:"100%",left:0,right:0,
-              background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
-              maxHeight:220,overflowY:"auto",zIndex:10,marginTop:2,
-              boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>
-              {candidates.map(c=>(
-                <div key={c} onMouseDown={()=>handleAdd(c)}
-                  style={{padding:"7px 10px",cursor:"pointer",fontSize:12,
-                    color:D.text,borderBottom:`1px solid ${D.border}`}}>
-                  {c}
-                </div>
-              ))}
+            <div style={{marginTop:6,background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+              maxHeight:240,overflowY:"auto"}}>
+              {candidates.map(c=>{
+                const sel=selected.has(c);
+                return (
+                  <div key={c} onClick={()=>toggle(c)}
+                    style={{padding:"6px 10px",cursor:"pointer",fontSize:12,
+                      color:sel?D.blue:D.text,fontWeight:sel?600:400,
+                      background:sel?`${D.blue}12`:"transparent",
+                      borderBottom:`1px solid ${D.border}`,
+                      display:"flex",alignItems:"center",gap:8}}>
+                    <input type="checkbox" checked={sel} readOnly
+                      style={{cursor:"pointer",accentColor:D.blue,margin:0}}/>
+                    <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
           {q.trim()&&candidates.length===0&&(
             <div style={{marginTop:4,fontSize:10,color:D.textMeta}}>
               매칭되는 상품이 없습니다. 주문/매장 데이터에 등록된 상품명만 검색됩니다.
+            </div>
+          )}
+          {selected.size>0&&(
+            <div style={{marginTop:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,color:D.textMeta}}>선택 {selected.size}개</span>
+              <button onClick={handleBatchAdd}
+                style={{padding:"5px 14px",fontSize:11,background:D.blue,color:"#fff",
+                  border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>
+                ＋ {selected.size}개 추가
+              </button>
             </div>
           )}
         </div>
