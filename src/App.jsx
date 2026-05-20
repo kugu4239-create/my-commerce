@@ -9770,6 +9770,20 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return [...s].sort();
   },[orders,storeSales]);
 
+  // 호버한 포스트 셀의 iso (리본 강조용)
+  const [hoveredFromIso,setHoveredFromIso]=useState(null);
+
+  // 포스트 ID → 색상 (Sankey 팔레트 순환)
+  const ribbonColor=(postId)=>D.SANKEY[Math.abs(postId)%D.SANKEY.length];
+
+  // 이름 매칭: 정확 일치 또는 한쪽이 다른 쪽의 부분 문자열 (대소문자 무시)
+  const nameMatches=(a,b)=>{
+    const al=String(a||"").toLowerCase();
+    const bl=String(b||"").toLowerCase();
+    if(!al||!bl) return false;
+    return al===bl||al.includes(bl)||bl.includes(al);
+  };
+
   // 월 이동
   const shiftMonth=(delta)=>{
     const [y,m]=ym.split("-").map(Number);
@@ -9841,6 +9855,74 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
   })();
   const WEEKDAYS=["일","월","화","수","목","금","토"];
 
+  // ── 리본(attribution) 계산 ────────────────────────
+  // 규칙: 포스트의 소개 상품이 그 후속 날짜의 판매 Top에 들었을 때만 연결
+  // 방향: 포스트 날짜 → 미래 (역방향 X)
+  const isoToGridIdx=useMemo(()=>{
+    const m={};
+    grid.forEach((c,i)=>{m[c.iso]=i;});
+    return m;
+  },[grid]);
+  const lastInMonthIso=useMemo(()=>{
+    const inMonths=grid.filter(c=>c.inMonth);
+    return inMonths.length?inMonths[inMonths.length-1].iso:null;
+  },[grid]);
+
+  // 같은 달 안 ribbons
+  const ribbons=useMemo(()=>{
+    if(!lastInMonthIso) return [];
+    const result=[];
+    igPosts.forEach(post=>{
+      if(post.post_date>lastInMonthIso||post.post_date<(grid[0]?.iso||"")) return;
+      // 단, 시작 셀이 현재 보이는 그리드 안에 있어야 함
+      if(isoToGridIdx[post.post_date]===undefined) return;
+      const tagged=postProductsMap[post.id]||[];
+      if(!tagged.length) return;
+      grid.forEach(cell=>{
+        if(!cell.inMonth) return;
+        if(cell.iso<=post.post_date) return; // 후속 날짜만
+        const d=dailyData[cell.iso];
+        if(!d?.topProducts?.length) return;
+        // tagged 중 하나라도 그날 topProducts에 매칭되면 1개 리본
+        for(const tagName of tagged){
+          const hit=d.topProducts.find(tp=>nameMatches(tagName,tp.name));
+          if(hit){
+            result.push({fromIso:post.post_date,toIso:cell.iso,postId:post.id,product:hit.name});
+            break;
+          }
+        }
+      });
+    });
+    return result;
+  },[igPosts,postProductsMap,grid,dailyData,lastInMonthIso,isoToGridIdx]);
+
+  // 월 넘어가는 매칭 (이번 달 포스트 → 다음 달 이후 판매 Top)
+  const crossMonthByPostDate=useMemo(()=>{
+    if(!lastInMonthIso) return {};
+    const out={}; // post_date(iso) → {nextYm, count}
+    igPosts.forEach(post=>{
+      if(isoToGridIdx[post.post_date]===undefined) return;
+      const tagged=postProductsMap[post.id]||[];
+      if(!tagged.length) return;
+      // dailyData에서 lastInMonthIso 이후의 모든 날짜 검사
+      Object.entries(dailyData).forEach(([iso,d])=>{
+        if(iso<=lastInMonthIso) return;
+        if(!d.topProducts?.length) return;
+        for(const tagName of tagged){
+          if(d.topProducts.find(tp=>nameMatches(tagName,tp.name))){
+            if(!out[post.post_date]) out[post.post_date]={nextYm:iso.slice(0,7),count:0};
+            if(iso.slice(0,7)<out[post.post_date].nextYm) out[post.post_date].nextYm=iso.slice(0,7);
+            out[post.post_date].count++;
+            break;
+          }
+        }
+      });
+    });
+    return out;
+  },[igPosts,postProductsMap,dailyData,lastInMonthIso,isoToGridIdx]);
+
+  const weeksCount=grid.length/7;
+
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
       {/* 월 셀렉터 — 중앙 정렬 */}
@@ -9859,6 +9941,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
 
       {/* 캘린더 그리드 — iPad 사이즈 (셀 크게) */}
       <Card>
+        <div style={{position:"relative"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:D.border,border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
           {WEEKDAYS.map((w,i)=>(
             <div key={w} style={{background:D.surfaceAlt,padding:"10px 12px",fontSize:13,fontWeight:600,
@@ -9869,8 +9952,11 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             const channels=d?Object.entries(d.channels).filter(([,v])=>v>0):[];
             const barTotal=channels.reduce((s,[,v])=>s+v,0)||1;
             const posts=postsByDate[c.iso]||[];
+            const cm=crossMonthByPostDate[c.iso];
             return (
             <div key={i} onClick={c.inMonth?()=>setPostModalDate(c.iso):undefined}
+              onMouseEnter={posts.length>0?()=>setHoveredFromIso(c.iso):undefined}
+              onMouseLeave={posts.length>0?()=>setHoveredFromIso(null):undefined}
               style={{
               background:c.inMonth?D.surface:D.bg,
               minHeight:170,padding:"10px 12px",
@@ -9883,11 +9969,17 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
                   color:c.isToday?D.blue:i%7===0?D.red:i%7===6?D.blue:D.text}}>
                   {c.date.getDate()}
                 </span>
-                <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
                   {posts.length>0&&<span title={`${posts.length}개 포스트`}
                     style={{fontSize:10,color:"#fff",fontWeight:700,
                       background:"linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
                       padding:"2px 7px",borderRadius:10}}>📷 {posts.length}</span>}
+                  {cm&&<button onClick={e=>{e.stopPropagation();setYm(cm.nextYm);}}
+                    title={`다음: ${cm.nextYm} (${cm.count}건)`}
+                    style={{fontSize:9,color:D.blue,fontWeight:700,background:`${D.blue}10`,
+                      border:`1px solid ${D.blue}30`,borderRadius:10,padding:"2px 6px",cursor:"pointer"}}>
+                    ▸{parseInt(cm.nextYm.split("-")[1])}월
+                  </button>}
                   {c.isToday&&<span style={{fontSize:10,color:D.blue,fontWeight:700,
                     background:`${D.blue}15`,padding:"2px 6px",borderRadius:10}}>오늘</span>}
                 </div>
@@ -9918,14 +10010,46 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
             </div>
           );})}
         </div>
+        {/* 리본 SVG 오버레이 — 포스트 → 후속 판매 Top 매칭 */}
+        {ribbons.length>0&&(
+          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",
+              pointerEvents:"none",overflow:"visible"}}
+            viewBox={`0 0 7 ${weeksCount+1}`}
+            preserveAspectRatio="none">
+            {/* 그리드 헤더(요일) 행 1만큼 offset → 셀 row+1 위치 */}
+            {ribbons.map((r,i)=>{
+              const fi=isoToGridIdx[r.fromIso];
+              const ti=isoToGridIdx[r.toIso];
+              if(fi===undefined||ti===undefined) return null;
+              const fx=(fi%7)+0.5;
+              const fy=Math.floor(fi/7)+1.5;  // +1 for header row, +0.5 for center
+              const tx=(ti%7)+0.5;
+              const ty=Math.floor(ti/7)+1.5;
+              const midY=(fy+ty)/2;
+              const path=`M${fx},${fy} C${fx},${midY} ${tx},${midY} ${tx},${ty}`;
+              const color=ribbonColor(r.postId);
+              const focused=hoveredFromIso===r.fromIso;
+              const dim=hoveredFromIso&&!focused;
+              return (
+                <path key={i} d={path} stroke={color} fill="none"
+                  strokeWidth={focused?2.5:1.8}
+                  opacity={dim?0.08:focused?0.85:0.32}
+                  vectorEffect="non-scaling-stroke"/>
+              );
+            })}
+          </svg>
+        )}
+        </div>
       </Card>
 
       {tableMissing&&<Alert type="warn" msg={`Supabase에 instagram_posts 테이블이 없습니다. 아래 SQL을 Supabase Editor에서 실행해주세요:\n\nCREATE TABLE IF NOT EXISTS instagram_posts (\n  id            serial PRIMARY KEY,\n  post_date     date NOT NULL,\n  url           text NOT NULL,\n  caption_memo  text,\n  created_at    timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS instagram_posts_date_idx ON instagram_posts (post_date);`}/>}
 
       <div style={{marginTop:16,fontSize:11,color:D.textMeta,lineHeight:1.7,background:D.bg,
         padding:"10px 14px",borderRadius:6,border:`1px dashed ${D.border}`}}>
-        <b>사용법</b> — 캘린더 셀을 클릭하면 그 날짜의 인스타그램 포스트를 등록/관리할 수 있습니다.<br/>
-        <b>다음 단계</b> — ① 상품 매칭 검색 → ② 리본 연결
+        <b>사용법</b><br/>
+        ① 셀 클릭 → 인스타그램 URL 등록 → 모달에서 소개 상품 검색·태깅<br/>
+        ② 소개 상품이 후속 날짜 판매 Top에 들어가면 자동으로 리본 연결 (포스트 셀 호버 시 강조)<br/>
+        ③ 매칭이 다음 달까지 이어지면 셀에 <span style={{color:D.blue,fontWeight:600}}>▸N월</span> 버튼 표시 — 클릭하면 그 달로 이동
       </div>
 
       {/* 포스트 등록·관리 모달 */}
