@@ -6708,14 +6708,32 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
         }
         insertedAny=true;
       }
-      setUploadStatus("done");setStatusMsg(`${parsedRows.length.toLocaleString()}개 행 저장 완료`);
+      const baseMsg=`${parsedRows.length.toLocaleString()}개 행 저장 완료`;
+      setUploadStatus("done");setStatusMsg(baseMsg);
+      // parsedRows를 캡처해두고 state 초기화 (UI 즉시 정리)
+      const capturedRows=parsedRows;
+      const capturedSnapDate=snapDate;
       setFile(null);setParsedRows([]);setSnapDate(null);setConflictInfo(null);setShowModal(false);
       await loadHistory();
       if(onUploaded) onUploaded();
-      // Post-process: reorder calculation (fire-and-forget, never blocks upload)
-      if(onReorderDone&&parsedRows.some(r=>r._r_weekly!=null)){
-        computeAndSaveReorder(parsedRows,snapDate).then(()=>onReorderDone()).catch(()=>{});}
-      else if(!parsedRows.some(r=>r._r_weekly!=null)&&onReorderDone) onReorderDone();
+      // Post-process: 리오더 계산 — 결과를 항상 받아서 사용자에게 노출
+      try{
+        const result=await computeAndSaveReorder(capturedRows,capturedSnapDate);
+        if(result&&!result.ok){
+          // 실패 또는 컬럼 없음 등 → warn 상태로 표시
+          setUploadStatus("warn");
+          setStatusMsg(`${baseMsg}\n⚠ ${result.message}`);
+        } else if(result&&result.status==="no_urgent_items"){
+          setStatusMsg(`${baseMsg}\nℹ ${result.message}`);
+        } else if(result&&result.ok){
+          setStatusMsg(`${baseMsg}\n✓ ${result.message}`);
+        }
+        if(onReorderDone) onReorderDone();
+      }catch(reErr){
+        setUploadStatus("warn");
+        setStatusMsg(`${baseMsg}\n⚠ 리오더 계산 중 오류: ${String(reErr?.message||reErr)}`);
+        if(onReorderDone) onReorderDone();
+      }
     }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
   },[parsedRows,snapDate,loadHistory,onUploaded,onReorderDone]);
 
@@ -6742,7 +6760,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   },[selDates,loadHistory,onUploaded]);
 
   const filteredHist=histFilter?history.filter(h=>h.snapshot_date.includes(histFilter)):history;
-  const stClr={parsing:"#7B9EC8",validating:"#C8A87B",uploading:"#7EC8A4",done:"#7EC8A4",error:"#C87B7B"};
+  const stClr={parsing:"#7B9EC8",validating:"#C8A87B",uploading:"#7EC8A4",done:"#7EC8A4",warn:"#C8A87B",error:"#C87B7B"};
 
   return(
     <div>
@@ -6785,12 +6803,12 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       {uploadStatus&&(
         <div style={{marginTop:8,padding:"7px 12px",borderRadius:6,background:"rgba(255,255,255,0.04)",
           border:`1px solid ${DC.border}`,display:"flex",alignItems:"center",gap:8}}>
-          {uploadStatus!=="done"&&uploadStatus!=="error"&&(
+          {uploadStatus!=="done"&&uploadStatus!=="error"&&uploadStatus!=="warn"&&(
             <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",
               border:`2px solid ${stClr[uploadStatus]||"#888"}`,borderTopColor:"transparent",
               animation:"invSpin 0.7s linear infinite",flexShrink:0}}/>
           )}
-          <span style={{fontSize:12,color:stClr[uploadStatus]||DC.text}}>{statusMsg}</span>
+          <span style={{fontSize:12,color:stClr[uploadStatus]||DC.text,whiteSpace:"pre-line",lineHeight:1.55}}>{statusMsg}</span>
         </div>
       )}
 
@@ -7960,10 +7978,16 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
 //   reorder_created_at timestamptz default now()
 // );
 // ─────────────────────────────────────────────
+// 결과 객체: {ok, status, message, inserted, total, eligible, withinThreshold}
 async function computeAndSaveReorder(parsedRows,snapDate){
-  const rows=parsedRows.filter(r=>r._r_weekly!=null);
-  if(!rows.length) return;
-  const computed=rows.map(r=>{
+  const total=parsedRows.length;
+  const withReorder=parsedRows.filter(r=>r._r_weekly!=null);
+  if(!withReorder.length){
+    return{ok:false,status:"no_reorder_columns",
+      message:"리오더 계산용 컬럼(가용재고·입고대기·1주발주합계·4주발주합계)이 파일에 없어 계산기는 업데이트되지 않았습니다.",
+      total,eligible:0,inserted:0};
+  }
+  const eligibleRows=withReorder.map(r=>{
     const avail=r._r_avail||0;
     const incoming=r._r_incoming||0;
     const weekly=r._r_weekly||0;
@@ -7990,20 +8014,35 @@ async function computeAndSaveReorder(parsedRows,snapDate){
       reorder_trend_ratio:Math.round(trendRatio*10000)/10000,
       reorder_recommended_qty:recommended,
     };
-  }).filter(r=>r&&r.reorder_days_left<14);
-  if(!computed.length) return;
-  const db=await getSupabase();
-  // Check latest saved date — skip if we already have newer data
-  const{data:latest}=await db.from("reorder_recommendations")
-    .select("reorder_data_date").order("reorder_data_date",{ascending:false}).limit(1);
-  const latestDate=latest?.[0]?.reorder_data_date;
-  if(latestDate&&snapDate<latestDate) return;
-  // Replace all existing records with latest
-  await db.from("reorder_recommendations").delete().lte("reorder_created_at",new Date().toISOString());
-  const CHUNK=200;
-  for(let i=0;i<computed.length;i+=CHUNK){
-    await db.from("reorder_recommendations").insert(computed.slice(i,i+CHUNK));
+  }).filter(r=>r);
+  const computed=eligibleRows.filter(r=>r.reorder_days_left<14);
+  if(!computed.length){
+    return{ok:true,status:"no_urgent_items",
+      message:`리오더 임박(14일 이내) 항목이 없어 계산기에 표시할 행이 없습니다. (전체 ${total.toLocaleString()}건 / 판매 있음 ${eligibleRows.length.toLocaleString()}건)`,
+      total,eligible:eligibleRows.length,inserted:0};
   }
+  const db=await getSupabase();
+  // 이전엔 snapDate < latestDate면 silent skip → 동일/이전 날짜 재업로드가 묻혔음. 제거하고 항상 갱신.
+  const {error:delErr}=await db.from("reorder_recommendations").delete().neq("reorder_id","00000000-0000-0000-0000-000000000000");
+  if(delErr){
+    return{ok:false,status:"delete_failed",
+      message:`리오더 기존 데이터 삭제 실패: ${delErr.message} — reorder_recommendations 테이블이 없거나 RLS가 막혀있을 수 있습니다.`,
+      total,eligible:eligibleRows.length,inserted:0};
+  }
+  const CHUNK=200;
+  let inserted=0;
+  for(let i=0;i<computed.length;i+=CHUNK){
+    const {error:insErr}=await db.from("reorder_recommendations").insert(computed.slice(i,i+CHUNK));
+    if(insErr){
+      return{ok:false,status:"insert_failed",
+        message:`리오더 데이터 저장 실패: ${insErr.message}`,
+        total,eligible:eligibleRows.length,inserted};
+    }
+    inserted+=computed.slice(i,i+CHUNK).length;
+  }
+  return{ok:true,status:"success",
+    message:`리오더 계산 완료: ${inserted.toLocaleString()}건 저장 (전체 ${total.toLocaleString()} / 판매 있음 ${eligibleRows.length.toLocaleString()} / 임박 ${inserted.toLocaleString()})`,
+    total,eligible:eligibleRows.length,inserted};
 }
 
 // ─────────────────────────────────────────────
