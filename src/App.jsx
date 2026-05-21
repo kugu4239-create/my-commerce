@@ -7232,8 +7232,8 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
     parseInvFile(f,parsed=>{
       setUploadStatus(null);setStatusMsg("");
       if(!parsed.length){setUploadStatus("error");setStatusMsg("유효한 데이터 행이 없습니다");return;}
-      const dates=[...new Set(parsed.map(r=>r.snapshot_date).filter(Boolean))];
-      setSnapDate(dates[0]||null);
+      const dates=[...new Set(parsed.map(r=>r.snapshot_date).filter(Boolean))].sort();
+      setSnapDate(dates[dates.length-1]||null);
       setParsedRows(parsed);
     },err=>{setUploadStatus("error");setStatusMsg(err);});
   },[]);
@@ -8587,15 +8587,15 @@ async function computeAndSaveReorder(parsedRows,snapDate){
       reorder_recommended_qty:recommended,
     };
   }).filter(r=>r&&r.reorder_days_left<14);
-  if(!computed.length) return;
   const db=await getSupabase();
-  // Check latest saved date — skip if we already have newer data
+  // Skip only if existing data is strictly newer (avoid overwriting newer upload with older)
   const{data:latest}=await db.from("reorder_recommendations")
     .select("reorder_data_date").order("reorder_data_date",{ascending:false}).limit(1);
   const latestDate=latest?.[0]?.reorder_data_date;
   if(latestDate&&snapDate<latestDate) return;
-  // Replace all existing records with latest
+  // Always clear existing rows so stale dates don't linger when new upload has 0 reorder items
   await db.from("reorder_recommendations").delete().lte("reorder_created_at",new Date().toISOString());
+  if(!computed.length) return;
   const CHUNK=200;
   for(let i=0;i<computed.length;i+=CHUNK){
     await db.from("reorder_recommendations").insert(computed.slice(i,i+CHUNK));
@@ -8605,7 +8605,7 @@ async function computeAndSaveReorder(parsedRows,snapDate){
 // ─────────────────────────────────────────────
 // REORDER CALCULATOR COMPONENT
 // ─────────────────────────────────────────────
-function ReorderCalculator({DC,refreshKey,onDateReady}){
+function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
   const [data,setData]=useState([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
@@ -8634,10 +8634,13 @@ function ReorderCalculator({DC,refreshKey,onDateReady}){
   useEffect(()=>{load();},[load,refreshKey]);
 
   const latestDataDate=useMemo(()=>{
-    if(!data.length) return null;
     const dates=data.map(r=>r.reorder_data_date||"").filter(Boolean).sort();
-    return dates[dates.length-1]||null;
-  },[data]);
+    const fromData=dates[dates.length-1]||null;
+    // Prefer the newer of the two so 기준일 reflects the most recent upload
+    // even when the new upload had 0 SKUs needing reorder (table is empty)
+    if(fromData&&latestSnapDate) return fromData>latestSnapDate?fromData:latestSnapDate;
+    return fromData||latestSnapDate||null;
+  },[data,latestSnapDate]);
 
   useEffect(()=>{if(onDateReady) onDateReady(latestDataDate);},[latestDataDate,onDateReady]);
 
@@ -10220,7 +10223,7 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
           <CaptureBtn cardRef={reorderCardRef} filename="리오더_계산기" DC={DC}/>
         </div>
-        <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate}/>
+        <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate} latestSnapDate={snapshotDates.length?[...snapshotDates].sort()[snapshotDates.length-1]:null}/>
       </div>
     </div>
   );
