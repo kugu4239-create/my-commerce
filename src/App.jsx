@@ -7091,6 +7091,7 @@ function calcInvRow(row){
 
 const INV_COL_ALIASES={
   product_name:           ["상품명","product_name","상품"],
+  barcode:                ["바코드","barcode","바코드번호"],
   option_name:            ["옵션","option_name","옵션명"],
   selling_price:          ["판매가","selling_price","가격","price"],
   supply_price:           ["공급가","supply_price","원가","cost","cost_price","sup_price"],
@@ -7154,6 +7155,7 @@ function parseInvFile(file,onResult,onError){
         return{
           snapshot_date:getDate("snapshot_date"),
           product_name:get("product_name"),
+          barcode:get("barcode")||"",
           option_name:get("option_name")||"",
           selling_price:parseInt(get("selling_price").replace(/[^0-9]/g,""),10)||0,
           supply_price:parseInt(get("supply_price").replace(/[^0-9]/g,""),10)||0,
@@ -7313,7 +7315,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           <div style={{marginBottom:6}}>
             <span style={{color:"#7EC8A4",fontWeight:700,fontSize:13}}>인벤토리 트렌드</span>
             <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
-              {["상품명","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
+              {["상품명","바코드","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
                 <span key={c} style={{background:"rgba(126,200,164,0.1)",border:"1px solid rgba(126,200,164,0.25)",
                   borderRadius:4,padding:"1px 6px",fontSize:12,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
               ))}
@@ -7630,14 +7632,14 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     // 사용자가 엑셀에서 「권장할인율(%)」 셀을 수정하면 「세일 후 가격」·「세일 후 원가율」 이 자동
     // 재계산되도록 수식 셀로 저장. (json_to_sheet 의 plain value 가 아니라 cell.f 사용)
     const header=[
-      "상품명","옵션","판매가","공급가","현재고","재고금액",
+      "상품명","바코드","옵션","판매가","공급가","현재고","재고금액",
       "미판매일수","SKU기간","판매효율","Aging상태","제안범위",
       "권장할인율(%)","세일 후 가격","세일 후 원가율(%)",
     ];
     const aoa=[header];
     allDiscountRecs.forEach(d=>{
       aoa.push([
-        d.product_name||"", d.option_name||"",
+        d.product_name||"", d.barcode||"", d.option_name||"",
         d.selling_price||0, d.supply_price||0,
         d.current_stock_qty||0, d.currentInventoryValue||0,
         d.noSalesDays||0, d.skuAge||0,
@@ -7649,14 +7651,19 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
       ]);
     });
     const ws=XLSX.utils.aoa_to_sheet(aoa);
+    // 바코드를 텍스트로 보존 (숫자 자동 변환 방지)
+    for(let i=0;i<allDiscountRecs.length;i++){
+      const bAddr=`B${i+2}`;
+      if(ws[bAddr]) ws[bAddr]={t:"s",v:String(allDiscountRecs[i].barcode||""),z:"@"};
+    }
     // 각 데이터 행에 수식 주입 (1-based, 헤더가 1행)
     for(let i=0;i<allDiscountRecs.length;i++){
       const r=i+2; // Excel row number (2부터)
-      const priceAddr=`C${r}`;        // 판매가
-      const costAddr =`D${r}`;        // 공급가
-      const discAddr =`L${r}`;        // 권장할인율(%)
-      const saleAddr =`M${r}`;        // 세일 후 가격
-      const rateAddr =`N${r}`;        // 세일 후 원가율(%)
+      const priceAddr=`D${r}`;        // 판매가
+      const costAddr =`E${r}`;        // 공급가
+      const discAddr =`M${r}`;        // 권장할인율(%)
+      const saleAddr =`N${r}`;        // 세일 후 가격
+      const rateAddr =`O${r}`;        // 세일 후 원가율(%)
       // 세일 후 가격 = 판매가 * (1 - 할인율/100)
       ws[saleAddr]={t:"n",f:`${priceAddr}*(1-${discAddr}/100)`,z:"#,##0"};
       // 세일 후 원가율 = 공급가 / 세일 후 가격 * 100  (분모 0 보호)
@@ -7664,7 +7671,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     }
     // 컬럼 폭 보정
     ws["!cols"]=[
-      {wch:24},{wch:14},{wch:10},{wch:10},{wch:8},{wch:12},
+      {wch:24},{wch:14},{wch:14},{wch:10},{wch:10},{wch:8},{wch:12},
       {wch:9},{wch:8},{wch:8},{wch:9},{wch:9},
       {wch:13},{wch:13},{wch:16},
     ];
