@@ -2320,11 +2320,19 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.orderedQty||0).toLocaleString()}장</div>
                       </td>
                       <td style={{textAlign:"right",padding:"7px 9px",color:D.green}}>
-                        {(c.shipped||0).toLocaleString()}
-                        <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.shippedQty||0).toLocaleString()}장</div>
+                        {isOffline||c.isSubRow?(
+                          <span style={{color:D.textMeta,fontSize:10}}>—</span>
+                        ):(<>
+                          {(c.shipped||0).toLocaleString()}
+                          <div style={{fontSize:9,color:D.textMeta,fontWeight:400}}>{(c.shippedQty||0).toLocaleString()}장</div>
+                        </>)}
                       </td>
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",color:D.red}}>
-                        {(c.returnedQty||0).toLocaleString()}<span style={{fontSize:9,color:D.textMeta,marginLeft:2}}>장</span>
+                        {isOffline||c.isSubRow?(
+                          <span style={{fontSize:9,fontWeight:500,color:"#888",background:"#f2f2f2",borderRadius:3,padding:"2px 5px"}}>구현 중</span>
+                        ):(<>
+                          {(c.returnedQty||0).toLocaleString()}<span style={{fontSize:9,color:D.textMeta,marginLeft:2}}>장</span>
+                        </>)}
                       </td>}
                       {hasRet&&<td style={{textAlign:"right",padding:"7px 9px",fontWeight:600}}>
                         {c.shippedQty>0?(c.returnedQty/c.shippedQty*100).toFixed(1):"0.0"}%</td>}
