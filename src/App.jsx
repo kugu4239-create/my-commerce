@@ -3924,30 +3924,58 @@ function DateButtonPicker({value,onChange}){
 
 // ─────────────────────────────────────────────
 // 프로모션 할인율 그리드 — Editor + 표시 컴포넌트
-// 저장 구조: { products: [{group,rate,start,end}], coupons: [{rate,start,end}] }
+// 저장 구조 (신):
+//   { products: { period:{start,end}, rows:[{group,rate}] },
+//     coupons:  [{rate,start,end}] }
+// 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
-function emptyProductRow(){return{group:"",rate:"",start:"",end:""};}
+function emptyProductRow(){return{group:"",rate:""};}
 function emptyCouponRow(){return{rate:"",start:"",end:""};}
 function normalizePlan(p){
-  return {
-    products: Array.isArray(p?.products)?p.products:[],
-    coupons:  Array.isArray(p?.coupons)?p.coupons:[],
-  };
+  const coupons=Array.isArray(p?.coupons)?p.coupons:[];
+  // 신 포맷
+  if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
+    return{
+      products:{
+        period:{start:p.products.period?.start||"",end:p.products.period?.end||""},
+        rows:p.products.rows.map(r=>({group:r.group||"",rate:r.rate||""})),
+      },
+      coupons,
+    };
+  }
+  // 구 포맷: 행마다 start/end 있던 경우 → 첫 비어있지 않은 행의 기간을 공통 period 로
+  if(Array.isArray(p?.products)){
+    const first=p.products.find(r=>r.start||r.end);
+    return{
+      products:{
+        period:{start:first?.start||"",end:first?.end||""},
+        rows:p.products.map(r=>({group:r.group||"",rate:r.rate||""})),
+      },
+      coupons,
+    };
+  }
+  return{products:{period:{start:"",end:""},rows:[]},coupons};
 }
 
 function DiscountPlanEditor({ value, onChange }) {
   const plan=normalizePlan(value);
-  // 기본: 상품 3행 / 쿠폰 1행 (실제 입력값이 없으면 보이게)
-  const products=plan.products.length?plan.products:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
-  const coupons =plan.coupons.length ?plan.coupons :[emptyCouponRow()];
+  // 표시용 행: 비어 있으면 기본 3행/1행. 입력 중에는 빈 행도 그대로 유지 (입력 끊김·삭제 버그 방지)
+  const productRows=plan.products.rows.length?plan.products.rows:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
+  const coupons    =plan.coupons.length?plan.coupons:[emptyCouponRow()];
 
-  const commit=(next)=>onChange({
-    products: next.products.filter(r=>r.group||r.rate||r.start||r.end),
-    coupons:  next.coupons.filter(r=>r.rate||r.start||r.end),
+  // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
+  const setProductPeriod=(field,v)=>onChange({
+    products:{period:{...plan.products.period,[field]:v},rows:productRows},
+    coupons,
   });
-
-  const setProducts=(arr)=>commit({products:arr,coupons});
-  const setCoupons =(arr)=>commit({products,coupons:arr});
+  const setProductRows=(arr)=>onChange({
+    products:{period:plan.products.period,rows:arr},
+    coupons,
+  });
+  const setCoupons=(arr)=>onChange({
+    products:plan.products,
+    coupons:arr,
+  });
 
   const cellInp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
     padding:"5px 8px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box",
@@ -3961,41 +3989,46 @@ function DiscountPlanEditor({ value, onChange }) {
 
       {/* 상품 할인 */}
       <div style={{marginBottom:12}}>
-        <div style={lbl}>상품 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 + 기간</span></div>
+        <div style={lbl}>상품 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 (전체 동일 기간)</span></div>
+        {/* 공통 기간 */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+          <div>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>시작</div>
+            <input type="date" value={plan.products.period.start}
+              onChange={e=>setProductPeriod("start",e.target.value)} style={cellInp}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>종료</div>
+            <input type="date" value={plan.products.period.end}
+              onChange={e=>setProductPeriod("end",e.target.value)} style={cellInp}/>
+          </div>
+        </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
-            <th style={{...head,width:"34%"}}>상품군</th>
-            <th style={{...head,width:"14%"}}>할인율(%)</th>
-            <th style={{...head,width:"22%"}}>시작</th>
-            <th style={{...head,width:"22%"}}>종료</th>
+            <th style={{...head,width:"68%"}}>상품군</th>
+            <th style={{...head,width:"24%"}}>할인율(%)</th>
             <th style={{...head,width:"8%"}}/>
           </tr></thead>
           <tbody>
-            {products.map((row,i)=>(
+            {productRows.map((row,i)=>(
               <tr key={i}>
                 <td style={{padding:"3px 4px"}}>
-                  <input value={row.group} onChange={e=>{const n=[...products];n[i]={...row,group:e.target.value};setProducts(n);}}
+                  <input value={row.group} onChange={e=>{const n=[...productRows];n[i]={...row,group:e.target.value};setProductRows(n);}}
                     style={cellInp} placeholder="예: 신상품, 전체"/>
                 </td>
                 <td style={{padding:"3px 4px"}}>
-                  <input type="number" value={row.rate} onChange={e=>{const n=[...products];n[i]={...row,rate:e.target.value};setProducts(n);}}
+                  <input type="number" value={row.rate} onChange={e=>{const n=[...productRows];n[i]={...row,rate:e.target.value};setProductRows(n);}}
                     style={cellInp} placeholder="0" min="0" max="100"/>
                 </td>
-                <td style={{padding:"3px 4px"}}>
-                  <input type="date" value={row.start} onChange={e=>{const n=[...products];n[i]={...row,start:e.target.value};setProducts(n);}} style={cellInp}/>
-                </td>
-                <td style={{padding:"3px 4px"}}>
-                  <input type="date" value={row.end} onChange={e=>{const n=[...products];n[i]={...row,end:e.target.value};setProducts(n);}} style={cellInp}/>
-                </td>
                 <td style={{padding:"3px 4px",textAlign:"right"}}>
-                  <button onClick={()=>{const n=products.filter((_,j)=>j!==i);setProducts(n.length?n:[emptyProductRow()]);}}
+                  <button onClick={()=>{const n=productRows.filter((_,j)=>j!==i);setProductRows(n.length?n:[emptyProductRow()]);}}
                     style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <button onClick={()=>setProducts([...products,emptyProductRow()])}
+        <button onClick={()=>setProductRows([...productRows,emptyProductRow()])}
           style={{marginTop:6,background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
             padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 행 추가</button>
       </div>
@@ -4039,45 +4072,93 @@ function DiscountPlanEditor({ value, onChange }) {
   );
 }
 
-// 표 셀에 표시되는 컴팩트 보기 — 상품 할인 행 + 쿠폰 행 + 총 할인율 범위
+// 저장 직전 빈 행 정리 — addPromo/patchPromo 직전에 호출
+function cleanDiscountPlan(plan){
+  const p=normalizePlan(plan);
+  return{
+    products:{
+      period:p.products.period,
+      rows:p.products.rows.filter(r=>r.group||r.rate),
+    },
+    coupons:p.coupons.filter(r=>r.rate||r.start||r.end),
+  };
+}
+
+// 표 셀에 표시되는 컴팩트 보기 — 상품 할인 + 쿠폰 기간을 작은 가로 막대 두 줄로 시각화
 function DiscountPlanView({ plan }) {
   const p=normalizePlan(plan);
-  const hasAny=p.products.length||p.coupons.length;
+  const cleanedProducts=p.products.rows.filter(r=>r.group||r.rate);
+  const cleanedCoupons=p.coupons.filter(r=>r.rate||r.start||r.end);
+  const hasAny=cleanedProducts.length||cleanedCoupons.length||p.products.period.start;
   if(!hasAny) return <span style={{color:D.textMeta,fontSize:11}}>—</span>;
-  // 총 할인율 = 1 - (1 - 상품) × (1 - 쿠폰)
-  // 기간별 compound 계산: 모든 일자에 대해 매일 적용 가능 할인 중 max 한 개씩 골라 compound
-  const dateSet=new Set();
-  [...p.products,...p.coupons].forEach(r=>{
-    if(!r.start||!r.end) return;
-    const s=new Date(r.start);const e=new Date(r.end);
-    for(let dt=s;dt<=e;dt=new Date(dt.getTime()+86400000)){
-      dateSet.add(dt.toISOString().slice(0,10));
-    }
-  });
-  const dates=[...dateSet].sort();
-  const perDay=dates.map(d=>{
-    const pr=p.products.filter(r=>r.start<=d&&r.end>=d).map(r=>+r.rate||0);
-    const cr=p.coupons .filter(r=>r.start<=d&&r.end>=d).map(r=>+r.rate||0);
-    const maxP=pr.length?Math.max(...pr):0;
-    const maxC=cr.length?Math.max(...cr):0;
-    const total=Math.round((1-(1-maxP/100)*(1-maxC/100))*1000)/10; // %, 소수1자리
-    return {date:d,product:maxP,coupon:maxC,total};
-  });
-  const maxTotal=perDay.length?Math.max(...perDay.map(d=>d.total)):0;
+
+  const prodStart=p.products.period.start;
+  const prodEnd  =p.products.period.end;
+  const prodRate =cleanedProducts.length?Math.max(...cleanedProducts.map(r=>+r.rate||0)):0;
+
+  // 막대 전체 범위: 모든 시작/종료의 min/max
+  const allStarts=[prodStart,...cleanedCoupons.map(r=>r.start)].filter(Boolean);
+  const allEnds  =[prodEnd,  ...cleanedCoupons.map(r=>r.end  )].filter(Boolean);
+  const rangeStart=allStarts.length?allStarts.sort()[0]:"";
+  const rangeEnd  =allEnds.length  ?allEnds.sort().slice(-1)[0]:"";
+  const rangeMs=rangeStart&&rangeEnd?Math.max(1,(new Date(rangeEnd)-new Date(rangeStart))+86400000):0;
+  const pct=(s,e)=>{
+    if(!s||!e||!rangeMs) return null;
+    const left =Math.max(0,(new Date(s)-new Date(rangeStart))/rangeMs*100);
+    const width=Math.max(2,((new Date(e)-new Date(s))+86400000)/rangeMs*100);
+    return{left:`${left}%`,width:`${Math.min(100-left,width)}%`};
+  };
+
+  // 총 최대 할인율 = 1 - (1 - 상품최대) × (1 - 쿠폰최대)
+  const couponMaxRate=cleanedCoupons.length?Math.max(...cleanedCoupons.map(r=>+r.rate||0)):0;
+  const maxTotal=Math.round((1-(1-prodRate/100)*(1-couponMaxRate/100))*1000)/10;
+
+  const barTrack={position:"relative",height:6,background:`${D.border}`,borderRadius:3,marginTop:2};
+  const barSeg=col=>({position:"absolute",top:0,height:6,background:col,borderRadius:3});
+
+  const prodSeg=pct(prodStart,prodEnd);
+
   return (
-    <div style={{fontSize:11,lineHeight:1.55,minWidth:140}}>
-      {p.products.map((r,i)=>(
+    <div style={{fontSize:11,lineHeight:1.45,minWidth:140}}>
+      {/* 요약: 상품군 · 쿠폰 행 */}
+      {cleanedProducts.map((r,i)=>(
         <div key={"p"+i} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-          · {r.group||"전체"} <b style={{color:D.text}}>{r.rate||0}%</b>{" "}
-          <span style={{color:D.textMeta}}>{r.start?.slice(5)}~{r.end?.slice(5)}</span>
+          · {r.group||"전체"} <b style={{color:D.text}}>{r.rate||0}%</b>
         </div>
       ))}
-      {p.coupons.map((r,i)=>(
+      {cleanedCoupons.map((r,i)=>(
         <div key={"c"+i} style={{color:D.blue,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
           🎟 쿠폰 <b>{r.rate||0}%</b>{" "}
           <span style={{color:D.textMeta}}>{r.start?.slice(5)}~{r.end?.slice(5)}</span>
         </div>
       ))}
+
+      {/* Gantt-style 막대 2줄 */}
+      {rangeStart&&rangeEnd&&(
+        <div style={{marginTop:5}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta}}>
+            <span style={{width:32,flexShrink:0}}>상품</span>
+            <div style={{flex:1,...barTrack}}>
+              {prodSeg&&<div style={{...barSeg(D.red),...prodSeg}}/>}
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta,marginTop:2}}>
+            <span style={{width:32,flexShrink:0}}>쿠폰</span>
+            <div style={{flex:1,...barTrack}}>
+              {cleanedCoupons.map((r,i)=>{
+                const s=pct(r.start,r.end);
+                if(!s) return null;
+                return <div key={i} style={{...barSeg(D.blue),...s}}/>;
+              })}
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:D.textMeta,marginTop:2,paddingLeft:36}}>
+            <span>{rangeStart.slice(5)}</span>
+            <span>{rangeEnd.slice(5)}</span>
+          </div>
+        </div>
+      )}
+
       {maxTotal>0&&(
         <div style={{marginTop:4,padding:"2px 6px",background:`${D.red}10`,color:D.red,
           borderRadius:4,fontWeight:600,display:"inline-block"}}>
@@ -4157,7 +4238,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [editPromoForm,setEditPromoForm]=useState({});
   const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]}});};
   const savePromoEdit=()=>{
-    patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content});
+    patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content,discount_plan:cleanDiscountPlan(editPromoForm.discount_plan)});
     setEditingPromoId(null);
   };
   const nowStr=new Date().toISOString().slice(0,16);
@@ -4193,7 +4274,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 
   const addPromo=async()=>{
     if(!form.name||!form.start_date||!form.end_date)return;
-    const newP={...form,id:Date.now()};
+    const newP={...form,discount_plan:cleanDiscountPlan(form.discount_plan),id:Date.now()};
     setPromos(prev=>{const next=[...prev,newP];setPromosCache(next);return next;});
     const db=await getSupabase();
     await db.from("promotions").insert(newP);
@@ -5170,7 +5251,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
       if(oid) m[k].orders.add(oid);
     });
     return Object.values(m).map(p=>({...p,orders:p.orders.size}))
-      .sort((a,b)=>b.qty-a.qty).slice(0,20);
+      .sort((a,b)=>b.orders-a.orders||b.qty-a.qty).slice(0,20);
   },[ch,promoStart,promoEnd,orders]);
 
   const prevTotal=dailyRevenue.filter(p=>p.date<promoStart).reduce((s,p)=>s+(p.revenue||0),0);
@@ -5271,16 +5352,16 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta,position:"sticky",top:0,background:D.surface}}>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>주문 건</th>
+                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
                 </tr></thead>
                 <tbody>
                   {top20.map((p,i)=>(
                     <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
                       <td style={{padding:"5px 7px",color:D.textMeta}}>{i+1}</td>
                       <td style={{padding:"5px 7px",color:D.text,maxWidth:380,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>{p.name}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.blue,fontWeight:600}}>{p.qty.toLocaleString()}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.orders.toLocaleString()}</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.blue,fontWeight:600}}>{p.orders.toLocaleString()}</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.qty.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
