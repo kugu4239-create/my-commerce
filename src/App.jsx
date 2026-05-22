@@ -4140,10 +4140,12 @@ function DiscountPlanView({ plan }) {
             ];
             const c=PASTEL[i%PASTEL.length];
             return(
-              <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:3,
+              <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
                 padding:"2px 7px",background:c.bg,border:`1px solid ${c.bd}`,
                 color:c.fg,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
-                {r.group||"전체"} <b style={{fontWeight:700}}>{r.rate||0}%</b>
+                <span>{r.group||"전체"}</span>
+                <span style={{width:1,height:10,background:c.bd,display:"inline-block"}}/>
+                <b style={{fontWeight:700}}>{r.rate||0}%</b>
               </span>
             );
           })}
