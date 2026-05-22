@@ -6737,20 +6737,26 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
   const [fileName,setFileName]=useState("");
   const [preview,setPreview]=useState(null);
   const [dateRange,setDateRange]=useState({start:"",end:""});
+  const [uploadDates,setUploadDates]=useState([]);
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
   const [conflictCount,setConflictCount]=useState(0);
 
-  // 파일 파싱 완료 후 기존 데이터 수 조회
+  // 파일 파싱 완료 후 기존 데이터 수 조회 (업로드 파일에 포함된 날짜만 대상)
   useEffect(()=>{
-    if(!preview||!dateRange.start||!dateRange.end){setConflictCount(0);return;}
+    if(!preview||!uploadDates.length){setConflictCount(0);return;}
     (async()=>{
       const db=await getSupabase();
-      const{count}=await db.from("store_sales").select("*",{count:"exact",head:true})
-        .gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
-      setConflictCount(count||0);
+      let total=0;
+      for(let i=0;i<uploadDates.length;i+=100){
+        const batch=uploadDates.slice(i,i+100);
+        const{count}=await db.from("store_sales").select("*",{count:"exact",head:true})
+          .in("sale_date",batch);
+        total+=count||0;
+      }
+      setConflictCount(total);
     })();
-  },[preview,dateRange.start,dateRange.end]);
+  },[preview,uploadDates]);
 
   const parseKRW=s=>{
     const str=String(s||"").trim().replace(/[\s,]/g,"");
@@ -6798,6 +6804,7 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
           if(!rows.length) throw new Error("파싱된 행이 0건입니다. '구매일자', '상품명', '수량'(>0), '실판매금액'(>0) 모두 값이 있는 행이 1개 이상 있어야 합니다.");
           const dates=[...new Set(rows.map(r=>r.sale_date))].sort();
           setDateRange({start:dates[0]||"",end:dates[dates.length-1]||""});
+          setUploadDates(dates);
           setPreview(rows); setStep(1);
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e?.message||String(e)}));
@@ -6807,8 +6814,11 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
     if(!preview?.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    if(dateRange.start&&dateRange.end){
-      await db.from("store_sales").delete().gte("sale_date",dateRange.start).lte("sale_date",dateRange.end);
+    // 업로드 파일에 포함된 날짜만 삭제 (날짜 범위 전체가 아님 — 사이의 미포함 날짜 데이터 보존)
+    for(let i=0;i<uploadDates.length;i+=100){
+      const batch=uploadDates.slice(i,i+100);
+      const{error:de}=await db.from("store_sales").delete().in("sale_date",batch);
+      if(de){setResult({type:"error",msg:"기존 데이터 삭제 실패: "+de.message});setLoading(false);return;}
     }
     for(let i=0;i<preview.length;i+=500){
       const{error}=await db.from("store_sales").insert(preview.slice(i,i+500));
@@ -6820,7 +6830,7 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
     onUpdate(ts2);setLoading(false);
   };
 
-  const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);setConflictCount(0);};
+  const reset=()=>{setStep(0);setPreview(null);setFileName("");setResult(null);setConflictCount(0);setUploadDates([]);};
 
   return(
     <div>
@@ -6851,7 +6861,7 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
                   ⚠ 기존 데이터 {conflictCount.toLocaleString()}건과 겹칩니다
                 </div>
                 <div style={{color:D.textSub}}>
-                  {dateRange.start} ~ {dateRange.end} 기간의 기존 데이터가 모두 삭제되고 새 데이터로 교체됩니다.
+                  업로드 파일에 포함된 {uploadDates.length}개 날짜({uploadDates.length<=3?uploadDates.join(", "):`${uploadDates[0]} 외 ${uploadDates.length-1}개`})의 기존 데이터만 삭제되고 새 데이터로 교체됩니다. 그 외 날짜의 데이터는 보존됩니다.
                 </div>
               </div>
             )}
