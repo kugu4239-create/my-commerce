@@ -1545,10 +1545,9 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   weekRows.forEach(r=>{
     const key=r.product_name||"미분류";
     if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
-    // 반품 카운트는 모든 행에서 집계 (반품 Top 용)
+    // 반품 카운트는 별도 집계 (반품 Top·반품률 용)
     if(r.status==="반품") byProd[key].returned++;
-    // 판매 Top 의 qty/orders 는 주문 기준 — 반품·취소 제외
-    if(r.status==="반품"||r.status==="취소") return;
+    // 판매 Top 의 qty/orders 는 주문 기준 — 모든 status 포함 (반품·취소 포함)
     byProd[key].qty+=(r.qty||0);
     byProd[key].orders++;
   });
@@ -1899,10 +1898,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     rows.forEach(r=>{
       const key=r.product_name||"미분류";
       if(!byProd[key]) byProd[key]={name:key,qty:0,orders:0,returned:0};
-      // 반품 카운트는 모든 행에서 집계 (반품률용)
+      // 반품 카운트는 별도 집계 (반품률용)
       if(r.status==="반품") byProd[key].returned++;
-      // 판매 Top qty/orders 는 주문 기준 — 반품·취소 제외
-      if(r.status==="반품"||r.status==="취소") return;
+      // 판매 Top qty/orders 는 주문 기준 — 모든 status 포함 (반품·취소 포함)
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
     });
     const totalQty=Object.values(byProd).reduce((s,p)=>s+p.qty,0)||1;
@@ -4205,6 +4203,39 @@ function DiscountPlanView({ plan }) {
 function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
+  const rowRefs=useRef({});
+  const [rowDlBusy,setRowDlBusy]=useState({});
+  const captureRow=async(p)=>{
+    const el=rowRefs.current[p.id];
+    if(!el||rowDlBusy[p.id]) return;
+    setRowDlBusy(b=>({...b,[p.id]:true}));
+    const hide=el.querySelectorAll("[data-capture-hide]");
+    hide.forEach(b=>{b._prevVis=b.style.visibility;b.style.visibility="hidden";});
+    try{
+      const {default:html2canvas}=await import("html2canvas");
+      const canvas=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false});
+      hide.forEach(b=>{b.style.visibility=b._prevVis||"";});
+      const fname=`프로모션_${p.name||"untitled"}_${new Date().toISOString().slice(0,10)}.png`;
+      canvas.toBlob(blob=>{
+        if(!blob){setRowDlBusy(b=>({...b,[p.id]:false}));return;}
+        const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if(isMobile&&navigator.share){
+          const file=new File([blob],fname,{type:"image/png"});
+          navigator.share({files:[file],title:fname}).catch(()=>{
+            const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:fname});
+            a.click();URL.revokeObjectURL(a.href);
+          }).finally(()=>setRowDlBusy(b=>({...b,[p.id]:false})));
+          return;
+        }
+        const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:fname});
+        a.click();URL.revokeObjectURL(a.href);
+        setRowDlBusy(b=>({...b,[p.id]:false}));
+      });
+    }catch(_){
+      hide.forEach(b=>{b.style.visibility=b._prevVis||"";});
+      setRowDlBusy(b=>({...b,[p.id]:false}));
+    }
+  };
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]}});
   const today=new Date().toISOString().slice(0,10);
   const [impactModal,setImpactModal]=useState(null);
@@ -4943,7 +4974,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   </tr>
                 );
                 return (
-                  <tr key={p.id}>
+                  <tr key={p.id} ref={el=>{if(el) rowRefs.current[p.id]=el; else delete rowRefs.current[p.id];}}>
                     <td {...td}>
                       <div style={{display:"flex",alignItems:"center",gap:5}}>
                         <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
@@ -5012,13 +5043,13 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       </div>
                     </td>
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
-                      <button onClick={()=>startEditPromo(p)} title="수정"
+                      <button data-capture-hide onClick={()=>startEditPromo(p)} title="수정"
                         style={{background:"transparent",border:"none",color:D.textMeta,
                           cursor:"pointer",padding:"2px 4px",fontSize:15,filter:"grayscale(1)"}}>✎</button>
                     </td>
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
                       {ended&&(
-                        <button onClick={()=>hidePromo(p)} title="가리기 (종료 프로모션 로그)"
+                        <button data-capture-hide onClick={()=>hidePromo(p)} title="가리기 (종료 프로모션 로그)"
                           style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
                             color:D.textMeta,cursor:"pointer",padding:"2px 8px",fontSize:11,whiteSpace:"nowrap",marginRight:4}}>
                           가리기
@@ -5026,9 +5057,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       )}
                     </td>
                     <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
-                      <button onClick={()=>delPromo(p.id)}
-                        style={{background:"transparent",border:"none",color:D.textMeta,
-                          cursor:"pointer",padding:0,fontSize:14}}>✕</button>
+                      <div style={{display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+                        <button data-capture-hide onClick={()=>captureRow(p)} disabled={!!rowDlBusy[p.id]}
+                          title="이 프로모션 카드 PNG 저장"
+                          style={{background:"transparent",border:"none",color:D.textMeta,
+                            cursor:rowDlBusy[p.id]?"wait":"pointer",padding:0,fontSize:14,
+                            opacity:rowDlBusy[p.id]?0.5:1}}>↓</button>
+                        <button data-capture-hide onClick={()=>delPromo(p.id)}
+                          style={{background:"transparent",border:"none",color:D.textMeta,
+                            cursor:"pointer",padding:0,fontSize:14}}>✕</button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -5264,7 +5302,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     }));
   },[ch,prevStart,prevEnd,promoStart,promoEnd,revenues,storeSales]);
 
-  // Top 20 상품: 프로모션 기간 + 해당 채널의 배송 status 행
+  // Top 20 상품: 프로모션 기간 + 해당 채널 — status 무관 (주문 기준)
   const top20=useMemo(()=>{
     const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
     const matchesCh=r=>{
@@ -5273,7 +5311,6 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     };
     const m={};
     orders.forEach(r=>{
-      if(r.status!=="배송") return;
       if(!matchesCh(r)) return;
       const d=r.order_date;
       if(!d||d<promoStart||d>promoEnd) return;
@@ -5373,7 +5410,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         {/* Top 20 */}
         <div>
           <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
-            프로모션 기간 판매 Top 20 ({ch}, 배송 완료 기준)
+            프로모션 기간 판매 Top 20 ({ch}, 주문 기준)
           </div>
           {top20.length===0?(
             <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
