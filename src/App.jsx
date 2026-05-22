@@ -17,6 +17,10 @@ import {
 //   ALTER TABLE revenues ADD COLUMN IF NOT EXISTS refund_count integer DEFAULT 0;
 //   ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount integer DEFAULT 0;
 //
+//   -- 인벤토리 상품코드 (Inventory Trend / Reorder Calculator):
+//   ALTER TABLE inventory_snapshot ADD COLUMN IF NOT EXISTS product_code text DEFAULT '';
+//   ALTER TABLE reorder_recommendations ADD COLUMN IF NOT EXISTS reorder_product_code text DEFAULT '';
+//
 //   -- 콘텐츠 임팩트 (인스타그램 포스트 캘린더):
 //   CREATE TABLE IF NOT EXISTS instagram_posts (
 //     id            serial PRIMARY KEY,
@@ -7100,7 +7104,8 @@ function calcInvRow(row){
 }
 
 const INV_COL_ALIASES={
-  product_name:           ["상품명","product_name","상품"],
+  product_code:           ["상품코드","product_code","품번","바코드","barcode","sku코드","sku_code"],
+  product_name:           ["상품명","product_name"],
   option_name:            ["옵션","option_name","옵션명"],
   selling_price:          ["판매가","selling_price","가격","price"],
   supply_price:           ["공급가","supply_price","원가","cost","cost_price","sup_price"],
@@ -7120,13 +7125,31 @@ const INV_COL_ALIASES={
   _r_monthly:             ["4주발주합계","monthly_sales","4주판매합계"],
 };
 
+// 헤더 → 필드 매핑: 1차로 정확 일치, 2차로 부분 포함 매칭.
+// 정확 일치 우선이라 "상품코드" 헤더는 product_name("상품명") 으로 잘못 빨려 들어가지 않음.
 function mapInvCols(headers){
   const result={};
+  const claimedHeaders=new Set();
+  const norm=s=>String(s||"").trim().toLowerCase().replace(/[\s_]/g,"");
+  const normHeaders=headers.map(norm);
+  // Pass 1: exact match
+  Object.entries(INV_COL_ALIASES).forEach(([field,aliases])=>{
+    if(result[field]!==undefined) return;
+    const aliasNorms=aliases.map(norm);
+    for(let i=0;i<normHeaders.length;i++){
+      if(claimedHeaders.has(i)) continue;
+      if(aliasNorms.includes(normHeaders[i])){
+        result[field]=i; claimedHeaders.add(i); break;
+      }
+    }
+  });
+  // Pass 2: partial (includes) match — only on headers not yet claimed
   headers.forEach((h,i)=>{
-    const n=String(h||"").trim().toLowerCase().replace(/[\s_]/g,"");
+    if(claimedHeaders.has(i)) return;
+    const n=normHeaders[i];
     Object.entries(INV_COL_ALIASES).forEach(([field,aliases])=>{
-      if(!result[field]&&aliases.some(a=>n===a.toLowerCase().replace(/[\s_]/g,"")||n.includes(a.toLowerCase().replace(/[\s_]/g,"")))){
-        result[field]=i;
+      if(!result[field]&&aliases.some(a=>n.includes(norm(a)))){
+        result[field]=i; claimedHeaders.add(i);
       }
     });
   });
@@ -7150,7 +7173,7 @@ function parseInvFile(file,onResult,onError){
       if(missing.length>0){
         onError(uploadErrColumns({
           missing,
-          required:Object.values(FIELD_LABELS).concat(["옵션","판매가","공급가","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"]),
+          required:Object.values(FIELD_LABELS).concat(["상품코드","옵션","판매가","공급가","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"]),
           headers,
         }));
         return;
@@ -7163,6 +7186,7 @@ function parseInvFile(file,onResult,onError){
         const getDate=(f)=>{const v=get(f);if(!v||v==="-") return null;return toDate(v)||null;};
         return{
           snapshot_date:getDate("snapshot_date"),
+          product_code:get("product_code")||"",
           product_name:get("product_name"),
           option_name:get("option_name")||"",
           selling_price:parseInt(get("selling_price").replace(/[^0-9]/g,""),10)||0,
@@ -7323,7 +7347,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           <div style={{marginBottom:6}}>
             <span style={{color:"#7EC8A4",fontWeight:700,fontSize:13}}>인벤토리 트렌드</span>
             <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
-              {["상품명","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
+              {["상품명","상품코드","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
                 <span key={c} style={{background:"rgba(126,200,164,0.1)",border:"1px solid rgba(126,200,164,0.25)",
                   borderRadius:4,padding:"1px 6px",fontSize:12,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
               ))}
@@ -7507,7 +7531,10 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     data.filter(d=>
       d.current_stock_qty>=minStock&&
       agingFilter.has(d.agingKey)&&
-      (!search||(d.product_name||"").toLowerCase().includes(search.toLowerCase())||(d.option_name||"").toLowerCase().includes(search.toLowerCase()))
+      (!search||
+        (d.product_name||"").toLowerCase().includes(search.toLowerCase())||
+        (d.product_code||"").toLowerCase().includes(search.toLowerCase())||
+        (d.option_name||"").toLowerCase().includes(search.toLowerCase()))
     )
   ,[data,agingFilter,minStock,search]);
 
@@ -7610,6 +7637,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     return(
       <div style={{background:"#161616",border:"1px solid #2e2e2e",borderRadius:9,padding:"12px 14px",fontSize:12,minWidth:210,maxWidth:270,boxShadow:"0 4px 20px rgba(0,0,0,0.6)"}}>
         <div style={{fontWeight:700,color:"#F0F0F0",marginBottom:3,fontSize:14}}>{d.product_name}</div>
+        {d.product_code&&<div style={{color:"#888",fontSize:11,fontFamily:"monospace",marginBottom:3}}>{d.product_code}</div>}
         {d.option_name&&<div style={{color:"#666",fontSize:12,marginBottom:8}}>{d.option_name}</div>}
         <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 10px",color:"#888"}}>
           {[
@@ -7640,14 +7668,14 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     // 사용자가 엑셀에서 「권장할인율(%)」 셀을 수정하면 「세일 후 가격」·「세일 후 원가율」 이 자동
     // 재계산되도록 수식 셀로 저장. (json_to_sheet 의 plain value 가 아니라 cell.f 사용)
     const header=[
-      "상품명","옵션","판매가","공급가","현재고","재고금액",
+      "상품코드","상품명","옵션","판매가","공급가","현재고","재고금액",
       "미판매일수","SKU기간","판매효율","Aging상태","제안범위",
       "권장할인율(%)","세일 후 가격","세일 후 원가율(%)",
     ];
     const aoa=[header];
     allDiscountRecs.forEach(d=>{
       aoa.push([
-        d.product_name||"", d.option_name||"",
+        d.product_code||"", d.product_name||"", d.option_name||"",
         d.selling_price||0, d.supply_price||0,
         d.current_stock_qty||0, d.currentInventoryValue||0,
         d.noSalesDays||0, d.skuAge||0,
@@ -7662,11 +7690,11 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     // 각 데이터 행에 수식 주입 (1-based, 헤더가 1행)
     for(let i=0;i<allDiscountRecs.length;i++){
       const r=i+2; // Excel row number (2부터)
-      const priceAddr=`C${r}`;        // 판매가
-      const costAddr =`D${r}`;        // 공급가
-      const discAddr =`L${r}`;        // 권장할인율(%)
-      const saleAddr =`M${r}`;        // 세일 후 가격
-      const rateAddr =`N${r}`;        // 세일 후 원가율(%)
+      const priceAddr=`D${r}`;        // 판매가
+      const costAddr =`E${r}`;        // 공급가
+      const discAddr =`M${r}`;        // 권장할인율(%)
+      const saleAddr =`N${r}`;        // 세일 후 가격
+      const rateAddr =`O${r}`;        // 세일 후 원가율(%)
       // 세일 후 가격 = 판매가 * (1 - 할인율/100)
       ws[saleAddr]={t:"n",f:`${priceAddr}*(1-${discAddr}/100)`,z:"#,##0"};
       // 세일 후 원가율 = 공급가 / 세일 후 가격 * 100  (분모 0 보호)
@@ -7674,7 +7702,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
     }
     // 컬럼 폭 보정
     ws["!cols"]=[
-      {wch:24},{wch:14},{wch:10},{wch:10},{wch:8},{wch:12},
+      {wch:12},{wch:24},{wch:14},{wch:10},{wch:10},{wch:8},{wch:12},
       {wch:9},{wch:8},{wch:8},{wch:9},{wch:9},
       {wch:13},{wch:13},{wch:16},
     ];
@@ -7910,8 +7938,8 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{borderBottom:`1px solid ${DC.border}`}}>
-                    {["순위","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율","세일 후 원가율"].map(h=>(
-                      <th key={h} style={{padding:"5px 7px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                    {["순위","상품코드","상품명","옵션","현재고","재고금액","미판매일수","Aging","권장할인율","세일 후 원가율"].map(h=>(
+                      <th key={h} style={{padding:"5px 7px",textAlign:h==="상품명"||h==="옵션"||h==="상품코드"?"left":"center",
                         fontWeight:600,color:DC.text,fontSize:12,whiteSpace:"nowrap"}}>
                         {h}
                       </th>
@@ -7927,6 +7955,9 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
                         background:i%2===0?"transparent":"rgba(0,0,0,0.02)",
                         opacity:d.inZone?1:0.75}}>
                         <td style={{padding:"5px 7px",textAlign:"center",color:d.inZone?"#C87B7B":DC.dim,fontWeight:700}}>{rank}</td>
+                        <td style={{padding:"5px 7px",color:DC.sub,fontFamily:"monospace",fontSize:11,maxWidth:90,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={d.product_code}>{d.product_code||"—"}</td>
                         <td style={{padding:"5px 7px",color:DC.text,fontWeight:500,maxWidth:140,
                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                           title={d.product_name}>{d.product_name}</td>
@@ -8007,6 +8038,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
               <button onClick={()=>setSelectedSku(null)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",fontSize:18,lineHeight:1}}>✕</button>
             </div>
             <div style={{fontWeight:600,fontSize:14,color:"#F0F0F0",marginBottom:3}}>{d.product_name}</div>
+            {d.product_code&&<div style={{color:"#888",fontSize:11,fontFamily:"monospace",marginBottom:3}}>{d.product_code}</div>}
             {d.option_name&&<div style={{color:"#666",fontSize:12,marginBottom:12}}>{d.option_name}</div>}
             <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",
               background:`${def?.color}20`,border:`1px solid ${def?.color}55`,borderRadius:14,marginBottom:16}}>
@@ -8483,8 +8515,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{borderBottom:`1px solid ${DC.border}`}}>
-                      {["상품명","옵션","재고 수","미판매 일수","재고 금액"].map(h=>(
-                        <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"?"left":"center",
+                      {["상품코드","상품명","옵션","재고 수","미판매 일수","재고 금액"].map(h=>(
+                        <th key={h} style={{padding:"6px 8px",textAlign:h==="상품명"||h==="옵션"||h==="상품코드"?"left":"center",
                           fontWeight:600,color:DC.text,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                       ))}
                     </tr>
@@ -8493,6 +8525,9 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
                     {[...drillRows].sort((a,b)=>(b.current_stock_qty||0)-(a.current_stock_qty||0)||b.noSalesDays-a.noSalesDays).slice(drillPage*50,(drillPage+1)*50).map((r,i)=>(
                       <tr key={r.id||i} style={{borderBottom:`1px solid ${DC.border}`,
                         background:i%2===0?"transparent":"rgba(0,0,0,0.02)"}}>
+                        <td style={{padding:"6px 8px",color:DC.sub,fontFamily:"monospace",fontSize:11,maxWidth:90,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                          title={r.product_code}>{r.product_code||"—"}</td>
                         <td style={{padding:"6px 8px",color:DC.text,fontWeight:500,maxWidth:160,
                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                           title={r.product_name}>{r.product_name}</td>
@@ -8552,6 +8587,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
 // create table if not exists public.reorder_recommendations (
 //   reorder_id uuid default gen_random_uuid() primary key,
 //   reorder_data_date date not null,
+//   reorder_product_code text default '',
 //   reorder_product_name text not null,
 //   reorder_option_name text default '',
 //   reorder_available_stock integer default 0,
@@ -8584,6 +8620,7 @@ async function computeAndSaveReorder(parsedRows,snapDate){
     const recommended=Math.max(0,Math.round(expectedDaily*14-effective));
     return{
       reorder_data_date:snapDate,
+      reorder_product_code:r.product_code||"",
       reorder_product_name:r.product_name,
       reorder_option_name:r.option_name||"",
       reorder_available_stock:avail,
@@ -8667,6 +8704,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     let rows=data;
     if(search) rows=rows.filter(r=>
       (r.reorder_product_name||"").toLowerCase().includes(search.toLowerCase())||
+      (r.reorder_product_code||"").toLowerCase().includes(search.toLowerCase())||
       (r.reorder_option_name||"").toLowerCase().includes(search.toLowerCase())
     );
     return[...rows].sort((a,b)=>{
@@ -8707,6 +8745,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
   const downloadCSV=(source)=>{
     const target=source||filtered;
     const cols=[
+      {label:"상품코드",get:r=>r.reorder_product_code||"",align:"left"},
       {label:"상품명",get:r=>r.reorder_product_name,align:"left"},
       {label:"옵션",get:r=>r.reorder_option_name,align:"left"},
       {label:"가용재고",get:r=>(r.reorder_available_stock||0).toLocaleString(),align:"center"},
@@ -8750,7 +8789,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
 
   const trendTag=r=>{const t=r.reorder_trend_ratio||0;return t>=1.2?{label:"↑ 상승",color:"#7EC8A4"}:t>=0.8?{label:"→ 안정",color:"#7B9EC8"}:{label:"↓ 감소",color:"#C87B7B"};};
 
-  const textCols=new Set(["reorder_product_name","reorder_option_name"]);
+  const textCols=new Set(["reorder_product_code","reorder_product_name","reorder_option_name"]);
   const SortTh=({k,label})=>(
     <th onClick={()=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");setPg(0);}}}
       style={{padding:"4px 6px",textAlign:textCols.has(k)?"left":"center",fontWeight:600,color:DC.text,borderBottom:`1px solid ${DC.border}`,
@@ -8862,7 +8901,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
 
           {/* Table */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-            <input placeholder="상품명 / 옵션 검색" value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
+            <input placeholder="상품코드 / 상품명 / 옵션 검색" value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"5px 10px",fontSize:13,color:DC.text,minWidth:180,outline:"none",fontFamily:"inherit"}}/>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -8892,6 +8931,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                       ref={el=>{if(el) el.indeterminate=!allFilteredSelected&&someFilteredSelected;}}
                       onChange={toggleAllFiltered} style={{cursor:"pointer"}}/>
                   </th>
+                  <SortTh k="reorder_product_code" label="상품코드"/>
                   <SortTh k="reorder_product_name" label="상품명"/>
                   <SortTh k="reorder_option_name" label="옵션"/>
                   <SortTh k="reorder_available_stock" label="가용재고"/>
@@ -8916,6 +8956,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                       <td style={{padding:"4px 6px",textAlign:"center"}}>
                         <input type="checkbox" checked={isSel} onChange={()=>toggleRow(k)} style={{cursor:"pointer"}}/>
                       </td>
+                      <td style={{padding:"4px 6px",color:DC.sub,fontFamily:"monospace",fontSize:12,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.reorder_product_code}>{r.reorder_product_code||"—"}</td>
                       <td style={{padding:"4px 6px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
                       <td style={{padding:"4px 6px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
                       <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
