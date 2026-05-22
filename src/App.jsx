@@ -4118,14 +4118,25 @@ function DiscountPlanView({ plan }) {
 
   const prodSeg=pct(prodStart,prodEnd);
 
+  // 상품 기간 == 모든 쿠폰 기간이 동일하면 "동일 기간" 표시로 막대 생략
+  const sameAsProd=r=>r.start===prodStart&&r.end===prodEnd;
+  const allSamePeriod=!!prodStart&&!!prodEnd&&cleanedCoupons.length>0&&cleanedCoupons.every(sameAsProd);
+
   return (
     <div style={{fontSize:11,lineHeight:1.45,minWidth:140}}>
-      {/* 요약: 상품군 · 쿠폰 행 */}
-      {cleanedProducts.map((r,i)=>(
-        <div key={"p"+i} style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-          · {r.group||"전체"} <b style={{color:D.text}}>{r.rate||0}%</b>
+      {/* 상품군 할인율 — 뱃지 형태 */}
+      {cleanedProducts.length>0&&(
+        <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:4}}>
+          {cleanedProducts.map((r,i)=>(
+            <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:3,
+              padding:"2px 7px",background:`${D.red}12`,border:`1px solid ${D.red}33`,
+              color:D.red,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
+              {r.group||"전체"} <b style={{fontWeight:700}}>{r.rate||0}%</b>
+            </span>
+          ))}
         </div>
-      ))}
+      )}
+      {/* 쿠폰 행 */}
       {cleanedCoupons.map((r,i)=>(
         <div key={"c"+i} style={{color:D.blue,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
           🎟 쿠폰 <b>{r.rate||0}%</b>{" "}
@@ -4133,36 +4144,43 @@ function DiscountPlanView({ plan }) {
         </div>
       ))}
 
-      {/* Gantt-style 막대 2줄 */}
+      {/* 기간 표시: 동일 기간이면 텍스트, 다르면 Gantt 막대 */}
       {rangeStart&&rangeEnd&&(
-        <div style={{marginTop:5}}>
-          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta}}>
-            <span style={{width:32,flexShrink:0}}>상품</span>
-            <div style={{flex:1,...barTrack}}>
-              {prodSeg&&<div style={{...barSeg(D.red),...prodSeg}}/>}
+        allSamePeriod?(
+          <div style={{marginTop:5,fontSize:10,color:D.textMeta}}>
+            <span style={{color:D.textSub,fontWeight:600}}>동일 기간</span>
+            {" · "}{prodStart?.slice(5)}~{prodEnd?.slice(5)}
+          </div>
+        ):(
+          <div style={{marginTop:5}}>
+            <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta}}>
+              <span style={{width:32,flexShrink:0}}>상품</span>
+              <div style={{flex:1,...barTrack}}>
+                {prodSeg&&<div style={{...barSeg(D.red),...prodSeg}}/>}
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta,marginTop:2}}>
+              <span style={{width:32,flexShrink:0}}>쿠폰</span>
+              <div style={{flex:1,...barTrack}}>
+                {cleanedCoupons.map((r,i)=>{
+                  const s=pct(r.start,r.end);
+                  if(!s) return null;
+                  return <div key={i} style={{...barSeg(D.blue),...s}}/>;
+                })}
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:D.textMeta,marginTop:2,paddingLeft:36}}>
+              <span>{rangeStart.slice(5)}</span>
+              <span>{rangeEnd.slice(5)}</span>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta,marginTop:2}}>
-            <span style={{width:32,flexShrink:0}}>쿠폰</span>
-            <div style={{flex:1,...barTrack}}>
-              {cleanedCoupons.map((r,i)=>{
-                const s=pct(r.start,r.end);
-                if(!s) return null;
-                return <div key={i} style={{...barSeg(D.blue),...s}}/>;
-              })}
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:D.textMeta,marginTop:2,paddingLeft:36}}>
-            <span>{rangeStart.slice(5)}</span>
-            <span>{rangeEnd.slice(5)}</span>
-          </div>
-        </div>
+        )
       )}
 
       {maxTotal>0&&(
         <div style={{marginTop:4,padding:"2px 6px",background:`${D.red}10`,color:D.red,
           borderRadius:4,fontWeight:600,display:"inline-block"}}>
-          최대 총 {maxTotal}%
+          상품*쿠폰 적용 할인율 최대 총 {maxTotal}%
         </div>
       )}
     </div>
