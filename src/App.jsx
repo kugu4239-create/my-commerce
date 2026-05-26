@@ -7809,10 +7809,42 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   );
 }
 
+// SKU Risk Bubble — 상태별 상품 엑셀 다운로드 (모달 표시 항목 포함)
+async function exportSkuRiskXlsx(rows){
+  if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
+  const XLSX=await getXLSX();
+  const colDefs=[
+    ["상품코드",      r=>r.product_code||""],
+    ["상품명",        r=>r.product_name||""],
+    ["옵션",          r=>r.option_name||""],
+    ["상태",          r=>INV_AGING_DEFS[r.agingKey]?.label||r.agingKey||""],
+    ["판매가",        r=>r.selling_price||0],
+    ["수량(현재고)",   r=>r.current_stock_qty||0],
+    ["현재 재고 금액", r=>r.currentInventoryValue||0],
+    ["미판매 일수",    r=>r.noSalesDays||0],
+    ["SKU 운영기간",  r=>r.skuAge||0],
+    ["최근입고 후",    r=>r.postRestockDays||0],
+    ["누적배송수량",   r=>r.cumulative_delivery_qty||0],
+    ["판매효율(STP)", r=>r.sellThroughProxy||0],
+  ];
+  const toAOA=list=>[colDefs.map(c=>c[0]),...list.map(r=>colDefs.map(c=>c[1](r)))];
+  const wb=XLSX.utils.book_new();
+  const sorted=[...rows].sort((a,b)=>
+    INV_AGING_KEYS.indexOf(a.agingKey)-INV_AGING_KEYS.indexOf(b.agingKey)
+    ||(b.current_stock_qty||0)-(a.current_stock_qty||0));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(toAOA(sorted)),"전체");
+  INV_AGING_KEYS.forEach(k=>{
+    const list=rows.filter(r=>r.agingKey===k);
+    if(list.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(toAOA(list)),INV_AGING_DEFS[k].label.slice(0,31));
+  });
+  const date=rows[0]?.snapshot_date||dayjs().format("YYYY-MM-DD");
+  XLSX.writeFile(wb,`SKU_Risk_${date}.xlsx`);
+}
+
 // ─────────────────────────────────────────────
 // INV BUBBLE SCATTER PLOT
 // ─────────────────────────────────────────────
-function InvBubblePlot({DC,snapshotDates,stopRef}){
+function InvBubblePlot({DC,snapshotDates,stopRef,onExportData}){
   const [dateMode,setDateMode]=useState("single"); // "single"|"range"
   const [selDate,setSelDate]=useState(null);
   const [selDateEnd,setSelDateEnd]=useState(null);
@@ -7860,7 +7892,9 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
         if(rows.length<PAGE) break;
         from+=PAGE;
       }
-      setData(all.map(calcInvRow));
+      const computed=all.map(calcInvRow);
+      setData(computed);
+      onExportData?.(computed);
       setLoading(false);
     })();
   },[loadDate]);
@@ -10417,6 +10451,7 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [invRefreshKey]=useState(0);
   const [agingDate,setAgingDate]=useState(null);
+  const [bubbleRows,setBubbleRows]=useState([]); // SKU Risk Bubble 현재 로드된 SKU (엑셀 다운로드용)
 
   const loadSnapshotDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -10577,11 +10612,19 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
       <div ref={bubbleCardRef} style={sectionCard}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:8}}>
           <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>SKU Risk Bubble</div>
-          <CaptureBtn cardRef={bubbleCardRef} filename="SKU_Risk_Bubble" DC={DC}/>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>exportSkuRiskXlsx(bubbleRows)} title="상태별 상품 엑셀 다운로드"
+              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,
+                padding:"5px 12px",fontSize:12,fontWeight:600,color:DC.text,cursor:"pointer",
+                display:"flex",alignItems:"center",gap:5}}>
+              ⬇ 상품 다운로드
+            </button>
+            <CaptureBtn cardRef={bubbleCardRef} filename="SKU_Risk_Bubble" DC={DC}/>
+          </div>
         </div>
-        <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef}/>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef} onExportData={setBubbleRows}/>
       </div>
 
       {/* ③ Aging Trend — 섹션 카드 */}
