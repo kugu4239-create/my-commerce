@@ -10404,13 +10404,10 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
   const volCardRef=useRef(null);
   const bubbleCardRef=useRef(null);
   const agingCardRef=agingTrendSecRef; // reuse existing ref
-  const reorderCardRef=reorderSecRef;  // reuse existing ref
   const [svgW,setSvgW]=useState(760);
-  const [reorderKey,setReorderKey]=useState(0);
   const [snapshotDates,setSnapshotDates]=useState([]);
   const [invRefreshKey,setInvRefreshKey]=useState(0);
   const [agingDate,setAgingDate]=useState(null);
-  const [reorderDate,setReorderDate]=useState(null);
 
   const loadSnapshotDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -10570,7 +10567,7 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
       {/* Inventory Uploader — 다크 카드 */}
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
         <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
-        <InventoryUploader DC={DC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
+        <InventoryUploader DC={DC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>{}}/>
       </div>
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
@@ -10598,12 +10595,36 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
       {/* ④ Active SKU 볼륨 */}
       <ActiveSkuVolume orders={orders} storeSales={storeSales} DC={DC}/>
 
-      {/* ⑤ 리오더 계산기 (자체 스타일 포함) */}
-      <div ref={reorderSecRef} style={{position:"relative"}}>
+      {/* 리오더 계산기는 '리오더 계산기' 탭으로 분리됨 — 업로더(위)는 그대로 유지되어 계산 소스 로직 보존 */}
+      <div ref={reorderSecRef} style={{height:1}}/>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 리오더 계산기 — 독립 페이지 (데이터 컴페어에서 분리)
+// 계산 소스(computeAndSaveReorder)는 데이터 컴페어의 Inventory 업로더가 그대로 트리거
+// ─────────────────────────────────────────────
+function ReorderPage(){
+  const reorderCardRef=useRef(null);
+  const [snapshotDates,setSnapshotDates]=useState([]);
+  const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  useEffect(()=>{(async()=>{
+    const db=await getSupabase();
+    const{data}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false});
+    if(data) setSnapshotDates([...new Set(data.map(r=>r.snapshot_date))]);
+  })();},[]);
+  const latestSnap=snapshotDates.length?[...snapshotDates].sort()[snapshotDates.length-1]:null;
+  return(
+    <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
+      <div style={{fontSize:13,color:"#888",marginBottom:2}}>
+        데이터 소스: <b style={{color:"#444"}}>데이터 컴페어 &gt; Inventory 업로더</b> — 엑셀 업로드 시 리오더 데이터가 자동 계산됩니다.
+      </div>
+      <div ref={reorderCardRef} style={{position:"relative"}}>
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
           <CaptureBtn cardRef={reorderCardRef} filename="리오더_계산기" DC={DC}/>
         </div>
-        <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate} latestSnapDate={snapshotDates.length?[...snapshotDates].sort()[snapshotDates.length-1]:null}/>
+        <ReorderCalculator DC={DC} refreshKey={0} latestSnapDate={latestSnap}/>
       </div>
     </div>
   );
@@ -12678,6 +12699,7 @@ export default function App() {
     {key:"flow",label:"물류 플로우"},
     {key:"impact",label:"콘텐츠 임팩트"},
     {key:"input",label:"데이터 입력"},
+    {key:"reorder",label:"리오더 계산기"},
   ];
 
   const [visible,setVisible]=useState(false);
@@ -12732,6 +12754,7 @@ export default function App() {
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
+        {page==="reorder"&&<ReorderPage/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
