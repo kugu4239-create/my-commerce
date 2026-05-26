@@ -7099,6 +7099,120 @@ function GuideSection({tabKey,desc,isDark}){
   );
 }
 
+// ─────────────────────────────────────────────
+// DATA INPUT — Claude 자동화 스크립트 (업로드 / 수정 / 다운로드)
+// ─────────────────────────────────────────────
+function ClaudeScriptPanel(){
+  const KEY="claude_script";
+  const ROW_ID="default";
+  const [name,setName]=useState("");
+  const [content,setContent]=useState("");
+  const [savedTs,setSavedTs]=useState(null);
+  const [msg,setMsg]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const fileRef=useRef(null);
+
+  const cacheLocal=(nm,ct,ts)=>localStorage.setItem(KEY,JSON.stringify({name:nm,content:ct,ts}));
+
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      // 1) 로컬 캐시 즉시 표시
+      try{
+        const raw=localStorage.getItem(KEY);
+        if(raw&&alive){const o=JSON.parse(raw);setName(o.name||"");setContent(o.content||"");setSavedTs(o.ts||null);}
+      }catch{/* ignore */}
+      // 2) Supabase가 권위 소스 — 다른 기기에서 저장한 내용 동기화
+      try{
+        const db=await getSupabase();
+        const{data,error}=await db.from("claude_scripts").select("*").eq("id",ROW_ID).maybeSingle();
+        if(!error&&data&&alive){
+          const ts=data.updated_at?dayjs(data.updated_at).format("YYYY.MM.DD HH:mm"):nowStr();
+          setName(data.name||"");setContent(data.content||"");setSavedTs(ts);
+          cacheLocal(data.name||"",data.content||"",ts);
+        }
+      }catch{/* 오프라인 → 로컬 캐시 유지 */}
+    })();
+    return()=>{alive=false;};
+  },[]);
+
+  const save=async()=>{
+    setSaving(true);
+    const row={id:ROW_ID,name:name||"claude-script.txt",content};
+    let ts=nowStr();
+    try{
+      const db=await getSupabase();
+      const{data,error}=await db.from("claude_scripts").upsert(row,{onConflict:"id"}).select().maybeSingle();
+      if(error) throw error;
+      if(data?.updated_at) ts=dayjs(data.updated_at).format("YYYY.MM.DD HH:mm");
+      cacheLocal(row.name,content,ts);
+      setSavedTs(ts);
+      setMsg({type:"success",msg:"저장 완료 — Supabase에 동기화되었습니다."});
+    }catch{
+      cacheLocal(row.name,content,ts);
+      setSavedTs(ts);
+      setMsg({type:"warn",msg:"로컬에만 저장되었습니다 (Supabase 연결 실패)."});
+    }finally{
+      setSaving(false);
+    }
+  };
+
+  const handleUpload=e=>{
+    const f=e.target.files?.[0];
+    if(!f){return;}
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      setName(f.name);
+      setContent(String(ev.target.result||""));
+      setMsg({type:"info",msg:`"${f.name}" 불러옴 — 수정 후 저장하세요.`});
+    };
+    reader.onerror=()=>setMsg({type:"error",msg:"파일을 읽지 못했습니다."});
+    reader.readAsText(f);
+    e.target.value="";
+  };
+
+  const download=()=>{
+    const fname=name||"claude-script.txt";
+    const blob=new Blob([content],{type:"text/plain;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=fname;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Card>
+      <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <span style={{fontWeight:600,fontSize:13,color:D.black}}>Claude 자동화 스크립트</span>
+        <span style={{fontSize:11,color:D.textMeta}}>업로드·수정·다운로드 — 저장 시 Supabase에 동기화되어 어디서든 볼 수 있습니다.</span>
+        <UpdatedAt ts={savedTs}/>
+      </div>
+
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="파일명 (예: automation.py)"
+          style={{flex:"1 1 240px",minWidth:200,border:`1px solid ${D.border}`,borderRadius:7,
+            padding:"8px 12px",fontSize:13,color:D.text,background:D.surface,outline:"none"}}/>
+        <input ref={fileRef} type="file" onChange={handleUpload} style={{display:"none"}}
+          accept=".txt,.md,.py,.js,.ts,.sh,.json,.yaml,.yml,.toml,.csv,.html,.css,text/*"/>
+        <Btn variant="ghost" onClick={()=>fileRef.current?.click()}>업로드</Btn>
+        <Btn variant="primary" onClick={save} disabled={saving}>{saving?"저장 중…":"저장"}</Btn>
+        <Btn variant="ghost" onClick={download} disabled={!content}>다운로드</Btn>
+      </div>
+
+      <textarea value={content} onChange={e=>setContent(e.target.value)} spellCheck={false}
+        placeholder="자동화 스크립트 내용을 입력하거나 파일을 업로드하세요."
+        style={{width:"100%",minHeight:320,boxSizing:"border-box",resize:"vertical",
+          border:`1px solid ${D.border}`,borderRadius:8,padding:"12px 14px",
+          fontSize:12.5,lineHeight:1.6,color:D.text,background:D.surfaceAlt,outline:"none",
+          fontFamily:"'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace",
+          tabSize:2,whiteSpace:"pre"}}/>
+
+      <Alert type={msg?.type} msg={msg?.msg}/>
+    </Card>
+  );
+}
+
 function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], storeSales=[] }) {
   const [tab,setTab]=useState("revenue");
   // 업로드 내역 패널들에 강제 새로고침 신호 (삭제/업로드 발생 시 증가)
@@ -7116,6 +7230,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
     {key:"orders",name:"주문·배송",extra:lastDate(orders,"order_date")},
     {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
     {key:"cs",name:"CS"},
+    {key:"script",name:"자동화 스크립트"},
     {key:"delete",name:"데이터 삭제"},
   ];
 
@@ -7154,6 +7269,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
       {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
       {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("store",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
       {tab==="cs"&&<CSDataInput/>}
+      {tab==="script"&&<ClaudeScriptPanel/>}
       {tab==="delete"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14}}>
           <DataDeleteSection table="revenues" dateField="date" label="매출 입력" onDone={()=>{onDataChange?.();bumpHist();}}/>
