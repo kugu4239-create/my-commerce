@@ -7328,6 +7328,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
     {key:"stock",name:"입고",extra:lastDate(stocks,"upload_date")},
     {key:"orders",name:"주문·배송",extra:lastDate(orders,"order_date")},
     {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
+    {key:"inventory",name:"인벤토리"},
     {key:"cs",name:"CS"},
     {key:"script",name:"자동화 스크립트"},
     {key:"delete",name:"데이터 삭제"},
@@ -7338,8 +7339,10 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
     orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필요 컬럼: 주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
+    inventory:"데이터 컴페어(SKU Risk · Aging Trend)와 리오더 계산기의 공통 데이터 소스입니다.\n엑셀에 가용재고 · 입고대기 · 1주발주합계 · 4주발주합계 컬럼이 있으면 리오더 데이터가 자동 계산됩니다.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
+  const DC_LIGHT={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
@@ -7367,6 +7370,12 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
       {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)} histRefreshKey={histRefreshKey}/>}
       {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
       {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("store",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
+      {tab==="inventory"&&(
+        <div style={{background:DC_LIGHT.card,border:`1px solid ${DC_LIGHT.border}`,borderRadius:12,padding:"20px 20px 24px"}}>
+          <div style={{fontWeight:600,fontSize:16,color:DC_LIGHT.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
+          <InventoryUploader DC={DC_LIGHT} onUploaded={()=>{}} onReorderDone={()=>{}}/>
+        </div>
+      )}
       {tab==="cs"&&<CSDataInput/>}
       {tab==="script"&&<ClaudeScriptPanel/>}
       {tab==="delete"&&(
@@ -7800,10 +7809,42 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   );
 }
 
+// SKU Risk Bubble — 상태별 상품 엑셀 다운로드 (모달 표시 항목 포함)
+async function exportSkuRiskXlsx(rows){
+  if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
+  const XLSX=await getXLSX();
+  const colDefs=[
+    ["상품코드",      r=>r.product_code||""],
+    ["상품명",        r=>r.product_name||""],
+    ["옵션",          r=>r.option_name||""],
+    ["상태",          r=>INV_AGING_DEFS[r.agingKey]?.label||r.agingKey||""],
+    ["판매가",        r=>r.selling_price||0],
+    ["수량(현재고)",   r=>r.current_stock_qty||0],
+    ["현재 재고 금액", r=>r.currentInventoryValue||0],
+    ["미판매 일수",    r=>r.noSalesDays||0],
+    ["SKU 운영기간",  r=>r.skuAge||0],
+    ["최근입고 후",    r=>r.postRestockDays||0],
+    ["누적배송수량",   r=>r.cumulative_delivery_qty||0],
+    ["판매효율(STP)", r=>r.sellThroughProxy||0],
+  ];
+  const toAOA=list=>[colDefs.map(c=>c[0]),...list.map(r=>colDefs.map(c=>c[1](r)))];
+  const wb=XLSX.utils.book_new();
+  const sorted=[...rows].sort((a,b)=>
+    INV_AGING_KEYS.indexOf(a.agingKey)-INV_AGING_KEYS.indexOf(b.agingKey)
+    ||(b.current_stock_qty||0)-(a.current_stock_qty||0));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(toAOA(sorted)),"전체");
+  INV_AGING_KEYS.forEach(k=>{
+    const list=rows.filter(r=>r.agingKey===k);
+    if(list.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(toAOA(list)),INV_AGING_DEFS[k].label.slice(0,31));
+  });
+  const date=rows[0]?.snapshot_date||dayjs().format("YYYY-MM-DD");
+  XLSX.writeFile(wb,`SKU_Risk_${date}.xlsx`);
+}
+
 // ─────────────────────────────────────────────
 // INV BUBBLE SCATTER PLOT
 // ─────────────────────────────────────────────
-function InvBubblePlot({DC,snapshotDates,stopRef}){
+function InvBubblePlot({DC,snapshotDates,stopRef,onExportData}){
   const [dateMode,setDateMode]=useState("single"); // "single"|"range"
   const [selDate,setSelDate]=useState(null);
   const [selDateEnd,setSelDateEnd]=useState(null);
@@ -7851,7 +7892,9 @@ function InvBubblePlot({DC,snapshotDates,stopRef}){
         if(rows.length<PAGE) break;
         from+=PAGE;
       }
-      setData(all.map(calcInvRow));
+      const computed=all.map(calcInvRow);
+      setData(computed);
+      onExportData?.(computed);
       setLoading(false);
     })();
   },[loadDate]);
@@ -10404,13 +10447,11 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
   const volCardRef=useRef(null);
   const bubbleCardRef=useRef(null);
   const agingCardRef=agingTrendSecRef; // reuse existing ref
-  const reorderCardRef=reorderSecRef;  // reuse existing ref
   const [svgW,setSvgW]=useState(760);
-  const [reorderKey,setReorderKey]=useState(0);
   const [snapshotDates,setSnapshotDates]=useState([]);
-  const [invRefreshKey,setInvRefreshKey]=useState(0);
+  const [invRefreshKey]=useState(0);
   const [agingDate,setAgingDate]=useState(null);
-  const [reorderDate,setReorderDate]=useState(null);
+  const [bubbleRows,setBubbleRows]=useState([]); // SKU Risk Bubble 현재 로드된 SKU (엑셀 다운로드용)
 
   const loadSnapshotDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -10567,19 +10608,23 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
         )}
       </div>
 
-      {/* Inventory Uploader — 다크 카드 */}
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
-        <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
-        <InventoryUploader DC={DC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>setReorderKey(k=>k+1)}/>
-      </div>
+      {/* Inventory 업로더는 '데이터 입력 > 인벤토리' 탭으로 이동 (snapshotDates는 마운트 시 로드) */}
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
       <div ref={bubbleCardRef} style={sectionCard}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:8}}>
           <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>SKU Risk Bubble</div>
-          <CaptureBtn cardRef={bubbleCardRef} filename="SKU_Risk_Bubble" DC={DC}/>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>exportSkuRiskXlsx(bubbleRows)} title="상태별 상품 엑셀 다운로드"
+              style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,
+                padding:"5px 12px",fontSize:12,fontWeight:600,color:DC.text,cursor:"pointer",
+                display:"flex",alignItems:"center",gap:5}}>
+              ⬇ 상품 다운로드
+            </button>
+            <CaptureBtn cardRef={bubbleCardRef} filename="SKU_Risk_Bubble" DC={DC}/>
+          </div>
         </div>
-        <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef}/>
+        <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef} onExportData={setBubbleRows}/>
       </div>
 
       {/* ③ Aging Trend — 섹션 카드 */}
@@ -10598,12 +10643,36 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
       {/* ④ Active SKU 볼륨 */}
       <ActiveSkuVolume orders={orders} storeSales={storeSales} DC={DC}/>
 
-      {/* ⑤ 리오더 계산기 (자체 스타일 포함) */}
-      <div ref={reorderSecRef} style={{position:"relative"}}>
+      {/* 리오더 계산기는 '리오더 계산기' 탭으로 분리됨 — 업로더(위)는 그대로 유지되어 계산 소스 로직 보존 */}
+      <div ref={reorderSecRef} style={{height:1}}/>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 리오더 계산기 — 독립 페이지 (데이터 컴페어에서 분리)
+// 계산 소스(computeAndSaveReorder)는 '데이터 입력 > 인벤토리' 업로더가 그대로 트리거
+// ─────────────────────────────────────────────
+function ReorderPage(){
+  const reorderCardRef=useRef(null);
+  const [snapshotDates,setSnapshotDates]=useState([]);
+  const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  useEffect(()=>{(async()=>{
+    const db=await getSupabase();
+    const{data}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false});
+    if(data) setSnapshotDates([...new Set(data.map(r=>r.snapshot_date))]);
+  })();},[]);
+  const latestSnap=snapshotDates.length?[...snapshotDates].sort()[snapshotDates.length-1]:null;
+  return(
+    <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
+      <div style={{fontSize:13,color:"#888",marginBottom:2}}>
+        데이터 소스: <b style={{color:"#444"}}>데이터 입력 &gt; 인벤토리</b> — 엑셀 업로드 시 리오더 데이터가 자동 계산됩니다.
+      </div>
+      <div ref={reorderCardRef} style={{position:"relative"}}>
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
           <CaptureBtn cardRef={reorderCardRef} filename="리오더_계산기" DC={DC}/>
         </div>
-        <ReorderCalculator DC={DC} refreshKey={reorderKey} onDateReady={setReorderDate} latestSnapDate={snapshotDates.length?[...snapshotDates].sort()[snapshotDates.length-1]:null}/>
+        <ReorderCalculator DC={DC} refreshKey={0} latestSnapDate={latestSnap}/>
       </div>
     </div>
   );
@@ -12678,6 +12747,7 @@ export default function App() {
     {key:"flow",label:"물류 플로우"},
     {key:"impact",label:"콘텐츠 임팩트"},
     {key:"input",label:"데이터 입력"},
+    {key:"reorder",label:"리오더 계산기"},
   ];
 
   const [visible,setVisible]=useState(false);
@@ -12732,6 +12802,7 @@ export default function App() {
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
+        {page==="reorder"&&<ReorderPage/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
