@@ -7328,6 +7328,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
     {key:"stock",name:"입고",extra:lastDate(stocks,"upload_date")},
     {key:"orders",name:"주문·배송",extra:lastDate(orders,"order_date")},
     {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
+    {key:"inventory",name:"인벤토리"},
     {key:"cs",name:"CS"},
     {key:"script",name:"자동화 스크립트"},
     {key:"delete",name:"데이터 삭제"},
@@ -7338,8 +7339,10 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
     orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필요 컬럼: 주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
+    inventory:"데이터 컴페어(SKU Risk · Aging Trend)와 리오더 계산기의 공통 데이터 소스입니다.\n엑셀에 가용재고 · 입고대기 · 1주발주합계 · 4주발주합계 컬럼이 있으면 리오더 데이터가 자동 계산됩니다.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
   };
+  const DC_LIGHT={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
@@ -7367,6 +7370,12 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
       {tab==="stock"&&<StockUploader onUpdate={ts=>onUpdate("stock",ts)} histRefreshKey={histRefreshKey}/>}
       {tab==="orders"&&<EasyAdminUploader onUpdate={ts=>{onUpdate("orders",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
       {tab==="store"&&<StoreUploader onUpdate={ts=>{onUpdate("store",ts);onDataChange?.();bumpHist();}} histRefreshKey={histRefreshKey}/>}
+      {tab==="inventory"&&(
+        <div style={{background:DC_LIGHT.card,border:`1px solid ${DC_LIGHT.border}`,borderRadius:12,padding:"20px 20px 24px"}}>
+          <div style={{fontWeight:600,fontSize:16,color:DC_LIGHT.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
+          <InventoryUploader DC={DC_LIGHT} onUploaded={()=>{}} onReorderDone={()=>{}}/>
+        </div>
+      )}
       {tab==="cs"&&<CSDataInput/>}
       {tab==="script"&&<ClaudeScriptPanel/>}
       {tab==="delete"&&(
@@ -10406,7 +10415,7 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
   const agingCardRef=agingTrendSecRef; // reuse existing ref
   const [svgW,setSvgW]=useState(760);
   const [snapshotDates,setSnapshotDates]=useState([]);
-  const [invRefreshKey,setInvRefreshKey]=useState(0);
+  const [invRefreshKey]=useState(0);
   const [agingDate,setAgingDate]=useState(null);
 
   const loadSnapshotDates=useCallback(async()=>{
@@ -10564,11 +10573,7 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
         )}
       </div>
 
-      {/* Inventory Uploader — 다크 카드 */}
-      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px",marginTop:16}}>
-        <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
-        <InventoryUploader DC={DC} onUploaded={()=>{loadSnapshotDates();setInvRefreshKey(k=>k+1);}} onReorderDone={()=>{}}/>
-      </div>
+      {/* Inventory 업로더는 '데이터 입력 > 인벤토리' 탭으로 이동 (snapshotDates는 마운트 시 로드) */}
 
       {/* ② SKU Risk Bubble — 다크 카드 */}
       <div ref={bubbleCardRef} style={sectionCard}>
@@ -10603,7 +10608,7 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
 
 // ─────────────────────────────────────────────
 // 리오더 계산기 — 독립 페이지 (데이터 컴페어에서 분리)
-// 계산 소스(computeAndSaveReorder)는 데이터 컴페어의 Inventory 업로더가 그대로 트리거
+// 계산 소스(computeAndSaveReorder)는 '데이터 입력 > 인벤토리' 업로더가 그대로 트리거
 // ─────────────────────────────────────────────
 function ReorderPage(){
   const reorderCardRef=useRef(null);
@@ -10618,7 +10623,7 @@ function ReorderPage(){
   return(
     <div style={{background:"#f8f8f6",minHeight:"100%",padding:"28px 28px 40px"}}>
       <div style={{fontSize:13,color:"#888",marginBottom:2}}>
-        데이터 소스: <b style={{color:"#444"}}>데이터 컴페어 &gt; Inventory 업로더</b> — 엑셀 업로드 시 리오더 데이터가 자동 계산됩니다.
+        데이터 소스: <b style={{color:"#444"}}>데이터 입력 &gt; 인벤토리</b> — 엑셀 업로드 시 리오더 데이터가 자동 계산됩니다.
       </div>
       <div ref={reorderCardRef} style={{position:"relative"}}>
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
