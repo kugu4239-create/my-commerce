@@ -3926,13 +3926,13 @@ function DateButtonPicker({value,onChange}){
 // 프로모션 할인율 그리드 — Editor + 표시 컴포넌트
 // 저장 구조 (신):
 //   { products: { period:{start,end}, rows:[{group,rate}] },
-//     coupons:  [{rate,start,end,stack}] }   // stack=true → 중복 적용(곱셈 누적)
+//     coupons:  [{name,rate,start,end,stack}] }   // stack=true → 중복 적용(곱셈 누적)
 // 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
 function emptyProductRow(){return{group:"",rate:""};}
-function emptyCouponRow(stack=false){return{rate:"",start:"",end:"",stack};}
+function emptyCouponRow(stack=false){return{name:"",rate:"",start:"",end:"",stack};}
 function normalizePlan(p){
-  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack}));
+  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack}));
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
     return{
@@ -4038,15 +4038,20 @@ function DiscountPlanEditor({ value, onChange }) {
         <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용</span></div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
-            <th style={{...head,width:"14%"}}>할인율(%)</th>
-            <th style={{...head,width:"12%",textAlign:"center"}}>중복</th>
-            <th style={{...head,width:"20%"}}>시작</th>
-            <th style={{...head,width:"20%"}}>종료</th>
-            <th style={{...head,width:"8%"}}/>
+            <th style={{...head,width:"28%"}}>쿠폰명</th>
+            <th style={{...head,width:"12%"}}>할인율(%)</th>
+            <th style={{...head,width:"10%",textAlign:"center"}}>중복</th>
+            <th style={{...head,width:"18%"}}>시작</th>
+            <th style={{...head,width:"18%"}}>종료</th>
+            <th style={{...head,width:"6%"}}/>
           </tr></thead>
           <tbody>
             {coupons.map((row,i)=>(
               <tr key={i}>
+                <td style={{padding:"3px 4px"}}>
+                  <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
+                    style={cellInp} placeholder="예: 신규가입 쿠폰"/>
+                </td>
                 <td style={{padding:"3px 4px"}}>
                   <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
                     style={cellInp} placeholder="0" min="0" max="100"/>
@@ -4091,7 +4096,7 @@ function cleanDiscountPlan(plan){
       period:p.products.period,
       rows:p.products.rows.filter(r=>r.group||r.rate),
     },
-    coupons:p.coupons.filter(r=>r.rate||r.start||r.end),
+    coupons:p.coupons.filter(r=>r.rate||r.start||r.end||r.name),
   };
 }
 
@@ -4171,7 +4176,7 @@ function DiscountPlanView({ plan }) {
       {/* 쿠폰 행 */}
       {cleanedCoupons.map((r,i)=>(
         <div key={"c"+i} style={{color:D.blue,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-          🎟 쿠폰 <b>{r.rate||0}%</b>
+          🎟 {r.name?<span>{r.name} </span>:null}<b>{r.rate||0}%</b>
           {r.stack&&<span style={{marginLeft:4,padding:"0 4px",fontSize:9,fontWeight:700,
             background:`${D.blue}1a`,color:D.blue,borderRadius:3,verticalAlign:"middle"}}>중복</span>}
           {" "}
