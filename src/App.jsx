@@ -3926,13 +3926,13 @@ function DateButtonPicker({value,onChange}){
 // 프로모션 할인율 그리드 — Editor + 표시 컴포넌트
 // 저장 구조 (신):
 //   { products: { period:{start,end}, rows:[{group,rate}] },
-//     coupons:  [{rate,start,end}] }
+//     coupons:  [{rate,start,end,stack}] }   // stack=true → 중복 적용(곱셈 누적)
 // 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
 function emptyProductRow(){return{group:"",rate:""};}
-function emptyCouponRow(){return{rate:"",start:"",end:""};}
+function emptyCouponRow(stack=false){return{rate:"",start:"",end:"",stack};}
 function normalizePlan(p){
-  const coupons=Array.isArray(p?.coupons)?p.coupons:[];
+  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack}));
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
     return{
@@ -4035,12 +4035,13 @@ function DiscountPlanEditor({ value, onChange }) {
 
       {/* 쿠폰 */}
       <div>
-        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용)</span></div>
+        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용</span></div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
             <th style={{...head,width:"14%"}}>할인율(%)</th>
-            <th style={{...head,width:"22%"}}>시작</th>
-            <th style={{...head,width:"22%"}}>종료</th>
+            <th style={{...head,width:"12%",textAlign:"center"}}>중복</th>
+            <th style={{...head,width:"20%"}}>시작</th>
+            <th style={{...head,width:"20%"}}>종료</th>
             <th style={{...head,width:"8%"}}/>
           </tr></thead>
           <tbody>
@@ -4049,6 +4050,11 @@ function DiscountPlanEditor({ value, onChange }) {
                 <td style={{padding:"3px 4px"}}>
                   <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
                     style={cellInp} placeholder="0" min="0" max="100"/>
+                </td>
+                <td style={{padding:"3px 4px",textAlign:"center"}}>
+                  <input type="checkbox" checked={!!row.stack} title="중복 적용 쿠폰"
+                    onChange={e=>{const n=[...coupons];n[i]={...row,stack:e.target.checked};setCoupons(n);}}
+                    style={{width:15,height:15,cursor:"pointer",accentColor:D.blue}}/>
                 </td>
                 <td style={{padding:"3px 4px"}}>
                   <input type="date" value={row.start} onChange={e=>{const n=[...coupons];n[i]={...row,start:e.target.value};setCoupons(n);}} style={cellInp}/>
@@ -4064,9 +4070,14 @@ function DiscountPlanEditor({ value, onChange }) {
             ))}
           </tbody>
         </table>
-        <button onClick={()=>setCoupons([...coupons,emptyCouponRow()])}
-          style={{marginTop:6,background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
-            padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 행 추가</button>
+        <div style={{display:"flex",gap:6,marginTop:6}}>
+          <button onClick={()=>setCoupons([...coupons,emptyCouponRow(false)])}
+            style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
+              padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 쿠폰 추가</button>
+          <button onClick={()=>setCoupons([...coupons,emptyCouponRow(true)])}
+            style={{background:`${D.blue}10`,border:`1px dashed ${D.blue}80`,borderRadius:5,
+              padding:"4px 12px",fontSize:11,color:D.blue,cursor:"pointer",fontWeight:600}}>+ 중복 쿠폰 추가</button>
+        </div>
       </div>
     </div>
   );
@@ -4109,9 +4120,15 @@ function DiscountPlanView({ plan }) {
     return{left:`${left}%`,width:`${Math.min(100-left,width)}%`};
   };
 
-  // 총 최대 할인율 = 1 - (1 - 상품최대) × (1 - 쿠폰최대)
-  const couponMaxRate=cleanedCoupons.length?Math.max(...cleanedCoupons.map(r=>+r.rate||0)):0;
-  const maxTotal=Math.round((1-(1-prodRate/100)*(1-couponMaxRate/100))*1000)/10;
+  // 총 최대 할인율 = 1 - (1 - 상품최대) × (단독쿠폰 최대) × (중복쿠폰 전부 곱)
+  //   - 중복(stack) 쿠폰: 모두 겹쳐 적용 → (1-r) 곱 누적
+  //   - 단독 쿠폰: 한 장만 적용 → 가장 높은 할인율 하나
+  const stackCoupons=cleanedCoupons.filter(r=>r.stack);
+  const soloCoupons =cleanedCoupons.filter(r=>!r.stack);
+  const stackFactor =stackCoupons.reduce((f,r)=>f*(1-(+r.rate||0)/100),1);
+  const soloMaxRate =soloCoupons.length?Math.max(...soloCoupons.map(r=>+r.rate||0)):0;
+  const couponFactor=stackFactor*(1-soloMaxRate/100);
+  const maxTotal=Math.round((1-(1-prodRate/100)*couponFactor)*1000)/10;
 
   const barTrack={position:"relative",height:6,background:`${D.border}`,borderRadius:3,marginTop:2};
   const barSeg=col=>({position:"absolute",top:0,height:6,background:col,borderRadius:3});
@@ -4154,7 +4171,10 @@ function DiscountPlanView({ plan }) {
       {/* 쿠폰 행 */}
       {cleanedCoupons.map((r,i)=>(
         <div key={"c"+i} style={{color:D.blue,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-          🎟 쿠폰 <b>{r.rate||0}%</b>{" "}
+          🎟 쿠폰 <b>{r.rate||0}%</b>
+          {r.stack&&<span style={{marginLeft:4,padding:"0 4px",fontSize:9,fontWeight:700,
+            background:`${D.blue}1a`,color:D.blue,borderRadius:3,verticalAlign:"middle"}}>중복</span>}
+          {" "}
           <span style={{color:D.textMeta}}>{r.start?.slice(5)}~{r.end?.slice(5)}</span>
         </div>
       ))}
