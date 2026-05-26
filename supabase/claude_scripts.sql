@@ -1,9 +1,9 @@
--- Claude 자동화 스크립트 저장 테이블
--- 데이터 입력 > 자동화 스크립트 탭에서 작성한 내용을 어디서든 볼 수 있도록 보관합니다.
+-- Claude 자동화 스크립트 파일함 테이블 (파일당 1행)
+-- 데이터 입력 > 자동화 스크립트 탭의 업로드/수정 파일을 어디서든 다운로드할 수 있도록 보관합니다.
 -- Supabase 대시보드 > SQL Editor 에서 1회 실행하세요.
 
 create table if not exists public.claude_scripts (
-  id         text primary key default 'default',
+  id         text primary key,
   name       text not null default 'claude-script.txt',
   content    text not null default '',
   updated_at timestamptz not null default now()

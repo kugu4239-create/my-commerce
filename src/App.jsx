@@ -4232,9 +4232,30 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [tableFileDragOver,setTableFileDragOver]=useState(null);
   // Hidden promo log (localStorage only — no schema change needed)
   const getHiddenLog=()=>{try{return JSON.parse(localStorage.getItem("hidden_promo_log")||"[]");}catch{return[];}};
+  const saveHiddenLogLocal=d=>localStorage.setItem("hidden_promo_log",JSON.stringify(d));
   const [hiddenLog,setHiddenLog]=useState(getHiddenLog);
   const hiddenIds=useMemo(()=>new Set(hiddenLog.map(h=>h.id)),[hiddenLog]);
   const [selHiddenIds,setSelHiddenIds]=useState(new Set());
+
+  // 가려진 종료 프로모션 — Supabase 동기화 (기기 간 공유). 미연결 시 localStorage 폴백
+  useEffect(()=>{
+    (async()=>{
+      const local=getHiddenLog();
+      try{
+        const db=await getSupabase();
+        const{data,error}=await db.from("hidden_promo_log").select("*");
+        if(error||!data) return; // 오프라인/미연결 → 로컬 초기값 유지
+        const rows=data.map(r=>({...(r.data||{}),id:r.id,hidden_at:r.hidden_at}));
+        if(rows.length>0){
+          setHiddenLog(rows);saveHiddenLogLocal(rows);
+        } else if(local.length>0){
+          // Supabase 비어있고 로컬에 있으면 1회 마이그레이션
+          const payload=local.map(h=>({id:h.id,hidden_at:h.hidden_at||new Date().toISOString(),data:h}));
+          await db.from("hidden_promo_log").insert(payload);
+        }
+      }catch{/* 로컬 초기값 유지 */}
+    })();
+  },[]);
   // Promo search
   const [searchStart,setSearchStart]=useState("");
   const [searchEnd,setSearchEnd]=useState("");
@@ -4327,15 +4348,23 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     const promo=promos.find(p=>p.id===id);
     patchPromo(id,{files:(promo?.files||[]).filter((_,i)=>i!==idx)});
   };
-  const hidePromo=p=>{
+  const hidePromo=async p=>{
     const entry={...p,hidden_at:new Date().toISOString()};
     const next=[...hiddenLog.filter(h=>h.id!==p.id),entry];
-    setHiddenLog(next);localStorage.setItem("hidden_promo_log",JSON.stringify(next));
+    setHiddenLog(next);saveHiddenLogLocal(next);
+    try{
+      const db=await getSupabase();
+      await db.from("hidden_promo_log").upsert({id:p.id,hidden_at:entry.hidden_at,data:entry},{onConflict:"id"});
+    }catch{/* 로컬 저장은 완료됨 */}
   };
-  const delFromHiddenLog=ids=>{
+  const delFromHiddenLog=async ids=>{
     const next=hiddenLog.filter(h=>!ids.has(h.id));
     setHiddenLog(next);setSelHiddenIds(new Set());
-    localStorage.setItem("hidden_promo_log",JSON.stringify(next));
+    saveHiddenLogLocal(next);
+    try{
+      const db=await getSupabase();
+      await db.from("hidden_promo_log").delete().in("id",[...ids]);
+    }catch{/* 로컬 저장은 완료됨 */}
   };
 
   const getSubmitPromos=()=>{try{return JSON.parse(localStorage.getItem("submit_promos")||"[]");}catch{return [];}};
@@ -7100,113 +7129,158 @@ function GuideSection({tabKey,desc,isDark}){
 }
 
 // ─────────────────────────────────────────────
-// DATA INPUT — Claude 자동화 스크립트 (업로드 / 수정 / 다운로드)
+// DATA INPUT — Claude 자동화 스크립트 파일함 (업로드 / 수정 / 다운로드)
 // ─────────────────────────────────────────────
-function ClaudeScriptPanel(){
-  const KEY="claude_script";
-  const ROW_ID="default";
-  const [name,setName]=useState("");
-  const [content,setContent]=useState("");
-  const [savedTs,setSavedTs]=useState(null);
-  const [msg,setMsg]=useState(null);
-  const [saving,setSaving]=useState(false);
-  const fileRef=useRef(null);
+const _scriptId=()=>(globalThis.crypto?.randomUUID?.()||(Date.now().toString(36)+Math.random().toString(36).slice(2)));
+const _fmtBytes=n=>{const b=Number(n)||0;return b<1024?`${b} B`:b<1024*1024?`${(b/1024).toFixed(1)} KB`:`${(b/1048576).toFixed(1)} MB`;};
 
-  const cacheLocal=(nm,ct,ts)=>localStorage.setItem(KEY,JSON.stringify({name:nm,content:ct,ts}));
+function ClaudeScriptPanel(){
+  const KEY="claude_scripts";
+  const [files,setFiles]=useState([]);
+  const [msg,setMsg]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [editing,setEditing]=useState(null); // {id,name,content,isNew} | null
+  const uploadRef=useRef(null);
+
+  const cacheLocal=arr=>localStorage.setItem(KEY,JSON.stringify(arr));
+  const sortFiles=arr=>[...arr].sort((a,b)=>String(b.updated_at||"").localeCompare(String(a.updated_at||"")));
 
   useEffect(()=>{
     let alive=true;
     (async()=>{
-      // 1) 로컬 캐시 즉시 표시
-      try{
-        const raw=localStorage.getItem(KEY);
-        if(raw&&alive){const o=JSON.parse(raw);setName(o.name||"");setContent(o.content||"");setSavedTs(o.ts||null);}
-      }catch{/* ignore */}
-      // 2) Supabase가 권위 소스 — 다른 기기에서 저장한 내용 동기화
+      let local=[];
+      try{local=JSON.parse(localStorage.getItem(KEY)||"[]");}catch{/* ignore */}
+      if(alive&&local.length) setFiles(sortFiles(local));
       try{
         const db=await getSupabase();
-        const{data,error}=await db.from("claude_scripts").select("*").eq("id",ROW_ID).maybeSingle();
-        if(!error&&data&&alive){
-          const ts=data.updated_at?dayjs(data.updated_at).format("YYYY.MM.DD HH:mm"):nowStr();
-          setName(data.name||"");setContent(data.content||"");setSavedTs(ts);
-          cacheLocal(data.name||"",data.content||"",ts);
+        const{data,error}=await db.from("claude_scripts").select("*");
+        if(error||!data) return; // 오프라인/미연결 → 로컬 유지
+        if(!alive) return;
+        if(data.length>0){
+          const rows=sortFiles(data);
+          setFiles(rows);cacheLocal(rows);
+        } else if(local.length>0){
+          await db.from("claude_scripts").upsert(local,{onConflict:"id"}); // 1회 마이그레이션
         }
-      }catch{/* 오프라인 → 로컬 캐시 유지 */}
+      }catch{/* 로컬 유지 */}
     })();
     return()=>{alive=false;};
   },[]);
 
-  const save=async()=>{
-    setSaving(true);
-    const row={id:ROW_ID,name:name||"claude-script.txt",content};
-    let ts=nowStr();
+  const persist=async row=>{
+    let saved={...row,updated_at:new Date().toISOString()};
     try{
       const db=await getSupabase();
-      const{data,error}=await db.from("claude_scripts").upsert(row,{onConflict:"id"}).select().maybeSingle();
+      const{data,error}=await db.from("claude_scripts").upsert({id:row.id,name:row.name,content:row.content},{onConflict:"id"}).select().maybeSingle();
       if(error) throw error;
-      if(data?.updated_at) ts=dayjs(data.updated_at).format("YYYY.MM.DD HH:mm");
-      cacheLocal(row.name,content,ts);
-      setSavedTs(ts);
-      setMsg({type:"success",msg:"저장 완료 — Supabase에 동기화되었습니다."});
+      if(data) saved={...saved,...data};
+      setMsg({type:"success",msg:`"${saved.name}" 저장 완료 — Supabase 동기화.`});
     }catch{
-      cacheLocal(row.name,content,ts);
-      setSavedTs(ts);
-      setMsg({type:"warn",msg:"로컬에만 저장되었습니다 (Supabase 연결 실패)."});
-    }finally{
-      setSaving(false);
+      setMsg({type:"warn",msg:`"${saved.name}" 로컬에만 저장됨 (Supabase 연결 실패).`});
     }
+    setFiles(prev=>{const next=sortFiles([...prev.filter(f=>f.id!==saved.id),saved]);cacheLocal(next);return next;});
+    return saved;
   };
 
-  const handleUpload=e=>{
-    const f=e.target.files?.[0];
-    if(!f){return;}
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      setName(f.name);
-      setContent(String(ev.target.result||""));
-      setMsg({type:"info",msg:`"${f.name}" 불러옴 — 수정 후 저장하세요.`});
-    };
-    reader.onerror=()=>setMsg({type:"error",msg:"파일을 읽지 못했습니다."});
-    reader.readAsText(f);
+  const handleUpload=async e=>{
+    const list=[...(e.target.files||[])];
     e.target.value="";
+    if(!list.length) return;
+    setBusy(true);
+    for(const f of list){
+      try{
+        const text=await f.text();
+        await persist({id:_scriptId(),name:f.name,content:text});
+      }catch{setMsg({type:"error",msg:`"${f.name}" 읽기 실패.`});}
+    }
+    setBusy(false);
   };
 
-  const download=()=>{
-    const fname=name||"claude-script.txt";
-    const blob=new Blob([content],{type:"text/plain;charset=utf-8"});
+  const download=f=>{
+    const blob=new Blob([f.content||""],{type:"text/plain;charset=utf-8"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
-    a.href=url;a.download=fname;
+    a.href=url;a.download=f.name||"claude-script.txt";
     document.body.appendChild(a);a.click();document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
+  const del=async f=>{
+    if(!window.confirm(`"${f.name}" 파일을 삭제할까요?`)) return;
+    setFiles(prev=>{const next=prev.filter(x=>x.id!==f.id);cacheLocal(next);return next;});
+    if(editing?.id===f.id) setEditing(null);
+    try{const db=await getSupabase();await db.from("claude_scripts").delete().eq("id",f.id);}catch{/* 로컬 반영됨 */}
+    setMsg({type:"info",msg:`"${f.name}" 삭제됨.`});
+  };
+
+  const saveEdit=async()=>{
+    if(!editing) return;
+    if(!editing.name.trim()){setMsg({type:"error",msg:"파일명을 입력하세요."});return;}
+    setBusy(true);
+    await persist({id:editing.id,name:editing.name.trim(),content:editing.content});
+    setBusy(false);
+    setEditing(null);
+  };
+
+  const linkBtn={background:"transparent",border:"none",cursor:"pointer",fontSize:12,padding:"4px 6px",borderRadius:5};
+
   return (
     <Card>
-      <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-        <span style={{fontWeight:600,fontSize:13,color:D.black}}>Claude 자동화 스크립트</span>
-        <span style={{fontSize:11,color:D.textMeta}}>업로드·수정·다운로드 — 저장 시 Supabase에 동기화되어 어디서든 볼 수 있습니다.</span>
-        <UpdatedAt ts={savedTs}/>
-      </div>
-
-      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
-        <input value={name} onChange={e=>setName(e.target.value)} placeholder="파일명 (예: automation.py)"
-          style={{flex:"1 1 240px",minWidth:200,border:`1px solid ${D.border}`,borderRadius:7,
-            padding:"8px 12px",fontSize:13,color:D.text,background:D.surface,outline:"none"}}/>
-        <input ref={fileRef} type="file" onChange={handleUpload} style={{display:"none"}}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <span style={{fontWeight:600,fontSize:13,color:D.black}}>Claude 자동화 스크립트 파일함</span>
+        <span style={{fontSize:11,color:D.textMeta,flex:1}}>업로드한 파일은 Supabase에 저장되어 어디서든 다운로드할 수 있습니다.</span>
+        <input ref={uploadRef} type="file" multiple onChange={handleUpload} style={{display:"none"}}
           accept=".txt,.md,.py,.js,.ts,.sh,.json,.yaml,.yml,.toml,.csv,.html,.css,text/*"/>
-        <Btn variant="ghost" onClick={()=>fileRef.current?.click()}>업로드</Btn>
-        <Btn variant="primary" onClick={save} disabled={saving}>{saving?"저장 중…":"저장"}</Btn>
-        <Btn variant="ghost" onClick={download} disabled={!content}>다운로드</Btn>
+        <Btn variant="ghost" onClick={()=>uploadRef.current?.click()} disabled={busy}>업로드</Btn>
+        <Btn variant="primary" onClick={()=>setEditing({id:_scriptId(),name:"",content:"",isNew:true})}>+ 새 파일</Btn>
       </div>
 
-      <textarea value={content} onChange={e=>setContent(e.target.value)} spellCheck={false}
-        placeholder="자동화 스크립트 내용을 입력하거나 파일을 업로드하세요."
-        style={{width:"100%",minHeight:320,boxSizing:"border-box",resize:"vertical",
-          border:`1px solid ${D.border}`,borderRadius:8,padding:"12px 14px",
-          fontSize:12.5,lineHeight:1.6,color:D.text,background:D.surfaceAlt,outline:"none",
-          fontFamily:"'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace",
-          tabSize:2,whiteSpace:"pre"}}/>
+      {files.length===0?(
+        <div style={{padding:"40px 0",textAlign:"center",color:D.textMeta,fontSize:13,
+          border:`1px dashed ${D.border}`,borderRadius:8}}>
+          저장된 파일이 없습니다. 파일을 업로드하거나 새로 만드세요.
+        </div>
+      ):(
+        <div style={{border:`1px solid ${D.border}`,borderRadius:8,overflow:"hidden"}}>
+          {files.map((f,i)=>(
+            <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
+              borderTop:i?`1px solid ${D.border}`:"none",background:D.surface}}>
+              <span style={{fontSize:14}}>📄</span>
+              <button onClick={()=>setEditing({...f,isNew:false})} title="수정"
+                style={{flex:1,minWidth:0,textAlign:"left",background:"transparent",border:"none",cursor:"pointer",
+                  fontSize:13,fontWeight:500,color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {f.name}
+              </button>
+              <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
+                {_fmtBytes(new Blob([f.content||""]).size)}
+                {f.updated_at?` · ${dayjs(f.updated_at).format("YY.MM.DD HH:mm")}`:""}
+              </span>
+              <button onClick={()=>download(f)} style={{...linkBtn,color:D.blue,fontWeight:600}}>다운로드</button>
+              <button onClick={()=>del(f)} style={{...linkBtn,color:D.red}}>삭제</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing&&(
+        <div style={{marginTop:14,border:`1px solid ${D.borderMid}`,borderRadius:8,padding:14,background:D.surfaceAlt}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+            <input value={editing.name} onChange={e=>setEditing(s=>({...s,name:e.target.value}))}
+              placeholder="파일명 (예: automation.py)" autoFocus
+              style={{flex:"1 1 240px",minWidth:200,border:`1px solid ${D.border}`,borderRadius:7,
+                padding:"8px 12px",fontSize:13,color:D.text,background:D.surface,outline:"none"}}/>
+            <Btn variant="primary" onClick={saveEdit} disabled={busy}>{busy?"저장 중…":"저장"}</Btn>
+            <Btn variant="ghost" onClick={()=>setEditing(null)}>취소</Btn>
+          </div>
+          <textarea value={editing.content} onChange={e=>setEditing(s=>({...s,content:e.target.value}))} spellCheck={false}
+            placeholder="스크립트 내용을 입력하거나 파일을 업로드하세요."
+            style={{width:"100%",minHeight:300,boxSizing:"border-box",resize:"vertical",
+              border:`1px solid ${D.border}`,borderRadius:8,padding:"12px 14px",
+              fontSize:12.5,lineHeight:1.6,color:D.text,background:D.surface,outline:"none",
+              fontFamily:"'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace",
+              tabSize:2,whiteSpace:"pre"}}/>
+        </div>
+      )}
 
       <Alert type={msg?.type} msg={msg?.msg}/>
     </Card>
