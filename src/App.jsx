@@ -3951,15 +3951,11 @@ function computeDiscountMatrix(plan){
   const stackIdxs=coupons.map((c,i)=>c.stack?i:-1).filter(i=>i>=0);
   const lastStackIdx=stackIdxs.length?stackIdxs[stackIdxs.length-1]:-1;
   const stackFinalOn=stack.length>=2;
-  const stackRates=stack.map(s=>(+s.rate||0)+"%").join("·");
   const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
     const nm=(c.name||"").trim()||`쿠폰${i+1}`;
     const rate=+c.rate||0;
-    const isStackFinal=c.stack&&stackFinalOn&&i===lastStackIdx;
-    const label=isStackFinal?`${nm} (중복 적층 최종·${stackRates})`
-      :c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`;
-    cols.push({key:"c"+i,coupon:true,stackFinal:isStackFinal,label});
+    cols.push({key:"c"+i,coupon:true,label:c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`});
   });
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
@@ -3983,13 +3979,8 @@ function DiscountMatrix({ plan, compact=false }){
   const anyCoupon=m.cols.some(c=>c.coupon);
   const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"right",whiteSpace:"nowrap"};
   const th={...cell,color:D.textMeta,fontWeight:600,borderBottom:`1px solid ${D.border}`};
-  // 상품(상품군·상품할인)과 쿠폰 열 구분선 + 중복 적층 열 강조 배경
-  const divAt=(c,ci)=>{
-    const s={};
-    if(c.coupon&&!m.cols[ci-1]?.coupon) s.borderLeft=`2px solid ${D.borderMid}`;
-    if(c.stackFinal){ s.borderLeft=`2px solid ${D.borderMid}`; s.background=`${D.blue}0d`; }
-    return s;
-  };
+  // 상품(상품군·상품할인)과 쿠폰 열 사이 구분선만 (개별 열 강조 없음)
+  const divAt=(c,ci)=>(c.coupon&&!m.cols[ci-1]?.coupon)?{borderLeft:`2px solid ${D.borderMid}`}:null;
   return (
     <div style={{overflowX:"auto",marginTop:6}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
