@@ -3974,13 +3974,15 @@ function computeDiscountMatrix(plan){
 }
 
 // 상품군×시나리오 매트릭스 표 (에디터·등록 카드 공용)
-function DiscountMatrix({ plan, compact=false }){
+function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   const m=computeDiscountMatrix(plan);
-  const [circled,setCircled]=useState(()=>new Set());
+  const [localCircled,setLocalCircled]=useState(()=>new Set());
   if(!m.hasGroup) return null;
   const anyCoupon=m.cols.some(c=>c.coupon);
-  // 값 클릭 시 파란 원으로 강조 토글 (스크린샷 강조용)
-  const toggleCircle=k=>setCircled(prev=>{const s=new Set(prev);s.has(k)?s.delete(k):s.add(k);return s;});
+  // 값 클릭 시 파란 원 강조 토글. onToggleCircle 있으면 제어형(저장·공유), 없으면 로컬
+  const controlled=!!onToggleCircle;
+  const circled=controlled?new Set(circledKeys||[]):localCircled;
+  const toggleCircle=k=>controlled?onToggleCircle(k):setLocalCircled(prev=>{const s=new Set(prev);s.has(k)?s.delete(k):s.add(k);return s;});
   const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"center",whiteSpace:"nowrap"};
   const th={...cell,color:D.textSub,fontWeight:600,borderBottom:`1px solid ${D.border}`,verticalAlign:"bottom"};
   // 상품(상품군·상품할인)과 쿠폰 열 사이 구분선만 (개별 열 강조 없음)
@@ -4008,7 +4010,7 @@ function DiscountMatrix({ plan, compact=false }){
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
                 const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
-                const k=i+"-"+c.key;
+                const k=(r.group||"전체")+"|"+c.key;
                 return <td key={c.key} onClick={v==null?undefined:()=>toggleCircle(k)}
                   style={{...cell,...divAt(c,ci),cursor:v==null?"default":"pointer",
                   fontWeight:v==null?500:(isFinal?700:500),
@@ -4214,7 +4216,7 @@ function cleanDiscountPlan(plan){
 }
 
 // 표 셀에 표시되는 컴팩트 보기 — 상품 할인 + 쿠폰 기간을 작은 가로 막대 두 줄로 시각화
-function DiscountPlanView({ plan }) {
+function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle }) {
   const p=normalizePlan(plan);
   const cleanedProducts=p.products.rows.filter(r=>r.group||r.rate);
   const cleanedCoupons=p.coupons.filter(r=>r.rate||r.start||r.end);
@@ -4223,22 +4225,28 @@ function DiscountPlanView({ plan }) {
 
   return (
     <div style={{fontSize:11,lineHeight:1.75,minWidth:140,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
-      {/* 상품군 할인율 — 뱃지 형태 (색 의미 없어 흑/백 통일) */}
+      {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유) */}
       {cleanedProducts.length>0&&(
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
-          {cleanedProducts.map((r,i)=>(
-            <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
-              padding:"2px 7px",background:"#fff",border:`1px solid ${D.black}`,
-              color:D.black,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
-              <span>{r.group||"전체"}</span>
-              <span style={{width:1,height:10,background:D.black,display:"inline-block"}}/>
+          {cleanedProducts.map((r,i)=>{
+            const g=r.group||"전체";
+            const on=(marks.groups||[]).includes(g);
+            return (
+            <span key={"p"+i} onClick={onToggleGroup?()=>onToggleGroup(g):undefined}
+              style={{display:"inline-flex",alignItems:"center",gap:6,
+              padding:"2px 7px",background:on?D.black:"#fff",border:`1px solid ${D.black}`,
+              color:on?"#fff":D.black,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap",
+              cursor:onToggleGroup?"pointer":"default"}}>
+              <span>{g}</span>
+              <span style={{width:1,height:10,background:on?"#fff":D.black,display:"inline-block"}}/>
               <b style={{fontWeight:700}}>{r.rate||0}%</b>
             </span>
-          ))}
+            );
+          })}
         </div>
       )}
       {/* 상품군 × 시나리오 최종 할인율 매트릭스 (쿠폰은 매트릭스 열로 표시) */}
-      {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact/>}
+      {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact circledKeys={marks.circles} onToggleCircle={onToggleCircle}/>}
     </div>
   );
 }
@@ -4436,6 +4444,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   },[]);
   // 핀셋 상품 뱃지 하이라이트(흑백) 토글 — pinned_products(jsonb)에 저장되어 기기 간 공유됨
   const togglePinHighlight=(p,idx)=>patchPromo(p.id,{pinned_products:(p.pinned_products||[]).map((pp,i)=>i===idx?{...pp,highlight:!pp.highlight}:pp)});
+  // 할인율 매트릭스 원형 강조 / 상품군 뱃지 마킹 — discount_marks(jsonb)에 저장되어 기기 간 공유됨
+  const toggleMark=(p,kind,key)=>{const m=p.discount_marks||{};const set=new Set(m[kind]||[]);set.has(key)?set.delete(key):set.add(key);patchPromo(p.id,{discount_marks:{...m,[kind]:[...set]}});};
 
   // Load from Supabase — localStorage는 Supabase에 실제 데이터 있을 때만 덮어씀
   useEffect(()=>{
@@ -4444,7 +4454,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       const db=await getSupabase();
       const{data,error}=await db.from("promotions").select("*").order("start_date",{ascending:true});
       if(!error&&data){
-        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[],submit_date:p.submit_date||""}));
+        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[],discount_marks:p.discount_marks||{},submit_date:p.submit_date||""}));
         if(rows.length>0){
           setPromos(rows);setPromosCache(rows);
         } else if(local.length>0){
@@ -4638,7 +4648,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       </div>
       <div style={{flex:"2 1 380px",minWidth:300}}>
         <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>할인율</div>
-        <DiscountPlanView plan={p.discount_plan}/>
+        <DiscountPlanView plan={p.discount_plan} marks={p.discount_marks||{}}
+          onToggleGroup={g=>toggleMark(p,"groups",g)} onToggleCircle={k=>toggleMark(p,"circles",k)}/>
       </div>
       {(p.pinned_products||[]).length>0&&(
       <div style={{flex:"1 1 150px",minWidth:130}}>
