@@ -4614,8 +4614,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 
   // ── 공백 알림 (채널별 등록 프로모션 사이 빈 기간) ──
   const [gapOpen,setGapOpen]=useState(false);
+  const [calcOpen,setCalcOpen]=useState(false);
   const promoGaps=useMemo(()=>{
-    const addDays=(d,n)=>new Date(new Date(d+"T00:00:00").getTime()+n*86400000).toISOString().slice(0,10);
+    // UTC 기준 날짜 연산 — 로컬(KST) 파싱 후 toISOString 변환 시 하루 밀리는 버그 방지
+    const addDays=(d,n)=>{const dt=new Date(d+"T00:00:00Z");dt.setUTCDate(dt.getUTCDate()+n);return dt.toISOString().slice(0,10);};
     // channels=null → 전체 채널, 배열이면 해당 채널만 통합해 빈 기간 계산
     const gapsFor=(channels)=>{
       const ivs=promos.filter(p=>!hiddenIds.has(p.id)&&p.start_date&&p.end_date&&(!channels||channels.includes(p.platform)))
@@ -4789,6 +4791,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
         )}
       </div>
+      {/* 좌측 책갈피 3 — 29CM 세일율 계산기 (모달) */}
+      {!strategyOpen&&!gapOpen&&!calcOpen&&(
+        <button onClick={()=>setCalcOpen(true)}
+          style={{position:"fixed",top:470,left:0,zIndex:1500,writingMode:"vertical-rl",
+            background:D.blue,color:"#fff",border:"none",borderRadius:"0 8px 8px 0",
+            padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
+            boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
+          29CM 세일율 계산기
+        </button>
+      )}
       <style>{`
         @keyframes promoShimmer {
           0%   { transform: translateX(-100%); }
@@ -5531,6 +5543,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 
       {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
       {filePreview&&<FilePreviewModal file={filePreview} onClose={()=>setFilePreview(null)}/>}
+      {calcOpen&&<SaleCalcModal onClose={()=>setCalcOpen(false)}/>}
     </div>
   );
 }
@@ -5570,6 +5583,262 @@ function promoRevenueChg(promo, revenues=[], storeSales=[]){
   }
   const chg=prevTotal>0?((promoTotal-prevTotal)/prevTotal*100):null;
   return {prevTotal,promoTotal,chg};
+}
+
+// 29CM 할인율 계산기 — 가격대별 P75 목표 할인율을 쿠폰율로 역산 (단일 시뮬 + 일괄 엑셀)
+const CALC_SLOTS=[
+  {id:"S1",name:"구간 1",min:0,     max:100000,   disc:32,color:"#854F0B",bg:"#FAEEDA",n:1597,range:"< ₩100,000"},
+  {id:"S2",name:"구간 2",min:100000,max:150000,   disc:23,color:"#534AB7",bg:"#EEEDFE",n:422, range:"₩100,000 ~ ₩149,999"},
+  {id:"S3",name:"구간 3",min:150000,max:200000,   disc:30,color:"#0F6E56",bg:"#E1F5EE",n:131, range:"₩150,000 ~ ₩199,999"},
+  {id:"S4",name:"구간 4",min:200000,max:250000,   disc:26,color:"#993C1D",bg:"#FAECE7",n:18,  range:"₩200,000 ~ ₩249,999"},
+  {id:"S5",name:"구간 5",min:250000,max:Infinity, disc:40,color:"#3C3489",bg:"#EEEDFE",n:16,  range:"≥ ₩250,000"},
+];
+const CALC_CONDS={S1:"정가 < ₩100,000",S2:"₩100,000 ≤ 정가 < ₩150,000",S3:"₩150,000 ≤ 정가 < ₩200,000",S4:"₩200,000 ≤ 정가 < ₩250,000",S5:"정가 ≥ ₩250,000"};
+const calcClassify=list=>{for(const s of CALC_SLOTS) if(list>=s.min&&list<s.max) return s; return CALC_SLOTS[CALC_SLOTS.length-1];};
+const wonFmt=n=>new Intl.NumberFormat("ko-KR").format(Math.round(n));
+const calcReverse=(list,p75,coupon)=>{
+  const factorFinal=1-p75/100, factorCoupon=1-coupon/100;
+  if(factorCoupon<=0) return {baseDisc:0,basePrice:list,finalPrice:list};
+  let baseFactor=factorFinal/factorCoupon; if(baseFactor>1) baseFactor=1;
+  return {baseDisc:Math.round((1-baseFactor)*1000)/10, basePrice:Math.round(list*baseFactor/10)*10, finalPrice:Math.round(Math.round(list*baseFactor/10)*10*factorCoupon/10)*10};
+};
+function SaleCalcModal({ onClose }){
+  const [coupon,setCoupon]=useState(10);
+  const [listPrice,setListPrice]=useState(129000);
+  const [processed,setProcessed]=useState(null);
+  const [summary,setSummary]=useState("");
+  const [showResults,setShowResults]=useState(false);
+  const [dragOver,setDragOver]=useState(false);
+  const fileRef=useRef(null);
+  const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
+  const cpn=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
+  const slot=calcClassify(listPrice||0);
+  const single=listPrice>0?calcReverse(listPrice,slot.disc,cpn):null;
+  useEffect(()=>{
+    if(!rawRef.current) return;
+    setProcessed(rawRef.current.map(r=>{const s=calcClassify(r.list);return {...r,slot:s,...calcReverse(r.list,s.disc,cpn)};}));
+  },[cpn]);
+  const handleFile=async file=>{
+    fnameRef.current=file.name.replace(/\.xlsx?$/i,"");
+    try{
+      const XLSX=await getXLSX();
+      const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellStyles:true});
+      wbRef.current=wb;
+      const sheet=wb.SheetNames.find(n=>/상품가격|할인가|할인/.test(n))||wb.SheetNames[0];
+      sheetRef.current=sheet;
+      const ws=wb.Sheets[sheet];
+      const range=XLSX.utils.decode_range(ws["!ref"]);
+      let headerRow=-1;
+      for(let r=range.s.r;r<=Math.min(range.s.r+10,range.e.r);r++){
+        const cellE=ws[XLSX.utils.encode_cell({r,c:4})];
+        if(/정상가/.test(cellE?String(cellE.v||""):"")){headerRow=r;break;}
+      }
+      if(headerRow===-1) headerRow=3;
+      const rows=[];
+      for(let r=headerRow+1;r<=range.e.r;r++){
+        const code=ws[XLSX.utils.encode_cell({r,c:0})];
+        const name=ws[XLSX.utils.encode_cell({r,c:1})];
+        const list=ws[XLSX.utils.encode_cell({r,c:4})];
+        const listVal=list&&typeof list.v==="number"?list.v:parseFloat(String(list?.v||"").replace(/[^\d.]/g,""));
+        if(!listVal||listVal<=0) continue;
+        rows.push({row:r,code:code?.v||"",name:name?.v||"",list:Math.round(listVal)});
+      }
+      rawRef.current=rows; setShowResults(true);
+      if(!rows.length){ setSummary("데이터 행을 찾지 못했습니다. E열에 정상가가 있는지 확인하세요."); setProcessed([]); return; }
+      setProcessed(rows.map(r=>{const s=calcClassify(r.list);return {...r,slot:s,...calcReverse(r.list,s.disc,cpn)};}));
+      setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행)`);
+    }catch(err){ setShowResults(true); setProcessed([]); setSummary("파일 읽기 실패: "+(err?.message||err)); }
+  };
+  const download=async()=>{
+    if(!wbRef.current||!processed||!processed.length) return;
+    const XLSX=await getXLSX();
+    const ws=wbRef.current.Sheets[sheetRef.current];
+    // 원본 셀 보존 — 기존 서식(z)·스타일(s)은 유지하고 I열 값만 교체. 캐시 표시값(w)·수식(f)만 제거
+    processed.forEach(r=>{
+      const addr=XLSX.utils.encode_cell({r:r.row,c:8});
+      const prev=ws[addr]||{};
+      const next={...prev,t:"n",v:r.basePrice};
+      delete next.f; delete next.w;
+      ws[addr]=next;
+    });
+    const range=XLSX.utils.decode_range(ws["!ref"]);
+    if(range.e.c<8){ range.e.c=8; ws["!ref"]=XLSX.utils.encode_range(range); }
+    // I열 변경값을 참조하는 다른 셀 수식이 엑셀에서 자동 재계산되도록 (수식 자체는 보존)
+    const wb=wbRef.current;
+    wb.Workbook={...(wb.Workbook||{}),CalcPr:{...(wb.Workbook?.CalcPr||{}),fullCalcOnLoad:true}};
+    XLSX.writeFile(wb,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
+  };
+  const sec={marginBottom:10,border:`1px solid ${D.border}`,borderRadius:8,background:D.surface};
+  const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
+  const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:13,width:120,fontFamily:"inherit"};
+  const th={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right",fontSize:11};
+  const td={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right"};
+  const DISP_CAP=500;
+  const shown=processed?processed.slice(0,DISP_CAP):[];
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} className="salecalc"
+        style={{background:D.surface,borderRadius:12,width:"min(880px,96vw)",maxHeight:"92vh",overflowY:"auto",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
+        <style>{`.salecalc details[open]>summary .chev{transform:rotate(180deg);} .salecalc .chev{transition:transform .2s;display:inline-block;}`}</style>
+        <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px solid ${D.border}`,
+          padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
+          <b style={{fontSize:16,color:D.black,fontWeight:700}}>29CM 할인율 계산기</b>
+          <button onClick={onClose} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+            width:32,height:32,cursor:"pointer",fontSize:15,color:D.textMeta}}>✕</button>
+        </div>
+        <div style={{padding:"18px 20px 36px"}}>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:D.textSub,padding:"8px 12px",
+            background:D.surfaceAlt,borderRadius:6,marginBottom:12}}>
+            <span>표본 <b style={{color:D.black}}>2,184개</b></span>
+            <span>P75 할인율 = 최종 목표</span>
+            <span>판매가 <b style={{color:D.black}}>10원 단위</b></span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"12px 14px",
+            background:"#eef3ff",border:`1px solid ${D.blue}`,borderRadius:6,marginBottom:16}}>
+            <label style={{fontSize:13,fontWeight:700,color:D.blue}}>쿠폰율 (전 페이지 적용)</label>
+            <input type="number" min="0" max="60" step="1" value={coupon}
+              onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:80}}/>
+            <span style={{fontSize:12,color:D.blue}}>% — 1·3·4 모두에 적용</span>
+          </div>
+
+          <details className="sec" style={sec} open>
+            <summary style={summarySty}>1. 가격대별 분류 정의 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
+            <div style={{padding:"4px 14px 14px"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr>
+                  <th style={{...th,textAlign:"left",background:D.black,color:"#fff"}}>분류</th>
+                  <th style={{...th,background:D.black,color:"#fff"}}>정가 범위</th>
+                  <th style={{...th,background:D.black,color:"#fff"}}>표본</th>
+                  <th style={{...th,background:D.black,color:"#fff"}}>할인율 (P75)</th>
+                </tr></thead>
+                <tbody>
+                  {CALC_SLOTS.map(s=>(
+                    <tr key={s.id}>
+                      <td style={{...td,textAlign:"left",fontWeight:600,color:s.color}}>{s.name}</td>
+                      <td style={td}>{s.range}</td>
+                      <td style={td}>{wonFmt(s.n)}</td>
+                      <td style={{...td,fontWeight:700,color:s.color,background:s.bg}}>{s.disc}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <details className="sec" style={sec}>
+            <summary style={summarySty}>2. 역산 공식 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
+            <div style={{padding:"4px 14px 14px"}}>
+              <pre style={{fontFamily:"'SF Mono',Menlo,Consolas,monospace",fontSize:11,padding:12,
+                background:D.surfaceAlt,borderRadius:6,lineHeight:1.7,whiteSpace:"pre",overflowX:"auto",color:D.text,margin:0}}>{`// 최종 = 기본 × 쿠폰 (곱연산)
+기본 판매가 (I열) = 정가 × (1 − P75/100) ÷ (1 − 쿠폰율/100)
+기본 할인율       = 1 − (1 − P75/100) ÷ (1 − 쿠폰율/100)
+최종 노출가       = 기본 판매가 × (1 − 쿠폰율/100)
+                  = 정가 × (1 − P75/100)         (검증)
+
+※ 판매가는 10원 단위 반올림 (29CM 규정)
+※ 쿠폰율이 P75보다 크면 기본 할인 0%, 정가 그대로 I열 입력`}</pre>
+            </div>
+          </details>
+
+          <details className="sec" style={sec}>
+            <summary style={summarySty}>3. 단일 정가 시뮬레이션 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
+            <div style={{padding:"4px 14px 14px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:14,background:D.surfaceAlt,borderRadius:6}}>
+                <label style={{fontSize:12,color:D.textSub,minWidth:40}}>정가</label>
+                <input type="range" min="50000" max="300000" step="1000" value={Math.min(300000,Math.max(50000,listPrice||50000))}
+                  onChange={e=>setListPrice(parseInt(e.target.value)||0)} style={{flex:1,minWidth:120,accentColor:D.black}}/>
+                <input type="number" min="0" step="1000" value={listPrice}
+                  onChange={e=>setListPrice(Math.max(0,parseInt(e.target.value)||0))} style={inNum}/>
+                <span style={{fontSize:12,color:D.textSub}}>원</span>
+              </div>
+              {single&&(
+                <div style={{marginTop:12,padding:16,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
+                    <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}%</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10}}>
+                    {[
+                      {l:"정가",v:`₩${wonFmt(listPrice)}`},
+                      {l:"최종 목표 (P75)",v:`${slot.disc}%`,c:slot.color},
+                      {l:"기본 할인율",v:`${single.baseDisc}%`},
+                      {l:"기본 판매가 (I열)",v:`₩${wonFmt(single.basePrice)}`,hl:true},
+                      {l:"최종 노출가 (검증)",v:`₩${wonFmt(single.finalPrice)}`},
+                    ].map((s,i)=>(
+                      <div key={i} style={{padding:"10px 12px",borderRadius:6,
+                        background:s.hl?"#eef3ff":D.surfaceAlt,border:s.hl?`1px solid ${D.blue}`:"none"}}>
+                        <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>{s.l}</div>
+                        <div style={{fontSize:16,fontWeight:600,color:s.hl?D.blue:(s.c||D.text)}}>{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
+
+          <div style={sec}>
+            <div style={{padding:"11px 14px",fontSize:13,fontWeight:700,borderBottom:`1px solid ${D.border}`,color:D.black}}>4. 29CM 일괄할인 양식 업로드</div>
+            <div style={{padding:14}}>
+              <div onClick={()=>fileRef.current?.click()}
+                onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+                onDragLeave={()=>setDragOver(false)}
+                onDrop={e=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);}}
+                style={{border:`1px dashed ${dragOver?D.blue:D.borderMid}`,borderRadius:6,padding:22,textAlign:"center",
+                  cursor:"pointer",background:dragOver?"#eef3ff":D.surface}}>
+                <div style={{margin:"0 0 4px",fontSize:13,color:D.text}}>29CM 일괄할인 v2 양식을 끌어다 놓거나 클릭해서 업로드</div>
+                <div style={{fontSize:11,color:D.textMeta}}>E열 정상가 기준 분류 → 쿠폰율 역산한 기본 판매가를 I열에 입력</div>
+                <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
+                  onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);e.target.value="";}}/>
+              </div>
+              {showResults&&(
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"12px 0 8px",flexWrap:"wrap",gap:8}}>
+                    <span style={{fontSize:11,color:D.textMeta}}>{summary}{processed&&processed.length>DISP_CAP?` · 처음 ${DISP_CAP}행 표시(다운로드는 전체)`:""}</span>
+                    {processed&&processed.length>0&&(
+                      <button onClick={download} style={{background:D.black,color:"#fff",border:"none",padding:"9px 18px",
+                        fontSize:12,borderRadius:6,cursor:"pointer",fontWeight:600}}>I열 갱신본 다운로드</button>
+                    )}
+                  </div>
+                  {processed&&processed.length>0&&(
+                    <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                        <thead><tr>
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가"].map((h,i)=>(
+                            <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
+                              textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {shown.map((r,i)=>(
+                            <tr key={i}>
+                              <td title={r.name} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"left",
+                                minWidth:160,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(r.list)}</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>
+                                <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,background:r.slot.bg,color:r.slot.color,fontWeight:600,fontSize:10}}>{r.slot.name}</span>
+                              </td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600}}>{r.slot.disc}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{cpn}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{r.baseDisc}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // 첨부 파일 미리보기 모달 — 엑셀/CSV는 표, 이미지·PDF는 인라인, 그 외는 다운로드 안내
