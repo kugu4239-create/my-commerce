@@ -3946,22 +3946,20 @@ function computeDiscountMatrix(plan){
   const stack=coupons.filter(c=>c.stack);
   const solo =coupons.filter(c=>!c.stack);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
-  // 쿠폰은 겹쳐서(곱) 합치지 않고 각 쿠폰을 개별 열로 — 상품할인 × 그 쿠폰 한 장
-  const cols=[{key:"prod",label:"프런트 할인"}];
-  coupons.forEach((c,i)=>{
-    const nm=(c.name||"").trim()||`쿠폰${i+1}`;
-    const rate=+c.rate||0;
-    cols.push({key:"c"+i,coupon:true,label:c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`});
-  });
-  // 중복 가능 쿠폰이 2장 이상이면, 중간에 중복 불가 쿠폰이 끼어 있어도 중복 가능 쿠폰끼리 적층(곱)한 열 추가
-  if(stack.length>=2) cols.push({key:"stackAll",coupon:true,stackAll:true,label:`프런트+중복쿠폰 (${stack.map(c=>(+c.rate||0)+"%").join("·")})`});
+  // 중복 불가 쿠폰은 각각 개별 열, 중복 가능 쿠폰은 따로 표시하지 않고 마지막에 적층 최종 열 하나로
   const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
+  const cols=[{key:"prod",label:"프런트 할인"}];
+  solo.forEach((c,i)=>{
+    const nm=(c.name||"").trim()||`쿠폰${i+1}`;
+    cols.push({key:"solo"+i,coupon:true,label:`${nm} (${+c.rate||0}%)`});
+  });
+  if(stack.length>=1) cols.push({key:"stackAll",coupon:true,stackAll:true,label:`프런트+중복쿠폰 (${stack.map(c=>(+c.rate||0)+"%").join("·")})`});
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
-    coupons.forEach((c,i)=>{
-      cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+    solo.forEach((c,i)=>{
+      cells["solo"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
     });
-    if(stack.length>=2){
+    if(stack.length>=1){
       const applicable=stack.filter(c=>!exOf(c).includes(g.group));
       cells.stackAll=applicable.length?fin(g.rate,applicable.reduce((f,c)=>f*(1-(+c.rate||0)/100),1)):null;
     }
