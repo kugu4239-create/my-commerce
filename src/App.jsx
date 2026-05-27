@@ -3995,8 +3995,9 @@ function DiscountMatrix({ plan, compact=false }){
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
                 const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
-                return <td key={c.key} style={{...cell,...divAt(c,ci),fontWeight:isFinal?700:500,
-                  color:isFinal?D.red:D.textSub}}>{v==null?"—":v+"%"}</td>;
+                return <td key={c.key} style={{...cell,...divAt(c,ci),
+                  fontWeight:v==null?500:(isFinal?700:500),
+                  color:v==null?D.textMeta:(isFinal?D.red:D.textSub)}}>{v==null?"미적용":v+"%"}</td>;
               })}
             </tr>
           ))}
