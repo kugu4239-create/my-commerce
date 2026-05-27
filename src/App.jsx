@@ -5375,7 +5375,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 // ─────────────────────────────────────────────
 // 프로모션 임팩트 분석 모달 — 종료된 프로모션 임팩트 분석
 //   - 일별 매출: 직전 동일 기간(점선 전) → 프로모션 기간(점선 후)
-//   - Top 20: 프로모션 기간 + 해당 채널의 배송 완료된 상품 수량 랭킹
+//   - Top 20: 프로모션 기간(주문일 기준) + 해당 채널 · status="배송" 상품 판매 랭킹
 // ─────────────────────────────────────────────
 function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
   const ch=promo.platform;
@@ -5599,7 +5599,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         {/* Top 20 */}
         <div>
           <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
-            프로모션 기간 판매 Top 20 ({ch}, 배송 완료 기준)
+            프로모션 기간 판매 Top 20 ({ch}, 주문일 기준)
           </div>
           {top20.length===0?(
             <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
