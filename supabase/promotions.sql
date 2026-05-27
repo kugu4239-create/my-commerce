@@ -27,6 +27,7 @@ alter table public.promotions add column if not exists content       text;
 alter table public.promotions add column if not exists files         jsonb default '[]'::jsonb;
 alter table public.promotions add column if not exists discount_plan jsonb default '{}'::jsonb;
 alter table public.promotions add column if not exists pinned_products jsonb default '[]'::jsonb;
+alter table public.promotions add column if not exists submit_date    text;   -- 프로모션 제출일
 
 -- 2) 제출해야 하는 프로모션
 create table if not exists public.submit_promotions (
@@ -46,6 +47,16 @@ create table if not exists public.hidden_promo_log (
   hidden_at text,
   data      jsonb default '{}'::jsonb
 );
+
+-- 3-2) 채널별 프로모션 전략 메모 (좌측 책갈피 드로어)
+create table if not exists public.promo_strategy (
+  channel text primary key,
+  memo    text
+);
+alter table public.promo_strategy enable row level security;
+drop policy if exists "promo_strategy_all" on public.promo_strategy;
+create policy "promo_strategy_all" on public.promo_strategy
+  for all using (true) with check (true);
 
 -- 4) RLS (앱은 anon 키 사용 → 읽기/쓰기 허용)
 alter table public.promotions       enable row level security;
