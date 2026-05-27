@@ -4090,66 +4090,67 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       {/* 쿠폰 */}
       <div style={{flex:"1 1 540px",minWidth:340}}>
         <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (프런트 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
-        <table style={{width:"100%",maxWidth:760,borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr>
-            <th style={{...head,width:"16%",textAlign:"center"}}>중복</th>
-            <th style={{...head,width:"30%"}}>쿠폰명</th>
-            <th style={{...head,width:"14%"}}>할인율(%)</th>
-            <th style={{...head,width:"18%"}}>시작</th>
-            <th style={{...head,width:"18%"}}>종료</th>
-            <th style={{...head,width:"4%"}}/>
-          </tr></thead>
-          <tbody>
-            {coupons.map((row,i)=>(
-              <tr key={i}>
-                <td style={{padding:"3px 4px",textAlign:"center"}}>
-                  <button onClick={()=>{const n=[...coupons];n[i]={...row,stack:!row.stack};setCoupons(n);}}
-                    title="중복 적용 여부"
-                    style={{width:"100%",padding:"5px 4px",fontSize:11,fontWeight:600,cursor:"pointer",borderRadius:5,whiteSpace:"nowrap",
-                      border:`1px solid ${row.stack?D.blue:D.border}`,
-                      background:row.stack?`${D.blue}14`:D.surface,color:row.stack?D.blue:D.textMeta}}>
-                    {row.stack?"중복 가능":"중복 불가"}
-                  </button>
-                </td>
-                <td style={{padding:"3px 4px"}}>
-                  <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
-                    style={cellInp} placeholder="예: 신규가입 쿠폰"/>
-                  {matrixGroups.length>0&&(
-                    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4,alignItems:"center"}}>
-                      <span style={{fontSize:9,color:D.textMeta}}>적용</span>
-                      {matrixGroups.map(g=>{
-                        const off=(row.excludeGroups||[]).includes(g);
-                        return <button key={g} type="button" onClick={()=>toggleCouponGroup(i,g)}
-                          title={off?`${g} 적용 안 함 → 클릭 시 적용`:`${g} 적용 중 → 클릭 시 제외`}
-                          style={{fontSize:9,padding:"1px 6px",borderRadius:8,cursor:"pointer",lineHeight:1.4,
-                            border:`1px solid ${off?D.border:D.blue}`,background:off?D.surfaceAlt:`${D.blue}14`,
-                            color:off?D.textMeta:D.blue,textDecoration:off?"line-through":"none",fontWeight:600}}>{g}</button>;
-                      })}
-                    </div>
-                  )}
-                </td>
-                <td style={{padding:"3px 4px"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:760}}>
+          {coupons.map((row,i)=>(
+            <div key={i} style={{border:`1px solid ${row.stack?`${D.blue}55`:D.border}`,borderRadius:8,
+              padding:"10px 12px",background:row.stack?`${D.blue}08`:D.surface,
+              display:"flex",flexDirection:"column",gap:8}}>
+              {/* 중복 토글 · 쿠폰명 · 할인율 · 삭제 */}
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>{const n=[...coupons];n[i]={...row,stack:!row.stack};setCoupons(n);}}
+                  title="중복 적용 여부 (다른 쿠폰과 겹쳐 적용)"
+                  style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,cursor:"pointer",borderRadius:6,whiteSpace:"nowrap",
+                    border:`1px solid ${row.stack?D.blue:D.border}`,
+                    background:row.stack?`${D.blue}14`:D.surface,color:row.stack?D.blue:D.textMeta}}>
+                  {row.stack?"중복 가능":"중복 불가"}
+                </button>
+                <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
+                  style={{...cellInp,flex:"1 1 160px",minWidth:120}} placeholder="쿠폰명 (예: 신규가입 쿠폰)"/>
+                <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
                   <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
-                    style={cellInp} placeholder="0" min="0" max="100"/>
-                </td>
-                <td style={{padding:"3px 4px"}}>
+                    style={{...cellInp,width:62,textAlign:"right"}} placeholder="0" min="0" max="100"/>
+                  <span style={{fontSize:11,color:D.textMeta}}>%</span>
+                </div>
+                <button onClick={()=>{const n=coupons.filter((_,j)=>j!==i);setCoupons(n.length?n:[emptyCouponRow()]);}}
+                  title="쿠폰 삭제"
+                  style={{flexShrink:0,background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:15,lineHeight:1,padding:"0 2px"}}>✕</button>
+              </div>
+              {/* 기간 */}
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                <span style={{fontSize:10,color:D.textMeta,fontWeight:600,width:60,flexShrink:0}}>기간</span>
+                <div style={{minWidth:130}}>
                   <DateDrop id={`${idPrefix}_coupon${i}Start`} value={row.start}
                     onChange={v=>{const n=[...coupons];n[i]={...row,start:v};setCoupons(n);}}
-                    calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="날짜"/>
-                </td>
-                <td style={{padding:"3px 4px"}}>
+                    calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="시작"/>
+                </div>
+                <span style={{color:D.textMeta,fontSize:11}}>~</span>
+                <div style={{minWidth:130}}>
                   <DateDrop id={`${idPrefix}_coupon${i}End`} value={row.end}
                     onChange={v=>{const n=[...coupons];n[i]={...row,end:v};setCoupons(n);}}
-                    calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="날짜"/>
-                </td>
-                <td style={{padding:"3px 4px",textAlign:"right"}}>
-                  <button onClick={()=>{const n=coupons.filter((_,j)=>j!==i);setCoupons(n.length?n:[emptyCouponRow()]);}}
-                    style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료"/>
+                </div>
+              </div>
+              {/* 적용 상품군 */}
+              {matrixGroups.length>0&&(
+                <div style={{display:"flex",alignItems:"flex-start",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontSize:10,color:D.textMeta,fontWeight:600,width:60,flexShrink:0,paddingTop:3}}>적용 상품군</span>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4,flex:1}}>
+                    {matrixGroups.map(g=>{
+                      const off=(row.excludeGroups||[]).includes(g);
+                      return <button key={g} type="button" onClick={()=>toggleCouponGroup(i,g)}
+                        title={off?`${g} 적용 안 함 → 클릭 시 적용`:`${g} 적용 중 → 클릭 시 제외`}
+                        style={{fontSize:10,padding:"2px 9px",borderRadius:12,cursor:"pointer",lineHeight:1.5,
+                          border:`1px solid ${off?D.border:D.blue}`,background:off?D.surfaceAlt:`${D.blue}14`,
+                          color:off?D.textMeta:D.blue,textDecoration:off?"line-through":"none",fontWeight:600}}>
+                        {off?"":"✓ "}{g}
+                      </button>;
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
         <div style={{display:"flex",gap:6,marginTop:6}}>
           <button onClick={()=>setCoupons([...coupons,emptyCouponRow(false)])}
             style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
