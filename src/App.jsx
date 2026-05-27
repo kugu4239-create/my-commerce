@@ -3955,7 +3955,8 @@ function computeDiscountMatrix(plan){
   coupons.forEach((c,i)=>{
     const nm=(c.name||"").trim()||`쿠폰${i+1}`;
     const rate=+c.rate||0;
-    cols.push({key:"c"+i,coupon:true,label:c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`});
+    const sub=c.stack?`(중복쿠폰·${rate}%)`:`(단독쿠폰·${rate}%)`;
+    cols.push({key:"c"+i,coupon:true,name:nm,sub,label:`${nm} ${sub}`});
   });
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
@@ -3977,8 +3978,8 @@ function DiscountMatrix({ plan, compact=false }){
   const m=computeDiscountMatrix(plan);
   if(!m.hasGroup) return null;
   const anyCoupon=m.cols.some(c=>c.coupon);
-  const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"right",whiteSpace:"nowrap"};
-  const th={...cell,color:D.textMeta,fontWeight:600,borderBottom:`1px solid ${D.border}`};
+  const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"center",whiteSpace:"nowrap"};
+  const th={...cell,color:D.textSub,fontWeight:600,borderBottom:`1px solid ${D.border}`,verticalAlign:"bottom"};
   // 상품(상품군·상품할인)과 쿠폰 열 사이 구분선만 (개별 열 강조 없음)
   const divAt=(c,ci)=>(c.coupon&&!m.cols[ci-1]?.coupon)?{borderLeft:`2px solid ${D.borderMid}`}:null;
   return (
@@ -3986,7 +3987,16 @@ function DiscountMatrix({ plan, compact=false }){
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
         <thead><tr>
           <th style={{...th,textAlign:"left"}}>상품군</th>
-          {m.cols.map((c,ci)=>(<th key={c.key} style={{...th,...divAt(c,ci)}}>{c.label}</th>))}
+          {m.cols.map((c,ci)=>(
+            <th key={c.key} style={{...th,...divAt(c,ci)}} title={c.label}>
+              {c.name?(
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+                  <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                  <span style={{fontWeight:400,fontSize:compact?9:10,color:D.textMeta}}>{c.sub}</span>
+                </div>
+              ):c.label}
+            </th>
+          ))}
         </tr></thead>
         <tbody>
           {m.rows.map((r,i)=>(
