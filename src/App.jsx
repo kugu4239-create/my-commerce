@@ -4214,31 +4214,18 @@ function DiscountPlanView({ plan }) {
 
   return (
     <div style={{fontSize:11,lineHeight:1.75,minWidth:140,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
-      {/* 상품군 할인율 — 뱃지 형태 (뮤트 파스텔, 색 순환) */}
+      {/* 상품군 할인율 — 뱃지 형태 (색 의미 없어 흑/백 통일) */}
       {cleanedProducts.length>0&&(
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
-          {cleanedProducts.map((r,i)=>{
-            const PASTEL=[
-              {bg:"#FCE4E4",bd:"#F2C6C6",fg:"#9A5A5A"}, // dusty rose
-              {bg:"#E5EEF8",bd:"#C4D6E8",fg:"#4F7396"}, // muted blue
-              {bg:"#E8F1E4",bd:"#CADDC1",fg:"#5E7E50"}, // sage green
-              {bg:"#F4ECDB",bd:"#E0CFAA",fg:"#8A6F3A"}, // muted gold
-              {bg:"#EEE5F4",bd:"#D2C0E0",fg:"#6E5491"}, // dusty lavender
-              {bg:"#E4EEF0",bd:"#C1D4D8",fg:"#4F7679"}, // soft teal
-              {bg:"#F4E3E9",bd:"#E0BFCC",fg:"#8E5B73"}, // mauve
-              {bg:"#EAEAEA",bd:"#CFCFCF",fg:"#555555"}, // neutral grey
-            ];
-            const c=PASTEL[i%PASTEL.length];
-            return(
-              <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
-                padding:"2px 7px",background:c.bg,border:`1px solid ${c.bd}`,
-                color:c.fg,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
-                <span>{r.group||"전체"}</span>
-                <span style={{width:1,height:10,background:c.bd,display:"inline-block"}}/>
-                <b style={{fontWeight:700}}>{r.rate||0}%</b>
-              </span>
-            );
-          })}
+          {cleanedProducts.map((r,i)=>(
+            <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
+              padding:"2px 7px",background:"#fff",border:`1px solid ${D.black}`,
+              color:D.black,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
+              <span>{r.group||"전체"}</span>
+              <span style={{width:1,height:10,background:D.black,display:"inline-block"}}/>
+              <b style={{fontWeight:700}}>{r.rate||0}%</b>
+            </span>
+          ))}
         </div>
       )}
       {/* 상품군 × 시나리오 최종 할인율 매트릭스 (쿠폰은 매트릭스 열로 표시) */}
