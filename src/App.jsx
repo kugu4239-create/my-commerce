@@ -5209,7 +5209,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>기간</div>
                       {[p.start_date,p.end_date].map((dt,i)=>{
                         const [d,t]=(dt||"").split("T");
-                        return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
+                        const wd=d?["일","월","화","수","목","금","토"][new Date(d+"T00:00:00").getDay()]:"";
+                        return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{wd&&<span style={{fontSize:12,color:D.textSub,marginLeft:3}}>({wd})</span>}{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
                       })}
                     </div>
                     <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
