@@ -3947,7 +3947,7 @@ function computeDiscountMatrix(plan){
   const solo =coupons.filter(c=>!c.stack);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
   // 쿠폰은 겹쳐서(곱) 합치지 않고 각 쿠폰을 개별 열로 — 상품할인 × 그 쿠폰 한 장
-  const cols=[{key:"prod",label:"상품할인"}];
+  const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
     const nm=(c.name||"").trim()||`쿠폰${i+1}`;
     const rate=+c.rate||0;
@@ -4041,7 +4041,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"flex-start",marginBottom:12}}>
       {/* 상품 할인 */}
       <div style={{flex:"0 1 520px",minWidth:300}}>
-        <div style={lbl}>상품 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 (전체 동일 기간)</span></div>
+        <div style={lbl}>프런트 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 (전체 동일 기간)</span></div>
         {/* 공통 기간 */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6,maxWidth:520}}>
           <div>
@@ -4089,7 +4089,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
 
       {/* 쿠폰 */}
       <div style={{flex:"1 1 540px",minWidth:340}}>
-        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
+        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (프런트 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
         <table style={{width:"100%",maxWidth:760,borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
             <th style={{...head,width:"16%",textAlign:"center"}}>중복</th>
@@ -4164,7 +4164,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       {/* 실시간 최종 할인율 매트릭스 (상품군 × 시나리오) */}
       {computeDiscountMatrix(plan).hasGroup&&(
         <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${D.border}`}}>
-          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(상품할인×쿠폰) · 빨강=예상 최종</span></div>
+          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 빨강=예상 최종</span></div>
           <DiscountMatrix plan={plan}/>
         </div>
       )}
@@ -5555,6 +5555,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
 
   // 핀셋 상품 — 프로모션 전/후 주문 수량 비교 (해당 채널 한정, order_date 기준, 모든 상태 = 주문 수량)
   const pinned=promo.pinned_products||[];
+  const pinnedNames=useMemo(()=>new Set(pinned.map(p=>p.name)),[pinned]);
   const pinnedComparison=useMemo(()=>{
     if(!pinned.length) return [];
     const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
@@ -5719,7 +5720,13 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                   {top20.map((p,i)=>(
                     <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
                       <td style={{padding:"5px 7px",color:D.textMeta}}>{i+1}</td>
-                      <td style={{padding:"5px 7px",color:D.text,maxWidth:380,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>{p.name}</td>
+                      <td style={{padding:"5px 7px",color:D.text,maxWidth:380}} title={p.name}>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{p.name}</span>
+                          {pinnedNames.has(p.name)&&<span style={{flexShrink:0,fontSize:9,fontWeight:700,color:D.blue,
+                            background:`${D.blue}14`,border:`1px solid ${D.blue}55`,borderRadius:4,padding:"1px 5px",whiteSpace:"nowrap"}}>핀셋 상품</span>}
+                        </div>
+                      </td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.blue,fontWeight:600}}>{p.orders.toLocaleString()}</td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.qty.toLocaleString()}</td>
                     </tr>
