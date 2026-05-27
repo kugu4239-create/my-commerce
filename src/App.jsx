@@ -178,6 +178,11 @@ const normCS = raw => {
   return "배송";
 };
 
+// 총(gross) 출고 판정 — 실제 출고된 행: 순배송 + 배송후 취소(반품) + 배송후 교환.
+// 배송전 취소('취소')·미배송('주문')은 제외. 반품/교환은 별도 status 로 계속 집계되므로
+// '배송'(총 출고)은 반품·교환을 부분집합으로 포함한다. (반품률 분모 = 총 출고)
+const wasShipped = s => s === "배송" || s === "반품" || s === "교환";
+
 function fmtEokMan(n){
   const eok=Math.floor(n/1e8);
   const man=Math.round((n%1e8)/1e4);
@@ -962,7 +967,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
       const ch = r.channel || "미분류";
       if (!prodMap[key]) prodMap[key] = { name:key, stock:0, shipped:0, returned:0, exchanged:0, byChannel:{} };
       if (!prodMap[key].byChannel[ch]) prodMap[key].byChannel[ch] = { shipped:0, returned:0, exchanged:0 };
-      if (r.status==="배송")  { prodMap[key].shipped++;   prodMap[key].byChannel[ch].shipped++; }
+      if (wasShipped(r.status)) { prodMap[key].shipped++;   prodMap[key].byChannel[ch].shipped++; }
       if (r.status==="반품")  { prodMap[key].returned++;  prodMap[key].byChannel[ch].returned++; }
       if (r.status==="교환")  { prodMap[key].exchanged++; prodMap[key].byChannel[ch].exchanged++; }
       if (!prodDates[key]) prodDates[key] = { min: r.order_date, max: r.order_date };
@@ -980,7 +985,7 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
       const ch = r.channel||"미분류";
       if (!chanMap[ch]) chanMap[ch] = { name:ch, shipped:0, returned:0, exchanged:0, byProd:{} };
       if (!chanMap[ch].byProd[r.product_name||"미분류"]) chanMap[ch].byProd[r.product_name||"미분류"] = { shipped:0, returned:0, exchanged:0 };
-      if (r.status==="배송") { chanMap[ch].shipped++; chanMap[ch].byProd[r.product_name||"미분류"].shipped++; }
+      if (wasShipped(r.status)) { chanMap[ch].shipped++; chanMap[ch].byProd[r.product_name||"미분류"].shipped++; }
       if (r.status==="반품") { chanMap[ch].returned++; chanMap[ch].byProd[r.product_name||"미분류"].returned++; }
       if (r.status==="교환") { chanMap[ch].exchanged++; chanMap[ch].byProd[r.product_name||"미분류"].exchanged++; }
     });
@@ -1275,14 +1280,14 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
 
   // ── [배송·반품 KPI] (온라인만, 매장 제외) ─────────────
   // 소스: 이지어드민 orders CSV — 오프라인 채널(매장 판매 머지 행 포함)은 제외
-  // 계산:
-  //   - 배송 수    = COUNT(DISTINCT order_no||order_id) where status="배송"
+  // 계산: ('배송'=총 출고 = 배송+배송후 취소(반품)+배송후 교환. 배송전 취소·미배송 제외)
+  //   - 배송 수    = COUNT(DISTINCT order_no||order_id) where 총 출고
   //   - 반품 수    = COUNT(DISTINCT order_no||order_id) where status="반품"
-  //   - 배송 장수  = SUM(qty) where 배송
+  //   - 배송 장수  = SUM(qty) where 총 출고
   //   - 반품 장수  = SUM(qty) where 반품
-  //   - 반품률     = 반품 장수 / 배송 장수 * 100 (장수 기준 — 부분 반품/교환 반영)
+  //   - 반품률     = 반품 장수 / 총 출고 장수 * 100 (장수 기준 — 분모는 반품·교환 포함)
   const onlineRows       = orderRows.filter(r=>!isOffline(r));
-  const shippedRows      = onlineRows.filter(r=>r.status==="배송");
+  const shippedRows      = onlineRows.filter(r=>wasShipped(r.status));
   const returnedRows     = onlineRows.filter(r=>r.status==="반품");
   const totalShipped     = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalReturned    = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
@@ -1318,7 +1323,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const storeMetrics      = {storeRevenue,storeOrderCount,storeReturnedCount,storeQty,storeReturnedQty,storeAOV};
 
   // ── [반품률] (온라인 전용) ─────────────────────────────
-  // 반품률 = 온라인 반품 qty ÷ 온라인 배송 qty × 100
+  // 반품률 = 온라인 반품 qty ÷ 온라인 총 출고 qty × 100 (분모는 반품·교환 포함)
   // 매장 배송 qty 는 분모에서 제외 (매장은 주문 수량 KPI 에만 합산)
   //   - 매장 반품도 집계 제외 (loadData 에서 status='반품' 필터링됨)
   //   - 노출용 두 합산 값(totalDeliveredQtyAll/totalReturnedQtyAll)은 매장 0 이라 totalDeliveredQty/totalReturnedQty 와 동일
@@ -1349,11 +1354,11 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   });
   // (2),(3) 이지어드민 행 순회 — 배송/반품/전체 고유 주문번호 + 장수 + 객단가 금액 맵
   const chOrderAmt={};      // 채널별 {oid: amount} — 객단가 분자
-  const chOrderIds={};      // 채널별 Set(oid) where 배송 — 객단가 분모 / 배송 카운트
+  const chOrderIds={};      // 채널별 Set(oid) where 총 출고(배송+반품+교환) — 배송 카운트
   const chReturnedIds={};   // 채널별 Set(oid) where 반품 — 반품 카운트
   const chAllOrderIds={};   // 채널별 Set(oid) 모든 상태 — 판매처 상세의 '주문 수' 컬럼용
   const chOrderedQty={};    // 채널별 SUM(qty) 모든 상태 — '주문 장수'
-  const chShippedQty={};    // 채널별 SUM(qty) 배송   — '배송 장수' + 반품률 분모
+  const chShippedQty={};    // 채널별 SUM(qty) 총 출고 — '배송 장수' + 반품률 분모(반품·교환 포함)
   const chReturnedQty={};   // 채널별 SUM(qty) 반품   — '반품 장수' + 반품률 분자
   const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
   orderRows.forEach(r=>{
@@ -1378,10 +1383,11 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       }
       chReturnedQty[ch]=(chReturnedQty[ch]||0)+qty;
     }
-    if(status!=="배송") return;
+    if(!wasShipped(status)) return;   // 취소·주문 제외 (배송+반품+교환 = 총 출고)
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
     chShippedQty[ch]=(chShippedQty[ch]||0)+qty;
+    if(status!=="배송") return;       // 객단가(AOV) 금액 맵은 순배송만 누적
     if(!chOrderAmt[ch]) chOrderAmt[ch]={};
     if(PAYMENT_CH.has(ch)){
       // 자사몰: 결제금액은 동일 주문의 각 행에 중복 기록 → 덮어쓰기(= 사실상 MAX)
@@ -1511,7 +1517,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     const ym=r.order_date?r.order_date.slice(0,7):null;
     if(!ym) return;
     if(!byMonth[ym]) byMonth[ym]={month:ym,shipped:0,returned:0};
-    if(r.status==="배송") byMonth[ym].shipped++;
+    if(wasShipped(r.status)) byMonth[ym].shipped++;   // 총 출고(배송+반품+교환)
     if(r.status==="반품") byMonth[ym].returned++;
   });
   const monthlyData=Object.values(byMonth)
@@ -1952,7 +1958,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const byDay={};
       orders.filter(r=>r.order_date===yStr).forEach(r=>{
         if(!byDay[yStr]) byDay[yStr]={date:yStr.slice(5),shipped:0};
-        if(r.status==="배송") byDay[yStr].shipped++;
+        if(wasShipped(r.status)) byDay[yStr].shipped++;
       });
       return Object.values(byDay);
     }
@@ -1965,7 +1971,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       orders.filter(r=>r.order_date>=cut&&r.order_date<=today).forEach(r=>{
         const d=r.order_date;
         if(!byDay[d]) byDay[d]={date:d.slice(5),shipped:0};
-        if(r.status==="배송") byDay[d].shipped++;
+        if(wasShipped(r.status)) byDay[d].shipped++;
       });
       return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
     }
@@ -1974,11 +1980,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const src=orders.filter(r=>r.order_date>=shippingCustomStart&&r.order_date<=shippingCustomEnd);
       if(diff<=60){
         const byDay={};
-        src.forEach(r=>{const d=r.order_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(r.status==="배송")byDay[d].shipped++;});
+        src.forEach(r=>{const d=r.order_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(wasShipped(r.status))byDay[d].shipped++;});
         return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
       }
       const byMonth={};
-      src.forEach(r=>{const ym=r.order_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(r.status==="배송")byMonth[ym].shipped++;});
+      src.forEach(r=>{const ym=r.order_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(wasShipped(r.status))byMonth[ym].shipped++;});
       return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
     }
     const c=new Date(); c.setMonth(c.getMonth()-3);
@@ -1987,7 +1993,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     orders.filter(r=>r.order_date>=cut).forEach(r=>{
       const ym=r.order_date?.slice(0,7); if(!ym) return;
       if(!byMonth[ym]) byMonth[ym]={date:ym,shipped:0};
-      if(r.status==="배송") byMonth[ym].shipped++;
+      if(wasShipped(r.status)) byMonth[ym].shipped++;
     });
     return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
   },[orders,shippingPeriod,shippingCustomStart,shippingCustomEnd]);
@@ -2899,10 +2905,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         /* ── 배송 (KPI 배송 건) ── */
         else if(kpiModal==="shipped"){
           modalTitle="배송 소스";
-          // 배송 건: 이지어드민 orders 중 status="배송", 매장 제외
+          // 배송 건: 이지어드민 orders 중 총 출고(배송+배송후 취소/교환), 매장 제외
           const OFFL2=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
           const isOff=r=>OFFL2.has(r.channel||"");
-          const shipped=filteredOrders.filter(r=>r.status==="배송"&&!isOff(r));
+          const shipped=filteredOrders.filter(r=>wasShipped(r.status)&&!isOff(r));
           const byCh={};
           shipped.forEach(r=>{
             const ch=normCh(r.channel);
@@ -2925,9 +2931,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>주문·배송 업로드 데이터</b> (orders, status="배송")<br/>
-                <b>배송 건</b> = COUNT(DISTINCT 주문번호) where status="배송"<br/>
-                <b>배송 수량(장)</b> = SUM(qty) where status="배송"
+                소스: <b>주문·배송 업로드 데이터</b> (orders, 실제 출고 = 배송 + 배송후 취소(반품) + 배송후 교환)<br/>
+                <b>배송 건</b> = COUNT(DISTINCT 주문번호) where 실제 출고<br/>
+                <b>배송 수량(장)</b> = SUM(qty) where 실제 출고 · 반품/교환은 별도 KPI 로도 집계
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <div>
@@ -2983,20 +2989,21 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         /* ── 반품률 ── */
         else if(kpiModal==="returnRate"){
           modalTitle="반품률 소스";
-          // 반품률 = 반품 수량(장) / 배송 수량(장) * 100 — 동기간 내, 매장 제외
+          // 반품률 = 반품 수량(장) / 총 출고 수량(장) * 100 — 동기간 내, 매장 제외
+          //   총 출고 = 배송 + 배송후 취소(반품) + 배송후 교환 (반품은 분모에도 포함)
           const OFFL3=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
           const isOff=r=>OFFL3.has(r.channel||"");
           const byCh={};
-          filteredOrders.filter(r=>!isOff(r)&&(r.status==="배송"||r.status==="반품")).forEach(r=>{
+          filteredOrders.filter(r=>!isOff(r)&&wasShipped(r.status)).forEach(r=>{
             const ch=normCh(r.channel);
             if(!byCh[ch]) byCh[ch]={shippedQty:0,returnedQty:0};
             const q=r.qty||1;
-            if(r.status==="배송") byCh[ch].shippedQty+=q;
-            else if(r.status==="반품") byCh[ch].returnedQty+=q;
+            byCh[ch].shippedQty+=q;                      // 총 출고
+            if(r.status==="반품") byCh[ch].returnedQty+=q; // 반품(분자) — 분모에도 포함됨
           });
           const chRows=Object.entries(byCh).sort((a,b)=>b[1].returnedQty-a[1].returnedQty);
           // 매장 반품률 — 매장 판매 데이터에서 별도 계산 (배송 카운트와 무관)
-          const storeShippedQty =filteredStoreSales.filter(r=>r.status==="배송").reduce((s,r)=>s+(r.qty||1),0);
+          const storeShippedQty =filteredStoreSales.filter(r=>wasShipped(r.status)).reduce((s,r)=>s+(r.qty||1),0);
           const storeReturnedQty=filteredStoreSales.filter(r=>r.status==="반품").reduce((s,r)=>s+(r.qty||1),0);
           const storeRate=storeShippedQty>0?(storeReturnedQty/storeShippedQty*100):0;
           const hasStore=storeShippedQty>0||storeReturnedQty>0;
@@ -3017,8 +3024,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>주문·배송 업로드 데이터</b> (온라인 채널, status="배송"·"반품") · <b>매장 판매 데이터</b> (오프라인 스토어, status="배송"·"반품")<br/>
-                <b>반품률</b> = <b>반품 수량(장) ÷ 배송 수량(장)</b> × 100 (동기간 내, 장수 단위 · 온라인과 매장 각각 별도 계산)<br/>
+                소스: <b>주문·배송 업로드 데이터</b> (온라인 채널, 총 출고·반품) · <b>매장 판매 데이터</b> (오프라인 스토어)<br/>
+                <b>반품률</b> = <b>반품 수량(장) ÷ 총 출고 수량(장)</b> × 100 (총 출고 = 배송+반품+교환 · 온라인과 매장 각각 별도 계산)<br/>
                 ※ 반품은 배송 완료 이후부터 접수되므로 단기간(어제·7일) 기준은 0%에 가깝게 보일 수 있습니다. 최근 한달·3개월이 더 정확합니다.
               </div>
             <div style={{display:"grid",gridTemplateColumns:["yd","7d"].includes(period)?"1fr":"1fr 1fr",gap:20}}>
@@ -6653,21 +6660,26 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
             const deliveryDateVal=toDate(r[deliveryDateCol]);
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
-            // 상태 추론 우선순위: CS → 상태 → 기본 "배송"
-            //   normCS: 배송전+취소→"취소", 그 외 취소→"반품", 교환→"교환"
-            const rawStatus=csRaw?normCS(csRaw):(statusRaw?normCS(statusRaw):"배송");
-            let status=rawStatus;
-            // 배송 전 취소/교환은 실제 배송 발생 여부에 따라 재분류
-            //   - 배송일 있음: 결국 배송됨 → "배송" 으로 카운트
-            //   - 배송일 없음 + 교환: "주문" (교환으로 잡지 않음)
-            //   - 배송일 없음 + 취소: "취소" 유지
-            const csLower=csRaw.toLowerCase().replace(/\s/g,"");
-            const isPreShip=csLower.includes("배송전");
-            if(isPreShip&&deliveryDateVal) status="배송";
-            else if(isPreShip&&!deliveryDateVal&&rawStatus==="교환") status="주문";
-            // 배송일 없으면 실제 배송 전 → "주문"
-            if(status==="배송"&&!deliveryDateVal) status="주문";
-            // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (배송일 있는 경우만 fire)
+            // ── 상태 분류 (파싱 집계 규칙) ──────────────────────────
+            //   주문 KPI    = 모든 행 (상태 무관)
+            //   배송(총 출고) = 상태 컬럼 = "배송"  (CS 무관)
+            //   상태=배송 + CS 키워드: 교환→"교환", 취소→"반품" (둘 다 '배송'에 포함되는 부분집합)
+            //   상태≠배송(접수/송장 등): CS 취소→"취소"(판매 Top 제외), 그 외→"주문"  (미출고)
+            const csN=csRaw.toLowerCase().replace(/\s/g,"");
+            let status;
+            if(statusCol&&statusRaw){
+              if(statusRaw==="배송"){
+                status = csN.includes("교환") ? "교환"
+                       : csN.includes("취소") ? "반품"
+                       : "배송";
+              } else {
+                status = csN.includes("취소") ? "취소" : "주문";
+              }
+            } else {
+              // 상태 컬럼 없는 파일(구 형식) — CS 기반 호환 분류
+              status = csRaw ? normCS(csRaw) : "배송";
+            }
+            // CORD prefix = 29CM 취소 주문 → 반품으로 강제
             if(status==="배송"&&/^CORD/i.test(oid)) status="반품";
             const qty=toNum(r[qtyCol])||1;
             const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
