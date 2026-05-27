@@ -11182,7 +11182,7 @@ function CaptureBtn({cardRef,filename,DC}){
   );
 }
 
-function DataCompare({revenues,storeSales=[],orders=[]}){
+function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
   const [volUnit,setVolUnit]=useState("month");
   const [customStart,setCustomStart]=useState("");
   const [customEnd,setCustomEnd]=useState("");
@@ -11393,6 +11393,9 @@ function DataCompare({revenues,storeSales=[],orders=[]}){
 
       {/* 리오더 계산기는 '리오더 계산기' 탭으로 분리됨 — 업로더(위)는 그대로 유지되어 계산 소스 로직 보존 */}
       <div ref={reorderSecRef} style={{height:1}}/>
+
+      {/* ⑤ 물류 플로우 — 기존 '물류 플로우' 탭에서 이동 */}
+      <LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>
     </div>
   );
 }
@@ -13366,7 +13369,7 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","flow","promo","input","compare","impact"];
+  const validPages=["dashboard","promo","input","compare","impact"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
@@ -13492,7 +13495,6 @@ export default function App() {
     {key:"dashboard",label:"대시보드"},
     {key:"compare",label:"데이터 컴페어"},
     {key:"promo",label:"프로모션 플로우"},
-    {key:"flow",label:"물류 플로우"},
     {key:"impact",label:"콘텐츠 임팩트"},
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
@@ -13546,9 +13548,8 @@ export default function App() {
           <Dashboard orders={orders} stocks={stocks} revenues={revenues} storeSales={storeSales} ts={ts}
             onRefresh={loadData}/>
         )}
-        {page==="flow"&&<LogisticsFlow orders={orders} stocks={stocks} ts={ts}/>}
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales} orders={orders}/>}
-        {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders}/>}
+        {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders} stocks={stocks} ts={ts}/>}
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
         {page==="reorder"&&<ReorderPage/>}
         {page==="input"&&(
