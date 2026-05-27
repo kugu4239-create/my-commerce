@@ -4616,7 +4616,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [gapOpen,setGapOpen]=useState(false);
   const [calcOpen,setCalcOpen]=useState(false);
   const promoGaps=useMemo(()=>{
-    const addDays=(d,n)=>new Date(new Date(d+"T00:00:00").getTime()+n*86400000).toISOString().slice(0,10);
+    // UTC 기준 날짜 연산 — 로컬(KST) 파싱 후 toISOString 변환 시 하루 밀리는 버그 방지
+    const addDays=(d,n)=>{const dt=new Date(d+"T00:00:00Z");dt.setUTCDate(dt.getUTCDate()+n);return dt.toISOString().slice(0,10);};
     // channels=null → 전체 채널, 배열이면 해당 채널만 통합해 빈 기간 계산
     const gapsFor=(channels)=>{
       const ivs=promos.filter(p=>!hiddenIds.has(p.id)&&p.start_date&&p.end_date&&(!channels||channels.includes(p.platform)))
