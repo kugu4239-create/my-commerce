@@ -3908,9 +3908,9 @@ function SubmitEodPicker({value,onChange}){
 // 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
 function emptyProductRow(){return{group:"",rate:""};}
-function emptyCouponRow(stack=false){return{name:"",rate:"",start:"",end:"",stack};}
+function emptyCouponRow(stack=false){return{name:"",rate:"",start:"",end:"",stack,excludeGroups:[]};}
 function normalizePlan(p){
-  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack}));
+  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack,excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[]}));
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
     return{
@@ -3936,8 +3936,8 @@ function normalizePlan(p){
 }
 
 // 할인율 매트릭스 — 곱연산(가격 기준): 최종 = 1-(1-d_p)*factor
-//   열(시나리오): 상품할인 / 중복적층(중복쿠폰 전부 곱) / 단일(중복불가) 쿠폰 각각
-//   행: 상품군. row.finalRate = 상품할인 × 중복적층(중복쿠폰 없으면 상품할인)
+//   열: 상품할인 + 쿠폰별 개별 시나리오 (중복 쿠폰도 겹치지 않고 한 장씩 따로 표시)
+//   행: 상품군
 function computeDiscountMatrix(plan){
   const p=normalizePlan(plan);
   const groups=p.products.rows.filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
@@ -3945,20 +3945,21 @@ function computeDiscountMatrix(plan){
   const coupons=p.coupons.filter(c=>(+c.rate||0)>0||(c.name||"").trim());
   const stack=coupons.filter(c=>c.stack);
   const solo =coupons.filter(c=>!c.stack);
-  const stackFactor=stack.reduce((f,c)=>f*(1-(+c.rate||0)/100),1);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
+  // 쿠폰은 겹쳐서(곱) 합치지 않고 각 쿠폰을 개별 열로 — 상품할인 × 그 쿠폰 한 장
   const cols=[{key:"prod",label:"상품할인"}];
-  if(stack.length){
-    const nm=stack.map(c=>(c.name||"").trim()||"쿠폰").join("+");
-    const rt=stack.map(c=>(+c.rate||0)+"%").join("+");
-    cols.push({key:"stack",label:`${nm} (중복쿠폰·${rt})`});
-  }
-  solo.forEach((c,i)=>cols.push({key:"solo"+i,label:`${(c.name||"").trim()||`쿠폰${i+1}`} (${(+c.rate||0)}%)`}));
+  coupons.forEach((c,i)=>{
+    const nm=(c.name||"").trim()||`쿠폰${i+1}`;
+    const rate=+c.rate||0;
+    cols.push({key:"c"+i,coupon:true,label:c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`});
+  });
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
-    if(stack.length) cells.stack=fin(g.rate,stackFactor);
-    solo.forEach((c,i)=>{cells["solo"+i]=fin(g.rate,1-(+c.rate||0)/100);});
-    return {group:g.group,rate:g.rate,cells,finalRate:stack.length?cells.stack:cells.prod};
+    coupons.forEach((c,i)=>{
+      const ex=Array.isArray(c.excludeGroups)?c.excludeGroups:[];
+      cells["c"+i]=ex.includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+    });
+    return {group:g.group,rate:g.rate,cells};
   });
   return {groups,coupons,stack,solo,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
 }
@@ -3967,23 +3968,26 @@ function computeDiscountMatrix(plan){
 function DiscountMatrix({ plan, compact=false }){
   const m=computeDiscountMatrix(plan);
   if(!m.hasGroup) return null;
+  const anyCoupon=m.cols.some(c=>c.coupon);
   const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"right",whiteSpace:"nowrap"};
   const th={...cell,color:D.textMeta,fontWeight:600,borderBottom:`1px solid ${D.border}`};
+  // 상품(상품군·상품할인)과 쿠폰 열을 시각적으로 구분하는 세로 구분선
+  const divAt=ci=>m.cols[ci].coupon&&!m.cols[ci-1]?.coupon?{borderLeft:`2px solid ${D.borderMid}`}:null;
   return (
     <div style={{overflowX:"auto",marginTop:6}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
         <thead><tr>
           <th style={{...th,textAlign:"left"}}>상품군</th>
-          {m.cols.map(c=>(<th key={c.key} style={th}>{c.label}</th>))}
+          {m.cols.map((c,ci)=>(<th key={c.key} style={{...th,...divAt(ci)}}>{c.label}</th>))}
         </tr></thead>
         <tbody>
           {m.rows.map((r,i)=>(
             <tr key={i}>
               <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}} title={r.group}>{r.group}</td>
-              {m.cols.map(c=>{
+              {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
-                const isFinal=(m.stack.length?c.key==="stack":c.key==="prod");
-                return <td key={c.key} style={{...cell,fontWeight:isFinal?700:500,
+                const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
+                return <td key={c.key} style={{...cell,...divAt(ci),fontWeight:isFinal?700:500,
                   color:isFinal?D.red:D.textSub}}>{v==null?"—":v+"%"}</td>;
               })}
             </tr>
@@ -4013,6 +4017,16 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     products:plan.products,
     coupons:arr,
   });
+  // 매트릭스에 쓰이는 상품군 목록 (쿠폰별 적용 여부 토글용)
+  const matrixGroups=[...new Set(productRows
+    .filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
+    .map(r=>(r.group||"").trim()||"전체"))];
+  const toggleCouponGroup=(i,g)=>{
+    const c=coupons[i];
+    const ex=Array.isArray(c.excludeGroups)?c.excludeGroups:[];
+    const next=ex.includes(g)?ex.filter(x=>x!==g):[...ex,g];
+    const n=[...coupons];n[i]={...c,excludeGroups:next};setCoupons(n);
+  };
 
   const cellInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:5,
     padding:"4px 7px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box",
@@ -4024,8 +4038,9 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     <div style={{border:`1px solid ${D.border}`,borderRadius:6,padding:"10px 12px",background:D.surface}}>
       <div style={{fontWeight:700,fontSize:13,color:D.black,marginBottom:8}}>할인율</div>
 
+      <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"flex-start",marginBottom:12}}>
       {/* 상품 할인 */}
-      <div style={{marginBottom:12}}>
+      <div style={{flex:"0 1 520px",minWidth:300}}>
         <div style={lbl}>상품 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 (전체 동일 기간)</span></div>
         {/* 공통 기간 */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6,maxWidth:520}}>
@@ -4073,8 +4088,8 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       </div>
 
       {/* 쿠폰 */}
-      <div>
-        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용</span></div>
+      <div style={{flex:"1 1 540px",minWidth:340}}>
+        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
         <table style={{width:"100%",maxWidth:760,borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
             <th style={{...head,width:"16%",textAlign:"center"}}>중복</th>
@@ -4099,6 +4114,19 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 <td style={{padding:"3px 4px"}}>
                   <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
                     style={cellInp} placeholder="예: 신규가입 쿠폰"/>
+                  {matrixGroups.length>0&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4,alignItems:"center"}}>
+                      <span style={{fontSize:9,color:D.textMeta}}>적용</span>
+                      {matrixGroups.map(g=>{
+                        const off=(row.excludeGroups||[]).includes(g);
+                        return <button key={g} type="button" onClick={()=>toggleCouponGroup(i,g)}
+                          title={off?`${g} 적용 안 함 → 클릭 시 적용`:`${g} 적용 중 → 클릭 시 제외`}
+                          style={{fontSize:9,padding:"1px 6px",borderRadius:8,cursor:"pointer",lineHeight:1.4,
+                            border:`1px solid ${off?D.border:D.blue}`,background:off?D.surfaceAlt:`${D.blue}14`,
+                            color:off?D.textMeta:D.blue,textDecoration:off?"line-through":"none",fontWeight:600}}>{g}</button>;
+                      })}
+                    </div>
+                  )}
                 </td>
                 <td style={{padding:"3px 4px"}}>
                   <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
@@ -4130,6 +4158,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
             style={{background:`${D.blue}10`,border:`1px dashed ${D.blue}80`,borderRadius:5,
               padding:"4px 12px",fontSize:11,color:D.blue,cursor:"pointer",fontWeight:600}}>+ 중복 쿠폰 추가</button>
         </div>
+      </div>
       </div>
 
       {/* 실시간 최종 할인율 매트릭스 (상품군 × 시나리오) */}
@@ -4163,42 +4192,6 @@ function DiscountPlanView({ plan }) {
   const hasAny=cleanedProducts.length||cleanedCoupons.length||p.products.period.start;
   if(!hasAny) return <span style={{color:D.textMeta,fontSize:11}}>—</span>;
 
-  const prodStart=p.products.period.start;
-  const prodEnd  =p.products.period.end;
-  const prodRate =cleanedProducts.length?Math.max(...cleanedProducts.map(r=>+r.rate||0)):0;
-
-  // 막대 전체 범위: 모든 시작/종료의 min/max
-  const allStarts=[prodStart,...cleanedCoupons.map(r=>r.start)].filter(Boolean);
-  const allEnds  =[prodEnd,  ...cleanedCoupons.map(r=>r.end  )].filter(Boolean);
-  const rangeStart=allStarts.length?allStarts.sort()[0]:"";
-  const rangeEnd  =allEnds.length  ?allEnds.sort().slice(-1)[0]:"";
-  const rangeMs=rangeStart&&rangeEnd?Math.max(1,(new Date(rangeEnd)-new Date(rangeStart))+86400000):0;
-  const pct=(s,e)=>{
-    if(!s||!e||!rangeMs) return null;
-    const left =Math.max(0,(new Date(s)-new Date(rangeStart))/rangeMs*100);
-    const width=Math.max(2,((new Date(e)-new Date(s))+86400000)/rangeMs*100);
-    return{left:`${left}%`,width:`${Math.min(100-left,width)}%`};
-  };
-
-  // 총 최대 할인율 = 1 - (1 - 상품최대) × (단독쿠폰 최대) × (중복쿠폰 전부 곱)
-  //   - 중복(stack) 쿠폰: 모두 겹쳐 적용 → (1-r) 곱 누적
-  //   - 단독 쿠폰: 한 장만 적용 → 가장 높은 할인율 하나
-  const stackCoupons=cleanedCoupons.filter(r=>r.stack);
-  const soloCoupons =cleanedCoupons.filter(r=>!r.stack);
-  const stackFactor =stackCoupons.reduce((f,r)=>f*(1-(+r.rate||0)/100),1);
-  const soloMaxRate =soloCoupons.length?Math.max(...soloCoupons.map(r=>+r.rate||0)):0;
-  const couponFactor=stackFactor*(1-soloMaxRate/100);
-  const maxTotal=Math.round((1-(1-prodRate/100)*couponFactor)*1000)/10;
-
-  const barTrack={position:"relative",height:6,background:`${D.border}`,borderRadius:3,marginTop:2};
-  const barSeg=col=>({position:"absolute",top:0,height:6,background:col,borderRadius:3});
-
-  const prodSeg=pct(prodStart,prodEnd);
-
-  // 상품 기간 == 모든 쿠폰 기간이 동일하면 "동일 기간" 표시로 막대 생략
-  const sameAsProd=r=>r.start===prodStart&&r.end===prodEnd;
-  const allSamePeriod=!!prodStart&&!!prodEnd&&cleanedCoupons.length>0&&cleanedCoupons.every(sameAsProd);
-
   return (
     <div style={{fontSize:11,lineHeight:1.75,minWidth:140,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
       {/* 상품군 할인율 — 뱃지 형태 (뮤트 파스텔, 색 순환) */}
@@ -4216,7 +4209,6 @@ function DiscountPlanView({ plan }) {
               {bg:"#EAEAEA",bd:"#CFCFCF",fg:"#555555"}, // neutral grey
             ];
             const c=PASTEL[i%PASTEL.length];
-            const finalRate=stackFactor<1?Math.round((1-(1-(+r.rate||0)/100)*stackFactor)*1000)/10:null;
             return(
               <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
                 padding:"2px 7px",background:c.bg,border:`1px solid ${c.bd}`,
@@ -4224,7 +4216,6 @@ function DiscountPlanView({ plan }) {
                 <span>{r.group||"전체"}</span>
                 <span style={{width:1,height:10,background:c.bd,display:"inline-block"}}/>
                 <b style={{fontWeight:700}}>{r.rate||0}%</b>
-                {finalRate!=null&&<span style={{color:D.red,fontWeight:700}}>→ {finalRate}%</span>}
               </span>
             );
           })}
@@ -4241,45 +4232,6 @@ function DiscountPlanView({ plan }) {
         </div>
       ))}
 
-      {/* 기간 표시: 동일 기간이면 텍스트, 다르면 Gantt 막대 */}
-      {rangeStart&&rangeEnd&&(
-        allSamePeriod?(
-          <div style={{marginTop:5,fontSize:10,color:D.textMeta}}>
-            <span style={{color:D.textSub,fontWeight:600}}>동일 기간</span>
-            {" · "}{prodStart?.slice(5)}~{prodEnd?.slice(5)}
-          </div>
-        ):(
-          <div style={{marginTop:5}}>
-            <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta}}>
-              <span style={{width:32,flexShrink:0}}>상품</span>
-              <div style={{flex:1,...barTrack}}>
-                {prodSeg&&<div style={{...barSeg(D.red),...prodSeg}}/>}
-              </div>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:D.textMeta,marginTop:2}}>
-              <span style={{width:32,flexShrink:0}}>쿠폰</span>
-              <div style={{flex:1,...barTrack}}>
-                {cleanedCoupons.map((r,i)=>{
-                  const s=pct(r.start,r.end);
-                  if(!s) return null;
-                  return <div key={i} style={{...barSeg(D.blue),...s}}/>;
-                })}
-              </div>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:D.textMeta,marginTop:2,paddingLeft:36}}>
-              <span>{rangeStart.slice(5)}</span>
-              <span>{rangeEnd.slice(5)}</span>
-            </div>
-          </div>
-        )
-      )}
-
-      {maxTotal>0&&(
-        <div style={{marginTop:4,padding:"2px 6px",background:`${D.red}10`,color:D.red,
-          borderRadius:4,fontWeight:600,display:"inline-block"}}>
-          상품*쿠폰 적용 할인율 최대 총 {maxTotal}%
-        </div>
-      )}
       {/* 상품군 × 시나리오 최종 할인율 매트릭스 */}
       {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact/>}
     </div>
