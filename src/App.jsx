@@ -4007,7 +4007,7 @@ function DiscountMatrix({ plan, compact=false }){
                 const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
                 return <td key={c.key} style={{...cell,...divAt(c,ci),
                   fontWeight:v==null?500:(isFinal?700:500),
-                  color:v==null?D.textMeta:(isFinal?D.red:D.textSub)}}>{v==null?"미적용":v+"%"}</td>;
+                  color:v==null?D.textMeta:(isFinal?D.blue:D.textSub)}}>{v==null?"미적용":v+"%"}</td>;
               })}
             </tr>
           ))}
@@ -4184,7 +4184,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       {/* 실시간 최종 할인율 매트릭스 (상품군 × 시나리오) */}
       {computeDiscountMatrix(plan).hasGroup&&(
         <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${D.border}`}}>
-          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 빨강=예상 최종</span></div>
+          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 파랑=예상 최종</span></div>
           <DiscountMatrix plan={plan}/>
         </div>
       )}
