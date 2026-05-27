@@ -1247,7 +1247,9 @@ const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ─────────────────────────────────────────────
 // ANALYTICS ENGINE
 // ─────────────────────────────────────────────
-function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
+// orderRows = 주문일(order_date) 필터, shipRows = 배송일(delivery_date) 필터.
+//   주문·매출·객단가 = orderRows(주문일) / 배송·반품·반품률 = shipRows(배송일)
+function analyze(orderRows, stockRows, revenueRows, storeRows=[], shipRows=orderRows) {
   // ═══════════════════════════════════════════════════════
   // 데이터 소스 가이드
   //   - orderRows   : 이지어드민 주문·배송 CSV (loadData에서 store_sales도 channel="오프라인 스토어"로 머지됨)
@@ -1278,17 +1280,18 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const totalRefundAmt  = revenueRows.reduce((s,r)=>s+(r.refund_amount||0),0);
   const totalRefundCount= revenueRows.reduce((s,r)=>s+(r.refund_count||0),0);
 
-  // ── [배송·반품 KPI] (온라인만, 매장 제외) ─────────────
-  // 소스: 이지어드민 orders CSV — 오프라인 채널(매장 판매 머지 행 포함)은 제외
+  // ── [배송·반품 KPI] (온라인만, 매장 제외 · 배송일 기준) ─────────────
+  // 소스: 이지어드민 orders CSV(배송일 필터) — 오프라인 채널(매장 판매 머지 행 포함)은 제외
   // 계산: ('배송'=총 출고 = 배송+배송후 취소(반품)+배송후 교환. 배송전 취소·미배송 제외)
   //   - 배송 수    = COUNT(DISTINCT order_no||order_id) where 총 출고
   //   - 반품 수    = COUNT(DISTINCT order_no||order_id) where status="반품"
   //   - 배송 장수  = SUM(qty) where 총 출고
   //   - 반품 장수  = SUM(qty) where 반품
   //   - 반품률     = 반품 장수 / 총 출고 장수 * 100 (장수 기준 — 분모는 반품·교환 포함)
-  const onlineRows       = orderRows.filter(r=>!isOffline(r));
-  const shippedRows      = onlineRows.filter(r=>wasShipped(r.status));
-  const returnedRows     = onlineRows.filter(r=>r.status==="반품");
+  const onlineRows       = orderRows.filter(r=>!isOffline(r));       // 주문일 기준 (주문 KPI)
+  const onlineShipRows   = shipRows.filter(r=>!isOffline(r));        // 배송일 기준 (배송·반품 KPI)
+  const shippedRows      = onlineShipRows.filter(r=>wasShipped(r.status));
+  const returnedRows     = onlineShipRows.filter(r=>r.status==="반품");
   const totalShipped     = new Set(shippedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalReturned    = new Set(returnedRows.map(r=>r.order_no||r.order_id).filter(Boolean)).size;
   const totalDeliveredQty= shippedRows.reduce((s,r)=>s+(r.qty||1),0);
@@ -1361,12 +1364,12 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
   const chShippedQty={};    // 채널별 SUM(qty) 총 출고 — '배송 장수' + 반품률 분모(반품·교환 포함)
   const chReturnedQty={};   // 채널별 SUM(qty) 반품   — '반품 장수' + 반품률 분자
   const PAYMENT_CH=new Set(["자사몰"]); // payment_amount(MAX) 사용 채널
+  // 주문(모든 상태) + 주문 장수 + 객단가(AOV) — 주문일(order_date) 기준
   orderRows.forEach(r=>{
     if(isExcl(r)) return; // MERRYON OVERSEA 제외
     const ch=r.channel||"미분류";
     // 주문번호 키: 신규 order_no 필드 우선, 없으면 order_id 전체(이전 데이터 호환)
     const oid=r.order_no||r.order_id||"";
-    // CORD prefix = 29CM 취소 주문 → 반품으로 강제 (실제 컨디션 파악 시 재조정)
     const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
     const qty=(r.qty||1);
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
@@ -1376,6 +1379,27 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
       chAllOrderIds[ch].add(oid);
     }
     chOrderedQty[ch]=(chOrderedQty[ch]||0)+qty;
+    // 객단가(AOV) 금액 맵 — 순배송 기준
+    if(status!=="배송") return;
+    if(!chOrderAmt[ch]) chOrderAmt[ch]={};
+    if(PAYMENT_CH.has(ch)){
+      // 자사몰: 결제금액은 동일 주문의 각 행에 중복 기록 → 덮어쓰기(= 사실상 MAX)
+      const pa=r.payment_amount||r.amount||0;
+      if(pa>0) chOrderAmt[ch][oid]=pa;
+    } else {
+      // 29CM·무신사: 판매가는 상품별로 다름 → 같은 주문 안에서 상품별 합산
+      const sp=r.sale_price||r.amount||0;
+      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+sp;
+    }
+  });
+  // 배송/반품 고유 주문번호 + 장수 — 배송일(delivery_date) 기준
+  shipRows.forEach(r=>{
+    if(isExcl(r)) return;
+    const ch=r.channel||"미분류";
+    const oid=r.order_no||r.order_id||"";
+    const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
+    const qty=(r.qty||1);
+    if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(status==="반품"){
       if(oid){
         if(!chReturnedIds[ch]) chReturnedIds[ch]=new Set();
@@ -1387,17 +1411,6 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
     if(!chOrderIds[ch]) chOrderIds[ch]=new Set();
     chOrderIds[ch].add(oid);
     chShippedQty[ch]=(chShippedQty[ch]||0)+qty;
-    if(status!=="배송") return;       // 객단가(AOV) 금액 맵은 순배송만 누적
-    if(!chOrderAmt[ch]) chOrderAmt[ch]={};
-    if(PAYMENT_CH.has(ch)){
-      // 자사몰: 결제금액은 동일 주문의 각 행에 중복 기록 → 덮어쓰기(= 사실상 MAX)
-      const pa=r.payment_amount||r.amount||0;
-      if(pa>0) chOrderAmt[ch][oid]=pa;
-    } else {
-      // 29CM·무신사: 판매가는 상품별로 다름 → 같은 주문 안에서 상품별 합산
-      const sp=r.sale_price||r.amount||0;
-      chOrderAmt[ch][oid]=(chOrderAmt[ch][oid]||0)+sp;
-    }
   });
   // 채널 shipped/returned는 라인 수 X → 고유 주문번호 수로 채움
   Object.keys(byChannel).forEach(ch=>{
@@ -1510,11 +1523,11 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[]) {
 
   // ── [월별 배송/반품 추이] ─────────────────────────────
   // 소스: 이지어드민 orders CSV (매장 포함 — 차트에서 라인이 채널별로 분리됨)
-  // 계산: order_date의 YYYY-MM 단위 그룹 → 배송/반품 라인 카운트, 반품률
+  // 계산: delivery_date(배송일)의 YYYY-MM 단위 그룹 → 배송/반품 라인 카운트, 반품률
   // (라인 카운트 유지: 차트는 추세 시각화 목적이므로 행 단위로 충분)
   const byMonth={};
-  orderRows.forEach(r=>{
-    const ym=r.order_date?r.order_date.slice(0,7):null;
+  shipRows.forEach(r=>{
+    const ym=r.delivery_date?r.delivery_date.slice(0,7):null;   // 배송일 기준
     if(!ym) return;
     if(!byMonth[ym]) byMonth[ym]={month:ym,shipped:0,returned:0};
     if(wasShipped(r.status)) byMonth[ym].shipped++;   // 총 출고(배송+반품+교환)
@@ -1807,6 +1820,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   );
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
+  // 배송·반품 KPI 전용 — 배송일(delivery_date) 기준 기간 필터 (배송일 없는 행은 기간 집계서 제외)
+  const deliveryFilteredOrders=useMemo(()=>filterByDate(orders,"delivery_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const filteredStoreSales=useMemo(()=>filterByDate(storeSales,"sale_date",period,customStart,customEnd),[storeSales,period,customStart,customEnd]);
   const filteredStocks=useMemo(()=>{
@@ -1818,7 +1833,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     });
     return Object.values(latest);
   },[stocks,period,customStart,customEnd]);
-  const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales),[filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales]);
+  const stats=useMemo(()=>analyze(filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales,deliveryFilteredOrders),[filteredOrders,filteredStocks,filteredRevenues,filteredStoreSales,deliveryFilteredOrders]);
 
   // 직전 동일 기간 채널별 순매출
   const prevPeriod=useMemo(()=>getPriorPeriod(period,customStart,customEnd),[period,customStart,customEnd]);
@@ -1950,13 +1965,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         topReason:topReason(p.name)}));
   },[worstFilteredOrders,rankWorstChannel]);
 
-  // 월별 배송량 차트 데이터
+  // 월별 배송량 차트 데이터 — 배송일(delivery_date) 기준 (배송일 없는 행 제외)
   const shippingChartData=useMemo(()=>{
     const today=localDate(-1);
     if(shippingPeriod==="yd"){
       const yStr=localDate(-1);
       const byDay={};
-      orders.filter(r=>r.order_date===yStr).forEach(r=>{
+      orders.filter(r=>r.delivery_date===yStr).forEach(r=>{
         if(!byDay[yStr]) byDay[yStr]={date:yStr.slice(5),shipped:0};
         if(wasShipped(r.status)) byDay[yStr].shipped++;
       });
@@ -1968,8 +1983,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       else c.setMonth(c.getMonth()-1);
       const cut=c.toISOString().slice(0,10);
       const byDay={};
-      orders.filter(r=>r.order_date>=cut&&r.order_date<=today).forEach(r=>{
-        const d=r.order_date;
+      orders.filter(r=>r.delivery_date>=cut&&r.delivery_date<=today).forEach(r=>{
+        const d=r.delivery_date;
         if(!byDay[d]) byDay[d]={date:d.slice(5),shipped:0};
         if(wasShipped(r.status)) byDay[d].shipped++;
       });
@@ -1977,21 +1992,21 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     }
     if(shippingPeriod==="custom"&&shippingCustomStart&&shippingCustomEnd){
       const diff=(new Date(shippingCustomEnd)-new Date(shippingCustomStart))/86400000;
-      const src=orders.filter(r=>r.order_date>=shippingCustomStart&&r.order_date<=shippingCustomEnd);
+      const src=orders.filter(r=>r.delivery_date>=shippingCustomStart&&r.delivery_date<=shippingCustomEnd);
       if(diff<=60){
         const byDay={};
-        src.forEach(r=>{const d=r.order_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(wasShipped(r.status))byDay[d].shipped++;});
+        src.forEach(r=>{const d=r.delivery_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(wasShipped(r.status))byDay[d].shipped++;});
         return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
       }
       const byMonth={};
-      src.forEach(r=>{const ym=r.order_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(wasShipped(r.status))byMonth[ym].shipped++;});
+      src.forEach(r=>{const ym=r.delivery_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(wasShipped(r.status))byMonth[ym].shipped++;});
       return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
     }
     const c=new Date(); c.setMonth(c.getMonth()-3);
     const cut=c.toISOString().slice(0,10);
     const byMonth={};
-    orders.filter(r=>r.order_date>=cut).forEach(r=>{
-      const ym=r.order_date?.slice(0,7); if(!ym) return;
+    orders.filter(r=>r.delivery_date>=cut).forEach(r=>{
+      const ym=r.delivery_date?.slice(0,7); if(!ym) return;
       if(!byMonth[ym]) byMonth[ym]={date:ym,shipped:0};
       if(wasShipped(r.status)) byMonth[ym].shipped++;
     });
@@ -2012,7 +2027,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=d.toISOString().slice(0,10);
     }
-    const filteredRet=orders.filter(r=>r.order_date>=start&&r.order_date<=end&&r.channel!=="오프라인 스토어");
+    const filteredRet=orders.filter(r=>r.delivery_date>=start&&r.delivery_date<=end&&r.channel!=="오프라인 스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
       if(r.status==="반품"){
@@ -2024,7 +2039,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     const chs=Object.entries(retByCh).sort((a,b)=>b[1]-a[1]).map(([ch])=>ch).slice(0,5);
     const byDate={};
     filteredRet.forEach(r=>{
-      const d=r.order_date; const ch=r.channel||"미분류";
+      const d=r.delivery_date; const ch=r.channel||"미분류";
       if(!d||!chs.includes(ch)) return;
       if(!byDate[d]){byDate[d]={date:d.slice(5)};chs.forEach(c=>byDate[d][c]=0);}
       if(r.status==="반품") byDate[d][ch]=(byDate[d][ch]||0)+1;
@@ -2408,7 +2423,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               <Bar dataKey="shipped" name="배송" fill="#7EADD4" radius={[3,3,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
-          {getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)}</div>}
+          <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>배송일 기준{getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)?` · ${getPeriodStr(shippingPeriod,shippingCustomStart,shippingCustomEnd)}`:""}</div>
         </Card>
 
         {/* 판매처별 일자 반품 */}
@@ -2905,10 +2920,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         /* ── 배송 (KPI 배송 건) ── */
         else if(kpiModal==="shipped"){
           modalTitle="배송 소스";
-          // 배송 건: 이지어드민 orders 중 총 출고(배송+배송후 취소/교환), 매장 제외
+          // 배송 건: 이지어드민 orders 중 총 출고(배송+배송후 취소/교환), 매장 제외 · 배송일 기준
           const OFFL2=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
           const isOff=r=>OFFL2.has(r.channel||"");
-          const shipped=filteredOrders.filter(r=>wasShipped(r.status)&&!isOff(r));
+          const shipped=deliveryFilteredOrders.filter(r=>wasShipped(r.status)&&!isOff(r));
           const byCh={};
           shipped.forEach(r=>{
             const ch=normCh(r.channel);
@@ -2920,7 +2935,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           const chRows=Object.entries(byCh).sort((a,b)=>b[1].oids.size-a[1].oids.size);
           const byDate={};
           shipped.forEach(r=>{
-            const d=r.order_date||"—";
+            const d=r.delivery_date||"—";
             if(!byDate[d]) byDate[d]={oids:new Set(),qty:0};
             const oid=r.order_no||r.order_id||"";
             if(oid) byDate[d].oids.add(oid);
@@ -2931,8 +2946,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
                 background:D.bg,borderRadius:6,padding:"8px 12px"}}>
-                소스: <b>주문·배송 업로드 데이터</b> (orders, 실제 출고 = 배송 + 배송후 취소(반품) + 배송후 교환)<br/>
-                <b>배송 건</b> = COUNT(DISTINCT 주문번호) where 실제 출고<br/>
+                소스: <b>주문·배송 업로드 데이터</b> (orders, 실제 출고 = 배송 + 배송후 취소(반품) + 배송후 교환) · <b>배송일 기준</b><br/>
+                <b>배송 건</b> = COUNT(DISTINCT 주문번호) where 실제 출고 (배송일 기준)<br/>
                 <b>배송 수량(장)</b> = SUM(qty) where 실제 출고 · 반품/교환은 별도 KPI 로도 집계
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
@@ -2961,11 +2976,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 </table>
               </div>
               <div>
-                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>주문일별 (최근 30일)</div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:D.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>배송일별 (최근 30일)</div>
                 <div style={{maxHeight:360,overflowY:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>주문일</th>
+                    <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>배송일</th>
                     <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송 건</th>
                     <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>배송 수량(장)</th>
                   </tr></thead>
@@ -2989,12 +3004,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         /* ── 반품률 ── */
         else if(kpiModal==="returnRate"){
           modalTitle="반품률 소스";
-          // 반품률 = 반품 수량(장) / 총 출고 수량(장) * 100 — 동기간 내, 매장 제외
+          // 반품률 = 반품 수량(장) / 총 출고 수량(장) * 100 — 동기간 내(배송일 기준), 매장 제외
           //   총 출고 = 배송 + 배송후 취소(반품) + 배송후 교환 (반품은 분모에도 포함)
           const OFFL3=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
           const isOff=r=>OFFL3.has(r.channel||"");
           const byCh={};
-          filteredOrders.filter(r=>!isOff(r)&&wasShipped(r.status)).forEach(r=>{
+          deliveryFilteredOrders.filter(r=>!isOff(r)&&wasShipped(r.status)).forEach(r=>{
             const ch=normCh(r.channel);
             if(!byCh[ch]) byCh[ch]={shippedQty:0,returnedQty:0};
             const q=r.qty||1;
@@ -3009,7 +3024,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           const hasStore=storeShippedQty>0||storeReturnedQty>0;
           // top return products — 반품 수량(장) 기준 (온라인 + 매장)
           const byProd={};
-          filteredOrders.filter(r=>!isOff(r)&&r.status==="반품").forEach(r=>{
+          deliveryFilteredOrders.filter(r=>!isOff(r)&&r.status==="반품").forEach(r=>{
             const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
             if(!byProd[k]) byProd[k]=0;
             byProd[k]+=(r.qty||1);
