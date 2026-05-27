@@ -5294,45 +5294,70 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               </button>
             )}
           </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                <th style={{padding:"4px 6px",width:22}}/>
-                {["채널","프로모션명","기간","할인율","가린 시각",""].map((h,i)=>(
-                  <th key={i} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,
-                    color:D.textSub,borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                <th style={{padding:"5px 6px",width:22}}/>
+                {["채널","프로모션명","기간","상세 내용","할인율","첨부 파일","가린 시각"].map((h,i)=>(
+                  <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
-                <tr key={h.id} style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                  <td style={{padding:"4px 6px"}}>
+              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>{
+                const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,color:D.textMeta}};
+                return (
+                <tr key={h.id}>
+                  <td style={{padding:"6px 6px",borderBottom:`1px solid ${D.border}`}}>
                     <input type="checkbox" checked={selHiddenIds.has(h.id)}
                       onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
                       style={{cursor:"pointer"}}/>
                   </td>
-                  <td style={{padding:"4px 8px"}}>
-                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
-                      <span style={{width:5,height:5,borderRadius:"50%",background:chColor(h.platform),display:"inline-block"}}/>
+                  <td {...td}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:chColor(h.platform),flexShrink:0}}/>
                       {h.platform}
-                    </span>
+                    </div>
                   </td>
-                  <td style={{padding:"4px 8px",color:D.text,fontWeight:500}}>{h.name}</td>
-                  <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{h.start_date?.slice(0,10)} ~ {h.end_date?.slice(0,10)}</td>
-                  <td style={{padding:"4px 8px",verticalAlign:"top",minWidth:170,maxWidth:220}}>
-                    <DiscountPlanView plan={h.discount_plan}/>
-                  </td>
-                  <td style={{padding:"4px 8px",fontSize:11}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
-                  <td style={{padding:"4px 8px"}}>
+                  <td {...td} style={{...td.style,color:D.text,fontWeight:600}}>
+                    {h.name}
                     <button onClick={()=>setImpactModal(h)}
-                      style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                      style={{marginLeft:8,background:D.black,color:"#fff",border:"none",borderRadius:5,
                         padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
                       임팩트 분석
                     </button>
                   </td>
+                  <td {...td} style={{...td.style,whiteSpace:"nowrap"}}>
+                    {[h.start_date,h.end_date].map((dt,i)=>{
+                      const [d,t]=(dt||"").split("T");
+                      return (
+                        <div key={i} style={{lineHeight:1.4}}>
+                          <span style={{fontWeight:700,fontSize:14,color:D.textSub}}>{d}</span>
+                          {t&&<span style={{fontWeight:500,fontSize:13,color:D.textMeta,marginLeft:4}}>{t}</span>}
+                        </div>
+                      );
+                    })}
+                  </td>
+                  <td {...td} style={{...td.style,maxWidth:200,color:D.textSub,whiteSpace:"pre-wrap"}}>{h.content||h.memo||"—"}</td>
+                  <td {...td} style={{...td.style,verticalAlign:"top",minWidth:170,maxWidth:220}}>
+                    <DiscountPlanView plan={h.discount_plan}/>
+                  </td>
+                  <td {...td} style={{...td.style,minWidth:140}}>
+                    {(h.files||[]).length
+                      ?(h.files||[]).map((f,i)=>(
+                        <div key={i} style={{lineHeight:1.5}}>
+                          <a href={f.data} download={f.name}
+                            style={{fontSize:12,color:D.textSub,textDecoration:"none",wordBreak:"break-all"}}
+                            title={f.name}>📎 {f.name}</a>
+                        </div>
+                      ))
+                      :<span style={{color:D.textMeta}}>—</span>}
+                  </td>
+                  <td {...td} style={{...td.style,fontSize:11,whiteSpace:"nowrap"}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </Card>
