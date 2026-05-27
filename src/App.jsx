@@ -3953,12 +3953,18 @@ function computeDiscountMatrix(plan){
     const rate=+c.rate||0;
     cols.push({key:"c"+i,coupon:true,label:c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`});
   });
+  // 중복 가능 쿠폰이 2장 이상이면, 중간에 중복 불가 쿠폰이 끼어 있어도 중복 가능 쿠폰끼리 적층(곱)한 열 추가
+  if(stack.length>=2) cols.push({key:"stackAll",coupon:true,stackAll:true,label:`프런트+중복쿠폰 (${stack.map(c=>(+c.rate||0)+"%").join("·")})`});
+  const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
     coupons.forEach((c,i)=>{
-      const ex=Array.isArray(c.excludeGroups)?c.excludeGroups:[];
-      cells["c"+i]=ex.includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+      cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
     });
+    if(stack.length>=2){
+      const applicable=stack.filter(c=>!exOf(c).includes(g.group));
+      cells.stackAll=applicable.length?fin(g.rate,applicable.reduce((f,c)=>f*(1-(+c.rate||0)/100),1)):null;
+    }
     return {group:g.group,rate:g.rate,cells};
   });
   return {groups,coupons,stack,solo,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
@@ -3971,14 +3977,19 @@ function DiscountMatrix({ plan, compact=false }){
   const anyCoupon=m.cols.some(c=>c.coupon);
   const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"right",whiteSpace:"nowrap"};
   const th={...cell,color:D.textMeta,fontWeight:600,borderBottom:`1px solid ${D.border}`};
-  // 상품(상품군·상품할인)과 쿠폰 열을 시각적으로 구분하는 세로 구분선
-  const divAt=ci=>m.cols[ci].coupon&&!m.cols[ci-1]?.coupon?{borderLeft:`2px solid ${D.borderMid}`}:null;
+  // 상품(상품군·상품할인)과 쿠폰 열 구분선 + 중복 적층 열 강조 배경
+  const divAt=(c,ci)=>{
+    const s={};
+    if(c.coupon&&!m.cols[ci-1]?.coupon) s.borderLeft=`2px solid ${D.borderMid}`;
+    if(c.stackAll){ s.borderLeft=`2px solid ${D.borderMid}`; s.background=`${D.blue}0d`; }
+    return s;
+  };
   return (
     <div style={{overflowX:"auto",marginTop:6}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
         <thead><tr>
           <th style={{...th,textAlign:"left"}}>상품군</th>
-          {m.cols.map((c,ci)=>(<th key={c.key} style={{...th,...divAt(ci)}}>{c.label}</th>))}
+          {m.cols.map((c,ci)=>(<th key={c.key} style={{...th,...divAt(c,ci)}}>{c.label}</th>))}
         </tr></thead>
         <tbody>
           {m.rows.map((r,i)=>(
@@ -3987,7 +3998,7 @@ function DiscountMatrix({ plan, compact=false }){
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
                 const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
-                return <td key={c.key} style={{...cell,...divAt(ci),fontWeight:isFinal?700:500,
+                return <td key={c.key} style={{...cell,...divAt(c,ci),fontWeight:isFinal?700:500,
                   color:isFinal?D.red:D.textSub}}>{v==null?"—":v+"%"}</td>;
               })}
             </tr>
@@ -4222,18 +4233,7 @@ function DiscountPlanView({ plan }) {
           })}
         </div>
       )}
-      {/* 쿠폰 행 */}
-      {cleanedCoupons.map((r,i)=>(
-        <div key={"c"+i} style={{color:D.blue,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-          🎟 {r.name?<span>{r.name} </span>:null}<b>{r.rate||0}%</b>
-          {r.stack&&<span style={{marginLeft:4,padding:"0 4px",fontSize:9,fontWeight:700,
-            background:`${D.blue}1a`,color:D.blue,borderRadius:3,verticalAlign:"middle"}}>중복</span>}
-          {" "}
-          <span style={{color:D.textMeta}}>{r.start?.slice(5)}~{r.end?.slice(5)}</span>
-        </div>
-      ))}
-
-      {/* 상품군 × 시나리오 최종 할인율 매트릭스 */}
+      {/* 상품군 × 시나리오 최종 할인율 매트릭스 (쿠폰은 매트릭스 열로 표시) */}
       {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact/>}
     </div>
   );
@@ -5189,13 +5189,22 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     {ended&&<span style={{fontSize:11,fontWeight:500,color:D.red}}>· 종료된 프로모션</span>}
                   </div>
                   {/* 임팩트 분석 — 이름 아래 */}
-                  {p.start_date&&p.start_date.slice(0,10)<=today&&(
-                    <div style={{marginTop:5}}>
+                  {p.start_date&&p.start_date.slice(0,10)<=today&&(()=>{
+                    const ichg=promoRevenueChg(p,revenues,storeSales).chg;
+                    return (
+                    <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <button onClick={()=>setImpactModal(p)} data-capture-hide
                         style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
                           padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600}}>임팩트 분석</button>
+                      {ichg!=null&&ichg>=20&&(
+                        <span data-capture-hide title={`직전 동일기간 대비 매출 +${ichg.toFixed(1)}%`}
+                          style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+                            width:18,height:18,borderRadius:"50%",background:D.blue,color:"#fff",
+                            fontSize:12,fontWeight:800,lineHeight:1,flexShrink:0}}>!</span>
+                      )}
                     </div>
-                  )}
+                    );
+                  })()}
                   {/* 본문: 기간/상세/할인율(넓게)/핀셋 ··· 첨부(우측) */}
                   <div style={{display:"flex",gap:16,marginTop:10,alignItems:"flex-start",flexWrap:"wrap"}}>
                     <div style={{flex:"0 0 auto",minWidth:120}}>
@@ -5479,6 +5488,38 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 //   - 일별 매출: 직전 동일 기간(점선 전) → 프로모션 기간(점선 후)
 //   - Top 20: 프로모션 기간(주문일 기준) + 해당 채널 · status="배송" 상품 판매 랭킹
 // ─────────────────────────────────────────────
+// 프로모션 매출 증감률 — 직전 동일기간 대비 (임팩트 분석 요약과 동일 기준)
+function promoRevenueChg(promo, revenues=[], storeSales=[]){
+  const ch=promo.platform;
+  const dayMs=86400000;
+  const todayStr=new Date().toISOString().slice(0,10);
+  const yesterdayStr=new Date(Date.now()-dayMs).toISOString().slice(0,10);
+  const promoStart=String(promo.start_date||"").slice(0,10);
+  const promoEndRaw=String(promo.end_date||"").slice(0,10);
+  if(!promoStart||!promoEndRaw) return {prevTotal:0,promoTotal:0,chg:null};
+  const isOngoing=promoEndRaw>todayStr;
+  const promoEnd=isOngoing?(yesterdayStr>=promoStart?yesterdayStr:promoStart):promoEndRaw;
+  const lenDays=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs)+1;
+  const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
+  let prevTotal=0,promoTotal=0;
+  if(ch==="오프라인 스토어"){
+    storeSales.forEach(r=>{
+      const d=r.sale_date; if(!d||d<prevStart||d>promoEnd) return;
+      const amt=r.status==="배송"?(r.amount||0):r.status==="반품"?-(r.amount||0):0;
+      if(d<promoStart) prevTotal+=amt; else promoTotal+=amt;
+    });
+  }else{
+    revenues.forEach(r=>{
+      if(r.channel!==ch) return;
+      const d=r.date; if(!d||d<prevStart||d>promoEnd) return;
+      const amt=(r.amount||0)-(r.refund_amount||0);
+      if(d<promoStart) prevTotal+=amt; else promoTotal+=amt;
+    });
+  }
+  const chg=prevTotal>0?((promoTotal-prevTotal)/prevTotal*100):null;
+  return {prevTotal,promoTotal,chg};
+}
+
 function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
   const ch=promo.platform;
   const dayMs=86400000;
@@ -5579,9 +5620,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     });
   },[pinned,ch,orders,promoStart,promoEnd,prevStart,prevEnd]);
 
-  const prevTotal=dailyRevenue.filter(p=>p.date<promoStart).reduce((s,p)=>s+(p.revenue||0),0);
-  const promoTotal=dailyRevenue.filter(p=>p.date>=promoStart).reduce((s,p)=>s+(p.revenue||0),0);
-  const chg=prevTotal>0?((promoTotal-prevTotal)/prevTotal*100):null;
+  const {prevTotal,promoTotal,chg}=promoRevenueChg(promo,revenues,storeSales);
 
   return (
     <div onClick={onClose}
