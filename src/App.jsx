@@ -4253,6 +4253,7 @@ function DiscountPlanView({ plan }) {
 //   value: [{name, memo}]
 function PinnedProductPicker({ value=[], onChange, orders=[] }) {
   const [q,setQ]=useState("");
+  const [checked,setChecked]=useState(()=>new Set());
   const allProducts=useMemo(()=>{
     const s=new Set();
     orders.forEach(r=>{const n=(r.product_name||"").trim(); if(n) s.add(n);});
@@ -4262,26 +4263,55 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
   const matches=useMemo(()=>{
     const kw=q.trim().toLowerCase();
     if(!kw) return [];
-    return allProducts.filter(n=>n.toLowerCase().includes(kw)&&!selectedNames.has(n)).slice(0,12);
+    return allProducts.filter(n=>n.toLowerCase().includes(kw)&&!selectedNames.has(n)).slice(0,30);
   },[q,allProducts,selectedNames]);
   const pillInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,padding:"7px 10px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box"};
-  const add=n=>{onChange([...value,{name:n,memo:""}]);setQ("");};
+  const addNames=names=>{
+    const add=names.filter(n=>!selectedNames.has(n));
+    if(!add.length) return;
+    onChange([...value,...add.map(n=>({name:n,memo:""}))]);
+    setChecked(new Set()); setQ("");
+  };
+  const toggle=n=>setChecked(prev=>{const s=new Set(prev);s.has(n)?s.delete(n):s.add(n);return s;});
+  const toggleAll=()=>setChecked(prev=>{
+    const s=new Set(prev);
+    if(matches.every(n=>s.has(n))) matches.forEach(n=>s.delete(n));
+    else matches.forEach(n=>s.add(n));
+    return s;
+  });
+  const checkedCount=matches.filter(n=>checked.has(n)).length;
+  const allChecked=matches.length>0&&matches.every(n=>checked.has(n));
   const remove=i=>onChange(value.filter((_,j)=>j!==i));
   const setMemo=(i,memo)=>onChange(value.map((v,j)=>j===i?{...v,memo}:v));
   return (
     <div>
-      <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>핀셋 상품 <span style={{opacity:.6}}>(배송 데이터 기반 · 상품 단위 · 임팩트 분석에서 전/후 판매량 비교)</span></div>
+      <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>핀셋 상품 <span style={{opacity:.6}}>(배송 데이터 기반 · 상품 단위 · 체크 후 한번에 추가 · 임팩트 분석에서 전/후 판매량 비교)</span></div>
       <div style={{position:"relative"}}>
         <input value={q} onChange={e=>setQ(e.target.value)} style={pillInp} placeholder="상품명 검색 (배송 데이터)"/>
         {matches.length>0&&(
           <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,background:D.surface,
-            border:`1px solid ${D.border}`,borderRadius:6,marginTop:2,maxHeight:220,overflowY:"auto",
+            border:`1px solid ${D.border}`,borderRadius:6,marginTop:2,maxHeight:260,overflowY:"auto",
             boxShadow:"0 4px 16px rgba(0,0,0,0.12)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,
+              padding:"6px 10px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt,
+              position:"sticky",top:0}}>
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:D.textSub,cursor:"pointer"}}>
+                <input type="checkbox" checked={allChecked} onChange={toggleAll} style={{cursor:"pointer"}}/>
+                모두 선택 ({matches.length})
+              </label>
+              <button onClick={()=>addNames(matches.filter(n=>checked.has(n)))} disabled={checkedCount===0}
+                style={{background:checkedCount?D.black:D.surfaceAlt,color:checkedCount?"#fff":D.textMeta,
+                  border:`1px solid ${checkedCount?D.black:D.border}`,borderRadius:5,padding:"4px 10px",
+                  fontSize:12,fontWeight:600,cursor:checkedCount?"pointer":"default",whiteSpace:"nowrap"}}>
+                선택 {checkedCount}개 추가
+              </button>
+            </div>
             {matches.map(n=>(
-              <div key={n} onClick={()=>add(n)}
-                style={{padding:"7px 10px",fontSize:13,cursor:"pointer",color:D.text,
-                  borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
-                title={n}>{n}</div>
+              <label key={n} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",fontSize:13,
+                cursor:"pointer",color:D.text,borderBottom:`1px solid ${D.border}`}}>
+                <input type="checkbox" checked={checked.has(n)} onChange={()=>toggle(n)} style={{cursor:"pointer",flexShrink:0}}/>
+                <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={n}>{n}</span>
+              </label>
             ))}
           </div>
         )}
