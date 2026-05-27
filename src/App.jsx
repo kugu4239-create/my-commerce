@@ -4393,7 +4393,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promoCalOpen,setPromoCalOpen]=useState(null);
   const [editingPromoId,setEditingPromoId]=useState(null);
   const [editPromoForm,setEditPromoForm]=useState({});
-  const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]}});};
+  const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[]});};
   const savePromoEdit=()=>{
     patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content,discount_plan:cleanDiscountPlan(editPromoForm.discount_plan)});
     setEditingPromoId(null);
@@ -5062,6 +5062,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                         <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
                         <textarea value={editPromoForm.content} onChange={e=>setEditPromoForm(f=>({...f,content:e.target.value}))}
                           style={{...inp3,resize:"vertical",minHeight:60,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등"/>
+                      </div>
+                      <div style={{marginBottom:8}}>
+                        <PinnedProductPicker value={editPromoForm.pinned_products||[]}
+                          onChange={v=>setEditPromoForm(f=>({...f,pinned_products:v}))} orders={orders}/>
                       </div>
                       <div style={{marginBottom:8}}>
                         <DiscountPlanEditor value={editPromoForm.discount_plan}
