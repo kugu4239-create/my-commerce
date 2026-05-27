@@ -4622,8 +4622,56 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     padding:"6px 10px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box",
     fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
 
+  // ── 프로모션 전략 메모 (채널별, 좌측 책갈피 드로어) ──
+  const [strategyOpen,setStrategyOpen]=useState(false);
+  const [strategy,setStrategy]=useState(()=>{try{return JSON.parse(localStorage.getItem("promo_strategy")||"{}");}catch{return{};}});
+  useEffect(()=>{(async()=>{
+    const db=await getSupabase();
+    const{data,error}=await db.from("promo_strategy").select("*");
+    if(!error&&Array.isArray(data)&&data.length){
+      const m={}; data.forEach(r=>{m[r.channel]=r.memo||"";});
+      setStrategy(m); localStorage.setItem("promo_strategy",JSON.stringify(m));
+    }
+  })();},[]);
+  const setStrategyMemo=(ch,memo)=>setStrategy(prev=>{const n={...prev,[ch]:memo};localStorage.setItem("promo_strategy",JSON.stringify(n));return n;});
+  const saveStrategy=async ch=>{const db=await getSupabase();await db.from("promo_strategy").upsert({channel:ch,memo:strategy[ch]||""},{onConflict:"channel"});};
+
   return (
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
+      {/* 좌측 책갈피 — 채널별 프로모션 전략 메모 */}
+      <div style={{position:"fixed",top:140,left:0,zIndex:1500}}>
+        {!strategyOpen?(
+          <button onClick={()=>setStrategyOpen(true)}
+            style={{writingMode:"vertical-rl",background:D.black,color:"#fff",border:"none",
+              borderRadius:"0 8px 8px 0",padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",
+              letterSpacing:"0.12em",boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
+            프로모션 전략 메모
+          </button>
+        ):(
+          <div style={{width:320,maxHeight:"72vh",overflowY:"auto",background:D.surface,
+            border:`1px solid ${D.border}`,borderRadius:"0 10px 10px 0",
+            boxShadow:"4px 4px 24px rgba(0,0,0,0.18)",padding:"14px 16px",
+            fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <b style={{fontSize:13,color:D.black}}>프로모션 전략 메모</b>
+              <button onClick={()=>setStrategyOpen(false)}
+                style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+            </div>
+            {PROMO_PLATFORMS.map(ch=>(
+              <div key={ch} style={{marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",background:chColor(ch),display:"inline-block"}}/>
+                  <span style={{fontSize:11,fontWeight:600,color:D.textSub}}>{ch}</span>
+                </div>
+                <textarea value={strategy[ch]||""} onChange={e=>setStrategyMemo(ch,e.target.value)} onBlur={()=>saveStrategy(ch)}
+                  placeholder="전략 메모..." style={{width:"100%",boxSizing:"border-box",minHeight:54,resize:"vertical",
+                    border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 8px",fontSize:11,color:D.text,
+                    fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.6}}/>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <style>{`
         @keyframes promoShimmer {
           0%   { transform: translateX(-100%); }
