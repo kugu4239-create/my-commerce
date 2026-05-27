@@ -5662,7 +5662,10 @@ function SaleCalcModal({ onClose }){
     });
     const range=XLSX.utils.decode_range(ws["!ref"]);
     if(range.e.c<8){ range.e.c=8; ws["!ref"]=XLSX.utils.encode_range(range); }
-    XLSX.writeFile(wbRef.current,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
+    // I열 변경값을 참조하는 다른 셀 수식이 엑셀에서 자동 재계산되도록 (수식 자체는 보존)
+    const wb=wbRef.current;
+    wb.Workbook={...(wb.Workbook||{}),CalcPr:{...(wb.Workbook?.CalcPr||{}),fullCalcOnLoad:true}};
+    XLSX.writeFile(wb,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
   };
   const sec={marginBottom:10,border:`1px solid ${D.border}`,borderRadius:8,background:D.surface};
   const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
