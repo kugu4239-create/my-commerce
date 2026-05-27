@@ -14,7 +14,8 @@ create table if not exists public.promotions (
   memo          text,
   content       text,
   files         jsonb default '[]'::jsonb,
-  discount_plan jsonb default '{}'::jsonb
+  discount_plan jsonb default '{}'::jsonb,
+  pinned_products jsonb default '[]'::jsonb   -- [{name, memo}] 임팩트 분석 전/후 비교용 핀셋 상품
 );
 
 alter table public.promotions add column if not exists name          text;
@@ -25,6 +26,7 @@ alter table public.promotions add column if not exists memo          text;
 alter table public.promotions add column if not exists content       text;
 alter table public.promotions add column if not exists files         jsonb default '[]'::jsonb;
 alter table public.promotions add column if not exists discount_plan jsonb default '{}'::jsonb;
+alter table public.promotions add column if not exists pinned_products jsonb default '[]'::jsonb;
 
 -- 2) 제출해야 하는 프로모션
 create table if not exists public.submit_promotions (
