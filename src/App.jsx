@@ -3946,23 +3946,31 @@ function computeDiscountMatrix(plan){
   const stack=coupons.filter(c=>c.stack);
   const solo =coupons.filter(c=>!c.stack);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
-  // 중복 불가 쿠폰은 각각 개별 열, 중복 가능 쿠폰은 따로 표시하지 않고 마지막에 적층 최종 열 하나로
+  // 각 쿠폰을 개별 열로 표시하되, 중복 가능 쿠폰이 2장 이상이면 마지막 중복 쿠폰 열에 적층 최종 할인율 표시
   const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
+  const stackIdxs=coupons.map((c,i)=>c.stack?i:-1).filter(i=>i>=0);
+  const lastStackIdx=stackIdxs.length?stackIdxs[stackIdxs.length-1]:-1;
+  const stackFinalOn=stack.length>=2;
+  const stackRates=stack.map(s=>(+s.rate||0)+"%").join("·");
   const cols=[{key:"prod",label:"프런트 할인"}];
-  solo.forEach((c,i)=>{
+  coupons.forEach((c,i)=>{
     const nm=(c.name||"").trim()||`쿠폰${i+1}`;
-    cols.push({key:"solo"+i,coupon:true,label:`${nm} (${+c.rate||0}%)`});
+    const rate=+c.rate||0;
+    const isStackFinal=c.stack&&stackFinalOn&&i===lastStackIdx;
+    const label=isStackFinal?`${nm} (중복 적층 최종·${stackRates})`
+      :c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`;
+    cols.push({key:"c"+i,coupon:true,stackFinal:isStackFinal,label});
   });
-  if(stack.length>=1) cols.push({key:"stackAll",coupon:true,stackAll:true,label:`프런트+중복쿠폰 (${stack.map(c=>(+c.rate||0)+"%").join("·")})`});
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
-    solo.forEach((c,i)=>{
-      cells["solo"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+    coupons.forEach((c,i)=>{
+      if(c.stack&&stackFinalOn&&i===lastStackIdx){
+        const applicable=stack.filter(s=>!exOf(s).includes(g.group));
+        cells["c"+i]=applicable.length?fin(g.rate,applicable.reduce((f,s)=>f*(1-(+s.rate||0)/100),1)):null;
+      }else{
+        cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+      }
     });
-    if(stack.length>=1){
-      const applicable=stack.filter(c=>!exOf(c).includes(g.group));
-      cells.stackAll=applicable.length?fin(g.rate,applicable.reduce((f,c)=>f*(1-(+c.rate||0)/100),1)):null;
-    }
     return {group:g.group,rate:g.rate,cells};
   });
   return {groups,coupons,stack,solo,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
@@ -3979,7 +3987,7 @@ function DiscountMatrix({ plan, compact=false }){
   const divAt=(c,ci)=>{
     const s={};
     if(c.coupon&&!m.cols[ci-1]?.coupon) s.borderLeft=`2px solid ${D.borderMid}`;
-    if(c.stackAll){ s.borderLeft=`2px solid ${D.borderMid}`; s.background=`${D.blue}0d`; }
+    if(c.stackFinal){ s.borderLeft=`2px solid ${D.borderMid}`; s.background=`${D.blue}0d`; }
     return s;
   };
   return (
@@ -5220,19 +5228,19 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>할인율</div>
                       <DiscountPlanView plan={p.discount_plan}/>
                     </div>
+                    {(p.pinned_products||[]).length>0&&(
                     <div style={{flex:"1 1 150px",minWidth:130}}>
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>핀셋 상품</div>
-                      {(p.pinned_products||[]).length?(
-                        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                          {(p.pinned_products||[]).map((pp,i)=>(
-                            <span key={i} title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
-                              style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:8,
-                                padding:"1px 7px",fontSize:10,color:D.textSub,maxWidth:140,overflow:"hidden",
-                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pp.name}</span>
-                          ))}
-                        </div>
-                      ):<span style={{color:D.textMeta,fontSize:11}}>—</span>}
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {(p.pinned_products||[]).map((pp,i)=>(
+                          <span key={i} title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
+                            style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:8,
+                              padding:"1px 7px",fontSize:10,color:D.textSub,maxWidth:140,overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pp.name}</span>
+                        ))}
+                      </div>
                     </div>
+                    )}
                     <div style={{flex:"0 0 auto",marginLeft:"auto",minWidth:150}}>
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>첨부 파일{p.submit_date?` · 제출일 ${p.submit_date}`:""}</div>
                       <div
