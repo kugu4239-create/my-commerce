@@ -4621,8 +4621,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   <span style={{fontSize:11,fontWeight:600,color:"#fff"}}>{ch}</span>
                 </div>
                 <textarea value={strategy[ch]||""} onChange={e=>setStrategyMemo(ch,e.target.value)} onBlur={()=>saveStrategy(ch)}
-                  placeholder="전략 메모..." style={{width:"100%",boxSizing:"border-box",minHeight:ch==="무신사"?54:108,resize:"vertical",
-                    background:"#fff",border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 8px",fontSize:11,color:"#111",
+                  style={{width:"100%",boxSizing:"border-box",minHeight:ch==="무신사"?54:108,resize:"vertical",
+                    background:"#2a2a2a",border:`1px solid #444`,borderRadius:6,padding:"6px 8px",fontSize:11,color:"#fff",
                     fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.6}}/>
               </div>
             ))}
