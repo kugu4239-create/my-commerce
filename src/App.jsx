@@ -4249,10 +4249,66 @@ function DiscountPlanView({ plan }) {
   );
 }
 
+// 핀셋 상품 선택기 — 배송(orders) 데이터 기반 상품 검색(상품 단위) + 상품별 메모
+//   value: [{name, memo}]
+function PinnedProductPicker({ value=[], onChange, orders=[] }) {
+  const [q,setQ]=useState("");
+  const allProducts=useMemo(()=>{
+    const s=new Set();
+    orders.forEach(r=>{const n=(r.product_name||"").trim(); if(n) s.add(n);});
+    return [...s].sort((a,b)=>a.localeCompare(b,"ko"));
+  },[orders]);
+  const selectedNames=useMemo(()=>new Set(value.map(v=>v.name)),[value]);
+  const matches=useMemo(()=>{
+    const kw=q.trim().toLowerCase();
+    if(!kw) return [];
+    return allProducts.filter(n=>n.toLowerCase().includes(kw)&&!selectedNames.has(n)).slice(0,12);
+  },[q,allProducts,selectedNames]);
+  const pillInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,padding:"7px 10px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box"};
+  const add=n=>{onChange([...value,{name:n,memo:""}]);setQ("");};
+  const remove=i=>onChange(value.filter((_,j)=>j!==i));
+  const setMemo=(i,memo)=>onChange(value.map((v,j)=>j===i?{...v,memo}:v));
+  return (
+    <div>
+      <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>핀셋 상품 <span style={{opacity:.6}}>(배송 데이터 기반 · 상품 단위 · 임팩트 분석에서 전/후 판매량 비교)</span></div>
+      <div style={{position:"relative"}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} style={pillInp} placeholder="상품명 검색 (배송 데이터)"/>
+        {matches.length>0&&(
+          <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,background:D.surface,
+            border:`1px solid ${D.border}`,borderRadius:6,marginTop:2,maxHeight:220,overflowY:"auto",
+            boxShadow:"0 4px 16px rgba(0,0,0,0.12)"}}>
+            {matches.map(n=>(
+              <div key={n} onClick={()=>add(n)}
+                style={{padding:"7px 10px",fontSize:13,cursor:"pointer",color:D.text,
+                  borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
+                title={n}>{n}</div>
+            ))}
+          </div>
+        )}
+      </div>
+      {value.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+          {value.map((v,i)=>(
+            <div key={v.name+i} style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:6,alignItems:"center"}}>
+              <span style={{background:D.surfaceAlt,borderRadius:4,padding:"6px 8px",fontSize:13,color:D.text,
+                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={v.name}>📌 {v.name}</span>
+              <input value={v.memo||""} onChange={e=>setMemo(i,e.target.value)}
+                style={{...pillInp,padding:"6px 8px"}} placeholder="메모 (선택)"/>
+              <button onClick={()=>remove(i)}
+                style={{background:"none",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
+                  cursor:"pointer",padding:"5px 9px",fontSize:13,lineHeight:1}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]}});
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[]});
   const today=new Date().toISOString().slice(0,10);
   const [impactModal,setImpactModal]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
@@ -4359,7 +4415,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       const db=await getSupabase();
       const{data,error}=await db.from("promotions").select("*").order("start_date",{ascending:true});
       if(!error&&data){
-        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]}}));
+        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[]}));
         if(rows.length>0){
           setPromos(rows);setPromosCache(rows);
         } else if(local.length>0){
@@ -4379,7 +4435,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     setPromos(prev=>{const next=[...prev,newP];setPromosCache(next);return next;});
     const db=await getSupabase();
     await db.from("promotions").insert(newP);
-    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]}});
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[]});
     setShowForm(false);
   };
   const delPromo=async id=>{
@@ -4643,6 +4699,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 )}
               </div>
             </div>
+          </div>
+          <div style={{marginTop:14}}>
+            <PinnedProductPicker value={form.pinned_products||[]}
+              onChange={v=>setForm(f=>({...f,pinned_products:v}))} orders={orders}/>
           </div>
           <div style={{marginTop:14}}>
             <DiscountPlanEditor value={form.discount_plan}
@@ -5234,45 +5294,70 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               </button>
             )}
           </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                <th style={{padding:"4px 6px",width:22}}/>
-                {["채널","프로모션명","기간","할인율","가린 시각",""].map((h,i)=>(
-                  <th key={i} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,
-                    color:D.textSub,borderBottom:`1px solid ${D.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                <th style={{padding:"5px 6px",width:22}}/>
+                {["채널","프로모션명","기간","상세 내용","할인율","첨부 파일","가린 시각"].map((h,i)=>(
+                  <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
-                <tr key={h.id} style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                  <td style={{padding:"4px 6px"}}>
+              {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>{
+                const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,color:D.textMeta}};
+                return (
+                <tr key={h.id}>
+                  <td style={{padding:"6px 6px",borderBottom:`1px solid ${D.border}`}}>
                     <input type="checkbox" checked={selHiddenIds.has(h.id)}
                       onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
                       style={{cursor:"pointer"}}/>
                   </td>
-                  <td style={{padding:"4px 8px"}}>
-                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
-                      <span style={{width:5,height:5,borderRadius:"50%",background:chColor(h.platform),display:"inline-block"}}/>
+                  <td {...td}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:chColor(h.platform),flexShrink:0}}/>
                       {h.platform}
-                    </span>
+                    </div>
                   </td>
-                  <td style={{padding:"4px 8px",color:D.text,fontWeight:500}}>{h.name}</td>
-                  <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{h.start_date?.slice(0,10)} ~ {h.end_date?.slice(0,10)}</td>
-                  <td style={{padding:"4px 8px",verticalAlign:"top",minWidth:170,maxWidth:220}}>
-                    <DiscountPlanView plan={h.discount_plan}/>
-                  </td>
-                  <td style={{padding:"4px 8px",fontSize:11}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
-                  <td style={{padding:"4px 8px"}}>
+                  <td {...td} style={{...td.style,color:D.text,fontWeight:600}}>
+                    {h.name}
                     <button onClick={()=>setImpactModal(h)}
-                      style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                      style={{marginLeft:8,background:D.black,color:"#fff",border:"none",borderRadius:5,
                         padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
                       임팩트 분석
                     </button>
                   </td>
+                  <td {...td} style={{...td.style,whiteSpace:"nowrap"}}>
+                    {[h.start_date,h.end_date].map((dt,i)=>{
+                      const [d,t]=(dt||"").split("T");
+                      return (
+                        <div key={i} style={{lineHeight:1.4}}>
+                          <span style={{fontWeight:700,fontSize:14,color:D.textSub}}>{d}</span>
+                          {t&&<span style={{fontWeight:500,fontSize:13,color:D.textMeta,marginLeft:4}}>{t}</span>}
+                        </div>
+                      );
+                    })}
+                  </td>
+                  <td {...td} style={{...td.style,maxWidth:200,color:D.textSub,whiteSpace:"pre-wrap"}}>{h.content||h.memo||"—"}</td>
+                  <td {...td} style={{...td.style,verticalAlign:"top",minWidth:170,maxWidth:220}}>
+                    <DiscountPlanView plan={h.discount_plan}/>
+                  </td>
+                  <td {...td} style={{...td.style,minWidth:140}}>
+                    {(h.files||[]).length
+                      ?(h.files||[]).map((f,i)=>(
+                        <div key={i} style={{lineHeight:1.5}}>
+                          <a href={f.data} download={f.name}
+                            style={{fontSize:12,color:D.textSub,textDecoration:"none",wordBreak:"break-all"}}
+                            title={f.name}>📎 {f.name}</a>
+                        </div>
+                      ))
+                      :<span style={{color:D.textMeta}}>—</span>}
+                  </td>
+                  <td {...td} style={{...td.style,fontSize:11,whiteSpace:"nowrap"}}>{h.hidden_at?new Date(h.hidden_at).toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </Card>
@@ -5363,6 +5448,30 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
       .sort((a,b)=>b.orders-a.orders||b.qty-a.qty).slice(0,20);
   },[ch,promoStart,promoEnd,orders]);
 
+  // 핀셋 상품 — 프로모션 전/후 주문 수량 비교 (해당 채널 한정, order_date 기준, 모든 상태 = 주문 수량)
+  const pinned=promo.pinned_products||[];
+  const pinnedComparison=useMemo(()=>{
+    if(!pinned.length) return [];
+    const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+    const matchesCh=r=> ch==="오프라인 스토어" ? OFFLINE.has(r.channel||"") : (r.channel||"")===ch;
+    const map={};
+    pinned.forEach(p=>{map[p.name]={name:p.name,memo:p.memo||"",prev:0,promo:0};});
+    orders.forEach(r=>{
+      const nm=r.product_name||"";
+      if(!map[nm]||!matchesCh(r)) return;
+      const d= ch==="오프라인 스토어" ? (r.sale_date||r.order_date) : r.order_date;
+      if(!d) return;
+      const q=r.qty||1;
+      if(d>=promoStart&&d<=promoEnd) map[nm].promo+=q;
+      else if(d>=prevStart&&d<=prevEnd) map[nm].prev+=q;
+    });
+    return pinned.map(p=>{
+      const o=map[p.name];
+      const chg=o.prev>0?((o.promo-o.prev)/o.prev*100):null;
+      return {...o,chg};
+    });
+  },[pinned,ch,orders,promoStart,promoEnd,prevStart,prevEnd]);
+
   const prevTotal=dailyRevenue.filter(p=>p.date<promoStart).reduce((s,p)=>s+(p.revenue||0),0);
   const promoTotal=dailyRevenue.filter(p=>p.date>=promoStart).reduce((s,p)=>s+(p.revenue||0),0);
   const chg=prevTotal>0?((promoTotal-prevTotal)/prevTotal*100):null;
@@ -5445,6 +5554,43 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
             </LineChart>
           </ResponsiveContainer>
         </div>
+
+        {/* 핀셋 상품 — 전/후 비교 (핀셋 상품 있을 때만 노출) */}
+        {pinned.length>0&&(
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+              핀셋 상품 — 프로모션 전/후 주문량 비교 ({ch}, 주문 수량 기준)
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
+                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>메모</th>
+                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>직전 ({lenDays}일)</th>
+                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>프로모션 ({lenDays}일)</th>
+                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>증감</th>
+                </tr></thead>
+                <tbody>
+                  {pinnedComparison.map((p,i)=>(
+                    <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"5px 7px",color:D.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>📌 {p.name}</td>
+                      <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.memo}>{p.memo||"—"}</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.prev.toLocaleString()}장</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{p.promo.toLocaleString()}장</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,
+                        color:p.chg==null?D.textMeta:p.chg>=0?D.green:D.red}}>
+                        {p.chg==null?(p.promo>0?"신규":"—"):`${p.chg>=0?"+":""}${p.chg.toFixed(1)}%`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{fontSize:10,color:D.textMeta,marginTop:5}}>
+              주문일 기준 · 프로모션 채널({ch}) 한정 · 주문 수량(장) 합계 · 직전 동일기간 대비
+            </div>
+          </div>
+        )}
 
         {/* Top 20 */}
         <div>
