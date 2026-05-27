@@ -3946,25 +3946,28 @@ function computeDiscountMatrix(plan){
   const stack=coupons.filter(c=>c.stack);
   const solo =coupons.filter(c=>!c.stack);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
-  // 쿠폰은 겹쳐서(곱) 합치지 않고 각 쿠폰을 개별 열로 — 상품할인 × 그 쿠폰 한 장
+  // 각 쿠폰을 개별 열로 표시하되, 중복 가능 쿠폰이 2장 이상이면 마지막 중복 쿠폰 열에 적층 최종 할인율 표시
+  const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
+  const stackIdxs=coupons.map((c,i)=>c.stack?i:-1).filter(i=>i>=0);
+  const lastStackIdx=stackIdxs.length?stackIdxs[stackIdxs.length-1]:-1;
+  const stackFinalOn=stack.length>=2;
   const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
     const nm=(c.name||"").trim()||`쿠폰${i+1}`;
     const rate=+c.rate||0;
-    cols.push({key:"c"+i,coupon:true,label:c.stack?`${nm} (중복쿠폰·${rate}%)`:`${nm} (${rate}%)`});
+    const sub=c.stack?`(중복쿠폰·${rate}%)`:`(단독쿠폰·${rate}%)`;
+    cols.push({key:"c"+i,coupon:true,name:nm,sub,label:`${nm} ${sub}`});
   });
-  // 중복 가능 쿠폰이 2장 이상이면, 중간에 중복 불가 쿠폰이 끼어 있어도 중복 가능 쿠폰끼리 적층(곱)한 열 추가
-  if(stack.length>=2) cols.push({key:"stackAll",coupon:true,stackAll:true,label:`프런트+중복쿠폰 (${stack.map(c=>(+c.rate||0)+"%").join("·")})`});
-  const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
     coupons.forEach((c,i)=>{
-      cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+      if(c.stack&&stackFinalOn&&i===lastStackIdx){
+        const applicable=stack.filter(s=>!exOf(s).includes(g.group));
+        cells["c"+i]=applicable.length?fin(g.rate,applicable.reduce((f,s)=>f*(1-(+s.rate||0)/100),1)):null;
+      }else{
+        cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+      }
     });
-    if(stack.length>=2){
-      const applicable=stack.filter(c=>!exOf(c).includes(g.group));
-      cells.stackAll=applicable.length?fin(g.rate,applicable.reduce((f,c)=>f*(1-(+c.rate||0)/100),1)):null;
-    }
     return {group:g.group,rate:g.rate,cells};
   });
   return {groups,coupons,stack,solo,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
@@ -3975,21 +3978,25 @@ function DiscountMatrix({ plan, compact=false }){
   const m=computeDiscountMatrix(plan);
   if(!m.hasGroup) return null;
   const anyCoupon=m.cols.some(c=>c.coupon);
-  const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"right",whiteSpace:"nowrap"};
-  const th={...cell,color:D.textMeta,fontWeight:600,borderBottom:`1px solid ${D.border}`};
-  // 상품(상품군·상품할인)과 쿠폰 열 구분선 + 중복 적층 열 강조 배경
-  const divAt=(c,ci)=>{
-    const s={};
-    if(c.coupon&&!m.cols[ci-1]?.coupon) s.borderLeft=`2px solid ${D.borderMid}`;
-    if(c.stackAll){ s.borderLeft=`2px solid ${D.borderMid}`; s.background=`${D.blue}0d`; }
-    return s;
-  };
+  const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"center",whiteSpace:"nowrap"};
+  const th={...cell,color:D.textSub,fontWeight:600,borderBottom:`1px solid ${D.border}`,verticalAlign:"bottom"};
+  // 상품(상품군·상품할인)과 쿠폰 열 사이 구분선만 (개별 열 강조 없음)
+  const divAt=(c,ci)=>(c.coupon&&!m.cols[ci-1]?.coupon)?{borderLeft:`2px solid ${D.borderMid}`}:null;
   return (
     <div style={{overflowX:"auto",marginTop:6}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
         <thead><tr>
           <th style={{...th,textAlign:"left"}}>상품군</th>
-          {m.cols.map((c,ci)=>(<th key={c.key} style={{...th,...divAt(c,ci)}}>{c.label}</th>))}
+          {m.cols.map((c,ci)=>(
+            <th key={c.key} style={{...th,...divAt(c,ci)}} title={c.label}>
+              {c.name?(
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+                  <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                  <span style={{fontWeight:400,fontSize:compact?9:10,color:D.textMeta}}>{c.sub}</span>
+                </div>
+              ):c.label}
+            </th>
+          ))}
         </tr></thead>
         <tbody>
           {m.rows.map((r,i)=>(
@@ -3998,8 +4005,9 @@ function DiscountMatrix({ plan, compact=false }){
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
                 const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
-                return <td key={c.key} style={{...cell,...divAt(c,ci),fontWeight:isFinal?700:500,
-                  color:isFinal?D.red:D.textSub}}>{v==null?"—":v+"%"}</td>;
+                return <td key={c.key} style={{...cell,...divAt(c,ci),
+                  fontWeight:v==null?500:(isFinal?700:500),
+                  color:v==null?D.textMeta:(isFinal?D.blue:D.textSub)}}>{v==null?"미적용":v+"%"}</td>;
               })}
             </tr>
           ))}
@@ -4176,7 +4184,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       {/* 실시간 최종 할인율 매트릭스 (상품군 × 시나리오) */}
       {computeDiscountMatrix(plan).hasGroup&&(
         <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${D.border}`}}>
-          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 빨강=예상 최종</span></div>
+          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 파랑=예상 최종</span></div>
           <DiscountMatrix plan={plan}/>
         </div>
       )}
@@ -4206,31 +4214,18 @@ function DiscountPlanView({ plan }) {
 
   return (
     <div style={{fontSize:11,lineHeight:1.75,minWidth:140,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
-      {/* 상품군 할인율 — 뱃지 형태 (뮤트 파스텔, 색 순환) */}
+      {/* 상품군 할인율 — 뱃지 형태 (색 의미 없어 흑/백 통일) */}
       {cleanedProducts.length>0&&(
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
-          {cleanedProducts.map((r,i)=>{
-            const PASTEL=[
-              {bg:"#FCE4E4",bd:"#F2C6C6",fg:"#9A5A5A"}, // dusty rose
-              {bg:"#E5EEF8",bd:"#C4D6E8",fg:"#4F7396"}, // muted blue
-              {bg:"#E8F1E4",bd:"#CADDC1",fg:"#5E7E50"}, // sage green
-              {bg:"#F4ECDB",bd:"#E0CFAA",fg:"#8A6F3A"}, // muted gold
-              {bg:"#EEE5F4",bd:"#D2C0E0",fg:"#6E5491"}, // dusty lavender
-              {bg:"#E4EEF0",bd:"#C1D4D8",fg:"#4F7679"}, // soft teal
-              {bg:"#F4E3E9",bd:"#E0BFCC",fg:"#8E5B73"}, // mauve
-              {bg:"#EAEAEA",bd:"#CFCFCF",fg:"#555555"}, // neutral grey
-            ];
-            const c=PASTEL[i%PASTEL.length];
-            return(
-              <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
-                padding:"2px 7px",background:c.bg,border:`1px solid ${c.bd}`,
-                color:c.fg,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
-                <span>{r.group||"전체"}</span>
-                <span style={{width:1,height:10,background:c.bd,display:"inline-block"}}/>
-                <b style={{fontWeight:700}}>{r.rate||0}%</b>
-              </span>
-            );
-          })}
+          {cleanedProducts.map((r,i)=>(
+            <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
+              padding:"2px 7px",background:"#fff",border:`1px solid ${D.black}`,
+              color:D.black,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
+              <span>{r.group||"전체"}</span>
+              <span style={{width:1,height:10,background:D.black,display:"inline-block"}}/>
+              <b style={{fontWeight:700}}>{r.rate||0}%</b>
+            </span>
+          ))}
         </div>
       )}
       {/* 상품군 × 시나리오 최종 할인율 매트릭스 (쿠폰은 매트릭스 열로 표시) */}
@@ -4621,7 +4616,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   <span style={{fontSize:11,fontWeight:600,color:"#fff"}}>{ch}</span>
                 </div>
                 <textarea value={strategy[ch]||""} onChange={e=>setStrategyMemo(ch,e.target.value)} onBlur={()=>saveStrategy(ch)}
-                  style={{width:"100%",boxSizing:"border-box",minHeight:ch==="무신사"?54:108,resize:"vertical",
+                  style={{width:"100%",boxSizing:"border-box",minHeight:ch==="무신사"?54:ch==="29CM"?324:108,resize:"vertical",
                     background:"#2a2a2a",border:`1px solid #444`,borderRadius:6,padding:"6px 8px",fontSize:11,color:"#fff",
                     fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.6}}/>
               </div>
@@ -5211,7 +5206,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>기간</div>
                       {[p.start_date,p.end_date].map((dt,i)=>{
                         const [d,t]=(dt||"").split("T");
-                        return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
+                        const wd=d?["일","월","화","수","목","금","토"][new Date(d+"T00:00:00").getDay()]:"";
+                        return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{wd&&<span style={{fontSize:12,color:D.textSub,marginLeft:3}}>({wd})</span>}{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
                       })}
                     </div>
                     <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
@@ -5222,19 +5218,19 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>할인율</div>
                       <DiscountPlanView plan={p.discount_plan}/>
                     </div>
+                    {(p.pinned_products||[]).length>0&&(
                     <div style={{flex:"1 1 150px",minWidth:130}}>
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>핀셋 상품</div>
-                      {(p.pinned_products||[]).length?(
-                        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                          {(p.pinned_products||[]).map((pp,i)=>(
-                            <span key={i} title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
-                              style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:8,
-                                padding:"1px 7px",fontSize:10,color:D.textSub,maxWidth:140,overflow:"hidden",
-                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pp.name}</span>
-                          ))}
-                        </div>
-                      ):<span style={{color:D.textMeta,fontSize:11}}>—</span>}
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {(p.pinned_products||[]).map((pp,i)=>(
+                          <span key={i} title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
+                            style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:8,
+                              padding:"1px 7px",fontSize:10,color:D.textSub,maxWidth:140,overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pp.name}</span>
+                        ))}
+                      </div>
                     </div>
+                    )}
                     <div style={{flex:"0 0 auto",marginLeft:"auto",minWidth:150}}>
                       <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>첨부 파일{p.submit_date?` · 제출일 ${p.submit_date}`:""}</div>
                       <div
