@@ -3900,50 +3900,6 @@ function SubmitEodPicker({value,onChange}){
   );
 }
 
-function DateButtonPicker({value,onChange}){
-  const todayStr=new Date().toISOString().slice(0,10);
-  const datePart=(value&&value.length>=10)?value.slice(0,10):todayStr;
-  const [y,m,d]=datePart.split("-").map(Number);
-  const [halfYear,setHalfYear]=useState(m<=6?0:1);
-  const setDate=(ny,nm,nd)=>{
-    const maxD=new Date(ny,nm,0).getDate();
-    const cd=Math.min(nd,maxD);
-    const ds=`${ny}-${String(nm).padStart(2,"0")}-${String(cd).padStart(2,"0")}`;
-    const tp=(value&&value.includes("T"))?value.slice(10):"";
-    onChange(ds+tp);
-  };
-  const daysInMonth=new Date(y,m,0).getDate();
-  const monthSet=halfYear===0?[1,2,3,4,5,6]:[7,8,9,10,11,12];
-  const bNone={border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit"};
-  const circSel={background:D.black,color:"#fff",fontWeight:700,borderRadius:"50%"};
-  const circDef={background:"transparent",color:D.textSub};
-  return(
-    <div style={{userSelect:"none"}}>
-      <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
-        <button onClick={()=>setDate(y-1,m,d)} style={{...bNone,fontSize:13,color:D.textSub,padding:"1px 6px"}}>◀</button>
-        <span style={{fontSize:13,fontWeight:700,color:D.text,minWidth:44,textAlign:"center"}}>{y}년</span>
-        <button onClick={()=>setDate(y+1,m,d)} style={{...bNone,fontSize:13,color:D.textSub,padding:"1px 6px"}}>▶</button>
-        <button onClick={()=>setHalfYear(v=>v===0?1:0)}
-          style={{...bNone,fontSize:11,color:D.textSub,background:D.surfaceAlt,borderRadius:4,padding:"2px 6px",marginLeft:"auto"}}>
-          {halfYear===0?"1~6월":"7~12월"}
-        </button>
-      </div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:2,marginBottom:4}}>
-        {monthSet.map(mo=>(
-          <button key={mo} onClick={()=>setDate(y,mo,Math.min(d,new Date(y,mo,0).getDate()))}
-            style={{...bNone,fontSize:12,padding:"3px 5px",borderRadius:"50%",...(mo===m?circSel:circDef)}}>{mo}월</button>
-        ))}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-        {Array.from({length:daysInMonth},(_,i)=>i+1).map(dd=>(
-          <button key={dd} onClick={()=>setDate(y,m,dd)}
-            style={{...bNone,fontSize:12,padding:"3px 0",textAlign:"center",borderRadius:"50%",...(dd===d?circSel:circDef)}}>{dd}</button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────
 // 프로모션 할인율 그리드 — Editor + 표시 컴포넌트
 // 저장 구조 (신):
@@ -3979,7 +3935,62 @@ function normalizePlan(p){
   return{products:{period:{start:"",end:""},rows:[]},coupons};
 }
 
-function DiscountPlanEditor({ value, onChange }) {
+// 할인율 매트릭스 — 곱연산(가격 기준): 최종 = 1-(1-d_p)*factor
+//   열(시나리오): 상품할인 / 중복적층(중복쿠폰 전부 곱) / 단일(중복불가) 쿠폰 각각
+//   행: 상품군. row.finalRate = 상품할인 × 중복적층(중복쿠폰 없으면 상품할인)
+function computeDiscountMatrix(plan){
+  const p=normalizePlan(plan);
+  const groups=p.products.rows.filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
+    .map(r=>({group:(r.group||"").trim()||"전체",rate:+r.rate||0}));
+  const coupons=p.coupons.filter(c=>(+c.rate||0)>0||(c.name||"").trim());
+  const stack=coupons.filter(c=>c.stack);
+  const solo =coupons.filter(c=>!c.stack);
+  const stackFactor=stack.reduce((f,c)=>f*(1-(+c.rate||0)/100),1);
+  const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
+  const cols=[{key:"prod",label:"상품할인"}];
+  if(stack.length) cols.push({key:"stack",label:`중복적층(${stack.length})`});
+  solo.forEach((c,i)=>cols.push({key:"solo"+i,label:(c.name||"").trim()||`쿠폰${i+1}`}));
+  const rows=groups.map(g=>{
+    const cells={prod:fin(g.rate,1)};
+    if(stack.length) cells.stack=fin(g.rate,stackFactor);
+    solo.forEach((c,i)=>{cells["solo"+i]=fin(g.rate,1-(+c.rate||0)/100);});
+    return {group:g.group,rate:g.rate,cells,finalRate:stack.length?cells.stack:cells.prod};
+  });
+  return {groups,coupons,stack,solo,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
+}
+
+// 상품군×시나리오 매트릭스 표 (에디터·등록 카드 공용)
+function DiscountMatrix({ plan, compact=false }){
+  const m=computeDiscountMatrix(plan);
+  if(!m.hasGroup) return null;
+  const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"right",whiteSpace:"nowrap"};
+  const th={...cell,color:D.textMeta,fontWeight:600,borderBottom:`1px solid ${D.border}`};
+  return (
+    <div style={{overflowX:"auto",marginTop:6}}>
+      <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
+        <thead><tr>
+          <th style={{...th,textAlign:"left"}}>상품군</th>
+          {m.cols.map(c=>(<th key={c.key} style={th}>{c.label}</th>))}
+        </tr></thead>
+        <tbody>
+          {m.rows.map((r,i)=>(
+            <tr key={i}>
+              <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}} title={r.group}>{r.group}</td>
+              {m.cols.map(c=>{
+                const v=r.cells[c.key];
+                const isFinal=(m.stack.length?c.key==="stack":c.key==="prod");
+                return <td key={c.key} style={{...cell,fontWeight:isFinal?700:500,
+                  color:isFinal?D.red:D.textSub}}>{v==null?"—":v+"%"}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPrefix="dp" }) {
   const plan=normalizePlan(value);
   // 표시용 행: 비어 있으면 기본 3행/1행. 입력 중에는 빈 행도 그대로 유지 (입력 끊김·삭제 버그 방지)
   const productRows=plan.products.rows.length?plan.products.rows:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
@@ -3999,37 +4010,39 @@ function DiscountPlanEditor({ value, onChange }) {
     coupons:arr,
   });
 
-  const cellInp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-    padding:"5px 8px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box",
-    fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
+  const cellInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:5,
+    padding:"4px 7px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box",
+    fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
   const lbl={fontSize:11,color:D.textMeta,marginBottom:4,fontWeight:600};
   const head={fontSize:11,color:D.textMeta,fontWeight:600,padding:"4px 6px",textAlign:"left"};
 
   return (
-    <div style={{border:`1px solid ${D.border}`,borderRadius:6,padding:"10px 12px",background:D.surfaceAlt}}>
+    <div style={{border:`1px solid ${D.border}`,borderRadius:6,padding:"10px 12px",background:D.surface}}>
       <div style={{fontWeight:700,fontSize:13,color:D.black,marginBottom:8}}>할인율</div>
 
       {/* 상품 할인 */}
       <div style={{marginBottom:12}}>
         <div style={lbl}>상품 할인 <span style={{color:D.textMeta,fontWeight:400}}>· 상품군별 할인율 (전체 동일 기간)</span></div>
         {/* 공통 기간 */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6,maxWidth:520}}>
           <div>
             <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>시작</div>
-            <input type="date" value={plan.products.period.start}
-              onChange={e=>setProductPeriod("start",e.target.value)} style={cellInp}/>
+            <DateDrop id={`${idPrefix}_prodStart`} value={plan.products.period.start}
+              onChange={v=>setProductPeriod("start",v)} calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}
+              placeholder="날짜 선택"/>
           </div>
           <div>
             <div style={{fontSize:10,color:D.textMeta,marginBottom:3}}>종료</div>
-            <input type="date" value={plan.products.period.end}
-              onChange={e=>setProductPeriod("end",e.target.value)} style={cellInp}/>
+            <DateDrop id={`${idPrefix}_prodEnd`} value={plan.products.period.end}
+              onChange={v=>setProductPeriod("end",v)} calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}
+              placeholder="날짜 선택"/>
           </div>
         </div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <table style={{width:"100%",maxWidth:520,borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
-            <th style={{...head,width:"68%"}}>상품군</th>
-            <th style={{...head,width:"24%"}}>할인율(%)</th>
-            <th style={{...head,width:"8%"}}/>
+            <th style={{...head,width:"62%"}}>상품군</th>
+            <th style={{...head,width:"28%"}}>할인율(%)</th>
+            <th style={{...head,width:"10%"}}/>
           </tr></thead>
           <tbody>
             {productRows.map((row,i)=>(
@@ -4058,18 +4071,27 @@ function DiscountPlanEditor({ value, onChange }) {
       {/* 쿠폰 */}
       <div>
         <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (상품 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용</span></div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <table style={{width:"100%",maxWidth:760,borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
-            <th style={{...head,width:"28%"}}>쿠폰명</th>
-            <th style={{...head,width:"12%"}}>할인율(%)</th>
-            <th style={{...head,width:"10%",textAlign:"center"}}>중복</th>
+            <th style={{...head,width:"16%",textAlign:"center"}}>중복</th>
+            <th style={{...head,width:"30%"}}>쿠폰명</th>
+            <th style={{...head,width:"14%"}}>할인율(%)</th>
             <th style={{...head,width:"18%"}}>시작</th>
             <th style={{...head,width:"18%"}}>종료</th>
-            <th style={{...head,width:"6%"}}/>
+            <th style={{...head,width:"4%"}}/>
           </tr></thead>
           <tbody>
             {coupons.map((row,i)=>(
               <tr key={i}>
+                <td style={{padding:"3px 4px",textAlign:"center"}}>
+                  <button onClick={()=>{const n=[...coupons];n[i]={...row,stack:!row.stack};setCoupons(n);}}
+                    title="중복 적용 여부"
+                    style={{width:"100%",padding:"5px 4px",fontSize:11,fontWeight:600,cursor:"pointer",borderRadius:5,whiteSpace:"nowrap",
+                      border:`1px solid ${row.stack?D.blue:D.border}`,
+                      background:row.stack?`${D.blue}14`:D.surface,color:row.stack?D.blue:D.textMeta}}>
+                    {row.stack?"중복 가능":"중복 불가"}
+                  </button>
+                </td>
                 <td style={{padding:"3px 4px"}}>
                   <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
                     style={cellInp} placeholder="예: 신규가입 쿠폰"/>
@@ -4078,16 +4100,15 @@ function DiscountPlanEditor({ value, onChange }) {
                   <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
                     style={cellInp} placeholder="0" min="0" max="100"/>
                 </td>
-                <td style={{padding:"3px 4px",textAlign:"center"}}>
-                  <input type="checkbox" checked={!!row.stack} title="중복 적용 쿠폰"
-                    onChange={e=>{const n=[...coupons];n[i]={...row,stack:e.target.checked};setCoupons(n);}}
-                    style={{width:15,height:15,cursor:"pointer",accentColor:D.blue}}/>
+                <td style={{padding:"3px 4px"}}>
+                  <DateDrop id={`${idPrefix}_coupon${i}Start`} value={row.start}
+                    onChange={v=>{const n=[...coupons];n[i]={...row,start:v};setCoupons(n);}}
+                    calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="날짜"/>
                 </td>
                 <td style={{padding:"3px 4px"}}>
-                  <input type="date" value={row.start} onChange={e=>{const n=[...coupons];n[i]={...row,start:e.target.value};setCoupons(n);}} style={cellInp}/>
-                </td>
-                <td style={{padding:"3px 4px"}}>
-                  <input type="date" value={row.end} onChange={e=>{const n=[...coupons];n[i]={...row,end:e.target.value};setCoupons(n);}} style={cellInp}/>
+                  <DateDrop id={`${idPrefix}_coupon${i}End`} value={row.end}
+                    onChange={v=>{const n=[...coupons];n[i]={...row,end:v};setCoupons(n);}}
+                    calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="날짜"/>
                 </td>
                 <td style={{padding:"3px 4px",textAlign:"right"}}>
                   <button onClick={()=>{const n=coupons.filter((_,j)=>j!==i);setCoupons(n.length?n:[emptyCouponRow()]);}}
@@ -4106,6 +4127,14 @@ function DiscountPlanEditor({ value, onChange }) {
               padding:"4px 12px",fontSize:11,color:D.blue,cursor:"pointer",fontWeight:600}}>+ 중복 쿠폰 추가</button>
         </div>
       </div>
+
+      {/* 실시간 최종 할인율 매트릭스 (상품군 × 시나리오) */}
+      {computeDiscountMatrix(plan).hasGroup&&(
+        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${D.border}`}}>
+          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(상품할인×쿠폰) · 빨강=예상 최종</span></div>
+          <DiscountMatrix plan={plan}/>
+        </div>
+      )}
     </div>
   );
 }
@@ -4167,10 +4196,10 @@ function DiscountPlanView({ plan }) {
   const allSamePeriod=!!prodStart&&!!prodEnd&&cleanedCoupons.length>0&&cleanedCoupons.every(sameAsProd);
 
   return (
-    <div style={{fontSize:11,lineHeight:1.45,minWidth:140}}>
+    <div style={{fontSize:11,lineHeight:1.75,minWidth:140,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
       {/* 상품군 할인율 — 뱃지 형태 (뮤트 파스텔, 색 순환) */}
       {cleanedProducts.length>0&&(
-        <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:4}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
           {cleanedProducts.map((r,i)=>{
             const PASTEL=[
               {bg:"#FCE4E4",bd:"#F2C6C6",fg:"#9A5A5A"}, // dusty rose
@@ -4183,6 +4212,7 @@ function DiscountPlanView({ plan }) {
               {bg:"#EAEAEA",bd:"#CFCFCF",fg:"#555555"}, // neutral grey
             ];
             const c=PASTEL[i%PASTEL.length];
+            const finalRate=stackFactor<1?Math.round((1-(1-(+r.rate||0)/100)*stackFactor)*1000)/10:null;
             return(
               <span key={"p"+i} style={{display:"inline-flex",alignItems:"center",gap:6,
                 padding:"2px 7px",background:c.bg,border:`1px solid ${c.bd}`,
@@ -4190,6 +4220,7 @@ function DiscountPlanView({ plan }) {
                 <span>{r.group||"전체"}</span>
                 <span style={{width:1,height:10,background:c.bd,display:"inline-block"}}/>
                 <b style={{fontWeight:700}}>{r.rate||0}%</b>
+                {finalRate!=null&&<span style={{color:D.red,fontWeight:700}}>→ {finalRate}%</span>}
               </span>
             );
           })}
@@ -4245,6 +4276,8 @@ function DiscountPlanView({ plan }) {
           상품*쿠폰 적용 할인율 최대 총 {maxTotal}%
         </div>
       )}
+      {/* 상품군 × 시나리오 최종 할인율 매트릭스 */}
+      {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact/>}
     </div>
   );
 }
@@ -4265,7 +4298,7 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
     if(!kw) return [];
     return allProducts.filter(n=>n.toLowerCase().includes(kw)&&!selectedNames.has(n)).slice(0,30);
   },[q,allProducts,selectedNames]);
-  const pillInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,padding:"7px 10px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box"};
+  const pillInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 10px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box",fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
   const addNames=names=>{
     const add=names.filter(n=>!selectedNames.has(n));
     if(!add.length) return;
@@ -4317,16 +4350,17 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
         )}
       </div>
       {value.length>0&&(
-        <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+        <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:8,maxWidth:560}}>
           {value.map((v,i)=>(
-            <div key={v.name+i} style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:6,alignItems:"center"}}>
-              <span style={{background:D.surfaceAlt,borderRadius:4,padding:"6px 8px",fontSize:13,color:D.text,
+            <div key={v.name+i} style={{display:"flex",alignItems:"center",gap:4,
+              background:D.surfaceAlt,borderRadius:4,padding:"3px 6px"}}>
+              <span style={{flex:"0 0 55%",fontSize:11,color:D.text,
                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={v.name}>📌 {v.name}</span>
               <input value={v.memo||""} onChange={e=>setMemo(i,e.target.value)}
-                style={{...pillInp,padding:"6px 8px"}} placeholder="메모 (선택)"/>
+                style={{...pillInp,flex:1,padding:"3px 6px",fontSize:11,background:D.surface}} placeholder="메모"/>
               <button onClick={()=>remove(i)}
-                style={{background:"none",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
-                  cursor:"pointer",padding:"5px 9px",fontSize:13,lineHeight:1}}>✕</button>
+                style={{background:"none",border:"none",color:D.textMeta,
+                  cursor:"pointer",padding:"0 4px",fontSize:13,lineHeight:1,flexShrink:0}}>✕</button>
             </div>
           ))}
         </div>
@@ -4338,7 +4372,7 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
 function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[]});
+  const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[],submit_date:""});
   const today=new Date().toISOString().slice(0,10);
   const [impactModal,setImpactModal]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
@@ -4361,6 +4395,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [isDragging,setIsDragging]=useState(false);
   const dragRef=useRef(null);
   const formFileRef=useRef(null);
+  const promoCardRefs=useRef({}); // 등록 프로모션 카드별 DOM ref (이미지 다운로드용)
   const [formFileDragOver,setFormFileDragOver]=useState(false);
   const [tableFileDragOver,setTableFileDragOver]=useState(null);
   // Hidden promo log (localStorage only — no schema change needed)
@@ -4423,7 +4458,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promoCalOpen,setPromoCalOpen]=useState(null);
   const [editingPromoId,setEditingPromoId]=useState(null);
   const [editPromoForm,setEditPromoForm]=useState({});
-  const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[]});};
+  const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[],submit_date:p.submit_date||""});};
   const savePromoEdit=()=>{
     patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content,discount_plan:cleanDiscountPlan(editPromoForm.discount_plan)});
     setEditingPromoId(null);
@@ -4445,7 +4480,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       const db=await getSupabase();
       const{data,error}=await db.from("promotions").select("*").order("start_date",{ascending:true});
       if(!error&&data){
-        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[]}));
+        const rows=data.map(p=>({...p,files:p.files||(p.file?[p.file]:[]),discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[],submit_date:p.submit_date||""}));
         if(rows.length>0){
           setPromos(rows);setPromosCache(rows);
         } else if(local.length>0){
@@ -4465,7 +4500,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     setPromos(prev=>{const next=[...prev,newP];setPromosCache(next);return next;});
     const db=await getSupabase();
     await db.from("promotions").insert(newP);
-    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[]});
+    setForm({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[],submit_date:""});
     setShowForm(false);
   };
   const delPromo=async id=>{
@@ -4511,16 +4546,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   // Load submit_promotions from Supabase on mount
   useEffect(()=>{
     (async()=>{
-      const local=getSubmitPromos();
       const db=await getSupabase();
       const{data,error}=await db.from("submit_promotions").select("*").order("id",{ascending:true});
-      if(!error&&data){
-        if(data.length>0){
-          setSubmitPromos(data);saveSubmitPromosLocal(data);
-        } else if(local.length>0){
-          const{error:e}=await db.from("submit_promotions").insert(local);
-          if(!e){setSubmitPromos(local);saveSubmitPromosLocal(local);}
-        }
+      if(!error&&Array.isArray(data)){
+        // DB가 단일 진실원천 — 빈 배열이면 그대로 반영(삭제 항목 부활 방지)
+        setSubmitPromos(data);saveSubmitPromosLocal(data);
       }
     })();
   },[]);
@@ -4545,7 +4575,12 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     const next=submitPromos.filter(s=>s.id!==id);
     setSubmitPromos(next);saveSubmitPromosLocal(next);
     const db=await getSupabase();
-    await db.from("submit_promotions").delete().eq("id",id);
+    const{error}=await db.from("submit_promotions").delete().eq("id",id);
+    if(error){
+      // 삭제 실패 시 롤백 + 알림 (재등장 방지)
+      alert("제출 완료 처리 실패: "+error.message);
+      setSubmitPromos(submitPromos);saveSubmitPromosLocal(submitPromos);
+    }
   };
 
   const startMs=new Date(viewStart).getTime();
@@ -4583,9 +4618,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     return Object.values(byDate).sort((a,b)=>a.date>b.date?1:-1);
   },[revenues,storeSales,viewStart,viewEnd]);
 
-  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
-    padding:"8px 12px",fontSize:16,color:D.text,width:"100%",boxSizing:"border-box",
-    fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
+  const inp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+    padding:"6px 10px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box",
+    fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
@@ -4611,31 +4646,37 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             start={viewStart} setStart={setViewStart}
             end={viewEnd} setEnd={setViewEnd}
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
-          <button onClick={()=>setShowForm(v=>!v)}
-            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
-              padding:"6px 14px",fontSize:13,cursor:"pointer",fontWeight:600}}>
-            {showForm?"취소":"+ 프로모션 추가"}
-          </button>
         </div>
       </div>
+
+      {/* 추가 버튼 — 타임라인 위 중앙 (폼 열리면 숨김) */}
+      {!showForm&&(
+        <div style={{display:"flex",justifyContent:"center",marginBottom:16}}>
+          <button onClick={()=>setShowForm(true)}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+              padding:"8px 22px",fontSize:13,cursor:"pointer",fontWeight:600}}>
+            + 프로모션 추가
+          </button>
+        </div>
+      )}
 
       {showForm&&(
         <Card style={{marginBottom:20}}>
           <div style={{fontWeight:600,fontSize:14,marginBottom:16}}>프로모션 추가</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:8,alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,alignItems:"start"}}>
             <div>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션명</div>
               <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp} placeholder="예: 오픈 기념 할인"/>
             </div>
             <div>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>플랫폼</div>
-              <div style={{display:"flex",gap:4}}>
+              <div style={{display:"flex",gap:3}}>
                 {PROMO_PLATFORMS.map(p=>(
                   <button key={p} onClick={()=>setForm(f=>({...f,platform:p}))}
                     style={{flex:1,background:form.platform===p?chColor(p):"transparent",
                       color:form.platform===p?"#fff":D.textSub,
                       border:`1px solid ${form.platform===p?chColor(p):D.border}`,
-                      borderRadius:5,padding:"6px 4px",fontSize:13,cursor:"pointer"}}>
+                      borderRadius:4,padding:"4px 3px",fontSize:9,cursor:"pointer"}}>
                     {p}
                   </button>
                 ))}
@@ -4672,13 +4713,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 </div>
               </div>
             ))}
-            <button onClick={addPromo}
-              style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
-                padding:"9px 16px",fontSize:14,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",marginTop:18}}>
-              저장
-            </button>
           </div>
-          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:8}}>
+          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"3fr 1fr",gap:8}}>
             <div>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
               <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))}
@@ -4736,7 +4772,23 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
           <div style={{marginTop:14}}>
             <DiscountPlanEditor value={form.discount_plan}
-              onChange={v=>setForm(f=>({...f,discount_plan:v}))}/>
+              onChange={v=>setForm(f=>({...f,discount_plan:v}))}
+              calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} idPrefix="adddp"/>
+          </div>
+          {/* 제출일 + 저장/취소 — 폼 하단 중앙 */}
+          <div style={{marginTop:18,display:"flex",justifyContent:"center",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:D.textMeta,fontWeight:600}}>제출일</span>
+              <DateDrop id="promo_submit_date" value={form.submit_date||""}
+                onChange={v=>setForm(f=>({...f,submit_date:v}))}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="제출일 선택"/>
+            </div>
+            <button onClick={addPromo}
+              style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+                padding:"8px 26px",fontSize:13,cursor:"pointer",fontWeight:600}}>저장</button>
+            <button onClick={()=>setShowForm(false)}
+              style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"8px 18px",fontSize:13,cursor:"pointer",color:D.textSub}}>취소</button>
           </div>
         </Card>
       )}
@@ -5030,124 +5082,147 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         )}
       </Card>
 
-      {/* 등록된 프로모션 목록 표 */}
+      {/* 등록된 프로모션 — 카드 목록 */}
       {promos.filter(p=>!hiddenIds.has(p.id)).length>0&&(
         <Card>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>등록된 프로모션</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead>
-              <tr style={{background:D.surfaceAlt}}>
-                {["채널","프로모션명","기간","상세 내용","할인율","첨부 파일","","",""].map((h,i)=>(
-                  <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
-                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...promos].filter(p=>!hiddenIds.has(p.id)).sort((a,b)=>a.start_date>b.start_date?1:-1).map(p=>{
-                const ended=isEnded(p);
-                const isEditing=editingPromoId===p.id;
-                const td={style:{padding:"6px 8px",borderBottom:`1px solid ${D.border}`,
-                  color:ended?"#ccc":D.text,textDecoration:"none"}};
-                const inp3={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                  padding:"7px 10px",fontSize:15,color:D.text,width:"100%",boxSizing:"border-box",
-                  fontFamily:"'Pretendard','Noto Sans KR',sans-serif"};
-                if(isEditing) return (
-                  <tr key={p.id}>
-                    <td colSpan={8} style={{padding:"10px 8px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                        <div>
-                          <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션명</div>
-                          <input value={editPromoForm.name} onChange={e=>setEditPromoForm(f=>({...f,name:e.target.value}))} style={inp3}/>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[...promos].filter(p=>!hiddenIds.has(p.id)).sort((a,b)=>a.start_date>b.start_date?1:-1).map(p=>{
+              const ended=isEnded(p);
+              const isEditing=editingPromoId===p.id;
+              const inp3={background:D.surface,border:`1px solid ${D.border}`,borderRadius:5,
+                padding:"6px 10px",fontSize:11,color:D.text,width:"100%",boxSizing:"border-box",
+                fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
+              return (
+              <div key={p.id} ref={el=>{promoCardRefs.current[p.id]=el;}}
+                style={{position:"relative",border:`1px solid ${D.border}`,borderRadius:10,
+                  padding:"14px 16px",background:D.surface,opacity:ended&&!isEditing?0.78:1,
+                  fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.7}}>
+                {isEditing?(
+                  <div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                      <div>
+                        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>프로모션명</div>
+                        <input value={editPromoForm.name} onChange={e=>setEditPromoForm(f=>({...f,name:e.target.value}))} style={inp3}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>플랫폼</div>
+                        <div style={{display:"flex",gap:3}}>
+                          {PROMO_PLATFORMS.map(pl=>(
+                            <button key={pl} onClick={()=>setEditPromoForm(f=>({...f,platform:pl}))}
+                              style={{flex:1,background:editPromoForm.platform===pl?chColor(pl):"transparent",
+                                color:editPromoForm.platform===pl?"#fff":D.textSub,
+                                border:`1px solid ${editPromoForm.platform===pl?chColor(pl):D.border}`,
+                                borderRadius:4,padding:"3px 2px",fontSize:8,cursor:"pointer"}}>{pl}</button>
+                          ))}
                         </div>
-                        <div>
-                          <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>플랫폼</div>
-                          <div style={{display:"flex",gap:3}}>
-                            {PROMO_PLATFORMS.map(pl=>(
-                              <button key={pl} onClick={()=>setEditPromoForm(f=>({...f,platform:pl}))}
-                                style={{flex:1,background:editPromoForm.platform===pl?chColor(pl):"transparent",
-                                  color:editPromoForm.platform===pl?"#fff":D.textSub,
-                                  border:`1px solid ${editPromoForm.platform===pl?chColor(pl):D.border}`,
-                                  borderRadius:4,padding:"5px 3px",fontSize:12,cursor:"pointer"}}>{pl}</button>
+                      </div>
+                      {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
+                        <div key={field}>
+                          <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>{label}</div>
+                          <DateDrop id={`editdate_${field}_${p.id}`} value={editPromoForm[field]?.slice(0,10)||""}
+                            onChange={v=>{const time=editPromoForm[field]?.slice(10)||"";setEditPromoForm(f=>({...f,[field]:v+time}));}}
+                            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="날짜 선택"/>
+                          <div style={{display:"flex",gap:3,marginTop:3}}>
+                            {[["T10:00","10시"],["T11:00","11시"],["T23:59","23:59"]].map(([time,tl])=>(
+                              <button key={time} onClick={()=>{
+                                const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
+                                setEditPromoForm(f=>({...f,[field]:`${base}${time}`}));
+                              }} style={{flex:1,fontSize:10,padding:"2px",background:D.surfaceAlt,
+                                border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub}}>{tl}</button>
                             ))}
                           </div>
                         </div>
-                        {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
-                          <div key={field}>
-                            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>{label}</div>
-                            <DateButtonPicker value={editPromoForm[field]||""} onChange={v=>setEditPromoForm(f=>({...f,[field]:v}))}/>
-                            <div style={{display:"flex",gap:3,marginTop:3}}>
-                              {[["T10:00","10시"],["T11:00","11시"],["T23:59","23:59"]].map(([time,tl])=>(
-                                <button key={time} onClick={()=>{
-                                  const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
-                                  setEditPromoForm(f=>({...f,[field]:`${base}${time}`}));
-                                }} style={{flex:1,fontSize:11,padding:"2px",background:D.surfaceAlt,
-                                  border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub}}>{tl}</button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{marginBottom:8}}>
-                        <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
+                      ))}
+                    </div>
+                    <div style={{marginBottom:8,display:"grid",gridTemplateColumns:"3fr 1fr",gap:8}}>
+                      <div>
+                        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
                         <textarea value={editPromoForm.content} onChange={e=>setEditPromoForm(f=>({...f,content:e.target.value}))}
-                          style={{...inp3,resize:"vertical",minHeight:60,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등"/>
+                          style={{...inp3,resize:"vertical",minHeight:80,lineHeight:1.6}} placeholder="할인율, 대상 상품, 조건 등"/>
                       </div>
-                      <div style={{marginBottom:8}}>
-                        <PinnedProductPicker value={editPromoForm.pinned_products||[]}
-                          onChange={v=>setEditPromoForm(f=>({...f,pinned_products:v}))} orders={orders}/>
+                      <div>
+                        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>제출일</div>
+                        <DateDrop id={`editsubmit_${p.id}`} value={editPromoForm.submit_date||""}
+                          onChange={v=>setEditPromoForm(f=>({...f,submit_date:v}))}
+                          calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="제출일 선택"/>
                       </div>
-                      <div style={{marginBottom:8}}>
-                        <DiscountPlanEditor value={editPromoForm.discount_plan}
-                          onChange={v=>setEditPromoForm(f=>({...f,discount_plan:v}))}/>
-                      </div>
-                      <div style={{display:"flex",gap:6}}>
-                        <button onClick={savePromoEdit}
-                          style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
-                            padding:"6px 16px",fontSize:13,cursor:"pointer",fontWeight:600}}>저장</button>
-                        <button onClick={()=>setEditingPromoId(null)}
-                          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
-                            padding:"6px 12px",fontSize:13,cursor:"pointer",color:D.textSub}}>취소</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-                return (
-                  <tr key={p.id}>
-                    <td {...td}>
-                      <div style={{display:"flex",alignItems:"center",gap:5}}>
-                        <div style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
-                        {p.platform}
-                      </div>
-                    </td>
-                    <td {...td} style={{...td.style,fontWeight:600}}>
-                      {p.name}
-                      {ended&&<span style={{marginLeft:6,fontSize:11,fontWeight:500,color:D.red}}>종료된 프로모션</span>}
-                      {/* 시작일이 지난(진행중 또는 종료된) 프로모션은 임팩트 분석 진입 가능 */}
-                      {p.start_date&&p.start_date.slice(0,10)<=today&&(
-                        <button onClick={()=>setImpactModal(p)}
-                          style={{marginLeft:8,background:D.black,color:"#fff",border:"none",borderRadius:5,
-                            padding:"2px 9px",fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>
-                          임팩트 분석
-                        </button>
-                      )}
-                    </td>
-                    <td {...td} style={{...td.style,whiteSpace:"nowrap",textDecoration:"none"}}>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <PinnedProductPicker value={editPromoForm.pinned_products||[]}
+                        onChange={v=>setEditPromoForm(f=>({...f,pinned_products:v}))} orders={orders}/>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <DiscountPlanEditor value={editPromoForm.discount_plan}
+                        onChange={v=>setEditPromoForm(f=>({...f,discount_plan:v}))}
+                        calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} idPrefix={`editdp${editingPromoId}`}/>
+                    </div>
+                    <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+                      <button onClick={savePromoEdit}
+                        style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                          padding:"7px 22px",fontSize:13,cursor:"pointer",fontWeight:600}}>저장</button>
+                      <button onClick={()=>setEditingPromoId(null)}
+                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                          padding:"7px 16px",fontSize:13,cursor:"pointer",color:D.textSub}}>취소</button>
+                    </div>
+                  </div>
+                ):(
+                <>
+                  {/* 우측 상단 액션 — 이미지 다운로드 + 수정 (캡처 시 숨김) */}
+                  <div data-capture-hide style={{position:"absolute",top:10,right:12,display:"flex",gap:6,alignItems:"center"}}>
+                    <CaptureBtn cardRef={{get current(){return promoCardRefs.current[p.id];}}}
+                      filename={`프로모션_${p.name||p.id}`} DC={{border:D.border,sub:D.textMeta}}/>
+                    <button onClick={()=>startEditPromo(p)} title="수정"
+                      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                        color:D.textSub,cursor:"pointer",padding:"3px 9px",fontSize:11,fontWeight:600}}>✎ 수정</button>
+                  </div>
+                  {/* 채널 + 이름 */}
+                  <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
+                    <span style={{fontSize:11,color:D.textMeta}}>{p.platform}</span>
+                    <b style={{fontSize:14,color:D.black}}>{p.name}</b>
+                    {ended&&<span style={{fontSize:11,fontWeight:500,color:D.red}}>· 종료된 프로모션</span>}
+                  </div>
+                  {/* 임팩트 분석 — 이름 아래 */}
+                  {p.start_date&&p.start_date.slice(0,10)<=today&&(
+                    <div style={{marginTop:5}}>
+                      <button onClick={()=>setImpactModal(p)} data-capture-hide
+                        style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                          padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600}}>임팩트 분석</button>
+                    </div>
+                  )}
+                  {/* 본문: 기간/상세/할인율(넓게)/핀셋 ··· 첨부(우측) */}
+                  <div style={{display:"flex",gap:16,marginTop:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+                    <div style={{flex:"0 0 auto",minWidth:120}}>
+                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>기간</div>
                       {[p.start_date,p.end_date].map((dt,i)=>{
                         const [d,t]=(dt||"").split("T");
-                        return (
-                          <div key={i} style={{lineHeight:1.4}}>
-                            <span style={{fontWeight:700,fontSize:14}}>{d}</span>
-                            {t&&<span style={{fontWeight:500,fontSize:13,color:D.textSub,marginLeft:4}}>{t}</span>}
-                          </div>
-                        );
+                        return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
                       })}
-                    </td>
-                    <td {...td} style={{...td.style,maxWidth:200,color:ended?"#bbb":D.textSub,whiteSpace:"pre-wrap"}}>{p.content||p.memo||"—"}</td>
-                    <td {...td} style={{...td.style,verticalAlign:"top",minWidth:170,maxWidth:220}}>
+                    </div>
+                    <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
+                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>상세 내용</div>
+                      {p.content||p.memo||"—"}
+                    </div>
+                    <div style={{flex:"2 1 380px",minWidth:300}}>
+                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>할인율</div>
                       <DiscountPlanView plan={p.discount_plan}/>
-                    </td>
-                    <td {...td} style={{...td.style,minWidth:160}}>
+                    </div>
+                    <div style={{flex:"1 1 150px",minWidth:130}}>
+                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>핀셋 상품</div>
+                      {(p.pinned_products||[]).length?(
+                        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                          {(p.pinned_products||[]).map((pp,i)=>(
+                            <span key={i} title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
+                              style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:8,
+                                padding:"1px 7px",fontSize:10,color:D.textSub,maxWidth:140,overflow:"hidden",
+                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pp.name}</span>
+                          ))}
+                        </div>
+                      ):<span style={{color:D.textMeta,fontSize:11}}>—</span>}
+                    </div>
+                    <div style={{flex:"0 0 auto",marginLeft:"auto",minWidth:150}}>
+                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>첨부 파일{p.submit_date?` · 제출일 ${p.submit_date}`:""}</div>
                       <div
                         onDragOver={e=>{e.preventDefault();setTableFileDragOver(p.id);}}
                         onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setTableFileDragOver(null);}}
@@ -5157,54 +5232,46 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                         style={{display:"flex",flexDirection:"column",gap:3,
                           border:`1px dashed ${tableFileDragOver===p.id?D.blue:"transparent"}`,
                           borderRadius:4,padding:tableFileDragOver===p.id?4:0,
-                          background:tableFileDragOver===p.id?"#eef3ff":"transparent",
-                          minHeight:24,transition:"all 0.15s"}}>
+                          background:tableFileDragOver===p.id?"#eef3ff":"transparent",minHeight:22,transition:"all 0.15s"}}>
                         {(p.files||[]).map((f,i)=>(
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:3}}>
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
                             <a href={f.data} download={f.name}
-                              style={{fontSize:12,color:ended?"#bbb":D.textSub,textDecoration:"none",
-                                wordBreak:"break-all",flex:1}}
+                              style={{fontSize:11,color:D.textSub,textDecoration:"none",wordBreak:"break-all",flex:1}}
                               title={f.name}>📎 {f.name}</a>
-                            <button onClick={()=>removeFileFromPromo(p.id,i)}
-                              style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",
-                                padding:0,fontSize:14,lineHeight:1,flexShrink:0}}>✕</button>
+                            <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
+                              style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
+                                cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0}}>첨부파일 삭제</button>
                           </div>
                         ))}
                         {(p.files||[]).length<3&&(
                           tableFileDragOver===p.id
                             ?<span style={{fontSize:11,color:D.blue,textAlign:"center",padding:"2px 0"}}>여기에 놓기 ↓</span>
-                            :<button onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
+                            :<button data-capture-hide onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
                               style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
-                                padding:"2px 6px",fontSize:12,color:D.textMeta,cursor:"pointer",
+                                padding:"2px 6px",fontSize:11,color:D.textMeta,cursor:"pointer",
                                 whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
                         )}
-                        {!(p.files||[]).length&&tableFileDragOver!==p.id&&<span style={{color:D.textMeta}}>—</span>}
+                        {!(p.files||[]).length&&tableFileDragOver!==p.id&&<span style={{color:D.textMeta,fontSize:11}}>—</span>}
                       </div>
-                    </td>
-                    <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
-                      <button onClick={()=>startEditPromo(p)} title="수정"
-                        style={{background:"transparent",border:"none",color:D.textMeta,
-                          cursor:"pointer",padding:"2px 4px",fontSize:15,filter:"grayscale(1)"}}>✎</button>
-                    </td>
-                    <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
-                      {ended&&(
-                        <button onClick={()=>hidePromo(p)} title="가리기 (종료 프로모션 로그)"
-                          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
-                            color:D.textMeta,cursor:"pointer",padding:"2px 8px",fontSize:11,whiteSpace:"nowrap",marginRight:4}}>
-                          가리기
-                        </button>
-                      )}
-                    </td>
-                    <td style={{padding:"6px 8px",borderBottom:`1px solid ${D.border}`}}>
-                      <button onClick={()=>delPromo(p.id)}
-                        style={{background:"transparent",border:"none",color:D.textMeta,
-                          cursor:"pointer",padding:0,fontSize:14}}>✕</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </div>
+                  {/* 하단 액션 — 가리기 / 프로모션 삭제 */}
+                  <div data-capture-hide style={{display:"flex",gap:6,marginTop:10,justifyContent:"flex-end"}}>
+                    {ended&&(
+                      <button onClick={()=>hidePromo(p)} title="가리기 (종료 프로모션 로그)"
+                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+                          color:D.textMeta,cursor:"pointer",padding:"3px 10px",fontSize:11}}>가리기</button>
+                    )}
+                    <button onClick={()=>delPromo(p.id)}
+                      style={{background:"transparent",border:`1px solid ${D.red}55`,borderRadius:4,
+                        color:D.red,cursor:"pointer",padding:"3px 10px",fontSize:11}}>프로모션 삭제</button>
+                  </div>
+                </>
+                )}
+              </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 
@@ -5607,7 +5674,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                 <tbody>
                   {pinnedComparison.map((p,i)=>(
                     <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
-                      <td style={{padding:"5px 7px",color:D.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>📌 {p.name}</td>
+                      <td style={{padding:"5px 7px",color:D.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>{p.name}</td>
                       <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.memo}>{p.memo||"—"}</td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.prev.toLocaleString()}장</td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{p.promo.toLocaleString()}장</td>

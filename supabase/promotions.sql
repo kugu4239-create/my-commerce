@@ -27,6 +27,7 @@ alter table public.promotions add column if not exists content       text;
 alter table public.promotions add column if not exists files         jsonb default '[]'::jsonb;
 alter table public.promotions add column if not exists discount_plan jsonb default '{}'::jsonb;
 alter table public.promotions add column if not exists pinned_products jsonb default '[]'::jsonb;
+alter table public.promotions add column if not exists submit_date    text;   -- 프로모션 제출일
 
 -- 2) 제출해야 하는 프로모션
 create table if not exists public.submit_promotions (
