@@ -5652,10 +5652,17 @@ function SaleCalcModal({ onClose }){
     if(!wbRef.current||!processed||!processed.length) return;
     const XLSX=await getXLSX();
     const ws=wbRef.current.Sheets[sheetRef.current];
-    processed.forEach(r=>{ ws[XLSX.utils.encode_cell({r:r.row,c:8})]={t:"n",v:r.basePrice}; });
+    // 원본 셀 보존 — 기존 서식(z)·스타일(s)은 유지하고 I열 값만 교체. 캐시 표시값(w)·수식(f)만 제거
+    processed.forEach(r=>{
+      const addr=XLSX.utils.encode_cell({r:r.row,c:8});
+      const prev=ws[addr]||{};
+      const next={...prev,t:"n",v:r.basePrice};
+      delete next.f; delete next.w;
+      ws[addr]=next;
+    });
     const range=XLSX.utils.decode_range(ws["!ref"]);
     if(range.e.c<8){ range.e.c=8; ws["!ref"]=XLSX.utils.encode_range(range); }
-    XLSX.writeFile(wbRef.current,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`);
+    XLSX.writeFile(wbRef.current,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
   };
   const sec={marginBottom:10,border:`1px solid ${D.border}`,borderRadius:8,background:D.surface};
   const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
