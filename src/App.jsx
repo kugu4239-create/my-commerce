@@ -11114,13 +11114,25 @@ function CaptureBtn({cardRef,filename,DC}){
   const capture=async()=>{
     if(!cardRef?.current||busy) return;
     setBusy(true);
+    const el=cardRef.current;
     // Hide all capture buttons inside the card before snapshot
-    const btns=cardRef.current.querySelectorAll("[data-capture-hide]");
+    const btns=el.querySelectorAll("[data-capture-hide]");
     btns.forEach(b=>{b._prevVis=b.style.visibility;b.style.visibility="hidden";});
+    // 스크롤 컨테이너(모달 등)는 보이는 영역만 잡히므로, 높이 제약을 잠시 풀어
+    // 폭(현재 뷰 비율)은 그대로 두고 전체 스크롤 높이로 펼쳐 캡처 후 복원
+    const prevStyle={maxHeight:el.style.maxHeight,height:el.style.height,overflow:el.style.overflow};
+    const prevScroll=el.scrollTop;
+    el.style.maxHeight="none";el.style.height="auto";el.style.overflow="visible";
+    const fullH=el.scrollHeight;
+    const restore=()=>{
+      el.style.maxHeight=prevStyle.maxHeight;el.style.height=prevStyle.height;el.style.overflow=prevStyle.overflow;
+      el.scrollTop=prevScroll;
+      btns.forEach(b=>{b.style.visibility=b._prevVis||"";});
+    };
     try{
       const {default:html2canvas}=await import("html2canvas");
-      const canvas=await html2canvas(cardRef.current,{scale:2,useCORS:true,backgroundColor:null,logging:false});
-      btns.forEach(b=>{b.style.visibility=b._prevVis||"";});
+      const canvas=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:null,logging:false,height:fullH,windowHeight:fullH});
+      restore();
       const fname=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
       const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
       const isAndroid=/Android/i.test(navigator.userAgent);
@@ -11152,7 +11164,7 @@ function CaptureBtn({cardRef,filename,DC}){
       const a=document.createElement("a");
       a.download=fname;a.href=canvas.toDataURL("image/png");a.click();
       feedback();
-    }catch(e){btns.forEach(b=>{b.style.visibility=b._prevVis||"";});console.error(e);}
+    }catch(e){restore();console.error(e);}
     setBusy(false);
   };
   return(
