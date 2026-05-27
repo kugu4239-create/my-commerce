@@ -3948,8 +3948,12 @@ function computeDiscountMatrix(plan){
   const stackFactor=stack.reduce((f,c)=>f*(1-(+c.rate||0)/100),1);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
   const cols=[{key:"prod",label:"상품할인"}];
-  if(stack.length) cols.push({key:"stack",label:`중복적층(${stack.length})`});
-  solo.forEach((c,i)=>cols.push({key:"solo"+i,label:(c.name||"").trim()||`쿠폰${i+1}`}));
+  if(stack.length){
+    const nm=stack.map(c=>(c.name||"").trim()||"쿠폰").join("+");
+    const rt=stack.map(c=>(+c.rate||0)+"%").join("+");
+    cols.push({key:"stack",label:`${nm} (중복쿠폰·${rt})`});
+  }
+  solo.forEach((c,i)=>cols.push({key:"solo"+i,label:`${(c.name||"").trim()||`쿠폰${i+1}`} (${(+c.rate||0)}%)`}));
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
     if(stack.length) cells.stack=fin(g.rate,stackFactor);
@@ -4318,7 +4322,7 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
   const setMemo=(i,memo)=>onChange(value.map((v,j)=>j===i?{...v,memo}:v));
   return (
     <div>
-      <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>핀셋 상품 <span style={{opacity:.6}}>(배송 데이터 기반 · 상품 단위 · 체크 후 한번에 추가 · 임팩트 분석에서 전/후 판매량 비교)</span></div>
+      <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>핀셋 상품 <span style={{opacity:.6}}>(배송 데이터 기반 · 상품 단위 · 체크 후 한번에 추가 · 임팩트 분석에서 전/후 판매량 비교)</span></div>
       <div style={{position:"relative"}}>
         <input value={q} onChange={e=>setQ(e.target.value)} style={pillInp} placeholder="상품명 검색 (배송 데이터)"/>
         {matches.length>0&&(
@@ -4648,24 +4652,24 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             프로모션 전략 메모
           </button>
         ):(
-          <div style={{width:320,maxHeight:"72vh",overflowY:"auto",background:D.surface,
+          <div style={{width:"70vw",maxHeight:"72vh",overflowY:"auto",background:D.black,
             border:`1px solid ${D.border}`,borderRadius:"0 10px 10px 0",
             boxShadow:"4px 4px 24px rgba(0,0,0,0.18)",padding:"14px 16px",
             fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <b style={{fontSize:13,color:D.black}}>프로모션 전략 메모</b>
+              <b style={{fontSize:11,color:"#fff"}}>프로모션 전략 메모</b>
               <button onClick={()=>setStrategyOpen(false)}
-                style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+                style={{background:"none",border:"none",color:"#fff",cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
             </div>
-            {PROMO_PLATFORMS.map(ch=>(
+            {["자사몰","29CM","오프라인 스토어","무신사"].map(ch=>(
               <div key={ch} style={{marginBottom:10}}>
                 <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
                   <span style={{width:7,height:7,borderRadius:"50%",background:chColor(ch),display:"inline-block"}}/>
-                  <span style={{fontSize:11,fontWeight:600,color:D.textSub}}>{ch}</span>
+                  <span style={{fontSize:11,fontWeight:600,color:"#fff"}}>{ch}</span>
                 </div>
                 <textarea value={strategy[ch]||""} onChange={e=>setStrategyMemo(ch,e.target.value)} onBlur={()=>saveStrategy(ch)}
-                  placeholder="전략 메모..." style={{width:"100%",boxSizing:"border-box",minHeight:54,resize:"vertical",
-                    border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 8px",fontSize:11,color:D.text,
+                  placeholder="전략 메모..." style={{width:"100%",boxSizing:"border-box",minHeight:ch==="무신사"?54:108,resize:"vertical",
+                    background:"#fff",border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 8px",fontSize:11,color:"#111",
                     fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.6}}/>
               </div>
             ))}
@@ -4713,11 +4717,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           <div style={{fontWeight:600,fontSize:14,marginBottom:16}}>프로모션 추가</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,alignItems:"start"}}>
             <div>
-              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션명</div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>프로모션명</div>
               <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp} placeholder="예: 오픈 기념 할인"/>
             </div>
             <div>
-              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>플랫폼</div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>플랫폼</div>
               <div style={{display:"flex",gap:3}}>
                 {PROMO_PLATFORMS.map(p=>(
                   <button key={p} onClick={()=>setForm(f=>({...f,platform:p}))}
@@ -4732,7 +4736,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             </div>
             {[["시작일시","start_date"],["종료일시","end_date"]].map(([label,field])=>(
               <div key={field}>
-                <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>{label}</div>
+                <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>{label}</div>
                 <DateDrop id={`promo_${field}`}
                   value={form[field]?.slice(0,10)||""}
                   onChange={v=>{const time=form[field]?.slice(10)||"";setForm(f=>({...f,[field]:v+time}));}}
@@ -4764,7 +4768,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
           <div style={{marginTop:10,display:"grid",gridTemplateColumns:"3fr 1fr",gap:8}}>
             <div>
-              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
               <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))}
                 onKeyDown={e=>{
                   if(e.key==="Enter"){
@@ -4779,7 +4783,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 style={{...inp,resize:"vertical",minHeight:144,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
             </div>
             <div>
-              <div style={{fontSize:12,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {(form.files||[]).map((f,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:4,
