@@ -3976,8 +3976,11 @@ function computeDiscountMatrix(plan){
 // 상품군×시나리오 매트릭스 표 (에디터·등록 카드 공용)
 function DiscountMatrix({ plan, compact=false }){
   const m=computeDiscountMatrix(plan);
+  const [circled,setCircled]=useState(()=>new Set());
   if(!m.hasGroup) return null;
   const anyCoupon=m.cols.some(c=>c.coupon);
+  // 값 클릭 시 파란 원으로 강조 토글 (스크린샷 강조용)
+  const toggleCircle=k=>setCircled(prev=>{const s=new Set(prev);s.has(k)?s.delete(k):s.add(k);return s;});
   const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"center",whiteSpace:"nowrap"};
   const th={...cell,color:D.textSub,fontWeight:600,borderBottom:`1px solid ${D.border}`,verticalAlign:"bottom"};
   // 상품(상품군·상품할인)과 쿠폰 열 사이 구분선만 (개별 열 강조 없음)
@@ -3992,7 +3995,7 @@ function DiscountMatrix({ plan, compact=false }){
               {c.name?(
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
                   <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                  <span style={{fontWeight:400,fontSize:compact?9:10,color:D.textMeta}}>{c.sub}</span>
+                  <span style={{color:D.blue}}>{c.sub}</span>
                 </div>
               ):c.label}
             </th>
@@ -4005,9 +4008,15 @@ function DiscountMatrix({ plan, compact=false }){
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
                 const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
-                return <td key={c.key} style={{...cell,...divAt(c,ci),
+                const k=i+"-"+c.key;
+                return <td key={c.key} onClick={v==null?undefined:()=>toggleCircle(k)}
+                  style={{...cell,...divAt(c,ci),cursor:v==null?"default":"pointer",
                   fontWeight:v==null?500:(isFinal?700:500),
-                  color:v==null?D.textMeta:(isFinal?D.blue:D.textSub)}}>{v==null?"미적용":v+"%"}</td>;
+                  color:v==null?D.textMeta:(isFinal?D.blue:D.textSub)}}>
+                  {v==null?"미적용":(circled.has(k)
+                    ?<span style={{display:"inline-block",border:`2px solid ${D.blue}`,borderRadius:"50%",padding:compact?"1px 6px":"2px 9px",lineHeight:1}}>{v}%</span>
+                    :v+"%")}
+                </td>;
               })}
             </tr>
           ))}
@@ -4184,7 +4193,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
       {/* 실시간 최종 할인율 매트릭스 (상품군 × 시나리오) */}
       {computeDiscountMatrix(plan).hasGroup&&(
         <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${D.border}`}}>
-          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 파랑=예상 최종</span></div>
+          <div style={{...lbl,marginBottom:2}}>예상 최종 할인율 <span style={{color:D.textMeta,fontWeight:400}}>· 곱연산(프런트할인×쿠폰) · 파랑=예상 최종 · 값 클릭 시 원 강조</span></div>
           <DiscountMatrix plan={plan}/>
         </div>
       )}
@@ -4327,6 +4336,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[],submit_date:""});
   const today=new Date().toISOString().slice(0,10);
   const [impactModal,setImpactModal]=useState(null);
+  const [filePreview,setFilePreview]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
   const [viewEnd,setViewEnd]=useState(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().slice(0,10);});
   const [viewPeriod,setViewPeriod]=useState("2m");
@@ -4424,6 +4434,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     const db=await getSupabase();
     await db.from("promotions").update(updates).eq("id",id);
   },[]);
+  // 핀셋 상품 뱃지 하이라이트(흑백) 토글 — pinned_products(jsonb)에 저장되어 기기 간 공유됨
+  const togglePinHighlight=(p,idx)=>patchPromo(p.id,{pinned_products:(p.pinned_products||[]).map((pp,i)=>i===idx?{...pp,highlight:!pp.highlight}:pp)});
 
   // Load from Supabase — localStorage는 Supabase에 실제 데이터 있을 때만 덮어씀
   useEffect(()=>{
@@ -5220,13 +5232,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     </div>
                     {(p.pinned_products||[]).length>0&&(
                     <div style={{flex:"1 1 150px",minWidth:130}}>
-                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>핀셋 상품</div>
+                      <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>핀셋 상품 <span style={{opacity:.6}}>(클릭 시 강조)</span></div>
                       <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
                         {(p.pinned_products||[]).map((pp,i)=>(
-                          <span key={i} title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
-                            style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:8,
-                              padding:"1px 7px",fontSize:10,color:D.textSub,maxWidth:140,overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pp.name}</span>
+                          <span key={i} onClick={()=>togglePinHighlight(p,i)}
+                            title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
+                            style={{cursor:"pointer",borderRadius:8,padding:"1px 7px",fontSize:10,maxWidth:140,
+                              overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                              background:pp.highlight?D.black:D.surfaceAlt,
+                              color:pp.highlight?"#fff":D.textSub,
+                              border:`1px solid ${pp.highlight?D.black:D.border}`}}>{pp.name}</span>
                         ))}
                       </div>
                     </div>
@@ -5245,9 +5260,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                           background:tableFileDragOver===p.id?"#eef3ff":"transparent",minHeight:22,transition:"all 0.15s"}}>
                         {(p.files||[]).map((f,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
-                            <a href={f.data} download={f.name}
-                              style={{fontSize:11,color:D.textSub,textDecoration:"none",wordBreak:"break-all",flex:1}}
-                              title={f.name}>📎 {f.name}</a>
+                            <button data-capture-hide onClick={()=>setFilePreview(f)}
+                              style={{background:"none",border:"none",padding:0,fontSize:11,color:D.blue,textDecoration:"underline",
+                                cursor:"pointer",wordBreak:"break-all",flex:1,textAlign:"left"}}
+                              title={`${f.name} 미리보기`}>📎 {f.name}</button>
                             <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
                               style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
                                 cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0}}>첨부파일 삭제</button>
@@ -5458,9 +5474,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     {(h.files||[]).length
                       ?(h.files||[]).map((f,i)=>(
                         <div key={i} style={{lineHeight:1.5}}>
-                          <a href={f.data} download={f.name}
-                            style={{fontSize:12,color:D.textSub,textDecoration:"none",wordBreak:"break-all"}}
-                            title={f.name}>📎 {f.name}</a>
+                          <button onClick={()=>setFilePreview(f)}
+                            style={{background:"none",border:"none",padding:0,fontSize:12,color:D.blue,textDecoration:"underline",
+                              cursor:"pointer",wordBreak:"break-all",textAlign:"left"}}
+                            title={`${f.name} 미리보기`}>📎 {f.name}</button>
                         </div>
                       ))
                       :<span style={{color:D.textMeta}}>—</span>}
@@ -5475,6 +5492,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       )}
 
       {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
+      {filePreview&&<FilePreviewModal file={filePreview} onClose={()=>setFilePreview(null)}/>}
     </div>
   );
 }
@@ -5514,6 +5532,95 @@ function promoRevenueChg(promo, revenues=[], storeSales=[]){
   }
   const chg=prevTotal>0?((promoTotal-prevTotal)/prevTotal*100):null;
   return {prevTotal,promoTotal,chg};
+}
+
+// 첨부 파일 미리보기 모달 — 엑셀/CSV는 표, 이미지·PDF는 인라인, 그 외는 다운로드 안내
+function FilePreviewModal({ file, onClose }){
+  const [aoaList,setAoaList]=useState(null);
+  const [sheets,setSheets]=useState([]);
+  const [active,setActive]=useState(0);
+  const [err,setErr]=useState("");
+  const name=file?.name||"";
+  const ext=(name.split(".").pop()||"").toLowerCase();
+  const type=file?.type||"";
+  const isImage=type.startsWith("image/")||["png","jpg","jpeg","gif","webp","svg","bmp","avif"].includes(ext);
+  const isPdf=type.includes("pdf")||ext==="pdf";
+  const isSheet=["xlsx","xls","xlsm","csv"].includes(ext)||type.includes("sheet")||type.includes("excel")||type.includes("csv");
+  useEffect(()=>{
+    if(!file||!isSheet) return;
+    let alive=true;
+    (async()=>{
+      try{
+        const XLSX=await getXLSX();
+        const b64=(file.data||"").split(",")[1]||"";
+        const wb=XLSX.read(b64,{type:"base64"});
+        const all=wb.SheetNames.map(nm=>XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,defval:""}));
+        if(!alive) return;
+        setSheets(wb.SheetNames); setAoaList(all); setActive(0);
+      }catch{ if(alive) setErr("미리보기를 불러오지 못했습니다."); }
+    })();
+    return()=>{alive=false;};
+  },[file,isSheet]);
+  const loading=isSheet&&aoaList===null&&!err;
+  const MAXR=300, MAXC=40;
+  const aoa=aoaList?.[active]||[];
+  const rows=aoa.slice(0,MAXR);
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:D.surface,borderRadius:12,padding:"18px 20px",
+        width:"min(1000px,95vw)",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
+          <b style={{fontSize:14,color:D.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>📎 {name}</b>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <a href={file.data} download={name} style={{fontSize:12,color:D.textSub,textDecoration:"none",
+              border:`1px solid ${D.border}`,borderRadius:6,padding:"4px 10px"}}>다운로드</a>
+            <button onClick={onClose} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+          </div>
+        </div>
+        {isSheet&&sheets.length>1&&(
+          <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
+            {sheets.map((s,i)=>(
+              <button key={i} onClick={()=>setActive(i)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",
+                border:`1px solid ${i===active?D.black:D.border}`,background:i===active?D.black:D.surface,color:i===active?"#fff":D.textSub}}>{s}</button>
+            ))}
+          </div>
+        )}
+        <div style={{overflow:"auto",flex:1,minHeight:0}}>
+          {isImage&&<img src={file.data} alt={name} style={{maxWidth:"100%",height:"auto",display:"block",margin:"0 auto"}}/>}
+          {isPdf&&<iframe title={name} src={file.data} style={{width:"100%",height:"72vh",border:"none"}}/>}
+          {isSheet&&(
+            loading?<div style={{color:D.textMeta,fontSize:12,padding:30,textAlign:"center"}}>불러오는 중…</div>
+            :err?<div style={{color:D.red,fontSize:12,padding:30,textAlign:"center"}}>{err}</div>
+            :<table style={{borderCollapse:"collapse",fontSize:11}}>
+              <tbody>
+                {rows.map((r,ri)=>(
+                  <tr key={ri}>
+                    {Array.from({length:Math.min(MAXC,Math.max(1,r.length))}).map((_,ci)=>{
+                      const val=r[ci]; const Tag=ri===0?"th":"td";
+                      return <Tag key={ci} title={String(val??"")} style={{border:`1px solid ${D.border}`,padding:"3px 8px",
+                        whiteSpace:"nowrap",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",textAlign:"left",
+                        background:ri===0?D.surfaceAlt:"transparent",fontWeight:ri===0?600:400,
+                        color:ri===0?D.textSub:D.text}}>{val===""||val==null?"":String(val)}</Tag>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {!isImage&&!isPdf&&!isSheet&&(
+            <div style={{color:D.textMeta,fontSize:13,padding:"40px 0",textAlign:"center"}}>
+              이 형식은 미리보기를 지원하지 않습니다. 다운로드해서 확인해 주세요.
+            </div>
+          )}
+        </div>
+        {isSheet&&!loading&&!err&&aoa.length>MAXR&&(
+          <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>※ 처음 {MAXR}행만 미리보기 (전체 {aoa.length.toLocaleString()}행)</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
