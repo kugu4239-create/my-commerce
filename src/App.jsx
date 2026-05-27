@@ -4600,12 +4600,38 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const setStrategyMemo=(ch,memo)=>setStrategy(prev=>{const n={...prev,[ch]:memo};localStorage.setItem("promo_strategy",JSON.stringify(n));return n;});
   const saveStrategy=async ch=>{const db=await getSupabase();await db.from("promo_strategy").upsert({channel:ch,memo:strategy[ch]||""},{onConflict:"channel"});};
 
+  // ── 공백 알림 (채널별 등록 프로모션 사이 빈 기간) ──
+  const [gapOpen,setGapOpen]=useState(false);
+  const gapsByChannel=useMemo(()=>{
+    const addDays=(d,n)=>new Date(new Date(d+"T00:00:00").getTime()+n*86400000).toISOString().slice(0,10);
+    const out={};
+    PROMO_PLATFORMS.forEach(ch=>{
+      const ivs=promos.filter(p=>p.platform===ch&&!hiddenIds.has(p.id)&&p.start_date&&p.end_date)
+        .map(p=>({s:String(p.start_date).slice(0,10),e:String(p.end_date).slice(0,10)}))
+        .filter(iv=>iv.s&&iv.e&&iv.s<=iv.e)
+        .sort((a,b)=>a.s>b.s?1:-1);
+      const merged=[];
+      ivs.forEach(iv=>{
+        const last=merged[merged.length-1];
+        if(last&&iv.s<=addDays(last.e,1)){ if(iv.e>last.e) last.e=iv.e; }
+        else merged.push({...iv});
+      });
+      const gaps=[];
+      for(let i=1;i<merged.length;i++){
+        const gs=addDays(merged[i-1].e,1), ge=addDays(merged[i].s,-1);
+        if(gs<=ge) gaps.push({start:gs,end:ge,days:Math.round((new Date(ge)-new Date(gs))/86400000)+1});
+      }
+      out[ch]={count:ivs.length,gaps};
+    });
+    return out;
+  },[promos,hiddenIds]);
+
   return (
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
       {/* 좌측 책갈피 — 채널별 프로모션 전략 메모 */}
       <div style={{position:"fixed",top:140,left:0,zIndex:1500}}>
         {!strategyOpen?(
-          <button onClick={()=>setStrategyOpen(true)}
+          <button onClick={()=>{setStrategyOpen(true);setGapOpen(false);}}
             style={{writingMode:"vertical-rl",background:D.black,color:"#fff",border:"none",
               borderRadius:"0 8px 8px 0",padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",
               letterSpacing:"0.12em",boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
@@ -4633,6 +4659,51 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.6}}/>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+      {/* 좌측 책갈피 2 — 공백 알림 (등록 프로모션 사이 빈 기간) */}
+      <div style={{position:"fixed",top:332,left:0,zIndex:1500}}>
+        {!gapOpen?(
+          <button onClick={()=>{setGapOpen(true);setStrategyOpen(false);}}
+            style={{writingMode:"vertical-rl",background:D.red,color:"#fff",border:"none",
+              borderRadius:"0 8px 8px 0",padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",
+              letterSpacing:"0.12em",boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
+            공백 알림
+          </button>
+        ):(
+          <div style={{width:"min(440px,90vw)",maxHeight:"72vh",overflowY:"auto",background:D.surface,
+            border:`1px solid ${D.border}`,borderRadius:"0 10px 10px 0",
+            boxShadow:"4px 4px 24px rgba(0,0,0,0.18)",padding:"14px 16px",
+            fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <b style={{fontSize:12,color:D.black}}>공백 알림</b>
+              <button onClick={()=>setGapOpen(false)}
+                style={{background:"none",border:"none",color:D.textMeta,cursor:"pointer",fontSize:15,lineHeight:1}}>✕</button>
+            </div>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:10}}>채널별 등록 프로모션 사이 빈 기간</div>
+            {PROMO_PLATFORMS.map(ch=>{
+              const info=gapsByChannel[ch]||{count:0,gaps:[]};
+              return (
+                <div key={ch} style={{marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:chColor(ch),display:"inline-block"}}/>
+                    <span style={{fontSize:11,fontWeight:600,color:D.textSub}}>{ch}</span>
+                  </div>
+                  {info.count===0?(
+                    <div style={{fontSize:11,color:D.textMeta,paddingLeft:12}}>등록된 프로모션 없음</div>
+                  ):info.gaps.length===0?(
+                    <div style={{fontSize:11,color:D.green,paddingLeft:12}}>공백 없음 (연속)</div>
+                  ):info.gaps.map((g,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:6,paddingLeft:12,fontSize:11,color:D.text,lineHeight:1.8}}>
+                      <span style={{color:D.red,fontWeight:700}}>•</span>
+                      <span style={{fontWeight:600}}>{g.start} ~ {g.end}</span>
+                      <span style={{color:D.textMeta}}>({g.days}일 공백)</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
