@@ -4342,7 +4342,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[],submit_date:""});
-  const today=new Date().toISOString().slice(0,10);
+  const today=localDate(0); // 로컬(KST) 날짜 — UTC 변환 시 새벽에 하루 밀려 오늘 시작 프로모션의 임팩트 버튼이 사라지던 문제 방지
   const [impactModal,setImpactModal]=useState(null);
   const [filePreview,setFilePreview]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
@@ -5557,8 +5557,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 function promoRevenueChg(promo, revenues=[], storeSales=[]){
   const ch=promo.platform;
   const dayMs=86400000;
-  const todayStr=new Date().toISOString().slice(0,10);
-  const yesterdayStr=new Date(Date.now()-dayMs).toISOString().slice(0,10);
+  const todayStr=localDate(0);
+  const yesterdayStr=localDate(-1);
   const promoStart=String(promo.start_date||"").slice(0,10);
   const promoEndRaw=String(promo.end_date||"").slice(0,10);
   if(!promoStart||!promoEndRaw) return {prevTotal:0,promoTotal:0,chg:null};
@@ -5933,8 +5933,8 @@ function FilePreviewModal({ file, onClose }){
 function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[] }) {
   const ch=promo.platform;
   const dayMs=86400000;
-  const todayStr=new Date().toISOString().slice(0,10);
-  const yesterdayStr=new Date(Date.now()-dayMs).toISOString().slice(0,10);
+  const todayStr=localDate(0);
+  const yesterdayStr=localDate(-1);
   const promoStart=String(promo.start_date||"").slice(0,10);
   const promoEndRaw=String(promo.end_date||"").slice(0,10);
   // 진행중 프로모션: 종료일이 미래 → 분석 종료일은 어제로 클램프
