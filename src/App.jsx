@@ -5562,7 +5562,7 @@ function promoRevenueChg(promo, revenues=[], storeSales=[]){
   const promoStart=String(promo.start_date||"").slice(0,10);
   const promoEndRaw=String(promo.end_date||"").slice(0,10);
   if(!promoStart||!promoEndRaw) return {prevTotal:0,promoTotal:0,chg:null};
-  const isOngoing=promoEndRaw>todayStr;
+  const isOngoing=promoEndRaw>=todayStr; // 종료일이 미래거나 당일(오늘)이면 오늘 데이터 미완성 → 전일까지만 집계
   const promoEnd=isOngoing?(yesterdayStr>=promoStart?yesterdayStr:promoStart):promoEndRaw;
   const lenDays=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs)+1;
   const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
@@ -5937,9 +5937,10 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   const yesterdayStr=localDate(-1);
   const promoStart=String(promo.start_date||"").slice(0,10);
   const promoEndRaw=String(promo.end_date||"").slice(0,10);
-  // 진행중 프로모션: 종료일이 미래 → 분석 종료일은 어제로 클램프
+  // 종료일이 미래거나 당일(오늘) → 오늘 데이터는 미완성이므로 분석 종료일을 전일(어제)로 클램프
+  //   (직전 동기간도 lenDays 기준이라 같은 만큼 하루 당겨짐) · 종료 다음날부터는 전체 기간 집계
   //   - 어제가 시작일보다 이르면(시작 당일) 시작일로 클램프
-  const isOngoing=promoEndRaw>todayStr;
+  const isOngoing=promoEndRaw>=todayStr;
   const promoEnd=isOngoing
     ?(yesterdayStr>=promoStart?yesterdayStr:promoStart)
     :promoEndRaw;
