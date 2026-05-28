@@ -6344,6 +6344,35 @@ function SaleCalcModal({ onClose }){
           </div>
           <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,
             borderRadius:10,marginBottom:16}}>
+            {/* 프리셋 — 자주 쓰는 쿠폰 시나리오 3종 */}
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:10,
+              paddingBottom:10,borderBottom:`1px dashed ${D.border}`}}>
+              <span style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em",marginRight:2}}>자주 쓰는 시나리오</span>
+              {[
+                {label:"29CM 지원 쿠폰 15%",sub:"장바구니 · 채널부담",apply:()=>{
+                  setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
+                  setStackCoupons([]);setScenarioIdx(0);
+                }},
+                {label:"29CM 지원 15% × 브랜드 쿠폰 10%",sub:"장바구니 채널 + 상품 자사",apply:()=>{
+                  setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
+                  setStackCoupons([{rate:"10",type:"product",burden:"self",shareRate:50}]);setScenarioIdx(0);
+                }},
+                {label:"이구쿠폰 29%",sub:"분담 · 자사 60 : 채널 40",apply:()=>{
+                  setCoupon(29);setPrimaryType("share");setPrimaryBurden("self");setPrimaryShareRate(40);
+                  setStackCoupons([]);setScenarioIdx(0);
+                }},
+              ].map((p,i)=>(
+                <button key={i} type="button" onClick={p.apply}
+                  title={`${p.label} · ${p.sub}`}
+                  style={{background:"transparent",border:`1px dashed ${D.black}`,borderRadius:5,
+                    padding:"5px 10px",fontSize:11,cursor:"pointer",fontWeight:600,color:D.text,
+                    fontFamily:"-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Helvetica Neue', Arial, sans-serif",
+                    letterSpacing:"-0.01em",lineHeight:1.3,textAlign:"left"}}>
+                  <span style={{display:"block",fontWeight:700}}>{p.label}</span>
+                  <span style={{display:"block",fontSize:9,color:D.textMeta,fontWeight:500,marginTop:1}}>{p.sub}</span>
+                </button>
+              ))}
+            </div>
             {/* 기본 쿠폰 행 */}
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               {/* 타입 세그먼트 */}
