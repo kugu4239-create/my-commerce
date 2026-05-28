@@ -6090,10 +6090,99 @@ function SaleCalcModal({ onClose }){
   const cpn=selectedScenario.eff;
   const slot=calcClassify(listPrice||0);
   const single=listPrice>0?calcReverse(listPrice,slot.disc,cpn):null;
+  // 인벤토리 공급가 맵 — 최근 스냅샷 기준 (이름·코드 키)
+  const [invMap,setInvMap]=useState({});
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const {data:latest}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false}).limit(1);
+        const d=latest?.[0]?.snapshot_date; if(!d||!alive) return;
+        let all=[],from=0;const PAGE=1000;
+        while(true){
+          const {data,error}=await db.from("inventory_snapshot").select("product_name,product_code,supply_price")
+            .eq("snapshot_date",d).range(from,from+PAGE-1);
+          if(error||!data||data.length===0) break;
+          all=all.concat(data);
+          if(data.length<PAGE) break;
+          from+=PAGE;
+        }
+        if(!alive) return;
+        const m={};
+        all.forEach(r=>{
+          const n=(r.product_name||"").trim();
+          if(n) m["n:"+n]=r.supply_price||0;
+          const c=(r.product_code||"").trim();
+          if(c) m["c:"+c]=r.supply_price||0;
+        });
+        setInvMap(m);
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  // 상품명/코드 → 공급가 매칭 (정확 일치 → 부분 포함 fallback)
+  const supplyOf=useCallback((name,code)=>{
+    if(code){const v=invMap["c:"+String(code).trim()]; if(v) return v;}
+    const n=(name||"").trim(); if(!n) return 0;
+    if(invMap["n:"+n]) return invMap["n:"+n];
+    const keys=Object.keys(invMap).filter(k=>k.startsWith("n:"));
+    for(const k of keys){
+      const kn=k.slice(2);
+      if(kn.length>=4&&(kn.includes(n)||n.includes(kn))) return invMap[k];
+    }
+    return 0;
+  },[invMap]);
+  // 행별 baseDisc 수동 오버라이드 (사용자가 직접 수정한 값) — cpn 변경에도 유지
   useEffect(()=>{
     if(!rawRef.current) return;
-    setProcessed(rawRef.current.map(r=>{const s=calcClassify(r.list);return {...r,slot:s,...calcReverse(r.list,s.disc,cpn)};}));
-  },[cpn]);
+    setProcessed(prev=>{
+      const factorCoupon=1-cpn/100;
+      return rawRef.current.map((r,i)=>{
+        const s=calcClassify(r.list);
+        const manualBase=prev?.[i]?.manualBase;
+        let calc;
+        if(manualBase!=null){
+          const baseFactor=1-manualBase/100;
+          const basePrice=Math.round(r.list*baseFactor/10)*10;
+          const finalPrice=Math.round(basePrice*factorCoupon/10)*10;
+          const finalDisc=r.list>0?Math.round((1-finalPrice/r.list)*1000)/10:0;
+          calc={baseDisc:manualBase,basePrice,finalPrice,finalDisc};
+        } else {
+          calc=calcReverse(r.list,s.disc,cpn);
+        }
+        const supply=supplyOf(r.name,r.code);
+        const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
+        return {...r,slot:s,...calc,manualBase,supply,costRatio};
+      });
+    });
+  },[cpn,supplyOf]);
+
+  // 사용자가 기본 할인율을 직접 수정하면 기본 판매가·최종가·원가율 즉시 재계산
+  const updateBaseDisc=(rowIdx,newBase)=>{
+    const v=Math.max(0,Math.min(100,Number(newBase)||0));
+    setProcessed(prev=>prev.map((r,i)=>{
+      if(i!==rowIdx) return r;
+      const baseFactor=1-v/100;
+      const basePrice=Math.round(r.list*baseFactor/10)*10;
+      const factorCoupon=1-cpn/100;
+      const finalPrice=Math.round(basePrice*factorCoupon/10)*10;
+      const finalDisc=r.list>0?Math.round((1-finalPrice/r.list)*1000)/10:0;
+      const supply=r.supply||0;
+      const costRatio=finalPrice>0&&supply>0?Math.round(supply/finalPrice*1000)/10:0;
+      return {...r,baseDisc:v,basePrice,finalPrice,finalDisc,manualBase:v,costRatio};
+    }));
+  };
+  const resetBaseDisc=(rowIdx)=>{
+    setProcessed(prev=>prev.map((r,i)=>{
+      if(i!==rowIdx) return r;
+      const s=r.slot;
+      const calc=calcReverse(r.list,s.disc,cpn);
+      const supply=r.supply||0;
+      const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
+      return {...r,...calc,manualBase:undefined,costRatio};
+    }));
+  };
   const handleFile=async file=>{
     fnameRef.current=file.name.replace(/\.xlsx?$/i,"");
     try{
@@ -6121,8 +6210,14 @@ function SaleCalcModal({ onClose }){
       }
       rawRef.current=rows; setShowResults(true);
       if(!rows.length){ setSummary("데이터 행을 찾지 못했습니다. E열에 정상가가 있는지 확인하세요."); setProcessed([]); return; }
-      setProcessed(rows.map(r=>{const s=calcClassify(r.list);return {...r,slot:s,...calcReverse(r.list,s.disc,cpn)};}));
-      setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행)`);
+      setProcessed(rows.map(r=>{
+        const s=calcClassify(r.list);
+        const calc=calcReverse(r.list,s.disc,cpn);
+        const supply=supplyOf(r.name,r.code);
+        const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
+        return {...r,slot:s,...calc,supply,costRatio};
+      }));
+      setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행) · 인벤토리 매칭 ${rows.filter(r=>supplyOf(r.name,r.code)>0).length}건`);
     }catch(err){ setShowResults(true); setProcessed([]); setSummary("파일 읽기 실패: "+(err?.message||err)); }
   };
   const download=async()=>{
@@ -6358,7 +6453,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","공급가","원가율"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -6374,10 +6469,33 @@ function SaleCalcModal({ onClose }){
                               </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600}}>{r.slot.disc}%</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{cpn}%</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{r.baseDisc}%</td>
+                              <td style={{padding:"4px 6px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
+                                <div style={{display:"inline-flex",alignItems:"center",gap:2}}>
+                                  <input type="number" step="0.1" min="0" max="100" value={r.baseDisc}
+                                    onChange={e=>updateBaseDisc(i,e.target.value)}
+                                    title={r.manualBase!=null?"사용자 수정 — 클릭으로 재계산값으로 복귀":"기본 역산값"}
+                                    style={{width:54,padding:"3px 5px",fontSize:11,textAlign:"right",
+                                      border:`1px solid ${r.manualBase!=null?D.blue:D.border}`,
+                                      borderRadius:4,background:r.manualBase!=null?"#eef3ff":D.surface,
+                                      color:r.manualBase!=null?D.blue:D.text,
+                                      fontWeight:r.manualBase!=null?700:400,fontFamily:"inherit"}}/>
+                                  <span style={{fontSize:11,color:D.textMeta}}>%</span>
+                                  {r.manualBase!=null&&(
+                                    <button onClick={()=>resetBaseDisc(i)} title="역산값으로 복귀"
+                                      style={{background:"transparent",border:"none",cursor:"pointer",fontSize:10,color:D.textMeta,padding:"0 3px"}}>↻</button>
+                                  )}
+                                </div>
+                              </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
+                                {r.supply>0?`₩${wonFmt(r.supply)}`:"—"}
+                              </td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,
+                                color:r.supply>0?(r.costRatio>=50?D.red:r.costRatio>=35?D.amber:D.green):D.textMeta,whiteSpace:"nowrap"}}>
+                                {r.supply>0?`${r.costRatio}%`:"—"}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
