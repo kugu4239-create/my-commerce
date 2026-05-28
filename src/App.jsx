@@ -3968,17 +3968,28 @@ function computeDiscountMatrix(plan){
 
   // 컬럼 구성:
   //   1) 프런트 할인
-  //   2) 단독: 각 쿠폰 1개씩
-  //   3) 누적(pair): canStack=true 인 쿠폰 쌍 — 현재 타입 규칙상 product × cart 만 가능
+  //   2) 단독 (combo=false): product / cart 단독 컬럼 (다른 쿠폰과 누적 가능하므로 비-final)
+  //   3) 조합 (combo=true): 분담 단독 (어차피 중복 불가 → final 비교용) + cart×product 쌍
   const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
+    if(couponTypeOf(c)==="share") return; // share 는 조합 그룹으로 이동
     const nm=couponDisplayName(c,i);
     const rate=+c.rate||0;
     const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(c)];
     cols.push({
       key:"c"+i,coupon:true,combo:false,indexes:[i],
       name:nm,sub:`(${tInfo.short}·${rate}%)`,label:`${nm} (${tInfo.short}·${rate}%)`,
-      color:tInfo.color,
+    });
+  });
+  // 분담 쿠폰 단독 (어차피 누구와도 누적 불가 → final 그 자체)
+  coupons.forEach((c,i)=>{
+    if(couponTypeOf(c)!=="share") return;
+    const nm=couponDisplayName(c,i);
+    const rate=+c.rate||0;
+    const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(c)];
+    cols.push({
+      key:"c"+i,coupon:true,combo:true,indexes:[i],
+      name:nm,sub:`(${tInfo.short}·${rate}%)`,label:`${nm} (${tInfo.short}·${rate}%)`,
     });
   });
   // 누적(pair) — 모든 canStack 쌍을 cartesian product 로 펼침
@@ -4367,26 +4378,28 @@ function cleanDiscountPlan(plan){
 }
 
 // 표 셀에 표시되는 컴팩트 보기 — 상품 할인 + 쿠폰 기간을 작은 가로 막대 두 줄로 시각화
-function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle }) {
+function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compact=true }) {
   const p=normalizePlan(plan);
   const cleanedProducts=p.products.rows.filter(r=>r.group||r.rate);
   const cleanedCoupons=p.coupons.filter(r=>r.rate||r.start||r.end);
   const hasAny=cleanedProducts.length||cleanedCoupons.length||p.products.period.start;
   if(!hasAny) return <span style={{color:D.textMeta,fontSize:11}}>—</span>;
 
+  const badgeFs=compact?11:12;
+  const badgePad=compact?"2px 7px":"3px 10px";
   return (
-    <div style={{fontSize:11,lineHeight:1.75,minWidth:140,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+    <div style={{fontSize:compact?11:12,lineHeight:1.75,minWidth:compact?140:0,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
       {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유) */}
       {cleanedProducts.length>0&&(
-        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:compact?5:8}}>
           {cleanedProducts.map((r,i)=>{
             const g=r.group||"전체";
             const on=(marks.groups||[]).includes(g);
             return (
             <span key={"p"+i} onClick={onToggleGroup?()=>onToggleGroup(g):undefined}
               style={{display:"inline-flex",alignItems:"center",gap:6,
-              padding:"2px 7px",background:on?D.black:"#fff",border:`1px solid ${D.black}`,
-              color:on?"#fff":D.black,borderRadius:10,fontSize:11,fontWeight:600,whiteSpace:"nowrap",
+              padding:badgePad,background:on?D.black:"#fff",border:`1px solid ${D.black}`,
+              color:on?"#fff":D.black,borderRadius:10,fontSize:badgeFs,fontWeight:600,whiteSpace:"nowrap",
               cursor:onToggleGroup?"pointer":"default"}}>
               <span>{g}</span>
               <span style={{width:1,height:10,background:on?"#fff":D.black,display:"inline-block"}}/>
@@ -4397,7 +4410,7 @@ function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle }) {
         </div>
       )}
       {/* 상품군 × 시나리오 최종 할인율 매트릭스 (쿠폰은 매트릭스 열로 표시) */}
-      {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact circledKeys={marks.circles} onToggleCircle={onToggleCircle}/>}
+      {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact={compact} circledKeys={marks.circles} onToggleCircle={onToggleCircle}/>}
     </div>
   );
 }
@@ -4519,6 +4532,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const promoCardRefs=useRef({}); // 등록 프로모션 카드별 DOM ref (이미지 다운로드용)
   const [formFileDragOver,setFormFileDragOver]=useState(false);
   const [tableFileDragOver,setTableFileDragOver]=useState(null);
+  const [pinnedModal,setPinnedModal]=useState(null); // 핀셋 상품 전체 보기 모달 — { promo } | null
   // Hidden promo log (localStorage only — no schema change needed)
   const getHiddenLog=()=>{try{return JSON.parse(localStorage.getItem("hidden_promo_log")||"[]");}catch{return[];}};
   const saveHiddenLogLocal=d=>localStorage.setItem("hidden_promo_log",JSON.stringify(d));
@@ -4784,78 +4798,101 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     return {all:gapsFor(null),core:gapsFor(["자사몰","29CM","오프라인 스토어"])};
   },[promos,hiddenIds]);
 
-  // 등록/가려진 카드 공용 본문 (기간·상세·할인율·핀셋·첨부)
-  const promoDetailBody=(p)=>(
-    <div style={{display:"flex",gap:16,marginTop:10,alignItems:"flex-start",flexWrap:"wrap"}}>
-      <div style={{flex:"0 0 auto",minWidth:120}}>
-        <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>기간</div>
-        {[p.start_date,p.end_date].map((dt,i)=>{
-          const [d,t]=(dt||"").split("T");
-          const wd=d?["일","월","화","수","목","금","토"][new Date(d+"T00:00:00").getDay()]:"";
-          return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{wd&&<span style={{fontSize:12,color:D.textSub,marginLeft:3}}>({wd})</span>}{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
-        })}
-      </div>
-      <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
-        <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>상세 내용</div>
-        {p.content||p.memo||"—"}
-      </div>
-      <div style={{flex:"2 1 380px",minWidth:300}}>
-        <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>할인율</div>
-        <DiscountPlanView plan={p.discount_plan} marks={p.discount_marks||{}}
-          onToggleGroup={g=>toggleMark(p,"groups",g)} onToggleCircle={k=>toggleMark(p,"circles",k)}/>
-      </div>
-      {(p.pinned_products||[]).length>0&&(
-      <div style={{flex:"1 1 150px",minWidth:130}}>
-        <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>핀셋 상품 <span style={{opacity:.6}}>(클릭 시 강조)</span></div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-          {(p.pinned_products||[]).map((pp,i)=>(
-            <span key={i} onClick={()=>togglePinHighlight(p,i)}
-              title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
-              style={{cursor:"pointer",borderRadius:8,padding:"1px 7px",fontSize:10,maxWidth:140,
-                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                background:pp.highlight?D.black:D.surfaceAlt,
-                color:pp.highlight?"#fff":D.textSub,
-                border:`1px solid ${pp.highlight?D.black:D.border}`}}>{pp.name}</span>
-          ))}
+  // 등록/가려진 카드 공용 본문
+  //   상단 행: 기간 · 상세 · 핀셋(최대 10) · 첨부
+  //   하단 영역: 할인율 매트릭스 (카드 전체 폭, 비-컴팩트)
+  const PIN_LIMIT=10;
+  const promoDetailBody=(p)=>{
+    const pins=p.pinned_products||[];
+    const visiblePins=pins.slice(0,PIN_LIMIT);
+    const hiddenCount=Math.max(0,pins.length-PIN_LIMIT);
+    return (
+    <div style={{marginTop:10}}>
+      {/* 상단 정보 행 */}
+      <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
+        <div style={{flex:"0 0 auto",minWidth:120}}>
+          <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>기간</div>
+          {[p.start_date,p.end_date].map((dt,i)=>{
+            const [d,t]=(dt||"").split("T");
+            const wd=d?["일","월","화","수","목","금","토"][new Date(d+"T00:00:00").getDay()]:"";
+            return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{wd&&<span style={{fontSize:12,color:D.textSub,marginLeft:3}}>({wd})</span>}{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
+          })}
         </div>
-      </div>
-      )}
-      <div style={{flex:"0 0 auto",marginLeft:"auto",minWidth:150}}>
-        <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>첨부 파일{p.submit_date?` · 제출일 ${p.submit_date}`:""}</div>
-        <div
-          onDragOver={e=>{e.preventDefault();setTableFileDragOver(p.id);}}
-          onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setTableFileDragOver(null);}}
-          onDrop={e=>{e.preventDefault();setTableFileDragOver(null);
-            addFilesFromList(e.dataTransfer.files,(p.files||[]).length,f=>addFileToPromo(p.id,f));
-          }}
-          style={{display:"flex",flexDirection:"column",gap:3,
-            border:`1px dashed ${tableFileDragOver===p.id?D.blue:"transparent"}`,
-            borderRadius:4,padding:tableFileDragOver===p.id?4:0,
-            background:tableFileDragOver===p.id?"#eef3ff":"transparent",minHeight:22,transition:"all 0.15s"}}>
-          {(p.files||[]).map((f,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
-              <button data-capture-hide onClick={()=>setFilePreview(f)}
-                style={{background:"none",border:"none",padding:0,fontSize:11,color:D.blue,textDecoration:"underline",
-                  cursor:"pointer",wordBreak:"break-all",flex:1,textAlign:"left"}}
-                title={`${f.name} 미리보기`}>📎 {f.name}</button>
-              <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
-                style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
-                  cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0}}>첨부파일 삭제</button>
+        <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
+          <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>상세 내용</div>
+          {p.content||p.memo||"—"}
+        </div>
+        {pins.length>0&&(
+          <div style={{flex:"2 1 280px",minWidth:200}}>
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>
+              핀셋 상품 <span style={{opacity:.6}}>(클릭 시 강조{pins.length>PIN_LIMIT?` · 총 ${pins.length}개 중 ${PIN_LIMIT}개 표시`:""})</span>
             </div>
-          ))}
-          {(p.files||[]).length<3&&(
-            tableFileDragOver===p.id
-              ?<span style={{fontSize:11,color:D.blue,textAlign:"center",padding:"2px 0"}}>여기에 놓기 ↓</span>
-              :<button data-capture-hide onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
-                style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
-                  padding:"2px 6px",fontSize:11,color:D.textMeta,cursor:"pointer",
-                  whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
-          )}
-          {!(p.files||[]).length&&tableFileDragOver!==p.id&&<span style={{color:D.textMeta,fontSize:11}}>—</span>}
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {visiblePins.map((pp,i)=>(
+                <span key={i} onClick={()=>togglePinHighlight(p,i)}
+                  title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
+                  style={{cursor:"pointer",borderRadius:8,padding:"1px 7px",fontSize:10,maxWidth:160,
+                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                    background:pp.highlight?D.black:D.surfaceAlt,
+                    color:pp.highlight?"#fff":D.textSub,
+                    border:`1px solid ${pp.highlight?D.black:D.border}`}}>{pp.name}</span>
+              ))}
+              {hiddenCount>0&&(
+                <button data-capture-hide onClick={()=>setPinnedModal({promo:p})}
+                  style={{cursor:"pointer",borderRadius:8,padding:"1px 8px",fontSize:10,fontWeight:600,
+                    background:"transparent",color:D.blue,border:`1px solid ${D.blue}80`,whiteSpace:"nowrap"}}>
+                  + {hiddenCount}개 더보기
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        <div style={{flex:"0 0 auto",marginLeft:"auto",minWidth:150}}>
+          <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>첨부 파일{p.submit_date?` · 제출일 ${p.submit_date}`:""}</div>
+          <div
+            onDragOver={e=>{e.preventDefault();setTableFileDragOver(p.id);}}
+            onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setTableFileDragOver(null);}}
+            onDrop={e=>{e.preventDefault();setTableFileDragOver(null);
+              addFilesFromList(e.dataTransfer.files,(p.files||[]).length,f=>addFileToPromo(p.id,f));
+            }}
+            style={{display:"flex",flexDirection:"column",gap:3,
+              border:`1px dashed ${tableFileDragOver===p.id?D.blue:"transparent"}`,
+              borderRadius:4,padding:tableFileDragOver===p.id?4:0,
+              background:tableFileDragOver===p.id?"#eef3ff":"transparent",minHeight:22,transition:"all 0.15s"}}>
+            {(p.files||[]).map((f,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
+                <button data-capture-hide onClick={()=>setFilePreview(f)}
+                  style={{background:"none",border:"none",padding:0,fontSize:11,color:D.blue,textDecoration:"underline",
+                    cursor:"pointer",wordBreak:"break-all",flex:1,textAlign:"left"}}
+                  title={`${f.name} 미리보기`}>📎 {f.name}</button>
+                <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
+                    cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0}}>첨부파일 삭제</button>
+              </div>
+            ))}
+            {(p.files||[]).length<3&&(
+              tableFileDragOver===p.id
+                ?<span style={{fontSize:11,color:D.blue,textAlign:"center",padding:"2px 0"}}>여기에 놓기 ↓</span>
+                :<button data-capture-hide onClick={()=>{setFileAddTarget(p.id);fileInputRef.current.value="";fileInputRef.current.click();}}
+                  style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:3,
+                    padding:"2px 6px",fontSize:11,color:D.textMeta,cursor:"pointer",
+                    whiteSpace:"nowrap",alignSelf:"flex-start"}}>+ 파일 추가</button>
+            )}
+            {!(p.files||[]).length&&tableFileDragOver!==p.id&&<span style={{color:D.textMeta,fontSize:11}}>—</span>}
+          </div>
         </div>
       </div>
+      {/* 하단: 할인율 매트릭스 — 카드 전체 폭으로 펼침 */}
+      {computeDiscountMatrix(p.discount_plan||{}).hasGroup&&(
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${D.border}`}}>
+          <div style={{fontSize:10,color:D.textMeta,marginBottom:6,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>할인율 매트릭스</div>
+          <DiscountPlanView plan={p.discount_plan} marks={p.discount_marks||{}}
+            onToggleGroup={g=>toggleMark(p,"groups",g)} onToggleCircle={k=>toggleMark(p,"circles",k)}
+            compact={false}/>
+        </div>
+      )}
     </div>
-  );
+  );};
 
   return (
     <div style={{padding:"20px 24px",maxWidth:1600,margin:"0 auto"}}>
@@ -5697,6 +5734,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
       {filePreview&&<FilePreviewModal file={filePreview} onClose={()=>setFilePreview(null)}/>}
       {calcOpen&&<SaleCalcModal onClose={()=>setCalcOpen(false)}/>}
+      {pinnedModal&&<PinnedListModal promo={pinnedModal.promo} onToggleHighlight={idx=>togglePinHighlight(pinnedModal.promo,idx)} onClose={()=>setPinnedModal(null)}/>}
     </div>
   );
 }
@@ -6219,6 +6257,43 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
 }
 
 // 첨부 파일 미리보기 모달 — 엑셀/CSV는 표, 이미지·PDF는 인라인, 그 외는 다운로드 안내
+// 핀셋 상품 전체 보기 모달 — 카드에서 10개 초과 시 "+ N개 더보기" 로 진입
+function PinnedListModal({ promo, onToggleHighlight, onClose }){
+  const pins=promo?.pinned_products||[];
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2050,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:12,padding:"18px 20px",
+          width:"min(720px,95vw)",maxHeight:"80vh",display:"flex",flexDirection:"column",
+          boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10}}>
+          <div>
+            <b style={{fontSize:14,color:D.black}}>{promo?.name||"프로모션"} · 핀셋 상품</b>
+            <span style={{fontSize:11,color:D.textMeta,marginLeft:8}}>총 {pins.length}개 · 클릭 시 강조 토글</span>
+          </div>
+          <button onClick={onClose}
+            style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+        </div>
+        <div style={{overflow:"auto",flex:1,minHeight:0}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {pins.map((pp,i)=>(
+              <span key={i} onClick={()=>onToggleHighlight(i)}
+                title={pp.memo?`${pp.name} · ${pp.memo}`:pp.name}
+                style={{cursor:"pointer",borderRadius:8,padding:"3px 10px",fontSize:11,maxWidth:240,
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                  background:pp.highlight?D.black:D.surfaceAlt,
+                  color:pp.highlight?"#fff":D.textSub,
+                  border:`1px solid ${pp.highlight?D.black:D.border}`}}>{pp.name}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FilePreviewModal({ file, onClose }){
   const [aoaList,setAoaList]=useState(null);
   const [sheets,setSheets]=useState([]);
