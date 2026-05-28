@@ -4629,6 +4629,8 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
 function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
+  const [addTimePickerFor,setAddTimePickerFor]=useState(null); // "start_date" | "end_date" | null
+  const [editTimePickerFor,setEditTimePickerFor]=useState(null); // 동일 — 수정 모드
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[],submit_date:""});
   const today=localDate(0); // 로컬(KST) 날짜 — UTC 변환 시 새벽에 하루 밀려 오늘 시작 프로모션의 임팩트 버튼이 사라지던 문제 방지
   const [impactModal,setImpactModal]=useState(null);
@@ -5036,7 +5038,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       <div style={{position:"fixed",top:140,left:0,zIndex:1500}}>
         {!strategyOpen?(gapOpen?null:(
           <button onClick={()=>{setStrategyOpen(true);setGapOpen(false);}}
-            style={{writingMode:"vertical-rl",background:D.black,color:"#fff",border:"none",
+            style={{writingMode:"vertical-rl",background:D.surface,color:D.text,border:`1px solid ${D.borderMid}`,
               borderRadius:"0 8px 8px 0",padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",
               letterSpacing:"0.12em",boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
             프로모션 전략 메모
@@ -5077,7 +5079,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       <div style={{position:"fixed",top:332,left:0,zIndex:1500}}>
         {!gapOpen?(strategyOpen?null:(
           <button onClick={()=>{setGapOpen(true);setStrategyOpen(false);}}
-            style={{writingMode:"vertical-rl",background:D.red,color:"#fff",border:"none",
+            style={{writingMode:"vertical-rl",background:D.surface,color:D.text,border:`1px solid ${D.borderMid}`,
               borderRadius:"0 8px 8px 0",padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",
               letterSpacing:"0.12em",boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
             공백 알림
@@ -5119,7 +5121,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       {!strategyOpen&&!gapOpen&&!calcOpen&&(
         <button onClick={()=>setCalcOpen(true)}
           style={{position:"fixed",top:470,left:0,zIndex:1500,writingMode:"vertical-rl",
-            background:D.blue,color:"#fff",border:"none",borderRadius:"0 8px 8px 0",
+            background:D.surface,color:D.text,border:`1px solid ${D.borderMid}`,borderRadius:"0 8px 8px 0",
             padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
             boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
           29CM 세일율 계산기
@@ -5204,6 +5206,13 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       {tl}
                     </button>
                   ))}
+                  <button onClick={()=>setAddTimePickerFor(addTimePickerFor===field?null:field)}
+                    style={{fontSize:11,padding:"3px 8px",
+                    background:addTimePickerFor===field?D.black:"transparent",
+                    color:addTimePickerFor===field?"#fff":D.textSub,
+                    border:`1px solid ${addTimePickerFor===field?D.black:D.border}`,borderRadius:3,cursor:"pointer",whiteSpace:"nowrap"}}>
+                    그외
+                  </button>
                   <button onClick={()=>{
                     const base=form[field]?form[field].slice(0,10):"";
                     setForm(f=>({...f,[field]:base}));
@@ -5212,6 +5221,19 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     시간 삭제
                   </button>
                 </div>
+                {addTimePickerFor===field&&(
+                  <div style={{marginTop:6,padding:"6px 8px",background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:5,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:D.textSub}}>시간 직접 입력:</span>
+                    <input type="time" value={form[field]?form[field].slice(11,16)||"":""}
+                      onChange={e=>{
+                        const t=e.target.value;
+                        const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
+                        setForm(f=>({...f,[field]:t?`${base}T${t}`:base}));
+                      }}
+                      style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:4,
+                        padding:"3px 6px",fontSize:12,color:D.text,fontFamily:"inherit"}}/>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -5303,8 +5325,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               fontSize:11,color:D.textMeta}}>{label}</span>;
           })}
           {(()=>{const tp=datePct(today);return tp>=0&&tp<=100?(
-            <span style={{position:"absolute",left:`${tp}%`,transform:"translateX(-50%)",
-              fontSize:11,color:D.primary,fontWeight:700}}>오늘</span>
+            <span style={{position:"absolute",left:`${tp}%`,top:-14,transform:"translateX(-50%)",
+              fontSize:11,color:D.primary,fontWeight:700,background:D.surface,
+              padding:"0 4px",borderRadius:3,whiteSpace:"nowrap"}}>오늘</span>
           ):null;})()}
         </div>
         {PROMO_PLATFORMS.map(plat=>{
@@ -5335,6 +5358,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     <div key={promo.id}
                       onMouseEnter={e=>{const rect=e.currentTarget.getBoundingClientRect();setHoveredPromo({promo,rect});}}
                       onMouseLeave={()=>setHoveredPromo(null)}
+                      onClick={()=>{
+                        const el=promoCardRefs.current[promo.id];
+                        if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+                      }}
+                      title={`${promo.name} — 카드로 이동`}
                       style={{position:"absolute",left:`${l}%`,width:`${w}%`,height:laneH,top,
                         background:ended?"#aaa":chColor(plat),borderRadius:4,display:"flex",alignItems:"center",
                         padding:"0 6px",fontSize:12,color:"#fff",overflow:"hidden",
@@ -5652,7 +5680,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                           <DateDrop id={`editdate_${field}_${p.id}`} value={editPromoForm[field]?.slice(0,10)||""}
                             onChange={v=>{const time=editPromoForm[field]?.slice(10)||"";setEditPromoForm(f=>({...f,[field]:v+time}));}}
                             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="날짜 선택"/>
-                          <div style={{display:"flex",gap:3,marginTop:3}}>
+                          <div style={{display:"flex",gap:3,marginTop:3,flexWrap:"wrap"}}>
                             {[["T10:00","10시"],["T11:00","11시"],["T23:59","23:59"]].map(([time,tl])=>(
                               <button key={time} onClick={()=>{
                                 const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
@@ -5660,7 +5688,33 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                               }} style={{flex:1,fontSize:10,padding:"2px",background:D.surfaceAlt,
                                 border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub}}>{tl}</button>
                             ))}
+                            <button onClick={()=>{
+                              const fkey=`${p.id}|${field}`;
+                              setEditTimePickerFor(editTimePickerFor===fkey?null:fkey);
+                            }} style={{fontSize:10,padding:"2px 6px",
+                              background:editTimePickerFor===`${p.id}|${field}`?D.black:"transparent",
+                              color:editTimePickerFor===`${p.id}|${field}`?"#fff":D.textSub,
+                              border:`1px solid ${editTimePickerFor===`${p.id}|${field}`?D.black:D.border}`,
+                              borderRadius:3,cursor:"pointer",whiteSpace:"nowrap"}}>그외</button>
+                            <button onClick={()=>{
+                              const base=(editPromoForm[field]||"").slice(0,10);
+                              setEditPromoForm(f=>({...f,[field]:base}));
+                            }} style={{fontSize:10,padding:"2px 6px",background:"transparent",
+                              border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textMeta,whiteSpace:"nowrap"}}>시간 삭제</button>
                           </div>
+                          {editTimePickerFor===`${p.id}|${field}`&&(
+                            <div style={{marginTop:5,padding:"5px 8px",background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:5,display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{fontSize:10,color:D.textSub}}>시간:</span>
+                              <input type="time" value={editPromoForm[field]?editPromoForm[field].slice(11,16)||"":""}
+                                onChange={e=>{
+                                  const t=e.target.value;
+                                  const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
+                                  setEditPromoForm(f=>({...f,[field]:t?`${base}T${t}`:base}));
+                                }}
+                                style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:4,
+                                  padding:"2px 5px",fontSize:11,color:D.text,fontFamily:"inherit"}}/>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -5988,7 +6042,9 @@ const calcReverse=(list,p75,coupon)=>{
 };
 function SaleCalcModal({ onClose }){
   const [coupon,setCoupon]=useState(10);
-  const [stackCoupons,setStackCoupons]=useState([]); // [{rate}] — 중복 쿠폰 목록
+  const [primaryType,setPrimaryType]=useState("cart"); // 기본 쿠폰 타입
+  const [stackCoupons,setStackCoupons]=useState([]); // [{rate, type}] — 중복 쿠폰 목록
+  const [scenarioIdx,setScenarioIdx]=useState(0); // 선택한 시나리오 인덱스
   const [listPrice,setListPrice]=useState(129000);
   const [processed,setProcessed]=useState(null);
   const [summary,setSummary]=useState("");
@@ -5997,9 +6053,41 @@ function SaleCalcModal({ onClose }){
   const fileRef=useRef(null);
   const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
   const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
-  const stackRates=stackCoupons.map(sc=>{const v=Number(sc.rate);return isNaN(v)||v<0?0:Math.min(v,60);});
-  // 유효 쿠폰율 = 1 − (기본 쿠폰 factor × ∏ 중복 쿠폰 factor)
-  const cpn=Math.round((1-stackRates.reduce((a,r)=>a*(1-r/100),1-cpnPrimary/100))*1000)/10;
+  // 입력된 모든 쿠폰 (이름·타입 포함)
+  const allCoupons=useMemo(()=>{
+    const list=[{rate:cpnPrimary,type:primaryType,label:"기본"}];
+    stackCoupons.forEach((s,i)=>{
+      const r=Number(s.rate);
+      const rate=isNaN(r)||r<0?0:Math.min(r,60);
+      list.push({rate,type:s.type||"product",label:`중복${i+1}`});
+    });
+    return list.filter(c=>c.rate>0);
+  },[cpnPrimary,primaryType,stackCoupons]);
+  // 타입 규칙 기반 가능한 시나리오 (단독 + cart×product 쌍 + 분담 단독)
+  const scenarios=useMemo(()=>{
+    const by={product:[],cart:[],share:[]};
+    allCoupons.forEach(c=>by[c.type]?.push(c));
+    const sc=[];
+    // 단독 (모든 쿠폰)
+    allCoupons.forEach(c=>{
+      const tInfo=COUPON_TYPE_BY_KEY[c.type];
+      sc.push({label:`${c.label} (${tInfo.short} ${c.rate}%)`,items:[c]});
+    });
+    // 쌍: 장바구니 × 상품
+    by.cart.forEach(cc=>{
+      by.product.forEach(pp=>{
+        sc.push({label:`${cc.label} × ${pp.label} (장바구니 ${cc.rate}% + 상품 ${pp.rate}%)`,items:[cc,pp]});
+      });
+    });
+    sc.forEach(s=>{
+      s.factor=s.items.reduce((f,c)=>f*(1-c.rate/100),1);
+      s.eff=Math.round((1-s.factor)*1000)/10;
+    });
+    return sc.sort((a,b)=>b.eff-a.eff);
+  },[allCoupons]);
+  const selectedScenario=scenarios[scenarioIdx]||scenarios[0]||{factor:1-cpnPrimary/100,eff:cpnPrimary,items:[]};
+  // 유효 쿠폰율 = 선택된 시나리오의 결과
+  const cpn=selectedScenario.eff;
   const slot=calcClassify(listPrice||0);
   const single=listPrice>0?calcReverse(listPrice,slot.disc,cpn):null;
   useEffect(()=>{
@@ -6091,25 +6179,42 @@ function SaleCalcModal({ onClose }){
           </div>
           <div style={{padding:"12px 14px",background:"#eef3ff",border:`1px solid ${D.blue}`,
             borderRadius:6,marginBottom:16}}>
+            {/* 기본 쿠폰 행 */}
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <label style={{fontSize:13,fontWeight:700,color:D.blue}}>쿠폰율 (전 페이지 적용)</label>
+              <label style={{fontSize:13,fontWeight:700,color:D.blue,minWidth:80}}>기본 쿠폰</label>
+              {/* 타입 세그먼트 */}
+              <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                {COUPON_TYPES.map(t=>{
+                  const active=primaryType===t.key;
+                  return <button key={t.key} type="button" onClick={()=>setPrimaryType(t.key)}
+                    style={{background:active?t.color:"transparent",color:active?"#fff":D.textMeta,
+                      border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                      fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
+                })}
+              </div>
               <input type="number" min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:80}}/>
-              <span style={{fontSize:12,color:D.blue}}>% (기본)</span>
-              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:""}])}
+              <span style={{fontSize:12,color:D.blue}}>%</span>
+              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product"}])}
                 style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
-                  padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+                  padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:"auto"}}>
                 + 중복 쿠폰
               </button>
-              {stackCoupons.length>0&&(
-                <span style={{fontSize:12,color:D.blue,marginLeft:"auto",fontWeight:700}}>
-                  유효 쿠폰율 {cpn}%
-                </span>
-              )}
             </div>
+            {/* 중복 쿠폰 행들 */}
             {stackCoupons.map((sc,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
                 <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>중복 쿠폰 {i+1}</span>
+                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                  {COUPON_TYPES.map(t=>{
+                    const active=(sc.type||"product")===t.key;
+                    return <button key={t.key} type="button"
+                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:t.key};setStackCoupons(n);}}
+                      style={{background:active?t.color:"transparent",color:active?"#fff":D.textMeta,
+                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
+                  })}
+                </div>
                 <input type="number" min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:80}}/>
@@ -6119,8 +6224,30 @@ function SaleCalcModal({ onClose }){
                     padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.blue}}>✕</button>
               </div>
             ))}
-            <div style={{fontSize:11,color:D.blue,marginTop:8,opacity:.85}}>
-              유효 쿠폰율 = 1 − (1−기본쿠폰) × ∏(1−중복쿠폰) — 계산기·1·3·4에 모두 적용됨
+            {/* 시나리오 선택 — 타입 규칙 기반 가능한 조합 */}
+            {scenarios.length>0&&(
+              <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${D.blue}33`}}>
+                <div style={{fontSize:11,color:D.blue,fontWeight:700,marginBottom:6}}>
+                  유효 시나리오 선택 — 같은 타입끼리·분담은 단독, 다른 타입(상품×장바구니)만 누적 가능
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                  {scenarios.map((s,i)=>{
+                    const active=scenarioIdx===i;
+                    return <button key={i} type="button" onClick={()=>setScenarioIdx(i)}
+                      style={{background:active?D.blue:"#fff",color:active?"#fff":D.blue,
+                        border:`1px solid ${D.blue}`,borderRadius:5,padding:"3px 9px",
+                        fontSize:11,cursor:"pointer",fontWeight:active?700:500,whiteSpace:"nowrap"}}>
+                      {s.label} → {s.eff}%
+                    </button>;
+                  })}
+                </div>
+                <div style={{fontSize:11,color:D.blue,marginTop:8,fontWeight:700}}>
+                  선택 시나리오의 유효 쿠폰율: {cpn}% (계산기·1·3·4 에 적용)
+                </div>
+              </div>
+            )}
+            <div style={{fontSize:10,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
+              유효 쿠폰율 = 1 − ∏(1−rate) of 선택 시나리오의 쿠폰들. 시나리오 미선택 시 기본 쿠폰 단독값 사용.
             </div>
           </div>
 
