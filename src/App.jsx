@@ -4781,10 +4781,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       byDate[key]={date:key.slice(5),fullDate:key,...Object.fromEntries(PROMO_PLATFORMS.map(p=>[p,null]))};
       cur.setDate(cur.getDate()+1);
     }
-    // 실제 매출 데이터 채우기
+    // 실제 매출 데이터 채우기 — 온라인 채널은 순매출(매출 − 환불)
     revenues.filter(r=>r.date>=viewStart&&r.date<=viewEnd).forEach(r=>{
       if(!byDate[r.date]) return;
-      byDate[r.date][r.channel]=(byDate[r.date][r.channel]||0)+(r.amount||0);
+      byDate[r.date][r.channel]=(byDate[r.date][r.channel]||0)+((r.amount||0)-(r.refund_amount||0));
     });
     // 오프라인 스토어 순매출 (배송 - 반품)
     storeSales.filter(r=>r.sale_date>=viewStart&&r.sale_date<=viewEnd).forEach(r=>{
@@ -5313,7 +5313,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 
       {/* 기간별 플랫폼 매출 그래프 */}
       <Card style={{marginBottom:20,borderTopLeftRadius:0,borderTopRightRadius:0}}>
-        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>기간별 플랫폼 매출</div>
+        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>기간별 플랫폼 순매출</div>
         {revenueData.length>0&&revenues.some(r=>r.date>=viewStart&&r.date<=viewEnd)?(
           <div style={{position:"relative",overflow:"hidden"}} onMouseDown={onDragStart}>
           <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden"}}>
