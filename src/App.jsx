@@ -4434,7 +4434,7 @@ function cleanDiscountPlan(plan){
 }
 
 // 표 셀에 표시되는 컴팩트 보기 — 상품 할인 + 쿠폰 기간을 작은 가로 막대 두 줄로 시각화
-function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compact=true }) {
+function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compact=true, showBadges=true }) {
   const p=normalizePlan(plan);
   const cleanedProducts=p.products.rows.filter(r=>r.group||r.rate);
   const cleanedCoupons=p.coupons.filter(r=>r.rate||r.start||r.end);
@@ -4446,8 +4446,9 @@ function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compa
   const badgePad=compact?"2px 7px":"2px 7px";
   return (
     <div style={{fontSize:compact?11:12,lineHeight:1.75,minWidth:compact?140:0,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
-      {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유). 비-compact 모드에서는 뱃지와 표 사이 간격을 넓힘 */}
-      {cleanedProducts.length>0&&(
+      {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유). 비-compact 모드에서는 뱃지와 표 사이 간격을 넓힘.
+          showBadges=false 면 뱃지 행 자체 미노출 (예: 임팩트 모달) */}
+      {showBadges&&cleanedProducts.length>0&&(
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:compact?5:24,justifyContent:compact?"flex-start":"center"}}>
           {cleanedProducts.map((r,i)=>{
             const g=r.group||"전체";
@@ -4510,7 +4511,7 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
     <div>
       <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>핀셋 상품 <span style={{opacity:.6}}>(배송 데이터 기반 · 상품 단위 · 체크 후 한번에 추가 · 임팩트 분석에서 전/후 판매량 비교)</span></div>
       <div style={{position:"relative"}}>
-        <input value={q} onChange={e=>setQ(e.target.value)} style={{...pillInp,width:"min(280px,100%)"}} placeholder="상품명 검색 (배송 데이터)"/>
+        <input value={q} onChange={e=>setQ(e.target.value)} style={{...pillInp,width:"30%",minWidth:200}} placeholder="상품명 검색 (배송 데이터)"/>
         {matches.length>0&&(
           <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,background:D.surface,
             border:`1px solid ${D.border}`,borderRadius:6,marginTop:2,maxHeight:260,overflowY:"auto",
@@ -5518,15 +5519,19 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         )}
       </Card>
 
-      {/* 오른쪽 도트 네비 — 항상 도트 + 라벨 표시, 스케일 축소로 카드 영역 덜 침범 */}
+      {/* 오른쪽 도트 네비 — 카드 영역(maxWidth:1600 centered)을 침범하지 않도록 우측 여백으로 push */}
       {(()=>{
         const navPromos=[...promos].filter(p=>!hiddenIds.has(p.id)).sort((a,b)=>a.start_date>b.start_date?1:-1);
         if(navPromos.length===0) return null;
+        // 카드 폭 1600 가정. 가능한 경우 오른쪽 마진 안쪽으로 배치, 아닐 경우 viewport 오른쪽 끝.
         return (
           <div data-capture-hide
-            style={{position:"fixed",right:6,top:"22vh",zIndex:80,
+            style={{position:"fixed",
+              right:"max(4px, calc((100vw - 1600px) / 2 - 156px))",
+              top:"22vh",zIndex:80,
               display:"flex",flexDirection:"column",gap:3,maxHeight:"70vh",overflowY:"auto",
-              padding:"6px 7px",background:`${D.surface}f2`,border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"6px 7px",width:150,boxSizing:"border-box",
+              background:`${D.surface}f2`,border:`1px solid ${D.border}`,borderRadius:6,
               boxShadow:"0 2px 8px rgba(0,0,0,0.08)",
               fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
             <div style={{fontSize:8,color:D.textMeta,fontWeight:700,letterSpacing:"0.06em",marginBottom:2}}>프로모션 바로가기</div>
@@ -5534,16 +5539,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               <button key={p.id} onClick={()=>{
                 const el=promoCardRefs.current[p.id];
                 if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
-              }} title={`${p.platform} · ${p.name}`}
-                style={{display:"flex",alignItems:"center",gap:4,
+              }} title={`${p.platform} ${p.name}`}
+                style={{display:"flex",alignItems:"center",gap:5,
                   background:"transparent",border:"none",padding:"1px 2px",borderRadius:3,
                   cursor:"pointer",textAlign:"left",fontFamily:"inherit",
-                  maxWidth:170,overflow:"hidden"}}>
+                  width:"100%",overflow:"hidden"}}>
                 <span style={{width:6,height:6,borderRadius:"50%",background:chColor(p.platform),flexShrink:0,
                   border:isEnded(p)?`1px solid ${D.border}`:"none",opacity:isEnded(p)?0.55:1}}/>
                 <span style={{fontSize:9,color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                   textDecoration:isEnded(p)?"line-through":"none",opacity:isEnded(p)?0.6:1}}>
-                  {p.platform} · {p.name}
+                  {p.platform} {p.name}
                 </span>
               </button>
             ))}
@@ -6711,13 +6716,13 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           </>
         )}
 
-        {/* 할인율 매트릭스 — 그래프 아래 (프로모션 카드와 동일 뷰 재사용) */}
+        {/* 할인율 매트릭스 — 그래프 아래 (프로모션 카드와 동일 뷰 재사용, 뱃지는 생략) */}
         {computeDiscountMatrix(promo.discount_plan||{}).hasGroup&&(
           <div style={{marginBottom:18}}>
             <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
               할인율 매트릭스
             </div>
-            <DiscountPlanView plan={promo.discount_plan} marks={promo.discount_marks||{}} compact={false}/>
+            <DiscountPlanView plan={promo.discount_plan} marks={promo.discount_marks||{}} compact={false} showBadges={false}/>
           </div>
         )}
 
