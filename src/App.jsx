@@ -3946,10 +3946,9 @@ function computeDiscountMatrix(plan){
   const stack=coupons.filter(c=>c.stack);
   const solo =coupons.filter(c=>!c.stack);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
-  // 각 쿠폰을 개별 열로 표시하되, 중복 가능 쿠폰이 2장 이상이면 마지막 중복 쿠폰 열에 적층 최종 할인율 표시
+  // 각 쿠폰을 개별 열로 표시. 중복 가능 쿠폰이 2장 이상이면 — 행(상품군)별로 — 그 행에 실제 적용 가능한 stack 쿠폰들의 마지막 열에 누적 최종 할인율을 표시한다 (해당 쿠폰이 그 행에서 제외되어 있으면 적용 불가로 둠).
   const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
   const stackIdxs=coupons.map((c,i)=>c.stack?i:-1).filter(i=>i>=0);
-  const lastStackIdx=stackIdxs.length?stackIdxs[stackIdxs.length-1]:-1;
   const stackFinalOn=stack.length>=2;
   const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
@@ -3960,12 +3959,18 @@ function computeDiscountMatrix(plan){
   });
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
+    // 이 상품군에 실제 적용되는 stack 쿠폰들의 마지막 인덱스 (제외 목록 반영)
+    const applicableStackForGroup=stackIdxs.filter(i=>!exOf(coupons[i]).includes(g.group));
+    const lastApplicableStackIdx=applicableStackForGroup.length?applicableStackForGroup[applicableStackForGroup.length-1]:-1;
     coupons.forEach((c,i)=>{
-      if(c.stack&&stackFinalOn&&i===lastStackIdx){
+      if(exOf(c).includes(g.group)){
+        cells["c"+i]=null; // 적용 제외 → 미적용
+      }else if(c.stack&&stackFinalOn&&i===lastApplicableStackIdx){
+        // 이 행에 적용 가능한 stack 쿠폰들만 누적
         const applicable=stack.filter(s=>!exOf(s).includes(g.group));
-        cells["c"+i]=applicable.length?fin(g.rate,applicable.reduce((f,s)=>f*(1-(+s.rate||0)/100),1)):null;
+        cells["c"+i]=applicable.length?fin(g.rate,applicable.reduce((f,s)=>f*(1-(+s.rate||0)/100),1)):fin(g.rate,1-(+c.rate||0)/100);
       }else{
-        cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+        cells["c"+i]=fin(g.rate,1-(+c.rate||0)/100);
       }
     });
     return {group:g.group,rate:g.rate,cells};
@@ -4034,6 +4039,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const productRows=plan.products.rows.length?plan.products.rows:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
   const coupons    =plan.coupons.length?plan.coupons:[emptyCouponRow()];
   const [calcOpen,setCalcOpen]=useState(false);
+  const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중인 행 인덱스
 
   // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
   const setProductPeriod=(field,v)=>onChange({
@@ -4154,11 +4160,32 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (프런트 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
         <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:760}}>
           {coupons.map((row,i)=>(
-            <div key={i} style={{border:`1px solid ${row.stack?`${D.blue}55`:D.border}`,borderRadius:8,
-              padding:"10px 12px",background:row.stack?`${D.blue}08`:D.surface,
-              display:"flex",flexDirection:"column",gap:8}}>
-              {/* 중복 토글 · 쿠폰명 · 할인율 · 삭제 */}
+            <div key={i}
+              onDragOver={e=>{if(dragIdx!==null&&dragIdx!==i){e.preventDefault();e.dataTransfer.dropEffect="move";}}}
+              onDrop={e=>{
+                e.preventDefault();
+                if(dragIdx===null||dragIdx===i){setDragIdx(null);return;}
+                const arr=[...coupons];
+                const [moved]=arr.splice(dragIdx,1);
+                arr.splice(i,0,moved);
+                setCoupons(arr);
+                setDragIdx(null);
+              }}
+              style={{border:`1px solid ${dragIdx!==null&&dragIdx!==i?`${D.blue}80`:row.stack?`${D.blue}55`:D.border}`,borderRadius:8,
+                padding:"10px 12px",background:row.stack?`${D.blue}08`:D.surface,
+                display:"flex",flexDirection:"column",gap:8,
+                opacity:dragIdx===i?0.45:1,
+                transition:"opacity 0.12s, border-color 0.12s"}}>
+              {/* 드래그 핸들 · 중복 토글 · 쿠폰명 · 할인율 · 삭제 */}
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span draggable="true"
+                  onDragStart={e=>{setDragIdx(i);e.dataTransfer.effectAllowed="move";}}
+                  onDragEnd={()=>setDragIdx(null)}
+                  title="드래그하여 쿠폰 순서 변경"
+                  style={{cursor:"grab",color:D.textMeta,fontSize:13,padding:"0 4px",
+                    userSelect:"none",flexShrink:0,lineHeight:1}}>
+                  ⋮⋮
+                </span>
                 <button onClick={()=>{const n=[...coupons];n[i]={...row,stack:!row.stack};setCoupons(n);}}
                   title="중복 적용 여부 (다른 쿠폰과 겹쳐 적용)"
                   style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,cursor:"pointer",borderRadius:6,whiteSpace:"nowrap",
