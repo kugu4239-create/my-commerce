@@ -6574,7 +6574,6 @@ function SaleCalcModal({ onClose }){
                     <span style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em"}}>적용 시나리오</span>
                     {selectedScenario.caseNum&&(
                       <span style={{background:D.black,color:"#fff",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:3}}>
-
                         Case {selectedScenario.caseNum}
                       </span>
                     )}
