@@ -6498,12 +6498,12 @@ function SaleCalcModal({ onClose }){
                   })}
                 </div>
                 <div style={{fontSize:11,color:D.blue,marginTop:8,fontWeight:700}}>
-                  선택 시나리오의 유효 쿠폰율: {cpn}% (계산기·1·3·4 에 적용)
+                  선택 시나리오의 최종 할인율: {cpn}% (계산기·1·3·4 에 적용)
                 </div>
               </div>
             )}
             <div style={{fontSize:10,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
-              유효 쿠폰율 = 1 − ∏(1−rate) of 선택 시나리오의 쿠폰들. 시나리오 미선택 시 기본 쿠폰 단독값 사용.
+              최종 할인율 = 1 − ∏(1−rate) of 선택 시나리오의 쿠폰들. 시나리오 미선택 시 기본 쿠폰 단독값 사용.
             </div>
           </div>
 
@@ -6684,7 +6684,7 @@ function SaleCalcModal({ onClose }){
                         <span style={{background:D.black,color:"#fff",fontSize:9,padding:"1px 6px",borderRadius:3}}>Case {selectedScenario.caseNum}</span>
                       )}
                       <span style={{color:D.text,fontWeight:600}}>{selectedScenario.label||`기본 쿠폰 ${cpn}%`}</span>
-                      <span style={{color:D.textMeta}}>유효 {cpn}%</span>
+                      <span style={{color:D.textMeta}}>최종 할인율 {cpn}%</span>
                       {singleSelected&&(
                         <>
                           <span style={{color:D.textMeta}}>·</span>
@@ -6856,7 +6856,7 @@ function SaleCalcModal({ onClose }){
                           return `${tInfo.label} ${c.rate}% · ${burden}`;
                         }).join(" × ")})</>
                       )}
-                      {' · '}유효 쿠폰율 {cpn}%
+                      {' · '}최종 할인율 {cpn}%
                     </div>
                   )}
                   {processed&&processed.length>0&&(
