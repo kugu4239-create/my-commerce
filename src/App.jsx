@@ -6613,7 +6613,7 @@ function SaleCalcModal({ onClose }){
                 const rowSty={display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,padding:"2px 0"};
                 return (
                 <>
-                  {/* 슬롯/조정 컨트롤 바 — 영수증 위쪽에 둠 */}
+                  {/* 슬롯/조정 컨트롤 바 — 명세서 위쪽에 둠 */}
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"12px 0 10px"}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]}</span>
