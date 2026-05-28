@@ -6326,8 +6326,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   const sec={marginBottom:12,border:`1px solid ${D.black}`,borderRadius:10,background:D.surface};
   const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:11,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
   const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:11,width:120,fontFamily:"inherit"};
-  const th={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right",fontSize:11};
-  const td={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right"};
+  const th={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"left",fontSize:11};
+  const td={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"left"};
   const DISP_CAP=500;
   const shown=processed?processed.slice(0,DISP_CAP):[];
   return (
@@ -6740,9 +6740,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       </div>
                       {couponSteps.length>0?couponSteps.map((s,i)=>{
                         const burdenSentence = s.c.type==="share"
-                          ? `자사 ${100-(s.c.shareRate||0)}% / 채널 ${s.c.shareRate||0}%로 분담합니다 (자사 ₩${wonFmt(s.slfPart)} · 채널 ₩${wonFmt(s.chPart)}).`
+                          ? `자사 ${100-(s.c.shareRate||0)}% / 채널 ${s.c.shareRate||0}%로 분담합니다. 채널분 ₩${wonFmt(s.chPart)}은 정산 시 채널 보전금액으로 이어집니다.`
                           : (s.c.burden==="channel"
-                              ? `29CM 채널이 전액 부담합니다 (채널 보전 ₩${wonFmt(s.chPart)}).`
+                              ? `29CM 채널이 전액 부담합니다. 정산 시 채널 보전금액으로 이어집니다.`
                               : `자사가 전액 부담하는 할인액입니다.`);
                         const refLabel=i===0?"기본 판매가":`직전 단계 판매가`;
                         return (
@@ -6796,7 +6796,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                           <div style={rowSty}>
                             <span style={labelCol}><span>{N.supply} 공급가(부가세 합)</span></span>
                             <span style={{...amtCol,color:D.red}}>−₩{wonFmt(supplyIncVat)}</span>
-                            <span style={calcCol}>인벤토리 공급가액 ₩{wonFmt(supply)} × 1.1 · 부가세 10%를 포함한 실 원가입니다.</span>
+                            <span style={calcCol}>인벤토리 업로드 파일에서 추출한 공급가액 ₩{wonFmt(supply)} × 1.1 · 부가세 10%를 포함한 실 원가입니다.</span>
                           </div>
                           <div style={totalSty}>
                             <span style={labelCol}><span>{N.margin} 마진 금액</span></span>
