@@ -4883,10 +4883,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
         </div>
       </div>
-      {/* 하단: 할인율 매트릭스 — 카드 전체 폭으로 펼침 */}
+      {/* 하단: 할인율 매트릭스 — 카드 전체 폭으로 펼치고 좌우 중앙 정렬 */}
       {computeDiscountMatrix(p.discount_plan||{}).hasGroup&&(
-        <div style={{marginTop:14,paddingTop:12,borderTop:`1px dashed ${D.border}`}}>
-          <div style={{fontSize:10,color:D.textMeta,marginBottom:6,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>할인율 매트릭스</div>
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px dashed ${D.border}`,
+          display:"flex",flexDirection:"column",alignItems:"center"}}>
+          <div style={{fontSize:10,color:D.textMeta,marginBottom:6,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase",alignSelf:"flex-start"}}>할인율 매트릭스</div>
           <DiscountPlanView plan={p.discount_plan} marks={p.discount_marks||{}}
             onToggleGroup={g=>toggleMark(p,"groups",g)} onToggleCircle={k=>toggleMark(p,"circles",k)}
             compact={false}/>
@@ -5462,7 +5463,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
               return (
               <div key={p.id} ref={el=>{promoCardRefs.current[p.id]=el;}}
-                style={{position:"relative",border:`1px solid ${D.borderMid}`,borderRadius:10,
+                style={{position:"relative",border:`1px solid ${D.black}`,borderRadius:10,
                   padding:"14px 16px",background:D.surface,opacity:ended&&!isEditing?0.78:1,
                   fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.7}}>
                 {isEditing?(
