@@ -6100,11 +6100,27 @@ function SaleCalcModal({ onClose }){
   // 유효 쿠폰율 = 선택된 시나리오의 결과
   const cpn=selectedScenario.eff;
   const slot=calcClassify(listPrice||0);
-  const single=listPrice>0?calcReverse(listPrice,slot.disc,cpn):null;
+  // 단일 시뮬 — 기본 할인율 사용자 수동 오버라이드 지원
+  const [singleManualBase,setSingleManualBase]=useState(null);
+  const single=useMemo(()=>{
+    if(!listPrice) return null;
+    if(singleManualBase!=null){
+      const bd=Math.max(0,Math.min(100,Number(singleManualBase)||0));
+      const baseFactor=1-bd/100;
+      const basePrice=Math.round(listPrice*baseFactor/10)*10;
+      const finalPrice=Math.round(basePrice*(1-cpn/100)/10)*10;
+      const finalDisc=listPrice>0?Math.round((1-finalPrice/listPrice)*1000)/10:0;
+      return {baseDisc:bd,basePrice,finalPrice,finalDisc};
+    }
+    return calcReverse(listPrice,slot.disc,cpn);
+  },[listPrice,slot.disc,cpn,singleManualBase]);
   // 부담 주체별 차감액 계산 → 자사 매출 → 수수료 → 마진
   // 프런트 할인(기본 할인율)은 항상 자사부담. 각 쿠폰은 burden(self/channel) 혹은 share 의 shareRate(채널부담률) 에 따라 분배.
+  // 정산 모델 (해석 B): 수수료는 고객 결제액(finalPrice)에만 부과,
+  //                      채널 보전(channelBurden) 은 수수료 없이 그대로 정산에 가산.
+  //                      net = finalPrice − fee + channelBurden
   const computeMargin=useCallback((list,baseDisc,items,supply)=>{
-    if(!list) return {revenue:0,fee:0,feeRate:28,net:0,margin:0,marginRate:0,selfBurden:0,channelBurden:0};
+    if(!list) return {finalPrice:0,selfBurden:0,channelBurden:0,fee:0,feeRate:28,net:0,margin:0,marginRate:0};
     let priceAfter=list*(1-baseDisc/100);
     let selfBurden=list*(baseDisc/100); // 프런트는 자사
     let channelBurden=0;
@@ -6123,12 +6139,13 @@ function SaleCalcModal({ onClose }){
     });
     // 채널 수수료율 = 28% − 기본 세일율(baseDisc) 10% 단위마다 -1%p (최소 0)
     const fr=Math.max(0,28-Math.floor(baseDisc/10));
-    const revenue=Math.round((list-selfBurden)/10)*10; // 자사 매출 (10원 단위)
-    const fee=Math.round(revenue*(fr/100)/10)*10;
-    const net=revenue-fee;
+    const finalPriceR=Math.round(priceAfter/10)*10;       // 고객 결제액 (10원 단위)
+    const channelBurdenR=Math.round(channelBurden/10)*10; // 채널 보전 (10원 단위)
+    const fee=Math.round(finalPriceR*(fr/100)/10)*10;     // 수수료는 결제액 기준
+    const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
     const margin=net-(supply||0);
     const marginRate=net>0?Math.round(margin/net*1000)/10:0;
-    return {revenue,fee,feeRate:fr,net,margin,marginRate,selfBurden:Math.round(selfBurden),channelBurden:Math.round(channelBurden)};
+    return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,marginRate};
   },[]);
   // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
   const [invMap,setInvMap]=useState({});
@@ -6338,17 +6355,19 @@ function SaleCalcModal({ onClose }){
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
-              {/* 부담 주체 세그먼트 */}
-              <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                  const active=primaryBurden===b.k;
-                  return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
-                    title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                    style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                      border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
-                      fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                })}
-              </div>
+              {/* 부담 주체 세그먼트 — share 타입은 shareRate 로 분담 결정되어 숨김 */}
+              {primaryType!=="share"&&(
+                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
+                    const active=primaryBurden===b.k;
+                    return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
+                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
+                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
+                  })}
+                </div>
+              )}
               <input type="number" min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
               <span style={{fontSize:12,color:D.blue}}>%</span>
@@ -6382,17 +6401,20 @@ function SaleCalcModal({ onClose }){
                         fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
                   })}
                 </div>
-                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                    const active=burden===b.k;
-                    return <button key={b.k} type="button"
-                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
-                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
-                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                  })}
-                </div>
+                {/* 부담 주체 세그먼트 — share 타입은 shareRate 로 분담 결정되어 숨김 */}
+                {t!=="share"&&(
+                  <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                    {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
+                      const active=burden===b.k;
+                      return <button key={b.k} type="button"
+                        onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
+                        title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
+                        style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                          border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                          fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
+                    })}
+                  </div>
+                )}
                 <input type="number" min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:70}}/>
@@ -6481,9 +6503,13 @@ function SaleCalcModal({ onClose }){
             </div>
           </details>
 
-          <details className="sec" style={sec}>
+          <details className="sec" style={sec} open>
             <summary style={summarySty}>3. 단일 정가 시뮬레이션 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
+              <div style={{margin:"0 0 10px",padding:"8px 12px",background:"#fff8ec",border:`1px solid ${D.amber}55`,
+                borderRadius:6,fontSize:11,color:D.text,lineHeight:1.6}}>
+                💡 기본 할인율을 직접 조정 가능하며, 구간에 적합한 할인율을 다시 보려면 재검색하세요.
+              </div>
               {/* 인벤토리 상품 검색 — 선택 시 정가/공급가 자동 채움 */}
               <div style={{position:"relative",marginBottom:10}}>
                 <label style={{fontSize:11,color:D.textMeta,marginBottom:3,display:"block"}}>인벤토리에서 상품 검색 (선택 시 정가·공급가 자동 입력)</label>
@@ -6544,18 +6570,36 @@ function SaleCalcModal({ onClose }){
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}% · 수수료 {m.feeRate}%</span>
+                    {/* 기본 할인율 수동 조정 */}
+                    <span style={{marginLeft:"auto",fontSize:11,color:D.textSub,display:"flex",alignItems:"center",gap:6}}>
+                      기본 할인율 직접 조정
+                      <input type="number" step="0.1" min="0" max="100"
+                        value={singleManualBase!=null?singleManualBase:single.baseDisc}
+                        onChange={e=>setSingleManualBase(e.target.value===""?null:Math.max(0,Math.min(100,Number(e.target.value)||0)))}
+                        style={{width:64,padding:"3px 6px",fontSize:11,textAlign:"right",
+                          border:`1px solid ${singleManualBase!=null?D.blue:D.border}`,
+                          borderRadius:4,background:singleManualBase!=null?"#eef3ff":D.surface,
+                          color:singleManualBase!=null?D.blue:D.text,
+                          fontWeight:singleManualBase!=null?700:400,fontFamily:"inherit"}}/>
+                      <span style={{fontSize:11,color:D.textMeta}}>%</span>
+                      {singleManualBase!=null&&(
+                        <button onClick={()=>setSingleManualBase(null)} title="역산값으로 복귀"
+                          style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 3px"}}>↻</button>
+                      )}
+                    </span>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10}}>
                     {[
                       {l:"정가",v:`₩${wonFmt(listPrice)}`},
                       {l:"최종 목표 (P75)",v:`${slot.disc}%`,c:slot.color},
-                      {l:"기본 할인율",v:`${single.baseDisc}%`},
+                      {l:"기본 할인율",v:`${single.baseDisc}%`,c:singleManualBase!=null?D.blue:undefined},
                       {l:"기본 판매가 (I열)",v:`₩${wonFmt(single.basePrice)}`,hl:true},
-                      {l:"최종 노출가",v:`₩${wonFmt(single.finalPrice)}`},
+                      {l:"최종 노출가 (고객 결제액)",v:`₩${wonFmt(single.finalPrice)}`},
                       {l:"최종 할인율 (쿠폰 포함)",v:`${single.finalDisc}%`,c:slot.color},
-                      {l:`자사 매출 (자사부담 차감)`,v:`₩${wonFmt(m.revenue)}`},
-                      {l:`채널 수수료 (${m.feeRate}%)`,v:`-₩${wonFmt(m.fee)}`,c:D.textSub},
-                      {l:`자사 정산 (수수료 차감)`,v:`₩${wonFmt(m.net)}`},
+                      {l:"자사부담 합계",v:`₩${wonFmt(m.selfBurden)}`,c:D.textSub},
+                      {l:"채널 보전 합계",v:`₩${wonFmt(m.channelBurden)}`,c:m.channelBurden>0?D.green:D.textMeta},
+                      {l:`채널 수수료 (${m.feeRate}%, 결제액 기준)`,v:`-₩${wonFmt(m.fee)}`,c:D.textSub},
+                      {l:`자사 정산 (결제액−수수료+채널보전)`,v:`₩${wonFmt(m.net)}`},
                       ...(supply>0?[
                         {l:"공급가",v:`₩${wonFmt(supply)}`},
                         {l:"마진",v:`₩${wonFmt(m.margin)} (${m.marginRate}%)`,c:m.margin>=0?D.green:D.red,hl:true},
@@ -6604,7 +6648,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","공급가","원가율","마진","마진율"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","채널보전","수수료","자사 정산","공급가","원가율","마진","마진율"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -6640,6 +6684,19 @@ function SaleCalcModal({ onClose }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
+                                ₩{wonFmt(r.selfBurden||0)}
+                              </td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.green:D.textMeta,whiteSpace:"nowrap"}}>
+                                ₩{wonFmt(r.channelBurden||0)}
+                              </td>
+                              <td title={`수수료율 ${r.feeRate}% × 결제액 ₩${wonFmt(r.finalPrice||0)}`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
+                                -₩{wonFmt(r.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({r.feeRate}%)</span>
+                              </td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:600,whiteSpace:"nowrap"}}>
+                                ₩{wonFmt(r.net||0)}
+                              </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`₩${wonFmt(r.supply)}`:"—"}
                               </td>
@@ -6647,7 +6704,7 @@ function SaleCalcModal({ onClose }){
                                 color:r.supply>0?(r.costRatio>=50?D.red:r.costRatio>=35?D.amber:D.green):D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`${r.costRatio}%`:"—"}
                               </td>
-                              <td title={`자사 매출 ₩${wonFmt(r.revenue||0)} − 수수료 ${r.feeRate}% ₩${wonFmt(r.fee||0)} − 공급가 ₩${wonFmt(r.supply||0)} = 마진`}
+                              <td title={`결제액 ₩${wonFmt(r.finalPrice||0)} − 수수료(${r.feeRate}%) ₩${wonFmt(r.fee||0)} + 채널보전 ₩${wonFmt(r.channelBurden||0)} − 공급가 ₩${wonFmt(r.supply||0)} = 마진`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                   color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
                                 {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
