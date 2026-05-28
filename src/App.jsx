@@ -7003,32 +7003,39 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                   )}
                                 </div>
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
+                              <td title={`기본 판매가 = 정상가 ₩${wonFmt(r.list)} × (1 − ${r.baseDisc}%) = ₩${wonFmt(r.basePrice)} (10원 단위 반올림) | I열에 입력되는 노출 판매가`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
+                              <td title={`최종 노출가 = 기본 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
+                              <td title={`최종 할인율 = 1 − (실 판매액 ₩${wonFmt(r.finalPrice)} ÷ 정상가 ₩${wonFmt(r.list)}) = ${r.finalDisc}% (정상가 대비 총 할인)`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
+                              <td title={`정상가 ₩${wonFmt(r.list)} × 기본 할인율 ${r.baseDisc}% = ₩${wonFmt(Math.round((r.list||0)*((r.baseDisc||0)/100)))} 프런트 할인분 + 자사부담 쿠폰 차감액 합산 (자사 부담 → 마진 차감 대상)`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
                               </td>
-                              <td title={`수수료율 ${r.feeRate}% × 기본 판매가 ₩${wonFmt(r.basePrice||0)}`}
+                              <td title={`기본 판매가 ₩${wonFmt(r.basePrice||0)} × 수수료율 ${r.feeRate}% = ₩${wonFmt(r.fee||0)} | 수수료율 = max(0, 28% − floor(기본 할인율 ${r.baseDisc}% / 10)%) = ${r.feeRate}%`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.red,whiteSpace:"nowrap"}}>
                                 −₩{wonFmt(r.fee||0)} <span style={{fontSize:11,color:D.textMeta}}>({r.feeRate}%)</span>
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.blue:D.textMeta,whiteSpace:"nowrap"}}>
+                              <td title={(r.channelBurden||0)>0?`채널부담 쿠폰 차감액 + 분담 쿠폰의 채널분 합산 = ₩${wonFmt(r.channelBurden)} (정산 시 자사에 +가산되어 보전)`:"채널이 부담한 쿠폰이 없어 보전 금액 없음"}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.blue:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.channelBurden||0)>0?`+₩${wonFmt(r.channelBurden)}`:"—"}
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:600,whiteSpace:"nowrap"}}>
+                              <td title={`자사 정산 = 실 판매액 ₩${wonFmt(r.finalPrice||0)} − 채널 수수료 ₩${wonFmt(r.fee||0)} + 채널 보전 ₩${wonFmt(r.channelBurden||0)} = ₩${wonFmt(r.net||0)} (자사 수령액)`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:600,whiteSpace:"nowrap"}}>
                                 ₩{wonFmt(r.net||0)}
                               </td>
-                              <td title={r.supply>0?`인벤토리 공급가액 ₩${wonFmt(r.supply)} × 1.1 (부가세 포함)`:""}
+                              <td title={r.supply>0?`인벤토리 공급가액 ₩${wonFmt(r.supply)} × 1.1 (부가세 10% 포함) = ₩${wonFmt(r.supplyIncVat||Math.round(r.supply*1.1))} (자사 실 원가)`:"인벤토리 매칭 없음 — 공급가 자동 입력 불가"}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`₩${wonFmt(r.supplyIncVat||Math.round(r.supply*1.1))}`:"—"}
                               </td>
-                              <td title={`결제액 ₩${wonFmt(r.finalPrice||0)} − 수수료(${r.feeRate}%) ₩${wonFmt(r.fee||0)} + 채널보전 ₩${wonFmt(r.channelBurden||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = 마진 (마진율 = 마진 ÷ 정상가)`}
+                              <td title={r.supply>0?`마진 = 자사 정산 ₩${wonFmt(r.net||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = ₩${wonFmt(r.margin||0)} | 정상가 ₩${wonFmt(r.list)} 대비 ${r.marginRate||0}% (마진율 = 마진 ÷ 정상가)`:""}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                   color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
                                 {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
+                              <td title={r.supply>0?`마진율 = 마진 ₩${wonFmt(r.margin||0)} ÷ 정상가 ₩${wonFmt(r.list)} × 100 = ${r.marginRate||0}% (정상가 대비 이익률)`:""}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                 color:r.supply>0?((r.marginRate||0)>=20?D.green:(r.marginRate||0)>=10?D.text:D.red):D.textMeta,
                                 fontWeight:700,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`${r.marginRate||0}%`:"—"}
