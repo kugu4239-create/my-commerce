@@ -4208,7 +4208,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     const cleanStacks=stackRates.filter(r=>r>0);
     const nextCoupons=[
       {...emptyCouponRow("cart"),name:"29CM 쿠폰",rate:String(primaryCoupon)},
-      ...cleanStacks.map((r,i)=>({...emptyCouponRow("product"),name:`29CM 중복 쿠폰 ${i+1}`,rate:String(r)})),
+      ...cleanStacks.map((r,i)=>({...emptyCouponRow("product"),name:`29CM Case ${i+1}`,rate:String(r)})),
     ];
     onChange({
       products:{period:plan.products.period,rows:nextProductRows},
@@ -6043,7 +6043,9 @@ const calcReverse=(list,p75,coupon)=>{
 function SaleCalcModal({ onClose }){
   const [coupon,setCoupon]=useState(10);
   const [primaryType,setPrimaryType]=useState("cart"); // 기본 쿠폰 타입
-  const [stackCoupons,setStackCoupons]=useState([]); // [{rate, type}] — 중복 쿠폰 목록
+  const [primaryBurden,setPrimaryBurden]=useState("self"); // self=자사부담, channel=채널부담
+  const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
+  const [stackCoupons,setStackCoupons]=useState([]); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
   const [scenarioIdx,setScenarioIdx]=useState(0); // 선택한 시나리오 인덱스
   const [listPrice,setListPrice]=useState(129000);
   const [processed,setProcessed]=useState(null);
@@ -6053,37 +6055,46 @@ function SaleCalcModal({ onClose }){
   const fileRef=useRef(null);
   const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
   const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
-  // 입력된 모든 쿠폰 (이름·타입 포함)
+  // 입력된 모든 쿠폰 (이름·타입·부담 주체·분담률 포함)
   const allCoupons=useMemo(()=>{
-    const list=[{rate:cpnPrimary,type:primaryType,label:"기본"}];
+    const list=[{rate:cpnPrimary,type:primaryType,burden:primaryBurden,shareRate:primaryShareRate,label:"기본"}];
     stackCoupons.forEach((s,i)=>{
       const r=Number(s.rate);
       const rate=isNaN(r)||r<0?0:Math.min(r,60);
-      list.push({rate,type:s.type||"product",label:`중복${i+1}`});
+      const sr=Number(s.shareRate);
+      list.push({
+        rate,
+        type:s.type||"product",
+        burden:s.burden||"self",
+        shareRate:isNaN(sr)?50:Math.max(0,Math.min(100,sr)),
+        label:`Case ${i+1}`,
+      });
     });
     return list.filter(c=>c.rate>0);
-  },[cpnPrimary,primaryType,stackCoupons]);
+  },[cpnPrimary,primaryType,primaryBurden,primaryShareRate,stackCoupons]);
   // 타입 규칙 기반 가능한 시나리오 (단독 + cart×product 쌍 + 분담 단독)
   const scenarios=useMemo(()=>{
     const by={product:[],cart:[],share:[]};
     allCoupons.forEach(c=>by[c.type]?.push(c));
     const sc=[];
-    // 단독 (모든 쿠폰)
+    // 단독 (모든 쿠폰) — "장바구니 15%" 형식
     allCoupons.forEach(c=>{
       const tInfo=COUPON_TYPE_BY_KEY[c.type];
-      sc.push({label:`${c.label} (${tInfo.short} ${c.rate}%)`,items:[c]});
+      sc.push({label:`${tInfo.short} ${c.rate}%`,items:[c]});
     });
-    // 쌍: 장바구니 × 상품
+    // 쌍: 장바구니 × 상품 — "장바구니 15% + 상품 10%" 형식
     by.cart.forEach(cc=>{
       by.product.forEach(pp=>{
-        sc.push({label:`${cc.label} × ${pp.label} (장바구니 ${cc.rate}% + 상품 ${pp.rate}%)`,items:[cc,pp]});
+        sc.push({label:`장바구니 ${cc.rate}% + 상품 ${pp.rate}%`,items:[cc,pp]});
       });
     });
     sc.forEach(s=>{
       s.factor=s.items.reduce((f,c)=>f*(1-c.rate/100),1);
       s.eff=Math.round((1-s.factor)*1000)/10;
     });
-    return sc.sort((a,b)=>b.eff-a.eff);
+    // 효과 큰 순 정렬 후 Case 번호 부여
+    sc.sort((a,b)=>b.eff-a.eff).forEach((s,i)=>{s.caseNum=i+1;});
+    return sc;
   },[allCoupons]);
   const selectedScenario=scenarios[scenarioIdx]||scenarios[0]||{factor:1-cpnPrimary/100,eff:cpnPrimary,items:[]};
   // 유효 쿠폰율 = 선택된 시나리오의 결과
@@ -6250,7 +6261,7 @@ function SaleCalcModal({ onClose }){
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="salecalc"
-        style={{background:D.surface,borderRadius:12,width:"min(880px,96vw)",maxHeight:"92vh",overflowY:"auto",
+        style={{background:D.surface,borderRadius:12,width:"min(1440px,80vw)",maxHeight:"92vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
         <style>{`.salecalc details[open]>summary .chev{transform:rotate(180deg);} .salecalc .chev{transition:transform .2s;display:inline-block;}`}</style>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px solid ${D.border}`,
@@ -6275,8 +6286,7 @@ function SaleCalcModal({ onClose }){
           <div style={{padding:"12px 14px",background:"#eef3ff",border:`1px solid ${D.blue}`,
             borderRadius:6,marginBottom:16}}>
             {/* 기본 쿠폰 행 */}
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <label style={{fontSize:13,fontWeight:700,color:D.blue,minWidth:80}}>기본 쿠폰</label>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               {/* 타입 세그먼트 */}
               <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
                 {COUPON_TYPES.map(t=>{
@@ -6287,38 +6297,80 @@ function SaleCalcModal({ onClose }){
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
+              {/* 부담 주체 세그먼트 */}
+              <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
+                  const active=primaryBurden===b.k;
+                  return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
+                    title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
+                    style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                      border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                      fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
+                })}
+              </div>
               <input type="number" min="0" max="60" step="1" value={coupon}
-                onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:80}}/>
+                onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
               <span style={{fontSize:12,color:D.blue}}>%</span>
-              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product"}])}
+              {primaryType==="share"&&(
+                <>
+                  <span style={{fontSize:10,color:D.textMeta}}>채널 분담</span>
+                  <input type="number" min="0" max="100" step="1" value={primaryShareRate}
+                    onChange={e=>setPrimaryShareRate(Number(e.target.value)||0)} style={{...inNum,width:60}}/>
+                  <span style={{fontSize:11,color:D.textMeta}}>%</span>
+                </>
+              )}
+              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product",burden:"self",shareRate:50}])}
                 style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
                   padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:"auto"}}>
-                + 중복 쿠폰
+                + 쿠폰 추가
               </button>
             </div>
-            {/* 중복 쿠폰 행들 */}
-            {stackCoupons.map((sc,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
-                <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>중복 쿠폰 {i+1}</span>
+            {/* 추가 쿠폰 행들 */}
+            {stackCoupons.map((sc,i)=>{
+              const t=sc.type||"product";
+              const burden=sc.burden||"self";
+              return (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
                 <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                  {COUPON_TYPES.map(t=>{
-                    const active=(sc.type||"product")===t.key;
-                    return <button key={t.key} type="button"
-                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:t.key};setStackCoupons(n);}}
-                      style={{background:active?t.color:"transparent",color:active?"#fff":D.textMeta,
+                  {COUPON_TYPES.map(typ=>{
+                    const active=t===typ.key;
+                    return <button key={typ.key} type="button"
+                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:typ.key};setStackCoupons(n);}}
+                      style={{background:active?typ.color:"transparent",color:active?"#fff":D.textMeta,
                         border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
-                        fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
+                        fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
+                  })}
+                </div>
+                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
+                    const active=burden===b.k;
+                    return <button key={b.k} type="button"
+                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
+                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
+                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
                   })}
                 </div>
                 <input type="number" min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
-                  style={{...inNum,width:80}}/>
+                  style={{...inNum,width:70}}/>
                 <span style={{fontSize:12,color:D.blue}}>%</span>
+                {t==="share"&&(
+                  <>
+                    <span style={{fontSize:10,color:D.textMeta}}>채널 분담</span>
+                    <input type="number" min="0" max="100" step="1" value={sc.shareRate==null?50:sc.shareRate}
+                      onChange={e=>{const n=[...stackCoupons];n[i]={...sc,shareRate:Number(e.target.value)||0};setStackCoupons(n);}}
+                      style={{...inNum,width:60}}/>
+                    <span style={{fontSize:11,color:D.textMeta}}>%</span>
+                  </>
+                )}
                 <button onClick={()=>setStackCoupons(stackCoupons.filter((_,j)=>j!==i))}
                   style={{background:"transparent",border:`1px solid ${D.blue}55`,borderRadius:5,
-                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.blue}}>✕</button>
+                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.blue,marginLeft:"auto"}}>✕</button>
               </div>
-            ))}
+              );
+            })}
             {/* 시나리오 선택 — 타입 규칙 기반 가능한 조합 */}
             {scenarios.length>0&&(
               <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${D.blue}33`}}>
@@ -6332,7 +6384,7 @@ function SaleCalcModal({ onClose }){
                       style={{background:active?D.blue:"#fff",color:active?"#fff":D.blue,
                         border:`1px solid ${D.blue}`,borderRadius:5,padding:"3px 9px",
                         fontSize:11,cursor:"pointer",fontWeight:active?700:500,whiteSpace:"nowrap"}}>
-                      {s.label} → {s.eff}%
+                      Case {s.caseNum} · {s.label} → {s.eff}%
                     </button>;
                   })}
                 </div>
@@ -6581,7 +6633,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
               <button onClick={()=>setStackCoupons([...stackCoupons,{rate:""}])}
                 style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
                   padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600}}>
-                + 중복 쿠폰
+                + 쿠폰 추가
               </button>
               {stackCoupons.length>0&&(
                 <span style={{fontSize:12,color:D.blue,marginLeft:"auto",fontWeight:700}}>
@@ -6591,7 +6643,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
             </div>
             {stackCoupons.map((sc,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
-                <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>중복 쿠폰 {i+1}</span>
+                <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>Case {i+1}</span>
                 <input type="number" min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={inNum}/>
@@ -6602,7 +6654,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
               </div>
             ))}
             <div style={{fontSize:10,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
-              매트릭스 열은 기본 쿠폰 변동값을 보여주고, 중복 쿠폰은 모든 셀에 동일 누적 적용됩니다.
+              매트릭스 열은 기본 쿠폰 변동값을 보여주고, 추가 Case 쿠폰은 모든 셀에 동일 누적 적용됩니다.
             </div>
           </div>
 
@@ -6661,7 +6713,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
               </table>
             </div>
             <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
-              셀 클릭 시 상품군(구간 + 금액 범위) 할인율 + 기본 쿠폰{stackCoupons.length>0?` + 중복 쿠폰 ${stackCoupons.length}개`:""}이 자동 입력되며,
+              셀 클릭 시 상품군(구간 + 금액 범위) 할인율 + 기본 쿠폰{stackCoupons.length>0?` + 추가 Case ${stackCoupons.length}개`:""}이 자동 입력되며,
               이 창은 계속 열린 채로 다른 구간/쿠폰 조합을 추가로 선택할 수 있습니다.
             </div>
           </div>
