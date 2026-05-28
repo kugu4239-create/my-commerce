@@ -6119,8 +6119,10 @@ function SaleCalcModal({ onClose }){
   // 정산 모델 (해석 B): 수수료는 고객 결제액(finalPrice)에만 부과,
   //                      채널 보전(channelBurden) 은 수수료 없이 그대로 정산에 가산.
   //                      net = finalPrice − fee + channelBurden
+  // 부가세 처리 (옵션 B · 양쪽 VAT 포함): 인벤토리 공급가는 세전(공급가액) 이므로
+  //                      마진 계산 시 ×1.1 적용. 결제액은 이미 소비자가(VAT 포함).
   const computeMargin=useCallback((list,baseDisc,items,supply)=>{
-    if(!list) return {finalPrice:0,selfBurden:0,channelBurden:0,fee:0,feeRate:28,net:0,margin:0,marginRate:0};
+    if(!list) return {finalPrice:0,selfBurden:0,channelBurden:0,fee:0,feeRate:28,net:0,margin:0,marginRate:0,supplyIncVat:0};
     let priceAfter=list*(1-baseDisc/100);
     let selfBurden=list*(baseDisc/100); // 프런트는 자사
     let channelBurden=0;
@@ -6143,9 +6145,10 @@ function SaleCalcModal({ onClose }){
     const channelBurdenR=Math.round(channelBurden/10)*10; // 채널 보전 (10원 단위)
     const fee=Math.round(finalPriceR*(fr/100)/10)*10;     // 수수료는 결제액 기준
     const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
-    const margin=net-(supply||0);
+    const supplyIncVat=Math.round((supply||0)*1.1);       // 공급가 (세포) = 인벤토리 공급가액 × 1.1
+    const margin=net-supplyIncVat;
     const marginRate=net>0?Math.round(margin/net*1000)/10:0;
-    return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,marginRate};
+    return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,marginRate,supplyIncVat};
   },[]);
   // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
   const [invMap,setInvMap]=useState({});
@@ -6219,9 +6222,10 @@ function SaleCalcModal({ onClose }){
           calc=calcReverse(r.list,s.disc,cpn);
         }
         const supply=supplyOf(r.name,r.code);
-        const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
+        const supplyIncVat=Math.round(supply*1.1);
+        const costRatio=calc.finalPrice>0&&supply>0?Math.round(supplyIncVat/calc.finalPrice*1000)/10:0;
         const m=computeMargin(r.list,calc.baseDisc,selectedScenario.items||[],supply);
-        return {...r,slot:s,...calc,manualBase,supply,costRatio,...m};
+        return {...r,slot:s,...calc,manualBase,supply,supplyIncVat,costRatio,...m};
       });
     });
   },[cpn,supplyOf,computeMargin,selectedScenario]);
@@ -6237,8 +6241,9 @@ function SaleCalcModal({ onClose }){
       const finalPrice=Math.round(basePrice*factorCoupon/10)*10;
       const finalDisc=r.list>0?Math.round((1-finalPrice/r.list)*1000)/10:0;
       const supply=r.supply||0;
-      const costRatio=finalPrice>0&&supply>0?Math.round(supply/finalPrice*1000)/10:0;
-      return {...r,baseDisc:v,basePrice,finalPrice,finalDisc,manualBase:v,costRatio};
+      const supplyIncVat=Math.round(supply*1.1);
+      const costRatio=finalPrice>0&&supply>0?Math.round(supplyIncVat/finalPrice*1000)/10:0;
+      return {...r,baseDisc:v,basePrice,finalPrice,finalDisc,manualBase:v,supplyIncVat,costRatio};
     }));
   };
   const resetBaseDisc=(rowIdx)=>{
@@ -6247,8 +6252,9 @@ function SaleCalcModal({ onClose }){
       const s=r.slot;
       const calc=calcReverse(r.list,s.disc,cpn);
       const supply=r.supply||0;
-      const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
-      return {...r,...calc,manualBase:undefined,costRatio};
+      const supplyIncVat=Math.round(supply*1.1);
+      const costRatio=calc.finalPrice>0&&supply>0?Math.round(supplyIncVat/calc.finalPrice*1000)/10:0;
+      return {...r,...calc,manualBase:undefined,supplyIncVat,costRatio};
     }));
   };
   const handleFile=async file=>{
@@ -6282,9 +6288,10 @@ function SaleCalcModal({ onClose }){
         const s=calcClassify(r.list);
         const calc=calcReverse(r.list,s.disc,cpn);
         const supply=supplyOf(r.name,r.code);
-        const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
+        const supplyIncVat=Math.round(supply*1.1);
+        const costRatio=calc.finalPrice>0&&supply>0?Math.round(supplyIncVat/calc.finalPrice*1000)/10:0;
         const m=computeMargin(r.list,calc.baseDisc,selectedScenario.items||[],supply);
-        return {...r,slot:s,...calc,supply,costRatio,...m};
+        return {...r,slot:s,...calc,supply,supplyIncVat,costRatio,...m};
       }));
       setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행) · 인벤토리 매칭 ${rows.filter(r=>supplyOf(r.name,r.code)>0).length}건`);
     }catch(err){ setShowResults(true); setProcessed([]); setSummary("파일 읽기 실패: "+(err?.message||err)); }
@@ -6316,20 +6323,31 @@ function SaleCalcModal({ onClose }){
   const DISP_CAP=500;
   const shown=processed?processed.slice(0,DISP_CAP):[];
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+    <div onClick={onClose} className="salecalc-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="salecalc"
         style={{background:D.surface,borderRadius:12,width:"min(1440px,80vw)",maxHeight:"92vh",overflowY:"auto",
           border:`1px solid ${D.black}`,
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
-        <style>{`.salecalc details[open]>summary .chev{transform:rotate(180deg);} .salecalc .chev{transition:transform .2s;display:inline-block;}`}</style>
+        <style>{`
+          .salecalc details[open]>summary .chev{transform:rotate(180deg);}
+          .salecalc .chev{transition:transform .2s;display:inline-block;}
+          @media (max-width: 768px) {
+            .salecalc-overlay { padding: 4px !important; align-items: flex-start !important; }
+            .salecalc { width: 100% !important; max-width: 100% !important; max-height: calc(100vh - 8px) !important; border-radius: 8px !important; }
+            .salecalc summary { padding: 9px 11px !important; font-size: 12px !important; }
+            .salecalc .sc-body { padding: 14px 10px 28px !important; }
+            .salecalc table { font-size: 10px !important; }
+            .salecalc table th, .salecalc table td { padding: 5px 6px !important; }
+          }
+        `}</style>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
           padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
           <b style={{fontSize:16,color:D.black,fontWeight:700}}>29CM 할인율 계산기</b>
           <button onClick={onClose} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
             width:32,height:32,cursor:"pointer",fontSize:15,color:D.textMeta}}>✕</button>
         </div>
-        <div style={{padding:"18px 20px 36px"}}>
+        <div className="sc-body" style={{padding:"18px 20px 36px"}}>
           <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:D.textSub,padding:"8px 12px",
             background:D.surfaceAlt,borderRadius:6,marginBottom:12}}>
             <span>표본 <b style={{color:D.black}}>2,184개</b></span>
@@ -6593,8 +6611,9 @@ function SaleCalcModal({ onClose }){
               {single&&(()=>{
                 // 공급가 매칭 (선택된 상품 우선, 없으면 invMap 에서 자동 매칭)
                 const supply=singleSelected?singleSelected.supply:supplyOf(singleSelected?.name||"",singleSelected?.code||"");
+                const supplyIncVat=Math.round(supply*1.1);
                 const m=computeMargin(listPrice,single.baseDisc,selectedScenario.items||[],supply);
-                const costRatio=single.finalPrice>0&&supply>0?Math.round(supply/single.finalPrice*1000)/10:0;
+                const costRatio=single.finalPrice>0&&supply>0?Math.round(supplyIncVat/single.finalPrice*1000)/10:0;
                 const frontCut=Math.max(0,listPrice-single.basePrice);
                 // 쿠폰 단계별 차감 + 부담 분리 (자사/채널)
                 const couponSteps=[];
@@ -6619,7 +6638,7 @@ function SaleCalcModal({ onClose }){
                 const channelDetail=couponSteps.filter(s=>s.chPart>0);
                 const mono='ui-monospace, SFMono-Regular, Menlo, Monaco, "Liberation Mono", monospace';
                 // 공통 스타일
-                const gridT="32px minmax(150px,1.6fr) minmax(150px,2fr) minmax(110px,auto)";
+                const gridT="26px minmax(0,1.4fr) minmax(0,1.8fr) minmax(90px,auto)";
                 const rowBase={display:"grid",gridTemplateColumns:gridT,alignItems:"baseline",gap:10,
                   padding:"7px 12px",borderTop:`1px solid ${D.border}`,fontSize:12,color:D.text};
                 const colHead={...rowBase,padding:"6px 12px",background:"#fafafa",
@@ -6819,14 +6838,14 @@ function SaleCalcModal({ onClose }){
                         </div>
                         <div style={rowBase}>
                           <span style={{...stepSty,color:D.red}}>−</span>
-                          <span>공급가 <span style={{fontSize:10,color:D.textMeta,marginLeft:4}}>(원가)</span></span>
-                          <span style={{color:D.textMeta,fontSize:11}}>인벤토리 매칭</span>
-                          <span style={{...amtSty,color:D.red}}>−₩{wonFmt(supply)}</span>
+                          <span>공급가 (세포) <span style={{fontSize:10,color:D.textMeta,marginLeft:4}}>(원가 + 부가세 10%)</span></span>
+                          <span style={calcSty}>₩{wonFmt(supply)} × 1.1</span>
+                          <span style={{...amtSty,color:D.red}}>−₩{wonFmt(supplyIncVat)}</span>
                         </div>
                         <div style={totalRow}>
                           <span></span>
                           <span>마진</span>
-                          <span style={{color:D.textMeta,fontWeight:400,fontSize:11}}>= 자사 정산액 − 공급가</span>
+                          <span style={{color:D.textMeta,fontWeight:400,fontSize:11}}>= 자사 정산액 − 공급가 (세포)</span>
                           <span style={{...amtBig,color:m.margin>=0?D.green:D.red}}>₩{wonFmt(m.margin)}</span>
                         </div>
                         <div style={rowBase}>
@@ -6838,7 +6857,7 @@ function SaleCalcModal({ onClose }){
                         <div style={rowBase}>
                           <span style={stepSty}></span>
                           <span>원가율</span>
-                          <span style={{color:D.textMeta,fontSize:11}}>공급가 ÷ 실판매액 (결제액 대비)</span>
+                          <span style={{color:D.textMeta,fontSize:11}}>공급가 (세포) ÷ 실판매액</span>
                           <span style={{...amtSty,color:costRatio>=50?D.red:costRatio>=35?D.amber:D.green}}>{costRatio}%</span>
                         </div>
                       </>
@@ -6881,7 +6900,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","채널보전","수수료","자사 정산","공급가","원가율","마진","마진율"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","채널보전","수수료","자사 정산","공급가 (세포)","원가율","마진","마진율"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -6930,14 +6949,15 @@ function SaleCalcModal({ onClose }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:600,whiteSpace:"nowrap"}}>
                                 ₩{wonFmt(r.net||0)}
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
-                                {r.supply>0?`₩${wonFmt(r.supply)}`:"—"}
+                              <td title={r.supply>0?`인벤토리 공급가액 ₩${wonFmt(r.supply)} × 1.1 (부가세 포함)`:""}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
+                                {r.supply>0?`₩${wonFmt(r.supplyIncVat||Math.round(r.supply*1.1))}`:"—"}
                               </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,
                                 color:r.supply>0?(r.costRatio>=50?D.red:r.costRatio>=35?D.amber:D.green):D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`${r.costRatio}%`:"—"}
                               </td>
-                              <td title={`결제액 ₩${wonFmt(r.finalPrice||0)} − 수수료(${r.feeRate}%) ₩${wonFmt(r.fee||0)} + 채널보전 ₩${wonFmt(r.channelBurden||0)} − 공급가 ₩${wonFmt(r.supply||0)} = 마진`}
+                              <td title={`결제액 ₩${wonFmt(r.finalPrice||0)} − 수수료(${r.feeRate}%) ₩${wonFmt(r.fee||0)} + 채널보전 ₩${wonFmt(r.channelBurden||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = 마진`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                   color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
                                 {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
