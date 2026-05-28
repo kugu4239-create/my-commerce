@@ -6595,40 +6595,28 @@ function SaleCalcModal({ onClose }){
                 const supply=singleSelected?singleSelected.supply:supplyOf(singleSelected?.name||"",singleSelected?.code||"");
                 const m=computeMargin(listPrice,single.baseDisc,selectedScenario.items||[],supply);
                 const costRatio=single.finalPrice>0&&supply>0?Math.round(supply/single.finalPrice*1000)/10:0;
+                // 순차 라인 아이템 (영수증 표시용) — 합산은 single.* 값을 신뢰
+                const frontCut=Math.max(0,listPrice-single.basePrice);
+                const couponLines=[];
+                let curPrice=single.basePrice;
+                (selectedScenario.items||[]).forEach(c=>{
+                  const tInfo=COUPON_TYPE_BY_KEY[c.type]||COUPON_TYPE_BY_KEY.product;
+                  const cut=Math.round(curPrice*((c.rate||0)/100));
+                  const burden=c.type==="share"
+                    ? `분담 자사${100-(c.shareRate||0)} : 채널${c.shareRate||0}`
+                    : (c.burden==="channel"?"채널부담":"자사부담");
+                  couponLines.push({tInfo,rate:c.rate||0,cut,burden,burdenColor:c.type==="share"?D.amber:(c.burden==="channel"?D.green:D.textSub)});
+                  curPrice-=cut;
+                });
+                const mono='ui-monospace, SFMono-Regular, Menlo, Monaco, "Liberation Mono", monospace';
+                const dashedDiv={borderTop:`1px dashed ${D.borderMid}`,margin:"8px 0"};
+                const rowSty={display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,padding:"2px 0"};
                 return (
-                <div style={{marginTop:12,padding:16,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10}}>
-                  {/* 적용 쿠폰 시나리오 — 한눈에 보이는 요약 */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10,
-                    padding:"8px 10px",background:D.surfaceAlt,border:`1px solid ${D.borderMid}`,borderRadius:6}}>
-                    <span style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em"}}>적용 시나리오</span>
-                    {selectedScenario.caseNum&&(
-                      <span style={{background:D.black,color:"#fff",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:3}}>
-                        Case {selectedScenario.caseNum}
-                      </span>
-                    )}
-                    <span style={{fontSize:12,color:D.text,fontWeight:600}}>
-                      {selectedScenario.label||`기본 쿠폰 ${cpn}%`}
-                    </span>
-                    <span style={{fontSize:11,color:D.textSub}}>→ 유효 쿠폰율 {cpn}%</span>
-                    {(selectedScenario.items||[]).length>0&&(
-                      <span style={{marginLeft:"auto",display:"flex",gap:4,flexWrap:"wrap"}}>
-                        {selectedScenario.items.map((c,idx)=>{
-                          const tInfo=COUPON_TYPE_BY_KEY[c.type];
-                          const burdenLabel=c.type==="share"?`분담(채널${c.shareRate||0}%)`:(c.burden==="channel"?"채널부담":"자사부담");
-                          return (
-                            <span key={idx} style={{fontSize:10,padding:"1px 6px",borderRadius:3,
-                              background:tInfo.bg,color:tInfo.color,border:`1px solid ${tInfo.border}`,whiteSpace:"nowrap"}}>
-                              {tInfo.short} {c.rate}% · {burdenLabel}
-                            </span>
-                          );
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+                <>
+                  {/* 슬롯/조정 컨트롤 바 — 영수증 위쪽에 둠 */}
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"12px 0 10px"}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
-                    <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}% · 수수료 {m.feeRate}%</span>
-                    {/* 기본 할인율 수동 조정 */}
+                    <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]}</span>
                     <span style={{marginLeft:"auto",fontSize:11,color:D.textSub,display:"flex",alignItems:"center",gap:6}}>
                       기본 할인율 직접 조정
                       <input type="number" step="0.1" min="0" max="100"
@@ -6646,34 +6634,146 @@ function SaleCalcModal({ onClose }){
                       )}
                     </span>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10}}>
-                    {[
-                      {l:"정가",v:`₩${wonFmt(listPrice)}`},
-                      {l:"최종 목표 (P75)",v:`${slot.disc}%`,c:slot.color},
-                      {l:"기본 할인율",v:`${single.baseDisc}%`,c:singleManualBase!=null?D.blue:undefined},
-                      {l:"기본 판매가 (I열)",v:`₩${wonFmt(single.basePrice)}`,hl:true},
-                      {l:"최종 노출가 (고객 결제액)",v:`₩${wonFmt(single.finalPrice)}`},
-                      {l:"최종 할인율 (쿠폰 포함)",v:`${single.finalDisc}%`,c:slot.color},
-                      {l:"자사부담 합계",v:`₩${wonFmt(m.selfBurden)}`,c:D.textSub},
-                      {l:"채널 보전 합계",v:`₩${wonFmt(m.channelBurden)}`,c:m.channelBurden>0?D.green:D.textMeta},
-                      {l:`채널 수수료 (${m.feeRate}%, 결제액 기준)`,v:`-₩${wonFmt(m.fee)}`,c:D.textSub},
-                      {l:`자사 정산 (결제액−수수료+채널보전)`,v:`₩${wonFmt(m.net)}`},
-                      ...(supply>0?[
-                        {l:"공급가",v:`₩${wonFmt(supply)}`},
-                        {l:"마진",v:`₩${wonFmt(m.margin)} (${m.marginRate}%)`,c:m.margin>=0?D.green:D.red,hl:true},
-                        {l:"원가율",v:`${costRatio}%`,c:costRatio>=50?D.red:costRatio>=35?D.amber:D.green},
-                      ]:[
-                        {l:"공급가 / 마진 / 원가율",v:"인벤토리 매칭 필요",c:D.textMeta},
-                      ]),
-                    ].map((s,i)=>(
-                      <div key={i} style={{padding:"10px 12px",borderRadius:6,
-                        background:s.hl?"#eef3ff":D.surfaceAlt,border:s.hl?`1px solid ${D.blue}`:"none"}}>
-                        <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>{s.l}</div>
-                        <div style={{fontSize:s.l==="공급가 / 마진 / 원가율"?12:16,fontWeight:600,color:s.hl?D.blue:(s.c||D.text)}}>{s.v}</div>
+                  {/* 영수증 (명세서) */}
+                  <div style={{margin:"0 auto",maxWidth:520,padding:"20px 22px",background:"#fffdf7",
+                    border:`1px solid ${D.borderMid}`,borderRadius:8,
+                    boxShadow:"0 1px 0 rgba(0,0,0,0.04), 0 6px 18px rgba(0,0,0,0.05)",color:D.text}}>
+                    {/* 헤더 */}
+                    <div style={{textAlign:"center",borderBottom:`2px solid ${D.black}`,paddingBottom:10,marginBottom:10}}>
+                      <div style={{fontSize:11,letterSpacing:"0.28em",color:D.textMeta,fontWeight:700}}>SALE PRICE</div>
+                      <div style={{fontSize:18,letterSpacing:"0.18em",color:D.black,fontWeight:800,marginTop:2}}>R E C E I P T</div>
+                    </div>
+                    {/* 메타: 슬롯·Case·시나리오·상품 */}
+                    <div style={{fontSize:11,color:D.textSub,lineHeight:1.7}}>
+                      <div style={rowSty}>
+                        <span>구간</span>
+                        <span style={{color:slot.color,fontWeight:600}}>{slot.name} (P75 {slot.disc}%)</span>
+                      </div>
+                      <div style={rowSty}>
+                        <span>시나리오</span>
+                        <span style={{color:D.text,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                          {selectedScenario.caseNum&&(
+                            <span style={{background:D.black,color:"#fff",fontSize:9,padding:"1px 6px",borderRadius:3,letterSpacing:"0.04em"}}>
+                              Case {selectedScenario.caseNum}
+                            </span>
+                          )}
+                          {selectedScenario.label||`기본 쿠폰 ${cpn}%`}
+                        </span>
+                      </div>
+                      {singleSelected&&(
+                        <div style={rowSty}>
+                          <span>상품</span>
+                          <span style={{color:D.text,maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                            title={singleSelected.name}>{singleSelected.name}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={dashedDiv}></div>
+                    {/* 정가 */}
+                    <div style={rowSty}>
+                      <span style={{fontSize:12,color:D.text}}>정가</span>
+                      <span style={{fontFamily:mono,fontSize:14,fontWeight:600}}>₩{wonFmt(listPrice)}</span>
+                    </div>
+                    {/* 프런트 할인 */}
+                    {single.baseDisc>0&&(
+                      <div style={{padding:"4px 0 2px"}}>
+                        <div style={rowSty}>
+                          <span style={{fontSize:11,color:D.text,display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:`${D.textMeta}15`,color:D.textSub,fontWeight:700}}>프런트</span>
+                            할인 {single.baseDisc}%
+                            <span style={{fontSize:9,color:D.textMeta}}>· 자사부담</span>
+                          </span>
+                          <span style={{fontFamily:mono,fontSize:12,color:D.red,fontWeight:600}}>−₩{wonFmt(frontCut)}</span>
+                        </div>
+                      </div>
+                    )}
+                    {/* 기본 판매가 (subtotal) */}
+                    <div style={{...rowSty,padding:"6px 0",borderTop:`1px dotted ${D.border}`,borderBottom:`1px dotted ${D.border}`,margin:"4px 0"}}>
+                      <span style={{fontSize:11,color:D.textSub,fontWeight:600}}>기본 판매가 (I열)</span>
+                      <span style={{fontFamily:mono,fontSize:13,fontWeight:700,color:D.text}}>₩{wonFmt(single.basePrice)}</span>
+                    </div>
+                    {/* 쿠폰 라인들 */}
+                    {couponLines.length>0&&couponLines.map((cl,idx)=>(
+                      <div key={idx} style={rowSty}>
+                        <span style={{fontSize:11,color:D.text,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <span style={{fontSize:9,padding:"1px 5px",borderRadius:3,
+                            background:cl.tInfo.bg,color:cl.tInfo.color,border:`1px solid ${cl.tInfo.border}`,fontWeight:700}}>
+                            {cl.tInfo.short}
+                          </span>
+                          쿠폰 {cl.rate}%
+                          <span style={{fontSize:9,color:cl.burdenColor,fontWeight:600}}>· {cl.burden}</span>
+                        </span>
+                        <span style={{fontFamily:mono,fontSize:12,color:D.red,fontWeight:600}}>−₩{wonFmt(cl.cut)}</span>
                       </div>
                     ))}
+                    <div style={dashedDiv}></div>
+                    {/* 최종 노출가 */}
+                    <div style={rowSty}>
+                      <span style={{fontSize:13,color:D.black,fontWeight:700}}>최종 노출가</span>
+                      <span style={{fontFamily:mono,fontSize:18,fontWeight:800,color:D.black}}>₩{wonFmt(single.finalPrice)}</span>
+                    </div>
+                    <div style={{...rowSty,marginTop:-2}}>
+                      <span style={{fontSize:10,color:D.textMeta}}>고객 결제액 · 최종 할인율</span>
+                      <span style={{fontSize:11,fontWeight:700,color:slot.color}}>{single.finalDisc}%</span>
+                    </div>
+                    <div style={dashedDiv}></div>
+                    {/* 정산 내역 */}
+                    <div style={{fontSize:10,letterSpacing:"0.16em",color:D.textMeta,fontWeight:700,margin:"2px 0 4px"}}>SETTLEMENT · 자사 정산</div>
+                    <div style={rowSty}>
+                      <span style={{fontSize:11,color:D.text}}>결제액</span>
+                      <span style={{fontFamily:mono,fontSize:12}}>₩{wonFmt(single.finalPrice)}</span>
+                    </div>
+                    <div style={rowSty}>
+                      <span style={{fontSize:11,color:D.text}}>+ 채널 보전 <span style={{fontSize:9,color:D.textMeta}}>(채널부담 누적)</span></span>
+                      <span style={{fontFamily:mono,fontSize:12,color:m.channelBurden>0?D.green:D.textMeta}}>+₩{wonFmt(m.channelBurden)}</span>
+                    </div>
+                    <div style={rowSty}>
+                      <span style={{fontSize:11,color:D.text}}>− 채널 수수료 <span style={{fontSize:9,color:D.textMeta}}>({m.feeRate}% · 결제액 기준)</span></span>
+                      <span style={{fontFamily:mono,fontSize:12,color:D.textSub}}>−₩{wonFmt(m.fee)}</span>
+                    </div>
+                    <div style={{...rowSty,marginTop:4,paddingTop:6,borderTop:`1px solid ${D.border}`}}>
+                      <span style={{fontSize:12,color:D.black,fontWeight:700}}>= 자사 정산액</span>
+                      <span style={{fontFamily:mono,fontSize:15,fontWeight:800,color:D.black}}>₩{wonFmt(m.net)}</span>
+                    </div>
+                    {/* 마진 섹션 */}
+                    {supply>0?(
+                      <>
+                        <div style={dashedDiv}></div>
+                        <div style={{fontSize:10,letterSpacing:"0.16em",color:D.textMeta,fontWeight:700,margin:"2px 0 4px"}}>MARGIN · 마진 분석</div>
+                        <div style={rowSty}>
+                          <span style={{fontSize:11,color:D.text}}>− 공급가</span>
+                          <span style={{fontFamily:mono,fontSize:12}}>−₩{wonFmt(supply)}</span>
+                        </div>
+                        <div style={{...rowSty,marginTop:4,paddingTop:6,borderTop:`1px solid ${D.border}`}}>
+                          <span style={{fontSize:12,color:D.black,fontWeight:700}}>= 마진</span>
+                          <span style={{fontFamily:mono,fontSize:15,fontWeight:800,color:m.margin>=0?D.green:D.red}}>
+                            ₩{wonFmt(m.margin)}
+                          </span>
+                        </div>
+                        <div style={rowSty}>
+                          <span style={{fontSize:10,color:D.textMeta}}>마진율 (자사 정산 대비)</span>
+                          <span style={{fontFamily:mono,fontSize:11,fontWeight:700,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
+                        </div>
+                        <div style={rowSty}>
+                          <span style={{fontSize:10,color:D.textMeta}}>원가율 (결제액 대비)</span>
+                          <span style={{fontFamily:mono,fontSize:11,fontWeight:700,color:costRatio>=50?D.red:costRatio>=35?D.amber:D.green}}>{costRatio}%</span>
+                        </div>
+                      </>
+                    ):(
+                      <>
+                        <div style={dashedDiv}></div>
+                        <div style={{padding:"6px 0",textAlign:"center",fontSize:11,color:D.textMeta,fontStyle:"italic"}}>
+                          공급가 미연동 — 인벤토리 매칭 시 마진/원가율 자동 계산
+                        </div>
+                      </>
+                    )}
+                    {/* 푸터 */}
+                    <div style={{marginTop:12,paddingTop:8,borderTop:`2px solid ${D.black}`,
+                      textAlign:"center",fontSize:9,color:D.textMeta,letterSpacing:"0.18em",fontWeight:600}}>
+                      THANK YOU · 29CM CALC
+                    </div>
                   </div>
-                </div>
+                </>
                 );
               })()}
             </div>
