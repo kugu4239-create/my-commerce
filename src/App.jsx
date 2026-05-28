@@ -6308,7 +6308,7 @@ function SaleCalcModal({ onClose }){
     wb.Workbook={...(wb.Workbook||{}),CalcPr:{...(wb.Workbook?.CalcPr||{}),fullCalcOnLoad:true}};
     XLSX.writeFile(wb,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
   };
-  const sec={marginBottom:10,border:`1px solid ${D.border}`,borderRadius:8,background:D.surface};
+  const sec={marginBottom:12,border:`1px solid ${D.black}`,borderRadius:10,background:D.surface};
   const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
   const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:13,width:120,fontFamily:"inherit"};
   const th={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right",fontSize:11};
@@ -6320,9 +6320,10 @@ function SaleCalcModal({ onClose }){
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="salecalc"
         style={{background:D.surface,borderRadius:12,width:"min(1440px,80vw)",maxHeight:"92vh",overflowY:"auto",
+          border:`1px solid ${D.black}`,
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
         <style>{`.salecalc details[open]>summary .chev{transform:rotate(180deg);} .salecalc .chev{transition:transform .2s;display:inline-block;}`}</style>
-        <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px solid ${D.border}`,
+        <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
           padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
           <b style={{fontSize:16,color:D.black,fontWeight:700}}>29CM 할인율 계산기</b>
           <button onClick={onClose} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
@@ -6341,8 +6342,8 @@ function SaleCalcModal({ onClose }){
             기본 할인율의 <b style={{color:D.black}}>일의 자리가 6~9이면 다음 10% 단위로 올림</b>합니다 (예: 7%→10%, 16~19%→20%).
             올림된 할인율로 기본 판매가·최종 노출가를 재계산합니다.
           </div>
-          <div style={{padding:"12px 14px",background:"#eef3ff",border:`1px solid ${D.blue}`,
-            borderRadius:6,marginBottom:16}}>
+          <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,
+            borderRadius:10,marginBottom:16}}>
             {/* 기본 쿠폰 행 */}
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               {/* 타입 세그먼트 */}
@@ -6552,8 +6553,8 @@ function SaleCalcModal({ onClose }){
                   onChange={e=>{setListPrice(Math.max(0,parseInt(e.target.value)||0));setSingleSelected(null);}} style={inNum}/>
                 <span style={{fontSize:12,color:D.textSub}}>원</span>
                 {singleSelected&&(
-                  <span style={{marginLeft:"auto",fontSize:11,color:D.blue,fontWeight:600,
-                    background:"#eef3ff",border:`1px solid ${D.blue}55`,borderRadius:4,padding:"3px 8px"}}>
+                  <span style={{marginLeft:"auto",fontSize:11,color:D.text,fontWeight:600,
+                    background:D.surfaceAlt,border:`1px solid ${D.borderMid}`,borderRadius:4,padding:"3px 8px"}}>
                     📌 {singleSelected.name} · 공급가 ₩{wonFmt(singleSelected.supply||0)}
                     <button onClick={()=>setSingleSelected(null)}
                       style={{marginLeft:6,background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:12}}>✕</button>
@@ -6567,6 +6568,34 @@ function SaleCalcModal({ onClose }){
                 const costRatio=single.finalPrice>0&&supply>0?Math.round(supply/single.finalPrice*1000)/10:0;
                 return (
                 <div style={{marginTop:12,padding:16,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10}}>
+                  {/* 적용 쿠폰 시나리오 — 한눈에 보이는 요약 */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10,
+                    padding:"8px 10px",background:D.surfaceAlt,border:`1px solid ${D.borderMid}`,borderRadius:6}}>
+                    <span style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em"}}>적용 시나리오</span>
+                    {selectedScenario.caseNum&&(
+                      <span style={{background:D.black,color:"#fff",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:3}}>
+                        Case {selectedScenario.caseNum}
+                      </span>
+                    )}
+                    <span style={{fontSize:12,color:D.text,fontWeight:600}}>
+                      {selectedScenario.label||`기본 쿠폰 ${cpn}%`}
+                    </span>
+                    <span style={{fontSize:11,color:D.textSub}}>→ 유효 쿠폰율 {cpn}%</span>
+                    {(selectedScenario.items||[]).length>0&&(
+                      <span style={{marginLeft:"auto",display:"flex",gap:4,flexWrap:"wrap"}}>
+                        {selectedScenario.items.map((c,idx)=>{
+                          const tInfo=COUPON_TYPE_BY_KEY[c.type];
+                          const burdenLabel=c.type==="share"?`분담(채널${c.shareRate||0}%)`:(c.burden==="channel"?"채널부담":"자사부담");
+                          return (
+                            <span key={idx} style={{fontSize:10,padding:"1px 6px",borderRadius:3,
+                              background:tInfo.bg,color:tInfo.color,border:`1px solid ${tInfo.border}`,whiteSpace:"nowrap"}}>
+                              {tInfo.short} {c.rate}% · {burdenLabel}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </div>
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}% · 수수료 {m.feeRate}%</span>
