@@ -6112,6 +6112,7 @@ function FilePreviewModal({ file, onClose }){
   const [sheets,setSheets]=useState([]);
   const [active,setActive]=useState(0);
   const [err,setErr]=useState("");
+  const [query,setQuery]=useState("");
   const name=file?.name||"";
   const ext=(name.split(".").pop()||"").toLowerCase();
   const type=file?.type||"";
@@ -6136,7 +6137,15 @@ function FilePreviewModal({ file, onClose }){
   const loading=isSheet&&aoaList===null&&!err;
   const MAXR=300, MAXC=40;
   const aoa=aoaList?.[active]||[];
-  const rows=aoa.slice(0,MAXR);
+  const headerRow=aoa[0]||[];
+  const dataRows=aoa.length>0?aoa.slice(1):[];
+  const q=query.trim().toLowerCase();
+  const filteredData=q
+    ? dataRows.filter(r=>r.some(c=>String(c??"").toLowerCase().includes(q)))
+    : dataRows;
+  const displayData=filteredData.slice(0,MAXR);
+  const rows=aoa.length>0?[headerRow,...displayData]:[];
+  const truncated=filteredData.length>MAXR;
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -6154,9 +6163,23 @@ function FilePreviewModal({ file, onClose }){
         {isSheet&&sheets.length>1&&(
           <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
             {sheets.map((s,i)=>(
-              <button key={i} onClick={()=>setActive(i)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",
+              <button key={i} onClick={()=>{setActive(i);setQuery("");}} style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",
                 border:`1px solid ${i===active?D.black:D.border}`,background:i===active?D.black:D.surface,color:i===active?"#fff":D.textSub}}>{s}</button>
             ))}
+          </div>
+        )}
+        {isSheet&&!loading&&!err&&aoa.length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+            <input type="search" value={query} onChange={e=>setQuery(e.target.value)}
+              placeholder="셀 내용 검색 (대소문자 무시 · 헤더 제외 데이터 행)"
+              style={{flex:"1 1 200px",minWidth:160,padding:"5px 10px",fontSize:12,
+                border:`1px solid ${D.border}`,borderRadius:6,color:D.text,background:D.surface,
+                fontFamily:"inherit"}}/>
+            <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
+              {q
+                ?`매치 ${filteredData.length.toLocaleString()}행 / 전체 ${dataRows.length.toLocaleString()}행`
+                :`전체 ${dataRows.length.toLocaleString()}행`}
+            </span>
           </div>
         )}
         <div style={{overflow:"auto",flex:1,minHeight:0}}>
@@ -6165,7 +6188,9 @@ function FilePreviewModal({ file, onClose }){
           {isSheet&&(
             loading?<div style={{color:D.textMeta,fontSize:12,padding:30,textAlign:"center"}}>불러오는 중…</div>
             :err?<div style={{color:D.red,fontSize:12,padding:30,textAlign:"center"}}>{err}</div>
-            :<table style={{borderCollapse:"collapse",fontSize:11}}>
+            :q&&filteredData.length===0
+              ?<div style={{color:D.textMeta,fontSize:12,padding:30,textAlign:"center"}}>검색 결과가 없습니다.</div>
+              :<table style={{borderCollapse:"collapse",fontSize:11}}>
               <tbody>
                 {rows.map((r,ri)=>(
                   <tr key={ri}>
@@ -6187,8 +6212,10 @@ function FilePreviewModal({ file, onClose }){
             </div>
           )}
         </div>
-        {isSheet&&!loading&&!err&&aoa.length>MAXR&&(
-          <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>※ 처음 {MAXR}행만 미리보기 (전체 {aoa.length.toLocaleString()}행)</div>
+        {isSheet&&!loading&&!err&&truncated&&(
+          <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>
+            ※ 처음 {MAXR}행만 표시 ({q?`매치 ${filteredData.length.toLocaleString()}행 중`:`전체 ${dataRows.length.toLocaleString()}행 중`})
+          </div>
         )}
       </div>
     </div>
