@@ -4904,10 +4904,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               background:tableFileDragOver===p.id?"#eef3ff":"transparent",minHeight:22,transition:"all 0.15s"}}>
             {(p.files||[]).map((f,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
-                <button data-capture-hide onClick={()=>setFilePreview(f)}
-                  style={{background:"none",border:"none",padding:0,fontSize:11,color:D.blue,textDecoration:"underline",
-                    cursor:"pointer",wordBreak:"break-all",flex:1,textAlign:"left"}}
-                  title={`${f.name} 미리보기`}>📎 {f.name}</button>
+                <span style={{fontSize:11,color:D.textSub,wordBreak:"break-all",flex:1,textAlign:"left"}}
+                  title={f.name}>📎 {f.name}</span>
+                <button data-capture-hide onClick={()=>setFilePreview(f)} title="미리보기"
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
+                    cursor:"pointer",padding:"1px 6px",fontSize:11,whiteSpace:"nowrap",flexShrink:0,lineHeight:1}}>🔍</button>
                 <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
                     cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0}}>첨부파일 삭제</button>
@@ -6661,6 +6662,9 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           </div>
         )}
 
+        {/* 행 호버 강조 — 핀셋 비교 + Top 20 공용 */}
+        <style>{`.impact-hoverable tbody tr{transition:background 0.12s;}.impact-hoverable tbody tr:hover{background:${D.surfaceAlt};}`}</style>
+
         {/* 핀셋 상품 — 전/후 비교 (핀셋 상품 있을 때만 노출) */}
         {pinned.length>0&&(
           <div style={{marginBottom:18}}>
@@ -6668,7 +6672,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
               핀셋 상품 — 프로모션 전/후 주문량 비교 ({ch}, 주문 수량 기준)
             </div>
             <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <table className="impact-hoverable" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>메모</th>
@@ -6708,9 +6712,9 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
               해당 기간·채널의 배송 데이터가 없습니다.
             </div>
           ):(
-            <div style={{maxHeight:360,overflowY:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta,position:"sticky",top:0,background:D.surface}}>
+            <div style={{overflowX:"auto"}}>
+              <table className="impact-hoverable" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>주문 건</th>
