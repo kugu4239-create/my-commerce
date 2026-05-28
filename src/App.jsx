@@ -4064,7 +4064,8 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const productRows=plan.products.rows.length?plan.products.rows:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
   const coupons    =plan.coupons.length?plan.coupons:[emptyCouponRow()];
   const [calcOpen,setCalcOpen]=useState(false);
-  const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중인 행 인덱스
+  const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
+  const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
 
   // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
   const setProductPeriod=(field,v)=>onChange({
@@ -4174,13 +4175,36 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         </div>
         <table style={{width:"100%",maxWidth:520,borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
-            <th style={{...head,width:"62%"}}>상품군</th>
+            <th style={{...head,width:22}}/>
+            <th style={{...head,width:"58%"}}>상품군</th>
             <th style={{...head,width:"28%"}}>할인율(%)</th>
             <th style={{...head,width:"10%"}}/>
           </tr></thead>
           <tbody>
             {productRows.map((row,i)=>(
-              <tr key={i}>
+              <tr key={i}
+                onDragOver={e=>{
+                  if(prodDragIdx===null||prodDragIdx===i) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect="move";
+                  const arr=[...productRows];
+                  const [m]=arr.splice(prodDragIdx,1);
+                  arr.splice(i,0,m);
+                  setProductRows(arr);
+                  setProdDragIdx(i);
+                }}
+                style={{opacity:prodDragIdx===i?0.4:1,transition:"opacity 0.12s",
+                  background:prodDragIdx!==null&&prodDragIdx!==i?`${D.blue}06`:"transparent"}}>
+                <td style={{padding:"3px 0",textAlign:"center"}}>
+                  <span draggable="true"
+                    onDragStart={e=>{e.dataTransfer.effectAllowed="move";setProdDragIdx(i);}}
+                    onDragEnd={()=>setProdDragIdx(null)}
+                    title="드래그하여 상품군 순서 변경"
+                    style={{cursor:"grab",color:D.textMeta,fontSize:11,userSelect:"none",
+                      display:"inline-block",padding:"0 2px",lineHeight:1}}>
+                    ⋮⋮
+                  </span>
+                </td>
                 <td style={{padding:"3px 4px"}}>
                   <input value={row.group} onChange={e=>{const n=[...productRows];n[i]={...row,group:e.target.value};setProductRows(n);}}
                     style={cellInp} placeholder="예: 신상품, 전체"/>
@@ -4208,16 +4232,18 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:760}}>
           {coupons.map((row,i)=>(
             <div key={i}
-              onDragOver={e=>{if(dragIdx!==null&&dragIdx!==i){e.preventDefault();e.dataTransfer.dropEffect="move";}}}
-              onDrop={e=>{
+              onDragOver={e=>{
+                if(dragIdx===null||dragIdx===i) return;
                 e.preventDefault();
-                if(dragIdx===null||dragIdx===i){setDragIdx(null);return;}
+                e.dataTransfer.dropEffect="move";
+                // 실시간 재배치 — 드래그 중인 쿠폰을 즉시 i 위치로 이동
                 const arr=[...coupons];
                 const [moved]=arr.splice(dragIdx,1);
                 arr.splice(i,0,moved);
                 setCoupons(arr);
-                setDragIdx(null);
+                setDragIdx(i);
               }}
+              onDrop={e=>{e.preventDefault();setDragIdx(null);}}
               style={(()=>{const isStack=(row.stacksWith||[]).length>0;return{
                 border:`1px solid ${dragIdx!==null&&dragIdx!==i?`${D.blue}80`:isStack?`${D.blue}55`:D.border}`,borderRadius:8,
                 padding:"10px 12px",background:isStack?`${D.blue}08`:D.surface,
