@@ -6316,8 +6316,8 @@ function SaleCalcModal({ onClose }){
     XLSX.writeFile(wb,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
   };
   const sec={marginBottom:12,border:`1px solid ${D.black}`,borderRadius:10,background:D.surface};
-  const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
-  const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:13,width:120,fontFamily:"inherit"};
+  const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:11,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
+  const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:11,width:120,fontFamily:"inherit"};
   const th={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right",fontSize:11};
   const td={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"right"};
   const DISP_CAP=500;
@@ -6328,7 +6328,7 @@ function SaleCalcModal({ onClose }){
       <div onClick={e=>e.stopPropagation()} className="salecalc"
         style={{background:D.surface,borderRadius:12,width:"min(1440px,80vw)",maxHeight:"92vh",overflowY:"auto",
           border:`1px solid ${D.black}`,
-          boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
+          boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:11,color:D.text}}>
         <style>{`
           .salecalc, .salecalc *,
           .salecalc input, .salecalc button, .salecalc select, .salecalc textarea, .salecalc pre {
@@ -6347,9 +6347,9 @@ function SaleCalcModal({ onClose }){
         `}</style>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
           padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
-          <b style={{fontSize:16,color:D.black,fontWeight:700}}>29CM 할인율 계산기</b>
+          <b style={{fontSize:11,color:D.black,fontWeight:700}}>29CM 할인율 계산기</b>
           <button onClick={onClose} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
-            width:32,height:32,cursor:"pointer",fontSize:15,color:D.textMeta}}>✕</button>
+            width:32,height:32,cursor:"pointer",fontSize:11,color:D.textMeta}}>✕</button>
         </div>
         <div className="sc-body" style={{padding:"18px 20px 36px"}}>
           <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:D.textSub,padding:"8px 12px",
@@ -6363,7 +6363,7 @@ function SaleCalcModal({ onClose }){
             {/* 프리셋 — 자주 쓰는 쿠폰 시나리오 3종 */}
             <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:10,
               paddingBottom:10,borderBottom:`1px dashed ${D.border}`}}>
-              <span style={{fontSize:10,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em",marginRight:2}}>자주 쓰는 시나리오</span>
+              <span style={{fontSize:11,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em",marginRight:2}}>자주 쓰는 시나리오</span>
               {[
                 {label:"29CM 지원 쿠폰 15%",sub:"장바구니 · 채널부담",apply:()=>{
                   setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
@@ -6385,7 +6385,7 @@ function SaleCalcModal({ onClose }){
                     fontFamily:"-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Helvetica Neue', Arial, sans-serif",
                     letterSpacing:"-0.01em",lineHeight:1.3,textAlign:"left"}}>
                   <span style={{display:"block",fontWeight:700}}>{p.label}</span>
-                  <span style={{display:"block",fontSize:9,color:D.textMeta,fontWeight:500,marginTop:1}}>{p.sub}</span>
+                  <span style={{display:"block",fontSize:11,color:D.textMeta,fontWeight:500,marginTop:1}}>{p.sub}</span>
                 </button>
               ))}
             </div>
@@ -6397,7 +6397,7 @@ function SaleCalcModal({ onClose }){
                   const active=primaryType===t.key;
                   return <button key={t.key} type="button" onClick={()=>setPrimaryType(t.key)}
                     style={{background:active?t.color:"transparent",color:active?"#fff":D.textMeta,
-                      border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                      border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
@@ -6409,17 +6409,17 @@ function SaleCalcModal({ onClose }){
                     return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
                       title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
                       style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
                         fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
                   })}
                 </div>
               )}
               <input type="number" min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
-              <span style={{fontSize:12,color:D.blue}}>%</span>
+              <span style={{fontSize:11,color:D.blue}}>%</span>
               {primaryType==="share"&&(
                 <>
-                  <span style={{fontSize:10,color:D.textMeta}}>채널 분담</span>
+                  <span style={{fontSize:11,color:D.textMeta}}>채널 분담</span>
                   <input type="number" min="0" max="100" step="1" value={primaryShareRate}
                     onChange={e=>setPrimaryShareRate(Number(e.target.value)||0)} style={{...inNum,width:60}}/>
                   <span style={{fontSize:11,color:D.textMeta}}>%</span>
@@ -6443,7 +6443,7 @@ function SaleCalcModal({ onClose }){
                     return <button key={typ.key} type="button"
                       onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:typ.key};setStackCoupons(n);}}
                       style={{background:active?typ.color:"transparent",color:active?"#fff":D.textMeta,
-                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
                         fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
                   })}
                 </div>
@@ -6456,7 +6456,7 @@ function SaleCalcModal({ onClose }){
                         onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
                         title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
                         style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                          border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                          border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
                           fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
                     })}
                   </div>
@@ -6464,10 +6464,10 @@ function SaleCalcModal({ onClose }){
                 <input type="number" min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:70}}/>
-                <span style={{fontSize:12,color:D.blue}}>%</span>
+                <span style={{fontSize:11,color:D.blue}}>%</span>
                 {t==="share"&&(
                   <>
-                    <span style={{fontSize:10,color:D.textMeta}}>채널 분담</span>
+                    <span style={{fontSize:11,color:D.textMeta}}>채널 분담</span>
                     <input type="number" min="0" max="100" step="1" value={sc.shareRate==null?50:sc.shareRate}
                       onChange={e=>{const n=[...stackCoupons];n[i]={...sc,shareRate:Number(e.target.value)||0};setStackCoupons(n);}}
                       style={{...inNum,width:60}}/>
@@ -6502,7 +6502,7 @@ function SaleCalcModal({ onClose }){
                 </div>
               </div>
             )}
-            <div style={{fontSize:10,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
+            <div style={{fontSize:11,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
               최종 할인율 = 1 − ∏(1−rate) of 선택 시나리오의 쿠폰들. 시나리오 미선택 시 기본 쿠폰 단독값 사용.
             </div>
           </div>
@@ -6510,7 +6510,7 @@ function SaleCalcModal({ onClose }){
           <details className="sec" style={sec} open>
             <summary style={summarySty}>1. 가격대별 분류 정의 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr>
                   <th style={{...th,textAlign:"left",background:D.black,color:"#fff"}}>분류</th>
                   <th style={{...th,background:D.black,color:"#fff"}}>정가 범위</th>
@@ -6521,14 +6521,14 @@ function SaleCalcModal({ onClose }){
                   {CALC_SLOTS.map(s=>(
                     <tr key={s.id}>
                       <td style={{...td,textAlign:"left",fontWeight:600,color:D.text}}>{s.name}</td>
-                      <td style={{...td,fontSize:12,fontWeight:500}}>{s.range}</td>
-                      <td style={{...td,fontSize:12}}>{wonFmt(s.n)}</td>
+                      <td style={{...td,fontSize:11,fontWeight:500}}>{s.range}</td>
+                      <td style={{...td,fontSize:11}}>{wonFmt(s.n)}</td>
                       <td style={{...td,fontWeight:700,color:D.text}}>{s.disc}%</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{marginTop:10,fontSize:11.5,lineHeight:1.65,color:D.text}}>
+              <div style={{marginTop:10,fontSize:11,lineHeight:1.65,color:D.text}}>
                 <b>할인율 올림 규칙</b> — 29CM 할인 규정상 10% 단위마다 판매수수료가 1%p 낮아지므로,
                 기본 할인율의 <b>일의 자리가 6~9이면 다음 10% 단위로 올림</b>합니다 (예: 7%→10%, 16~19%→20%).
                 올림된 할인율로 기본 판매가·최종 노출가를 재계산합니다.
@@ -6581,7 +6581,7 @@ function SaleCalcModal({ onClose }){
                           setListPrice(p.selling||0);
                           setSingleQuery("");
                         }}
-                          style={{padding:"7px 10px",fontSize:12,cursor:"pointer",
+                          style={{padding:"7px 10px",fontSize:11,cursor:"pointer",
                             borderBottom:i<matches.length-1?`1px solid ${D.border}`:"none",
                             display:"flex",justifyContent:"space-between",gap:8}}>
                           <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
@@ -6595,18 +6595,18 @@ function SaleCalcModal({ onClose }){
                 })()}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:14,background:D.surfaceAlt,borderRadius:6}}>
-                <label style={{fontSize:12,color:D.textSub,minWidth:40}}>정가</label>
+                <label style={{fontSize:11,color:D.textSub,minWidth:40}}>정가</label>
                 <input type="range" min="50000" max="300000" step="1000" value={Math.min(300000,Math.max(50000,listPrice||50000))}
                   onChange={e=>{setListPrice(parseInt(e.target.value)||0);setSingleSelected(null);}} style={{flex:1,minWidth:120,accentColor:D.black}}/>
                 <input type="number" min="0" step="1000" value={listPrice}
                   onChange={e=>{setListPrice(Math.max(0,parseInt(e.target.value)||0));setSingleSelected(null);}} style={inNum}/>
-                <span style={{fontSize:12,color:D.textSub}}>원</span>
+                <span style={{fontSize:11,color:D.textSub}}>원</span>
                 {singleSelected&&(
                   <span style={{marginLeft:"auto",fontSize:11,color:D.text,fontWeight:600,
                     background:D.surfaceAlt,border:`1px solid ${D.borderMid}`,borderRadius:4,padding:"3px 8px"}}>
                     📌 {singleSelected.name} · 공급가 ₩{wonFmt(singleSelected.supply||0)}
                     <button onClick={()=>setSingleSelected(null)}
-                      style={{marginLeft:6,background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:12}}>✕</button>
+                      style={{marginLeft:6,background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:11}}>✕</button>
                   </span>
                 )}
               </div>
@@ -6653,7 +6653,7 @@ function SaleCalcModal({ onClose }){
                 <>
                   {/* 슬롯 + 기본할인율 조정 컨트롤 */}
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"12px 0 10px"}}>
-                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,border:`1px solid ${D.borderMid}`,color:D.text}}>{slot.name}</span>
+                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,border:`1px solid ${D.borderMid}`,color:D.text}}>{slot.name}</span>
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]}</span>
                     <span style={{marginLeft:"auto",fontSize:11,color:D.textSub,display:"flex",alignItems:"center",gap:6}}>
                       기본 할인율 직접 조정
@@ -6681,7 +6681,7 @@ function SaleCalcModal({ onClose }){
                       <span style={{color:D.textMeta}}>P75 {slot.disc}%</span>
                       <span style={{color:D.textMeta}}>·</span>
                       {selectedScenario.caseNum&&(
-                        <span style={{background:D.black,color:"#fff",fontSize:9,padding:"1px 6px",borderRadius:3}}>Case {selectedScenario.caseNum}</span>
+                        <span style={{background:D.black,color:"#fff",fontSize:11,padding:"1px 6px",borderRadius:3}}>Case {selectedScenario.caseNum}</span>
                       )}
                       <span style={{color:D.text,fontWeight:600}}>{selectedScenario.label||`기본 쿠폰 ${cpn}%`}</span>
                       <span style={{color:D.textMeta}}>최종 할인율 {cpn}%</span>
@@ -6820,7 +6820,7 @@ function SaleCalcModal({ onClose }){
           </details>
 
           <div style={sec}>
-            <div style={{padding:"11px 14px",fontSize:13,fontWeight:700,borderBottom:`1px solid ${D.border}`,color:D.black}}>4. 29CM 일괄할인 양식 업로드</div>
+            <div style={{padding:"11px 14px",fontSize:11,fontWeight:700,borderBottom:`1px solid ${D.border}`,color:D.black}}>4. 29CM 일괄할인 양식 업로드</div>
             <div style={{padding:14}}>
               <div onClick={()=>fileRef.current?.click()}
                 onDragOver={e=>{e.preventDefault();setDragOver(true);}}
@@ -6828,7 +6828,7 @@ function SaleCalcModal({ onClose }){
                 onDrop={e=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);}}
                 style={{border:`1px dashed ${dragOver?D.blue:D.borderMid}`,borderRadius:6,padding:22,textAlign:"center",
                   cursor:"pointer",background:dragOver?"#eef3ff":D.surface}}>
-                <div style={{margin:"0 0 4px",fontSize:13,color:D.text}}>29CM 일괄할인 v2 양식을 끌어다 놓거나 클릭해서 업로드</div>
+                <div style={{margin:"0 0 4px",fontSize:11,color:D.text}}>29CM 일괄할인 v2 양식을 끌어다 놓거나 클릭해서 업로드</div>
                 <div style={{fontSize:11,color:D.textMeta}}>E열 정상가 기준 분류 → 쿠폰율 역산한 기본 판매가를 I열에 입력</div>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
                   onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);e.target.value="";}}/>
@@ -6839,11 +6839,11 @@ function SaleCalcModal({ onClose }){
                     <span style={{fontSize:11,color:D.textMeta}}>{summary}{processed&&processed.length>DISP_CAP?` · 처음 ${DISP_CAP}행 표시(다운로드는 전체)`:""}</span>
                     {processed&&processed.length>0&&(
                       <button onClick={download} style={{background:D.black,color:"#fff",border:"none",padding:"9px 18px",
-                        fontSize:12,borderRadius:6,cursor:"pointer",fontWeight:600}}>I열 갱신본 다운로드</button>
+                        fontSize:11,borderRadius:6,cursor:"pointer",fontWeight:600}}>I열 갱신본 다운로드</button>
                     )}
                   </div>
                   {processed&&processed.length>0&&(
-                    <div style={{margin:"0 0 10px",fontSize:12,color:D.black,fontWeight:700,lineHeight:1.55}}>
+                    <div style={{margin:"0 0 10px",fontSize:11,color:D.black,fontWeight:700,lineHeight:1.55}}>
                       적용 시나리오
                       {selectedScenario.caseNum&&<> · Case {selectedScenario.caseNum}</>}
                       {' · '}{selectedScenario.label||`기본 쿠폰 ${cpn}%`}
@@ -6875,7 +6875,7 @@ function SaleCalcModal({ onClose }){
                                 minWidth:160,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(r.list)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>
-                                <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,border:`1px solid ${D.border}`,color:D.text,fontWeight:600,fontSize:10}}>{r.slot.name}</span>
+                                <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,border:`1px solid ${D.border}`,color:D.text,fontWeight:600,fontSize:11}}>{r.slot.name}</span>
                               </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600}}>{r.slot.disc}%</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{cpn}%</td>
@@ -6892,7 +6892,7 @@ function SaleCalcModal({ onClose }){
                                   <span style={{fontSize:11,color:D.textMeta}}>%</span>
                                   {r.manualBase!=null&&(
                                     <button onClick={()=>resetBaseDisc(i)} title="역산값으로 복귀"
-                                      style={{background:"transparent",border:"none",cursor:"pointer",fontSize:10,color:D.textMeta,padding:"0 3px"}}>↻</button>
+                                      style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 3px"}}>↻</button>
                                   )}
                                 </div>
                               </td>
@@ -6904,7 +6904,7 @@ function SaleCalcModal({ onClose }){
                               </td>
                               <td title={`수수료율 ${r.feeRate}% × 결제액 ₩${wonFmt(r.finalPrice||0)}`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.red,whiteSpace:"nowrap"}}>
-                                −₩{wonFmt(r.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({r.feeRate}%)</span>
+                                −₩{wonFmt(r.fee||0)} <span style={{fontSize:11,color:D.textMeta}}>({r.feeRate}%)</span>
                               </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.blue:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.channelBurden||0)>0?`+₩${wonFmt(r.channelBurden)}`:"—"}
@@ -6950,7 +6950,7 @@ function SaleCalcModal({ onClose }){
                     const rows=Object.values(groups).sort((a,b)=>a.slot.min-b.slot.min);
                     return (
                       <div style={{marginTop:18,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
-                        <div style={{padding:"9px 12px",fontSize:12,fontWeight:700,color:D.black,
+                        <div style={{padding:"9px 12px",fontSize:11,fontWeight:700,color:D.black,
                           background:D.surfaceAlt,borderBottom:`1px solid ${D.borderMid}`}}>
                           상품군별 결론 — 평균 기본 할인율 / 평균 최종 할인율 / 평균 마진율
                         </div>
