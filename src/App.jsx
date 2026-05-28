@@ -4008,6 +4008,8 @@ function computeDiscountMatrix(plan){
       });
     }
   }
+  // 조합(combo=true) 컬럼들에 케이스 번호 부여 — case 1, case 2, ...
+  {let n=0; cols.forEach(c=>{ if(c.combo) c.caseNum=++n; });}
 
   // 각 행: 컬럼별로 indexes 의 쿠폰 중 하나라도 제외되면 미적용,
   //         아니면 factor = ∏(1 - rate/100) 누적 → fin(g.rate, factor)
@@ -4051,7 +4053,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
     return null;
   };
   return (
-    <div style={{overflowX:"auto",marginTop:6}}>
+    <div style={{overflowX:"auto",marginTop:6,display:"flex",justifyContent:"center"}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
         <thead><tr>
           <th style={{...th,textAlign:"left"}}>상품군</th>
@@ -4059,6 +4061,12 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
             <th key={c.key} style={{...th,...divAt(c,ci)}} title={c.label}>
               {c.name?(
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+                  {c.combo&&c.caseNum&&(
+                    <span style={{fontSize:compact?9:10,fontWeight:700,color:D.blue,
+                      letterSpacing:"0.04em",marginBottom:2}}>
+                      Case {c.caseNum}
+                    </span>
+                  )}
                   <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
                   <span style={{color:c.combo?D.blue:D.textMeta}}>{c.sub}</span>
                 </div>
@@ -4390,9 +4398,9 @@ function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compa
   const badgePad=compact?"2px 7px":"2px 7px";
   return (
     <div style={{fontSize:compact?11:12,lineHeight:1.75,minWidth:compact?140:0,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
-      {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유) */}
+      {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유). 비-compact 모드에서는 뱃지와 표 사이 간격을 넓힘 */}
       {cleanedProducts.length>0&&(
-        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:compact?5:8}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:compact?5:24,justifyContent:compact?"flex-start":"center"}}>
           {cleanedProducts.map((r,i)=>{
             const g=r.group||"전체";
             const on=(marks.groups||[]).includes(g);
@@ -4812,7 +4820,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       {/* 상단 정보 행 */}
       <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
         <div style={{flex:"0 0 auto",minWidth:120}}>
-          <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>기간</div>
+          <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>기간</div>
           {[p.start_date,p.end_date].map((dt,i)=>{
             const [d,t]=(dt||"").split("T");
             const wd=d?["일","월","화","수","목","금","토"][new Date(d+"T00:00:00").getDay()]:"";
@@ -4820,13 +4828,13 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           })}
         </div>
         <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
-          <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>상세 내용</div>
+          <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>상세 내용</div>
           {p.content||p.memo||"—"}
         </div>
         {pins.length>0&&(
           <div style={{flex:"2 1 280px",minWidth:200}}>
-            <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>
-              핀셋 상품 <span style={{opacity:.6}}>(클릭 시 강조{pins.length>PIN_LIMIT?` · 총 ${pins.length}개 중 ${PIN_LIMIT}개 표시`:""})</span>
+            <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>
+              핀셋 상품{pins.length>PIN_LIMIT&&<span style={{opacity:.6,fontWeight:500,marginLeft:6}}>총 {pins.length}개 중 {PIN_LIMIT}개 표시</span>}
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
               {visiblePins.map((pp,i)=>(
@@ -4883,11 +4891,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
         </div>
       </div>
-      {/* 하단: 할인율 매트릭스 — 카드 전체 폭으로 펼치고 좌우 중앙 정렬 */}
+      {/* 하단: 할인율 매트릭스 — 카드 전체 폭으로 펼치고 표 자체는 좌우 중앙 정렬 */}
       {computeDiscountMatrix(p.discount_plan||{}).hasGroup&&(
-        <div style={{marginTop:14,paddingTop:12,borderTop:`1px dashed ${D.border}`,
-          display:"flex",flexDirection:"column",alignItems:"center"}}>
-          <div style={{fontSize:10,color:D.textMeta,marginBottom:6,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase",alignSelf:"flex-start"}}>할인율 매트릭스</div>
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px dashed ${D.border}`}}>
+          <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:6}}>할인율 매트릭스</div>
           <DiscountPlanView plan={p.discount_plan} marks={p.discount_marks||{}}
             onToggleGroup={g=>toggleMark(p,"groups",g)} onToggleCircle={k=>toggleMark(p,"circles",k)}
             compact={false}/>
@@ -5545,27 +5552,27 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
                         color:D.textSub,cursor:"pointer",padding:"3px 9px",fontSize:11,fontWeight:600}}>✎ 수정</button>
                   </div>
-                  {/* 채널 + 이름 */}
-                  <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
-                    <span style={{fontSize:11,color:D.textMeta}}>{p.platform}</span>
-                    <b style={{fontSize:14,color:D.black}}>{p.name}</b>
-                    {ended&&<span style={{fontSize:11,fontWeight:500,color:D.red}}>· 종료된 프로모션</span>}
-                  </div>
-                  {/* 임팩트 분석 — 이름 아래 */}
-                  {p.start_date&&p.start_date.slice(0,10)<=today&&(()=>{
-                    const ichg=promoRevenueChg(p,revenues,storeSales).chg;
+                  {/* 채널 + 이름 + 임팩트 분석 (이름 오른쪽) */}
+                  {(()=>{
+                    const ichg=(p.start_date&&p.start_date.slice(0,10)<=today)?promoRevenueChg(p,revenues,storeSales).chg:null;
+                    const canImpact=!!(p.start_date&&p.start_date.slice(0,10)<=today);
                     return (
-                    <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
-                      <button onClick={()=>setImpactModal(p)} data-capture-hide
-                        style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
-                          padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600}}>임팩트 분석</button>
+                    <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130,flexWrap:"wrap"}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
+                      <span style={{fontSize:11,color:D.textMeta}}>{p.platform}</span>
+                      <b style={{fontSize:14,color:D.black}}>{p.name}</b>
+                      {canImpact&&(
+                        <button onClick={()=>setImpactModal(p)} data-capture-hide
+                          style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                            padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:4}}>임팩트 분석</button>
+                      )}
                       {ichg!=null&&ichg>=20&&(
                         <span data-capture-hide title={`직전 동일기간 대비 매출 +${ichg.toFixed(1)}%`}
                           style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
                             width:18,height:18,borderRadius:"50%",background:D.blue,color:"#fff",
                             fontSize:12,fontWeight:800,lineHeight:1,flexShrink:0}}>!</span>
                       )}
+                      {ended&&<span style={{fontSize:11,fontWeight:500,color:D.red,marginLeft:4}}>· 종료된 프로모션</span>}
                     </div>
                     );
                   })()}
