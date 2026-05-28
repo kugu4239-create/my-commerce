@@ -4289,7 +4289,26 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
 
       {/* 쿠폰 */}
       <div style={{flex:"1 1 540px",minWidth:340}}>
-        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (프런트 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
+        <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (프런트 할인 적용 후 추가 적용) · 타입별 누적 규칙 자동 적용 · 칩으로 적용 상품군 선택</span></div>
+        {/* 쿠폰 타입별 누적 규칙 안내 */}
+        <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",fontSize:10,lineHeight:1.4}}>
+          {[
+            {key:"product",desc:"상품 쿠폰끼리 중복 불가 · 장바구니와 누적 가능 · 분담과는 누적 불가"},
+            {key:"cart",desc:"장바구니 쿠폰끼리 중복 불가 · 상품과 누적 가능 · 분담과는 누적 불가"},
+            {key:"share",desc:"분담 쿠폰은 다른 어떤 쿠폰과도 중복 불가 (단독 적용)"},
+          ].map(({key,desc})=>{
+            const t=COUPON_TYPE_BY_KEY[key];
+            return (
+              <div key={key} style={{display:"flex",alignItems:"center",gap:5,
+                background:t.bg,border:`1px solid ${t.border}`,borderRadius:6,padding:"3px 7px",
+                flex:"1 1 200px",minWidth:200}}>
+                <span style={{background:t.color,color:"#fff",fontWeight:700,fontSize:9,
+                  padding:"2px 6px",borderRadius:3,whiteSpace:"nowrap",flexShrink:0}}>{t.short}</span>
+                <span style={{color:t.color,fontSize:10}}>{desc}</span>
+              </div>
+            );
+          })}
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:760}}>
           {coupons.map((row,i)=>(
             <div key={i}
@@ -4914,8 +4933,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               ))}
               {hiddenCount>0&&(
                 <button data-capture-hide onClick={()=>setPinnedModal({promo:p})}
-                  style={{cursor:"pointer",borderRadius:8,padding:"1px 8px",fontSize:10,fontWeight:600,
-                    background:"transparent",color:D.blue,border:`1px solid ${D.blue}80`,whiteSpace:"nowrap"}}>
+                  style={{cursor:"pointer",borderRadius:8,padding:"1px 8px",fontSize:11,fontWeight:500,
+                    background:"transparent",color:D.black,border:`1px dashed ${D.black}`,whiteSpace:"nowrap",
+                    fontFamily:"-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Helvetica Neue', Arial, sans-serif",
+                    letterSpacing:"-0.01em"}}>
                   + {hiddenCount}개 더보기
                 </button>
               )}
@@ -4940,11 +4961,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   title={f.name}>📎 {f.name}</span>
                 <button data-capture-hide onClick={()=>setFilePreview(f)} title="미리보기"
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
-                    cursor:"pointer",padding:"2px 6px",whiteSpace:"nowrap",flexShrink:0,lineHeight:1,
-                    display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                    aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="5"/><path d="M11 11 L14 14"/></svg>
+                    cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0,lineHeight:1}}>
+                  미리보기
                 </button>
                 <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
