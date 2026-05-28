@@ -3908,9 +3908,19 @@ function SubmitEodPicker({value,onChange}){
 // 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
 function emptyProductRow(){return{group:"",rate:""};}
-function emptyCouponRow(stack=false){return{name:"",rate:"",start:"",end:"",stack,excludeGroups:[]};}
+function emptyCouponRow(stack=false){return{name:"",rate:"",start:"",end:"",stack,excludeGroups:[],stacksWith:[]};}
+// 쿠폰 표시 이름 (이름 비어있으면 `쿠폰N`)
+function couponDisplayName(c,i){const n=(c?.name||"").trim();return n||`쿠폰${i+1}`;}
 function normalizePlan(p){
-  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack,excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[]}));
+  let coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack,excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[],stacksWith:Array.isArray(c.stacksWith)?c.stacksWith:[]}));
+  // 레거시 마이그레이션: stacksWith 가 모두 비어 있고 stack=true 가 하나라도 있으면
+  //   기존 글로벌 stack 동작을 보존하기 위해 stack=true 쿠폰들이 서로 중복되도록 채움
+  if(coupons.length>0&&coupons.every(c=>c.stacksWith.length===0)&&coupons.some(c=>c.stack)){
+    const stackNames=coupons.map((c,i)=>c.stack?couponDisplayName(c,i):null).filter(Boolean);
+    coupons=coupons.map((c,i)=>c.stack
+      ?{...c,stacksWith:stackNames.filter(n=>n!==couponDisplayName(c,i))}
+      :c);
+  }
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
     return{
@@ -3943,29 +3953,49 @@ function computeDiscountMatrix(plan){
   const groups=p.products.rows.filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
     .map(r=>({group:(r.group||"").trim()||"전체",rate:+r.rate||0}));
   const coupons=p.coupons.filter(c=>(+c.rate||0)>0||(c.name||"").trim());
-  const stack=coupons.filter(c=>c.stack);
-  const solo =coupons.filter(c=>!c.stack);
+  const stack=coupons.filter(c=>(c.stacksWith||[]).length>0);
+  const solo =coupons.filter(c=>(c.stacksWith||[]).length===0);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
-  // 각 쿠폰을 개별 열로 표시하되, 중복 가능 쿠폰이 2장 이상이면 마지막 중복 쿠폰 열에 적층 최종 할인율 표시
   const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
-  const stackIdxs=coupons.map((c,i)=>c.stack?i:-1).filter(i=>i>=0);
-  const lastStackIdx=stackIdxs.length?stackIdxs[stackIdxs.length-1]:-1;
-  const stackFinalOn=stack.length>=2;
+  const swOf=c=>Array.isArray(c.stacksWith)?c.stacksWith:[];
   const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
-    const nm=(c.name||"").trim()||`쿠폰${i+1}`;
+    const nm=couponDisplayName(c,i);
     const rate=+c.rate||0;
-    const sub=c.stack?`(중복쿠폰·${rate}%)`:`(단독쿠폰·${rate}%)`;
+    const isStack=swOf(c).length>0;
+    const sub=isStack?`(중복쿠폰·${rate}%)`:`(단독쿠폰·${rate}%)`;
     cols.push({key:"c"+i,coupon:true,name:nm,sub,label:`${nm} ${sub}`});
   });
+  // 각 쿠폰 열은 기본적으로 그 쿠폰 단독 적용 시 최종 할인율을 표시.
+  // 행마다 "stacksWith 안에 행에 적용 가능한 다른 쿠폰이 1개라도 있는 마지막 쿠폰 열"을 찾아
+  // 그 셀에는 자기 자신 + 적용 가능 스택 동료들의 누적 최종 할인율을 표시한다.
+  // - 쿠폰 자체가 행에서 제외되면 미적용(null).
+  // - 누적 대상은 자기 + stacksWith 에 있는 동료 중 행에 제외 안 된 것만.
+  const stackPalsOf=(i,g)=>{
+    const sw=swOf(coupons[i]);
+    if(sw.length===0) return [];
+    return coupons.map((other,j)=>({other,j}))
+      .filter(({other,j})=>j!==i&&sw.includes(couponDisplayName(other,j))&&!exOf(other).includes(g.group));
+  };
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
+    // 행에서 스택 동료가 실제로 1개 이상인 쿠폰 중 가장 뒤쪽 인덱스
+    let lastIdxWithStacks=-1;
     coupons.forEach((c,i)=>{
-      if(c.stack&&stackFinalOn&&i===lastStackIdx){
-        const applicable=stack.filter(s=>!exOf(s).includes(g.group));
-        cells["c"+i]=applicable.length?fin(g.rate,applicable.reduce((f,s)=>f*(1-(+s.rate||0)/100),1)):null;
+      if(exOf(c).includes(g.group)) return;
+      if(stackPalsOf(i,g).length>0) lastIdxWithStacks=i;
+    });
+    coupons.forEach((c,i)=>{
+      if(exOf(c).includes(g.group)){
+        cells["c"+i]=null;
+        return;
+      }
+      if(i===lastIdxWithStacks){
+        const pals=stackPalsOf(i,g);
+        const factor=[i,...pals.map(p=>p.j)].reduce((f,idx)=>f*(1-(+coupons[idx].rate||0)/100),1);
+        cells["c"+i]=fin(g.rate,factor);
       }else{
-        cells["c"+i]=exOf(c).includes(g.group)?null:fin(g.rate,1-(+c.rate||0)/100);
+        cells["c"+i]=fin(g.rate,1-(+c.rate||0)/100);
       }
     });
     return {group:g.group,rate:g.rate,cells};
@@ -4034,6 +4064,8 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const productRows=plan.products.rows.length?plan.products.rows:[emptyProductRow(),emptyProductRow(),emptyProductRow()];
   const coupons    =plan.coupons.length?plan.coupons:[emptyCouponRow()];
   const [calcOpen,setCalcOpen]=useState(false);
+  const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
+  const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
 
   // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
   const setProductPeriod=(field,v)=>onChange({
@@ -4058,11 +4090,14 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     const nextProductRows=idx>=0
       ?filledProducts.map((r,i)=>i===idx?{...r,rate:String(baseDisc)}:r)
       :[...filledProducts,{group:groupLabel,rate:String(baseDisc)}];
-    // 쿠폰: 기본 쿠폰(stack=false) + 중복 쿠폰들(stack=true)로 대체
+    // 쿠폰: 기본 쿠폰 + 중복 쿠폰들 — 모두 서로 중복 적용되도록 stacksWith 양방향 설정
     const cleanStacks=stackRates.filter(r=>r>0);
+    const primaryName="29CM 쿠폰";
+    const stackNames=cleanStacks.map((_,i)=>`29CM 중복 쿠폰 ${i+1}`);
+    const allNames=[primaryName,...stackNames];
     const nextCoupons=[
-      {...emptyCouponRow(),name:"29CM 쿠폰",rate:String(primaryCoupon),stack:false},
-      ...cleanStacks.map((r,i)=>({...emptyCouponRow(true),name:`29CM 중복 쿠폰 ${i+1}`,rate:String(r)})),
+      {...emptyCouponRow(),name:primaryName,rate:String(primaryCoupon),stack:cleanStacks.length>0,stacksWith:allNames.filter(n=>n!==primaryName)},
+      ...cleanStacks.map((r,i)=>({...emptyCouponRow(true),name:stackNames[i],rate:String(r),stacksWith:allNames.filter(n=>n!==stackNames[i])})),
     ];
     onChange({
       products:{period:plan.products.period,rows:nextProductRows},
@@ -4079,6 +4114,25 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     const ex=Array.isArray(c.excludeGroups)?c.excludeGroups:[];
     const next=ex.includes(g)?ex.filter(x=>x!==g):[...ex,g];
     const n=[...coupons];n[i]={...c,excludeGroups:next};setCoupons(n);
+  };
+  // 중복 가능 여부 토글 — 양방향으로 반영해 두 쿠폰의 stacksWith 가 동기화되도록
+  const toggleStacksWith=(i,otherName)=>{
+    const c=coupons[i];
+    const cur=Array.isArray(c.stacksWith)?c.stacksWith:[];
+    const turningOn=!cur.includes(otherName);
+    const ownName=couponDisplayName(c,i);
+    const arr=[...coupons];
+    arr[i]={...c,stacksWith:turningOn?[...cur,otherName]:cur.filter(x=>x!==otherName)};
+    const targetIdx=coupons.findIndex((other,j)=>j!==i&&couponDisplayName(other,j)===otherName);
+    if(targetIdx>=0){
+      const t=arr[targetIdx];
+      const tCur=Array.isArray(t.stacksWith)?t.stacksWith:[];
+      arr[targetIdx]={...t,
+        stacksWith:turningOn
+          ?(tCur.includes(ownName)?tCur:[...tCur,ownName])
+          :tCur.filter(x=>x!==ownName)};
+    }
+    setCoupons(arr);
   };
 
   const cellInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:5,
@@ -4121,13 +4175,36 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         </div>
         <table style={{width:"100%",maxWidth:520,borderCollapse:"collapse",fontSize:12}}>
           <thead><tr>
-            <th style={{...head,width:"62%"}}>상품군</th>
+            <th style={{...head,width:22}}/>
+            <th style={{...head,width:"58%"}}>상품군</th>
             <th style={{...head,width:"28%"}}>할인율(%)</th>
             <th style={{...head,width:"10%"}}/>
           </tr></thead>
           <tbody>
             {productRows.map((row,i)=>(
-              <tr key={i}>
+              <tr key={i}
+                onDragOver={e=>{
+                  if(prodDragIdx===null||prodDragIdx===i) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect="move";
+                  const arr=[...productRows];
+                  const [m]=arr.splice(prodDragIdx,1);
+                  arr.splice(i,0,m);
+                  setProductRows(arr);
+                  setProdDragIdx(i);
+                }}
+                style={{opacity:prodDragIdx===i?0.4:1,transition:"opacity 0.12s",
+                  background:prodDragIdx!==null&&prodDragIdx!==i?`${D.blue}06`:"transparent"}}>
+                <td style={{padding:"3px 0",textAlign:"center"}}>
+                  <span draggable="true"
+                    onDragStart={e=>{e.dataTransfer.effectAllowed="move";setProdDragIdx(i);}}
+                    onDragEnd={()=>setProdDragIdx(null)}
+                    title="드래그하여 상품군 순서 변경"
+                    style={{cursor:"grab",color:D.textMeta,fontSize:11,userSelect:"none",
+                      display:"inline-block",padding:"0 2px",lineHeight:1}}>
+                    ⋮⋮
+                  </span>
+                </td>
                 <td style={{padding:"3px 4px"}}>
                   <input value={row.group} onChange={e=>{const n=[...productRows];n[i]={...row,group:e.target.value};setProductRows(n);}}
                     style={cellInp} placeholder="예: 신상품, 전체"/>
@@ -4154,18 +4231,46 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         <div style={lbl}>쿠폰 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 + 기간 (프런트 할인 적용 후 추가 적용) · 중복 = 여러 장 겹쳐 적용 · 칩으로 적용 상품군 선택</span></div>
         <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:760}}>
           {coupons.map((row,i)=>(
-            <div key={i} style={{border:`1px solid ${row.stack?`${D.blue}55`:D.border}`,borderRadius:8,
-              padding:"10px 12px",background:row.stack?`${D.blue}08`:D.surface,
-              display:"flex",flexDirection:"column",gap:8}}>
-              {/* 중복 토글 · 쿠폰명 · 할인율 · 삭제 */}
+            <div key={i}
+              onDragOver={e=>{
+                if(dragIdx===null||dragIdx===i) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect="move";
+                // 실시간 재배치 — 드래그 중인 쿠폰을 즉시 i 위치로 이동
+                const arr=[...coupons];
+                const [moved]=arr.splice(dragIdx,1);
+                arr.splice(i,0,moved);
+                setCoupons(arr);
+                setDragIdx(i);
+              }}
+              onDrop={e=>{e.preventDefault();setDragIdx(null);}}
+              style={(()=>{const isStack=(row.stacksWith||[]).length>0;return{
+                border:`1px solid ${dragIdx!==null&&dragIdx!==i?`${D.blue}80`:isStack?`${D.blue}55`:D.border}`,borderRadius:8,
+                padding:"10px 12px",background:isStack?`${D.blue}08`:D.surface,
+                display:"flex",flexDirection:"column",gap:8,
+                opacity:dragIdx===i?0.45:1,
+                transition:"opacity 0.12s, border-color 0.12s"};})()}>
+              {/* 드래그 핸들 · 중복 토글 · 쿠폰명 · 할인율 · 삭제 */}
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <button onClick={()=>{const n=[...coupons];n[i]={...row,stack:!row.stack};setCoupons(n);}}
-                  title="중복 적용 여부 (다른 쿠폰과 겹쳐 적용)"
-                  style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,cursor:"pointer",borderRadius:6,whiteSpace:"nowrap",
-                    border:`1px solid ${row.stack?D.blue:D.border}`,
-                    background:row.stack?`${D.blue}14`:D.surface,color:row.stack?D.blue:D.textMeta}}>
-                  {row.stack?"중복 가능":"중복 불가"}
-                </button>
+                <span draggable="true"
+                  onDragStart={e=>{setDragIdx(i);e.dataTransfer.effectAllowed="move";}}
+                  onDragEnd={()=>setDragIdx(null)}
+                  title="드래그하여 쿠폰 순서 변경"
+                  style={{cursor:"grab",color:D.textMeta,fontSize:13,padding:"0 4px",
+                    userSelect:"none",flexShrink:0,lineHeight:1}}>
+                  ⋮⋮
+                </span>
+                {(()=>{
+                  const nStacks=(row.stacksWith||[]).length;
+                  return (
+                    <span title={nStacks>0?`다른 쿠폰 ${nStacks}개와 중복 적용 설정됨 (아래 칩으로 변경)`:"단독 쿠폰 — 아래 칩으로 중복 적용 쿠폰 선택"}
+                      style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,borderRadius:6,whiteSpace:"nowrap",
+                        border:`1px solid ${nStacks>0?D.blue:D.border}`,
+                        background:nStacks>0?`${D.blue}14`:D.surface,color:nStacks>0?D.blue:D.textMeta}}>
+                      {nStacks>0?`중복 ${nStacks}`:"단독"}
+                    </span>
+                  );
+                })()}
                 <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
                   style={{...cellInp,flex:"1 1 160px",minWidth:120}} placeholder="쿠폰명 (예: 신규가입 쿠폰)"/>
                 <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
@@ -4192,6 +4297,27 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                     calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료"/>
                 </div>
               </div>
+              {/* 중복 적용 쿠폰 — 다른 쿠폰들과의 중복 여부 선택 */}
+              {coupons.length>1&&(
+                <div style={{display:"flex",alignItems:"flex-start",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontSize:10,color:D.textMeta,fontWeight:600,width:60,flexShrink:0,paddingTop:3}}>중복 쿠폰</span>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4,flex:1}}>
+                    {coupons.map((other,j)=>{
+                      if(j===i) return null;
+                      const otherName=couponDisplayName(other,j);
+                      const on=(row.stacksWith||[]).includes(otherName);
+                      return <button key={j} type="button" onClick={()=>toggleStacksWith(i,otherName)}
+                        title={on?`${otherName} 와 중복 적용 중 → 클릭 시 해제`:`${otherName} 와 중복 적용 안 함 → 클릭 시 추가`}
+                        style={{fontSize:10,padding:"2px 9px",borderRadius:12,cursor:"pointer",lineHeight:1.5,
+                          border:`1px solid ${on?D.blue:D.border}`,background:on?`${D.blue}14`:D.surfaceAlt,
+                          color:on?D.blue:D.textMeta,textDecoration:on?"none":"line-through",fontWeight:600,
+                          maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {on?"✓ ":""}{otherName}
+                      </button>;
+                    })}
+                  </div>
+                </div>
+              )}
               {/* 적용 상품군 */}
               {matrixGroups.length>0&&(
                 <div style={{display:"flex",alignItems:"flex-start",gap:6,flexWrap:"wrap"}}>
@@ -4217,7 +4343,11 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           <button onClick={()=>setCoupons([...coupons,emptyCouponRow(false)])}
             style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
               padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 쿠폰 추가</button>
-          <button onClick={()=>setCoupons([...coupons,emptyCouponRow(true)])}
+          <button onClick={()=>{
+            // 모든 기존 쿠폰들과 자동으로 중복 적용되도록 stacksWith 자동 채움
+            const others=coupons.map((c,j)=>couponDisplayName(c,j));
+            setCoupons([...coupons,{...emptyCouponRow(true),stacksWith:others}]);
+          }}
             style={{background:`${D.blue}10`,border:`1px dashed ${D.blue}80`,borderRadius:5,
               padding:"4px 12px",fontSize:11,color:D.blue,cursor:"pointer",fontWeight:600}}>+ 중복 쿠폰 추가</button>
         </div>
@@ -6112,6 +6242,7 @@ function FilePreviewModal({ file, onClose }){
   const [sheets,setSheets]=useState([]);
   const [active,setActive]=useState(0);
   const [err,setErr]=useState("");
+  const [query,setQuery]=useState("");
   const name=file?.name||"";
   const ext=(name.split(".").pop()||"").toLowerCase();
   const type=file?.type||"";
@@ -6136,12 +6267,23 @@ function FilePreviewModal({ file, onClose }){
   const loading=isSheet&&aoaList===null&&!err;
   const MAXR=300, MAXC=40;
   const aoa=aoaList?.[active]||[];
-  const rows=aoa.slice(0,MAXR);
+  const headerRow=aoa[0]||[];
+  const dataRows=aoa.length>0?aoa.slice(1):[];
+  const q=query.trim().toLowerCase();
+  const filteredData=q
+    ? dataRows.filter(r=>r.some(c=>String(c??"").toLowerCase().includes(q)))
+    : dataRows;
+  const displayData=filteredData.slice(0,MAXR);
+  const rows=aoa.length>0?[headerRow,...displayData]:[];
+  const truncated=filteredData.length>MAXR;
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:D.surface,borderRadius:12,padding:"18px 20px",
-        width:"min(1000px,95vw)",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        width:"min(1000px,95vw)",
+        // 엑셀/CSV 시트 미리보기에서 검색 시 행이 줄어도 모달이 흔들리지 않도록 최소 높이 확보
+        ...(isSheet?{minHeight:"min(720px,85vh)"}:{}),
+        maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
           <b style={{fontSize:14,color:D.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>📎 {name}</b>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
@@ -6154,9 +6296,23 @@ function FilePreviewModal({ file, onClose }){
         {isSheet&&sheets.length>1&&(
           <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
             {sheets.map((s,i)=>(
-              <button key={i} onClick={()=>setActive(i)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",
+              <button key={i} onClick={()=>{setActive(i);setQuery("");}} style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",
                 border:`1px solid ${i===active?D.black:D.border}`,background:i===active?D.black:D.surface,color:i===active?"#fff":D.textSub}}>{s}</button>
             ))}
+          </div>
+        )}
+        {isSheet&&!loading&&!err&&aoa.length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+            <input type="search" value={query} onChange={e=>setQuery(e.target.value)}
+              placeholder="셀 내용 검색 (대소문자 무시 · 헤더 제외 데이터 행)"
+              style={{flex:"1 1 200px",minWidth:160,padding:"5px 10px",fontSize:12,
+                border:`1px solid ${D.border}`,borderRadius:6,color:D.text,background:D.surface,
+                fontFamily:"inherit"}}/>
+            <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}}>
+              {q
+                ?`매치 ${filteredData.length.toLocaleString()}행 / 전체 ${dataRows.length.toLocaleString()}행`
+                :`전체 ${dataRows.length.toLocaleString()}행`}
+            </span>
           </div>
         )}
         <div style={{overflow:"auto",flex:1,minHeight:0}}>
@@ -6165,7 +6321,9 @@ function FilePreviewModal({ file, onClose }){
           {isSheet&&(
             loading?<div style={{color:D.textMeta,fontSize:12,padding:30,textAlign:"center"}}>불러오는 중…</div>
             :err?<div style={{color:D.red,fontSize:12,padding:30,textAlign:"center"}}>{err}</div>
-            :<table style={{borderCollapse:"collapse",fontSize:11}}>
+            :q&&filteredData.length===0
+              ?<div style={{color:D.textMeta,fontSize:12,padding:30,textAlign:"center"}}>검색 결과가 없습니다.</div>
+              :<table style={{borderCollapse:"collapse",fontSize:11}}>
               <tbody>
                 {rows.map((r,ri)=>(
                   <tr key={ri}>
@@ -6187,8 +6345,10 @@ function FilePreviewModal({ file, onClose }){
             </div>
           )}
         </div>
-        {isSheet&&!loading&&!err&&aoa.length>MAXR&&(
-          <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>※ 처음 {MAXR}행만 미리보기 (전체 {aoa.length.toLocaleString()}행)</div>
+        {isSheet&&!loading&&!err&&truncated&&(
+          <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>
+            ※ 처음 {MAXR}행만 표시 ({q?`매치 ${filteredData.length.toLocaleString()}행 중`:`전체 ${dataRows.length.toLocaleString()}행 중`})
+          </div>
         )}
       </div>
     </div>
