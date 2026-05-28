@@ -6678,7 +6678,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{padding:"10px 12px",borderBottom:`1px solid ${D.borderMid}`,
                       display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,fontSize:11,color:D.textSub}}>
                       <span style={{color:D.text,fontWeight:600}}>{slot.name}</span>
-                      <span style={{color:D.textMeta}}>P75 {slot.disc}%</span>
+                      <span style={{color:D.textMeta}}>권장 총 할인율 {slot.disc}%</span>
                       <span style={{color:D.textMeta}}>·</span>
                       {selectedScenario.caseNum&&(
                         <span style={{background:D.black,color:"#fff",fontSize:11,padding:"1px 6px",borderRadius:3}}>Case {selectedScenario.caseNum}</span>
