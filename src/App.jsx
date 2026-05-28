@@ -6411,33 +6411,46 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,
             borderRadius:10,marginBottom:16}}>
             {/* 프리셋 — 자주 쓰는 쿠폰 시나리오 3종 */}
-            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:10,
-              paddingBottom:10,borderBottom:`1px dashed ${D.border}`}}>
-              <span style={{fontSize:11,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em",marginRight:2}}>자주 쓰는 시나리오</span>
-              {[
-                {label:"29CM 지원 쿠폰 15%",sub:"장바구니 · 채널부담",apply:()=>{
-                  setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
-                  setStackCoupons([]);setScenarioIdx(0);
-                }},
-                {label:"29CM 지원 15% × 브랜드 쿠폰 10%",sub:"장바구니 채널 + 상품 자사",apply:()=>{
-                  setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
-                  setStackCoupons([{rate:"10",type:"product",burden:"self",shareRate:50}]);setScenarioIdx(0);
-                }},
-                {label:"이구쿠폰 29%",sub:"분담 · 자사 60 : 채널 40",apply:()=>{
-                  setCoupon(29);setPrimaryType("share");setPrimaryBurden("self");setPrimaryShareRate(40);
-                  setStackCoupons([]);setScenarioIdx(0);
-                }},
-              ].map((p,i)=>(
-                <button key={i} type="button" onClick={p.apply}
-                  title={`${p.label} · ${p.sub}`}
-                  style={{background:"transparent",border:`1px dashed ${D.black}`,borderRadius:5,
-                    padding:"5px 10px",fontSize:11,cursor:"pointer",fontWeight:600,color:D.text,
-                    fontFamily:"-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Helvetica Neue', Arial, sans-serif",
-                    letterSpacing:"-0.01em",lineHeight:1.3,textAlign:"left"}}>
-                  <span style={{display:"block",fontWeight:700}}>{p.label}</span>
-                  <span style={{display:"block",fontSize:11,color:D.textMeta,fontWeight:500,marginTop:1}}>{p.sub}</span>
-                </button>
-              ))}
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:12,
+              paddingBottom:12,borderBottom:`1px dashed ${D.border}`}}>
+              <span style={{fontSize:11,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em"}}>자주 쓰는 시나리오</span>
+              <div style={{display:"flex",alignItems:"stretch",gap:10,flexWrap:"wrap",justifyContent:"center",width:"100%"}}>
+                {[
+                  {
+                    title:"29CM 지원 쿠폰 15%",
+                    detail:"장바구니 쿠폰 15% 단독 · 채널 전액 부담 (29CM 채널 발행 쿠폰이므로 자사 부담 없음). 기본 판매가에서 15% 차감 후 결제, 차감액은 정산 시 채널이 보전합니다.",
+                    apply:()=>{
+                      setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
+                      setStackCoupons([]);setScenarioIdx(0);
+                    },
+                  },
+                  {
+                    title:"29CM 지원 15% × 브랜드 쿠폰 10%",
+                    detail:"장바구니 쿠폰 15% (채널 부담) + 상품 쿠폰 10% (자사 부담) 누적 적용. 상품 쿠폰을 먼저 10% 차감 후 잔여가에서 장바구니 15% 차감. 자사부담분은 마진에서 차감, 채널부담분은 정산 시 보전.",
+                    apply:()=>{
+                      setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
+                      setStackCoupons([{rate:"10",type:"product",burden:"self",shareRate:50}]);setScenarioIdx(0);
+                    },
+                  },
+                  {
+                    title:"이구쿠폰 29%",
+                    detail:"분담 쿠폰 29% 단독 적용 (다른 쿠폰과 중복 불가). 차감액의 60% 는 자사 부담(마진 차감), 40% 는 채널 부담(정산 시 보전). 분담 비율은 입력값에 따라 조정 가능.",
+                    apply:()=>{
+                      setCoupon(29);setPrimaryType("share");setPrimaryBurden("self");setPrimaryShareRate(40);
+                      setStackCoupons([]);setScenarioIdx(0);
+                    },
+                  },
+                ].map((p,i)=>(
+                  <button key={i} type="button" onClick={p.apply} title={p.title}
+                    style={{flex:"1 1 280px",maxWidth:340,minWidth:240,background:"transparent",
+                      border:`1px dashed ${D.black}`,borderRadius:6,padding:"12px 14px",fontSize:11,cursor:"pointer",
+                      color:D.text,fontFamily:"inherit",letterSpacing:"-0.01em",lineHeight:1.55,textAlign:"left",
+                      display:"flex",flexDirection:"column",gap:6}}>
+                    <span style={{fontWeight:700,fontSize:11,color:D.black}}>{p.title}</span>
+                    <span style={{fontSize:11,color:D.textSub,fontWeight:400}}>{p.detail}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             {/* 기본 쿠폰 행 */}
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
