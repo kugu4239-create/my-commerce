@@ -6333,7 +6333,7 @@ function SaleCalcModal({ onClose }){
           .salecalc, .salecalc *,
           .salecalc input, .salecalc button, .salecalc select, .salecalc textarea, .salecalc pre {
             font-family: 'Pretendard','Noto Sans KR','-apple-system','BlinkMacSystemFont',sans-serif !important;
-            font-size: 12px !important;
+            font-size: 11px !important;
             line-height: 1.5 !important;
           }
           .salecalc details[open]>summary .chev{transform:rotate(180deg);}
