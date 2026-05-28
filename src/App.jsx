@@ -6850,9 +6850,12 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                   {lastValid!=null?`${lastValid}%`:"적용 불가"}
                                 </span>
                                 <span style={calcCol}>
-                                  {lastValid!=null
-                                    ? `마진이 0원이 되는 시점의 기본 할인율로, 이 비율을 초과하면 적자가 발생합니다 (현재 기본 할인율 ${single.baseDisc}%).`
-                                    : "현재 쿠폰/시나리오 조건에서는 어떤 기본 할인율로도 마진이 0 이상이 되지 않습니다."}
+                                  {(()=>{
+                                    const scenarioTag=selectedScenario.caseNum?`Case ${selectedScenario.caseNum} (${selectedScenario.label})`:`기본 쿠폰 ${cpn}%`;
+                                    return lastValid!=null
+                                      ? `${scenarioTag} 시나리오 기준 역산 — 마진이 0원이 되는 시점의 기본 할인율로, 이 비율을 초과하면 적자가 발생합니다 (현재 기본 할인율 ${single.baseDisc}%).`
+                                      : `${scenarioTag} 시나리오 기준 — 어떤 기본 할인율로도 마진이 0 이상이 되지 않습니다.`;
+                                  })()}
                                 </span>
                               </div>
                             );
