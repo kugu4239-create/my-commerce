@@ -4049,27 +4049,27 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     coupons:arr,
   });
 
-  // 29CM 계산기에서 선택한 (구간 · 기본 할인율 · 쿠폰율) 조합을 상품군·쿠폰 입력에 반영
-  const applyCalc=({tier,baseDisc,couponRate})=>{
+  // 29CM 계산기에서 선택한 조합을 상품군·쿠폰 입력에 반영
+  // {tier, baseDisc, primaryCoupon, stackRates:[중복쿠폰율 ...]}
+  const applyCalc=({tier,baseDisc,primaryCoupon,stackRates=[]})=>{
     const groupLabel=`${tier.name} ${tier.range}`;
     const filledProducts=productRows.filter(r=>r.group||r.rate);
     const idx=filledProducts.findIndex(r=>r.group===groupLabel);
     const nextProductRows=idx>=0
       ?filledProducts.map((r,i)=>i===idx?{...r,rate:String(baseDisc)}:r)
       :[...filledProducts,{group:groupLabel,rate:String(baseDisc)}];
-    const filledCouponIdx=coupons.findIndex(c=>c.rate||c.name||c.start||c.end);
-    let nextCoupons;
-    if(filledCouponIdx<0){
-      nextCoupons=[{...emptyCouponRow(),name:"29CM 쿠폰",rate:String(couponRate)}];
-    } else {
-      nextCoupons=coupons.map((c,i)=>i===filledCouponIdx?{...c,rate:String(couponRate)}:c);
-    }
+    // 쿠폰: 기본 쿠폰(stack=false) + 중복 쿠폰들(stack=true)로 대체
+    const cleanStacks=stackRates.filter(r=>r>0);
+    const nextCoupons=[
+      {...emptyCouponRow(),name:"29CM 쿠폰",rate:String(primaryCoupon),stack:false},
+      ...cleanStacks.map((r,i)=>({...emptyCouponRow(true),name:`29CM 중복 쿠폰 ${i+1}`,rate:String(r)})),
+    ];
     onChange({
       products:{period:plan.products.period,rows:nextProductRows},
       coupons:nextCoupons,
     });
   };
-  const firstCouponRate=Number((coupons.find(c=>c.rate)||{}).rate)||10;
+  const firstCouponRate=Number((coupons.find(c=>!c.stack&&c.rate)||coupons.find(c=>c.rate)||{}).rate)||10;
   // 매트릭스에 쓰이는 상품군 목록 (쿠폰별 적용 여부 토글용)
   const matrixGroups=[...new Set(productRows
     .filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
@@ -5654,6 +5654,7 @@ const calcReverse=(list,p75,coupon)=>{
 };
 function SaleCalcModal({ onClose }){
   const [coupon,setCoupon]=useState(10);
+  const [stackCoupons,setStackCoupons]=useState([]); // [{rate}] — 중복 쿠폰 목록
   const [listPrice,setListPrice]=useState(129000);
   const [processed,setProcessed]=useState(null);
   const [summary,setSummary]=useState("");
@@ -5661,7 +5662,10 @@ function SaleCalcModal({ onClose }){
   const [dragOver,setDragOver]=useState(false);
   const fileRef=useRef(null);
   const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
-  const cpn=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
+  const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
+  const stackRates=stackCoupons.map(sc=>{const v=Number(sc.rate);return isNaN(v)||v<0?0:Math.min(v,60);});
+  // 유효 쿠폰율 = 1 − (기본 쿠폰 factor × ∏ 중복 쿠폰 factor)
+  const cpn=Math.round((1-stackRates.reduce((a,r)=>a*(1-r/100),1-cpnPrimary/100))*1000)/10;
   const slot=calcClassify(listPrice||0);
   const single=listPrice>0?calcReverse(listPrice,slot.disc,cpn):null;
   useEffect(()=>{
@@ -5751,12 +5755,39 @@ function SaleCalcModal({ onClose }){
             기본 할인율의 <b style={{color:D.black}}>일의 자리가 6~9이면 다음 10% 단위로 올림</b>합니다 (예: 7%→10%, 16~19%→20%).
             올림된 할인율로 기본 판매가·최종 노출가를 재계산합니다.
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"12px 14px",
-            background:"#eef3ff",border:`1px solid ${D.blue}`,borderRadius:6,marginBottom:16}}>
-            <label style={{fontSize:13,fontWeight:700,color:D.blue}}>쿠폰율 (전 페이지 적용)</label>
-            <input type="number" min="0" max="60" step="1" value={coupon}
-              onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:80}}/>
-            <span style={{fontSize:12,color:D.blue}}>% — 1·3·4 모두에 적용</span>
+          <div style={{padding:"12px 14px",background:"#eef3ff",border:`1px solid ${D.blue}`,
+            borderRadius:6,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <label style={{fontSize:13,fontWeight:700,color:D.blue}}>쿠폰율 (전 페이지 적용)</label>
+              <input type="number" min="0" max="60" step="1" value={coupon}
+                onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:80}}/>
+              <span style={{fontSize:12,color:D.blue}}>% (기본)</span>
+              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:""}])}
+                style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
+                  padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+                + 중복 쿠폰
+              </button>
+              {stackCoupons.length>0&&(
+                <span style={{fontSize:12,color:D.blue,marginLeft:"auto",fontWeight:700}}>
+                  유효 쿠폰율 {cpn}%
+                </span>
+              )}
+            </div>
+            {stackCoupons.map((sc,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>중복 쿠폰 {i+1}</span>
+                <input type="number" min="0" max="60" step="1" value={sc.rate}
+                  onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
+                  style={{...inNum,width:80}}/>
+                <span style={{fontSize:12,color:D.blue}}>%</span>
+                <button onClick={()=>setStackCoupons(stackCoupons.filter((_,j)=>j!==i))}
+                  style={{background:"transparent",border:`1px solid ${D.blue}55`,borderRadius:5,
+                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.blue}}>✕</button>
+              </div>
+            ))}
+            <div style={{fontSize:11,color:D.blue,marginTop:8,opacity:.85}}>
+              유효 쿠폰율 = 1 − (1−기본쿠폰) × ∏(1−중복쿠폰) — 계산기·1·3·4에 모두 적용됨
+            </div>
           </div>
 
           <details className="sec" style={sec} open>
@@ -5906,38 +5937,40 @@ function SaleCalcModal({ onClose }){
 // — 쿠폰율 입력 → 5개 가격 구간(P75 + 역산 기본 할인율) 선택 → 기본×쿠폰 매트릭스 셀 클릭 시 상품군·쿠폰 자동 입력
 function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
   const [coupon,setCoupon]=useState(String(initialCoupon||10));
-  const [selIdx,setSelIdx]=useState(1); // 기본 구간2 (가장 표본 큰 구간 다음)
+  const [stackCoupons,setStackCoupons]=useState([]); // [{rate}] — 중복 쿠폰
   const [recent,setRecent]=useState(null);
-  const cpn=(()=>{const v=Number(coupon);return isNaN(v)||v<0?0:Math.min(v,60);})();
+  const cpnPrimary=(()=>{const v=Number(coupon);return isNaN(v)||v<0?0:Math.min(v,60);})();
+  const stackRates=stackCoupons.map(sc=>{const v=Number(sc.rate);return isNaN(v)||v<0?0:Math.min(v,60);});
+  const stackFactor=stackRates.reduce((a,r)=>a*(1-r/100),1);
+  const effCpn=Math.round((1-(1-cpnPrimary/100)*stackFactor)*1000)/10;
 
-  const slotDerived=useMemo(()=>CALC_SLOTS.map(s=>{
-    const factorFinal=1-s.disc/100, factorCoupon=1-cpn/100;
-    if(factorCoupon<=0) return {...s,baseRaw:0,baseRounded:0};
-    let bf=factorFinal/factorCoupon; if(bf>1) bf=1;
-    const raw=Math.round((1-bf)*1000)/10;
-    return {...s,baseRaw:raw,baseRounded:roundUpBaseDisc(raw)};
-  }),[cpn]);
-  const sel=slotDerived[selIdx];
-
-  // 매트릭스 축 — 기본 행은 고정 5% 단위, 쿠폰 열은 입력 쿠폰 중심 ±10%
-  const baseRows=[5,10,15,20,25,30,35,40];
+  // 쿠폰 열 — 입력 기본 쿠폰 중심 ±10% (5% 단위 5개)
   const couponCols=useMemo(()=>{
-    const snap=Math.max(0,Math.min(50,Math.round(cpn/5)*5));
+    const snap=Math.max(0,Math.min(50,Math.round(cpnPrimary/5)*5));
     let lo=snap-10, hi=snap+10;
     if(lo<0){hi+=-lo;lo=0;}
     if(hi>50){lo=Math.max(0,lo-(hi-50));hi=50;}
     const arr=[]; for(let v=lo;v<=hi&&arr.length<5;v+=5) arr.push(v);
     return arr;
-  },[cpn]);
+  },[cpnPrimary]);
+  const hlCol=couponCols.reduce((best,c)=>Math.abs(c-cpnPrimary)<Math.abs(best-cpnPrimary)?c:best,couponCols[0]);
 
-  const finalDisc=(b,c)=>Math.round((1-(1-b/100)*(1-c/100))*1000)/10;
-  const hlRow=Math.max(baseRows[0],Math.min(baseRows[baseRows.length-1],Math.round(sel.baseRounded/5)*5));
-  const hlCol=couponCols.reduce((best,c)=>Math.abs(c-cpn)<Math.abs(best-cpn)?c:best,couponCols[0]);
+  // (구간, 기본 쿠폰)에서 P75 목표를 맞추는 프런트 할인율 역산 + 올림 규칙
+  const derivedFront=(slot,primary)=>{
+    const factorFinal=1-slot.disc/100, factorCoupon=(1-primary/100)*stackFactor;
+    if(factorCoupon<=0) return 0;
+    let bf=factorFinal/factorCoupon; if(bf>1) bf=1;
+    return roundUpBaseDisc(Math.round((1-bf)*1000)/10);
+  };
+  // 검증: 도출된 프런트 + 기본 쿠폰 + 중복 누적 시 실제 최종 할인율
+  const finalDisc=(front,primary)=>Math.round((1-(1-front/100)*(1-primary/100)*stackFactor)*1000)/10;
 
-  const handleApply=(b,c)=>{
-    onApply({tier:sel,baseDisc:b,couponRate:c});
-    setRecent({tierName:sel.name,range:sel.range,baseDisc:b,couponRate:c,finalDisc:finalDisc(b,c)});
-    setTimeout(()=>setRecent(r=>r&&r.baseDisc===b&&r.couponRate===c?null:r),2500);
+  const handleApply=(slot,primary)=>{
+    const front=derivedFront(slot,primary);
+    onApply({tier:slot,baseDisc:front,primaryCoupon:primary,stackRates});
+    setRecent({tierName:slot.name,range:slot.range,baseDisc:front,primaryCoupon:primary,
+      stackRates:[...stackRates],finalDisc:finalDisc(front,primary),p75:slot.disc});
+    setTimeout(()=>setRecent(r=>r&&r.tierName===slot.name&&r.primaryCoupon===primary?null:r),2500);
   };
 
   const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:13,width:80,fontFamily:"inherit"};
@@ -5958,86 +5991,84 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
         <div style={{padding:"16px 20px 24px"}}>
 
           {/* 1. 쿠폰율 입력 */}
-          <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
-            background:"#eef3ff",border:`1px solid ${D.blue}`,borderRadius:6,marginBottom:14}}>
-            <label style={{fontSize:13,fontWeight:700,color:D.blue}}>1. 쿠폰율 입력</label>
-            <input type="number" min="0" max="60" step="1" value={coupon}
-              onChange={e=>setCoupon(e.target.value)} style={inNum}/>
-            <span style={{fontSize:12,color:D.blue}}>%</span>
-            <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>먼저 입력하면 각 구간별 역산 기본 할인율이 자동 도출됩니다</span>
-          </div>
-
-          {/* 2. 구간 선택 */}
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:12,fontWeight:700,color:D.black,marginBottom:6}}>
-              2. 구간 + 금액 범위 선택 <span style={{color:D.textMeta,fontWeight:400}}>· 쿠폰율 기준 도출된 기본 할인율(올림 규칙 적용)</span>
+          <div style={{padding:"10px 12px",background:"#eef3ff",border:`1px solid ${D.blue}`,
+            borderRadius:6,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <label style={{fontSize:13,fontWeight:700,color:D.blue}}>1. 쿠폰율 입력</label>
+              <input type="number" min="0" max="60" step="1" value={coupon}
+                onChange={e=>setCoupon(e.target.value)} style={inNum}/>
+              <span style={{fontSize:12,color:D.blue}}>% (기본)</span>
+              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:""}])}
+                style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
+                  padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+                + 중복 쿠폰
+              </button>
+              {stackCoupons.length>0&&(
+                <span style={{fontSize:12,color:D.blue,marginLeft:"auto",fontWeight:700}}>
+                  유효 쿠폰율 {effCpn}%
+                </span>
+              )}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>
-              {slotDerived.map((s,i)=>{
-                const isSel=selIdx===i;
-                return(
-                  <button key={s.id} onClick={()=>setSelIdx(i)}
-                    style={{textAlign:"left",cursor:"pointer",borderRadius:8,
-                      border:`2px solid ${isSel?s.color:D.border}`,
-                      background:isSel?s.bg:D.surface,
-                      padding:"8px 10px",fontFamily:"inherit"}}>
-                    <div style={{display:"flex",alignItems:"baseline",gap:5,marginBottom:3,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,fontWeight:700,color:s.color}}>{s.name}</span>
-                      <span style={{fontSize:9,color:D.textMeta}}>P75 {s.disc}%</span>
-                    </div>
-                    <div style={{fontSize:10,color:D.textSub,marginBottom:4,lineHeight:1.4}}>{s.range}</div>
-                    <div style={{fontSize:10,color:D.textMeta}}>
-                      기본 <b style={{color:s.color}}>{s.baseRounded}%</b>
-                      {s.baseRaw!==s.baseRounded&&<span style={{color:D.textMeta}}> (raw {s.baseRaw}%)</span>}
-                    </div>
-                  </button>
-                );
-              })}
+            {stackCoupons.map((sc,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>중복 쿠폰 {i+1}</span>
+                <input type="number" min="0" max="60" step="1" value={sc.rate}
+                  onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
+                  style={inNum}/>
+                <span style={{fontSize:12,color:D.blue}}>%</span>
+                <button onClick={()=>setStackCoupons(stackCoupons.filter((_,j)=>j!==i))}
+                  style={{background:"transparent",border:`1px solid ${D.blue}55`,borderRadius:5,
+                    padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.blue}}>✕</button>
+              </div>
+            ))}
+            <div style={{fontSize:10,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
+              매트릭스 열은 기본 쿠폰 변동값을 보여주고, 중복 쿠폰은 모든 셀에 동일 누적 적용됩니다.
             </div>
           </div>
 
-          {/* 3. 기본 × 쿠폰 매트릭스 */}
+          {/* 2. 구간 × 쿠폰율 매트릭스 — 셀=도출 프런트 할인율(P75 목표 기준 역산 + 올림) */}
           <div>
             <div style={{fontSize:12,fontWeight:700,color:D.black,marginBottom:6}}>
-              3. 기본 × 쿠폰 매트릭스 <span style={{color:D.textMeta,fontWeight:400}}>· 셀=최종 할인율(쿠폰 포함) · ★={sel.name} P75 추천 조합 · 셀 클릭 시 자동 입력</span>
+              2. 구간 × 쿠폰율 — 도출 프런트 할인율
+              <span style={{color:D.textMeta,fontWeight:400}}> · 굵은 값=프런트 · 작은 값=쿠폰 적용 후 실제 최종 할인율 · ★=입력 기본 쿠폰 · 셀 클릭 시 자동 입력</span>
             </div>
             <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr>
                   <th style={{padding:"6px 8px",background:D.surfaceAlt,color:D.textSub,fontWeight:600,
                     borderBottom:`1px solid ${D.border}`,fontSize:10,textAlign:"left",whiteSpace:"nowrap"}}>
-                    기본 \ 쿠폰
+                    구간 \ 기본 쿠폰
                   </th>
                   {couponCols.map(c=>(
                     <th key={c} style={{padding:"6px 8px",background:c===hlCol?`${D.blue}14`:D.surfaceAlt,
                       color:c===hlCol?D.blue:D.textSub,fontWeight:c===hlCol?700:600,
-                      borderBottom:`1px solid ${D.border}`,fontSize:10,textAlign:"right",whiteSpace:"nowrap"}}>
+                      borderBottom:`1px solid ${D.border}`,fontSize:10,textAlign:"center",whiteSpace:"nowrap"}}>
                       {c}%{c===hlCol?" ★":""}
                     </th>
                   ))}
                 </tr></thead>
                 <tbody>
-                  {baseRows.map(b=>(
-                    <tr key={b}>
-                      <td style={{padding:"6px 8px",background:b===hlRow?`${sel.color}14`:D.surface,
-                        color:b===hlRow?sel.color:D.textSub,fontWeight:b===hlRow?700:600,
-                        borderBottom:`1px solid ${D.border}`,fontSize:10,whiteSpace:"nowrap"}}>
-                        {b}%{b===hlRow?" ★":""}
+                  {CALC_SLOTS.map(s=>(
+                    <tr key={s.id}>
+                      <td style={{padding:"7px 9px",background:s.bg,
+                        color:s.color,borderBottom:`1px solid ${D.border}`,
+                        fontSize:10,whiteSpace:"nowrap",lineHeight:1.4}}>
+                        <div style={{fontWeight:700}}>{s.name} <span style={{fontSize:9,color:D.textMeta,fontWeight:600}}>P75 {s.disc}%</span></div>
+                        <div style={{fontSize:9,color:D.textSub,fontWeight:500}}>{s.range}</div>
                       </td>
                       {couponCols.map(c=>{
-                        const v=finalDisc(b,c);
-                        const isHL=b===hlRow&&c===hlCol;
-                        const inHLAxis=b===hlRow||c===hlCol;
+                        const front=derivedFront(s,c);
+                        const fin=finalDisc(front,c);
+                        const isHL=c===hlCol;
                         return(
-                          <td key={c} onClick={()=>handleApply(b,c)}
-                            style={{padding:"6px 8px",textAlign:"right",cursor:"pointer",
+                          <td key={c} onClick={()=>handleApply(s,c)}
+                            style={{padding:"7px 9px",textAlign:"center",cursor:"pointer",
                               borderBottom:`1px solid ${D.border}`,
-                              background:isHL?sel.bg:(inHLAxis?D.surfaceAlt:D.surface),
-                              color:isHL?sel.color:D.text,
-                              fontWeight:isHL?700:500,whiteSpace:"nowrap",
-                              outline:isHL?`2px solid ${sel.color}`:"none",
-                              outlineOffset:"-2px"}}>
-                            {v}%
+                              background:isHL?`${s.color}14`:D.surface,
+                              outline:isHL?`2px solid ${s.color}`:"none",outlineOffset:"-2px",
+                              transition:"background 0.12s"}}>
+                            <div style={{fontSize:13,fontWeight:700,color:s.color,lineHeight:1.2}}>{front}%</div>
+                            <div style={{fontSize:9,color:D.textMeta,lineHeight:1.3}}>→ {fin}%</div>
                           </td>
                         );
                       })}
@@ -6047,7 +6078,8 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
               </table>
             </div>
             <div style={{fontSize:10,color:D.textMeta,marginTop:6,lineHeight:1.5}}>
-              셀 클릭 시 상품군({sel.name} {sel.range}) 할인율 + 쿠폰율이 자동 입력되며, 이 창은 계속 열린 채로 다른 구간/조합을 추가로 선택할 수 있습니다.
+              셀 클릭 시 상품군(구간 + 금액 범위) 할인율 + 기본 쿠폰{stackCoupons.length>0?` + 중복 쿠폰 ${stackCoupons.length}개`:""}이 자동 입력되며,
+              이 창은 계속 열린 채로 다른 구간/쿠폰 조합을 추가로 선택할 수 있습니다.
             </div>
           </div>
 
@@ -6055,7 +6087,11 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
             <div style={{marginTop:12,padding:"10px 12px",background:`${D.green}10`,border:`1px solid ${D.green}55`,
               borderRadius:6,fontSize:12,color:D.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{color:D.green,fontWeight:700}}>✓ 추가됨</span>
-              <span>{recent.tierName} ({recent.range}) · 기본 {recent.baseDisc}% · 쿠폰 {recent.couponRate}% → 최종 {recent.finalDisc}%</span>
+              <span>
+                {recent.tierName} ({recent.range}) · 기본 {recent.baseDisc}% · 쿠폰 {recent.primaryCoupon}%
+                {recent.stackRates&&recent.stackRates.length>0&&` (+중복 ${recent.stackRates.filter(r=>r>0).join("/")}%)`}
+                {" → 최종 "}{recent.finalDisc}%
+              </span>
             </div>
           )}
         </div>
