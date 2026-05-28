@@ -6721,7 +6721,7 @@ function SaleCalcModal({ onClose }){
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
                           <span style={labelCol}><span>{N.baseDisc} 기본 할인 금액</span></span>
-                          <span style={{...amtCol,color:D.red}}>−₩{wonFmt(frontCut)}</span>
+                          <span style={{...amtCol,color:D.red}}>−₩{wonFmt(frontCut)} <span style={{color:D.textMeta,fontWeight:400}}>({single.baseDisc}%)</span></span>
                           <span style={calcCol}>{N.list} × {single.baseDisc}% · 자사 부담</span>
                         </div>
                       )}
@@ -6740,7 +6740,7 @@ function SaleCalcModal({ onClose }){
                             <span style={labelCol}>
                               <span>{N.coupons[i]} {s.tInfo.label} 금액</span>
                             </span>
-                            <span style={{...amtCol,color:D.red}}>−₩{wonFmt(s.cut)}</span>
+                            <span style={{...amtCol,color:D.red}}>−₩{wonFmt(s.cut)} <span style={{color:D.textMeta,fontWeight:400}}>({s.c.rate}%)</span></span>
                             <span style={calcCol}>{refBase} × {s.c.rate}% · {burdenInline}</span>
                           </div>
                         );
@@ -6761,7 +6761,7 @@ function SaleCalcModal({ onClose }){
                       <div style={groupGap}></div>
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.fee} 채널 수수료</span></span>
-                        <span style={{...amtCol,color:D.red}}>−₩{wonFmt(m.fee)}</span>
+                        <span style={{...amtCol,color:D.red}}>−₩{wonFmt(m.fee)} <span style={{color:D.textMeta,fontWeight:400}}>({m.feeRate}%)</span></span>
                         <span style={calcCol}>{N.finalPrice} × {m.feeRate}% · 28% − 기본 할인율 10%당 1%p</span>
                       </div>
                       <div style={rowSty}>
