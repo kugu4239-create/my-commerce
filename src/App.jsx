@@ -3995,15 +3995,20 @@ function computeDiscountMatrix(plan){
     });
   });
   // 누적(pair) — 모든 canStack 쌍을 cartesian product 로 펼침
+  //  · 상품 쿠폰을 먼저, 장바구니 쿠폰을 나중으로 배치 (실제 적용 순서와 동일하게 표시)
   for(let i=0;i<coupons.length;i++){
     for(let j=i+1;j<coupons.length;j++){
       if(!canStack(coupons[i],coupons[j])) continue;
-      const ci=coupons[i],cj=coupons[j];
+      let ii=i,jj=j;
+      if(couponTypeOf(coupons[i])==="cart" && couponTypeOf(coupons[j])==="product"){
+        ii=j; jj=i; // 상품 쿠폰을 먼저 표시
+      }
+      const ci=coupons[ii],cj=coupons[jj];
       const ti=COUPON_TYPE_BY_KEY[couponTypeOf(ci)],tj=COUPON_TYPE_BY_KEY[couponTypeOf(cj)];
-      const ni=couponDisplayName(ci,i),nj=couponDisplayName(cj,j);
+      const ni=couponDisplayName(ci,ii),nj=couponDisplayName(cj,jj);
       const ri=+ci.rate||0,rj=+cj.rate||0;
       cols.push({
-        key:"cp"+i+"_"+j,coupon:true,combo:true,indexes:[i,j],
+        key:"cp"+ii+"_"+jj,coupon:true,combo:true,indexes:[ii,jj],
         name:`${ni} × ${nj}`,
         sub:`(${ti.short} ${ri}% + ${tj.short} ${rj}%)`,
         label:`${ni} × ${nj} (${ti.short}+${tj.short})`,
