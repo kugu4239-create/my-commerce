@@ -3908,44 +3908,29 @@ function SubmitEodPicker({value,onChange}){
 // 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
 function emptyProductRow(){return{group:"",rate:""};}
-function emptyCouponRow(stack=false){return{name:"",rate:"",start:"",end:"",stack,excludeGroups:[],stacksWith:[]};}
+// 쿠폰 타입 모델 — same-type 끼리 중복 불가, share 는 누구와도 중복 불가, 그 외 cross-type 만 누적
+const COUPON_TYPES=[
+  {key:"product",label:"상품 쿠폰",  short:"상품",   color:D.blue,  bg:`${D.blue}10`,  border:`${D.blue}55`},
+  {key:"cart",   label:"장바구니 쿠폰",short:"장바구니",color:D.green, bg:`${D.green}10`, border:`${D.green}55`},
+  {key:"share",  label:"분담 쿠폰",  short:"분담",   color:D.amber, bg:`${D.amber}10`, border:`${D.amber}55`},
+];
+const COUPON_TYPE_BY_KEY=Object.fromEntries(COUPON_TYPES.map(t=>[t.key,t]));
+function couponTypeOf(c){const t=c?.type;return t&&COUPON_TYPE_BY_KEY[t]?t:"product";}
+function canStack(a,b){const ta=couponTypeOf(a),tb=couponTypeOf(b);if(ta==="share"||tb==="share") return false;return ta!==tb;}
+function emptyCouponRow(type="product"){return{name:"",rate:"",start:"",end:"",type,stack:false,excludeGroups:[],stacksWith:[]};}
 // 쿠폰 표시 이름 (이름 비어있으면 `쿠폰N`)
 function couponDisplayName(c,i){const n=(c?.name||"").trim();return n||`쿠폰${i+1}`;}
 function normalizePlan(p){
-  let coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",stack:!!c.stack,excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[],stacksWith:Array.isArray(c.stacksWith)?c.stacksWith:[]}));
-  // 레거시 마이그레이션: stacksWith 가 모두 비어 있고 stack=true 가 하나라도 있으면
-  //   기존 글로벌 stack 동작을 보존하기 위해 stack=true 쿠폰들이 서로 중복되도록 채움
-  if(coupons.length>0&&coupons.every(c=>c.stacksWith.length===0)&&coupons.some(c=>c.stack)){
-    const stackNames=coupons.map((c,i)=>c.stack?couponDisplayName(c,i):null).filter(Boolean);
-    coupons=coupons.map((c,i)=>c.stack
-      ?{...c,stacksWith:stackNames.filter(n=>n!==couponDisplayName(c,i))}
-      :c);
-  }
-  // stacksWith 정리
-  // 1) 현재 쿠폰 이름 목록에 없는 stale 항목 제거 + 자기 참조 제거
-  // 2) 양방향 동기(union): A 가 B 를 listed 하면 B 도 A 를 listed 하도록 채움
-  //    (편집기의 symmetric toggle 이 있어도, 레거시 데이터·이름 변경 등으로 한쪽만 남는 경우가 있어 매 로드 시 보강)
-  if(coupons.length>0){
-    const displayNames=coupons.map((c,i)=>couponDisplayName(c,i));
-    const nameSet=new Set(displayNames);
-    coupons=coupons.map((c,i)=>{
-      const ownName=displayNames[i];
-      const sw=(c.stacksWith||[]).filter(n=>nameSet.has(n)&&n!==ownName);
-      return {...c,stacksWith:sw};
-    });
-    coupons=coupons.map((c,i)=>{
-      const ownName=displayNames[i];
-      const sw=[...(c.stacksWith||[])];
-      coupons.forEach((other,j)=>{
-        if(j===i) return;
-        const oName=displayNames[j];
-        if((other.stacksWith||[]).includes(ownName)&&!sw.includes(oName)){
-          sw.push(oName);
-        }
-      });
-      return {...c,stacksWith:sw};
-    });
-  }
+  const coupons=(Array.isArray(p?.coupons)?p.coupons:[]).map(c=>({
+    name:c.name||"",
+    rate:c.rate||"",
+    start:c.start||"",
+    end:c.end||"",
+    type:(c?.type&&COUPON_TYPE_BY_KEY[c.type])?c.type:"product",
+    stack:!!c.stack,
+    excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[],
+    stacksWith:Array.isArray(c.stacksWith)?c.stacksWith:[],
+  }));
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
     return{
@@ -3978,54 +3963,60 @@ function computeDiscountMatrix(plan){
   const groups=p.products.rows.filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
     .map(r=>({group:(r.group||"").trim()||"전체",rate:+r.rate||0}));
   const coupons=p.coupons.filter(c=>(+c.rate||0)>0||(c.name||"").trim());
-  const stack=coupons.filter(c=>(c.stacksWith||[]).length>0);
-  const solo =coupons.filter(c=>(c.stacksWith||[]).length===0);
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
   const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
-  const swOf=c=>Array.isArray(c.stacksWith)?c.stacksWith:[];
+
+  // 컬럼 구성:
+  //   1) 프런트 할인
+  //   2) 단독: 각 쿠폰 1개씩
+  //   3) 누적(pair): canStack=true 인 쿠폰 쌍 — 현재 타입 규칙상 product × cart 만 가능
   const cols=[{key:"prod",label:"프런트 할인"}];
   coupons.forEach((c,i)=>{
     const nm=couponDisplayName(c,i);
     const rate=+c.rate||0;
-    const isStack=swOf(c).length>0;
-    const sub=isStack?`(중복쿠폰·${rate}%)`:`(단독쿠폰·${rate}%)`;
-    cols.push({key:"c"+i,coupon:true,name:nm,sub,label:`${nm} ${sub}`});
+    const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(c)];
+    cols.push({
+      key:"c"+i,coupon:true,combo:false,indexes:[i],
+      name:nm,sub:`(${tInfo.short}·${rate}%)`,label:`${nm} (${tInfo.short}·${rate}%)`,
+      color:tInfo.color,
+    });
   });
-  // 각 쿠폰 열은 기본적으로 그 쿠폰 단독 적용 시 최종 할인율을 표시.
-  // 행마다 "stacksWith 안에 행에 적용 가능한 다른 쿠폰이 1개라도 있는 마지막 쿠폰 열"을 찾아
-  // 그 셀에는 자기 자신 + 적용 가능 스택 동료들의 누적 최종 할인율을 표시한다.
-  // - 쿠폰 자체가 행에서 제외되면 미적용(null).
-  // - 누적 대상은 자기 + stacksWith 에 있는 동료 중 행에 제외 안 된 것만.
-  const stackPalsOf=(i,g)=>{
-    const sw=swOf(coupons[i]);
-    if(sw.length===0) return [];
-    return coupons.map((other,j)=>({other,j}))
-      .filter(({other,j})=>j!==i&&sw.includes(couponDisplayName(other,j))&&!exOf(other).includes(g.group));
-  };
+  // 누적(pair) — 모든 canStack 쌍을 cartesian product 로 펼침
+  for(let i=0;i<coupons.length;i++){
+    for(let j=i+1;j<coupons.length;j++){
+      if(!canStack(coupons[i],coupons[j])) continue;
+      const ci=coupons[i],cj=coupons[j];
+      const ti=COUPON_TYPE_BY_KEY[couponTypeOf(ci)],tj=COUPON_TYPE_BY_KEY[couponTypeOf(cj)];
+      const ni=couponDisplayName(ci,i),nj=couponDisplayName(cj,j);
+      const ri=+ci.rate||0,rj=+cj.rate||0;
+      cols.push({
+        key:"cp"+i+"_"+j,coupon:true,combo:true,indexes:[i,j],
+        name:`${ni} × ${nj}`,
+        sub:`(${ti.short} ${ri}% + ${tj.short} ${rj}%)`,
+        label:`${ni} × ${nj} (${ti.short}+${tj.short})`,
+      });
+    }
+  }
+
+  // 각 행: 컬럼별로 indexes 의 쿠폰 중 하나라도 제외되면 미적용,
+  //         아니면 factor = ∏(1 - rate/100) 누적 → fin(g.rate, factor)
   const rows=groups.map(g=>{
     const cells={prod:fin(g.rate,1)};
-    // 행에서 스택 동료가 실제로 1개 이상인 쿠폰 중 가장 뒤쪽 인덱스
-    let lastIdxWithStacks=-1;
-    coupons.forEach((c,i)=>{
-      if(exOf(c).includes(g.group)) return;
-      if(stackPalsOf(i,g).length>0) lastIdxWithStacks=i;
-    });
-    coupons.forEach((c,i)=>{
-      if(exOf(c).includes(g.group)){
-        cells["c"+i]=null;
+    cols.forEach(col=>{
+      if(col.key==="prod") return;
+      const idxs=col.indexes||[];
+      const excluded=idxs.some(idx=>exOf(coupons[idx]).includes(g.group));
+      if(excluded){
+        cells[col.key]=null;
         return;
       }
-      if(i===lastIdxWithStacks){
-        const pals=stackPalsOf(i,g);
-        const factor=[i,...pals.map(p=>p.j)].reduce((f,idx)=>f*(1-(+coupons[idx].rate||0)/100),1);
-        cells["c"+i]=fin(g.rate,factor);
-      }else{
-        cells["c"+i]=fin(g.rate,1-(+c.rate||0)/100);
-      }
+      const factor=idxs.reduce((f,idx)=>f*(1-(+coupons[idx].rate||0)/100),1);
+      cells[col.key]=fin(g.rate,factor);
     });
     return {group:g.group,rate:g.rate,cells};
   });
-  return {groups,coupons,stack,solo,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
+
+  return {groups,coupons,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
 }
 
 // 상품군×시나리오 매트릭스 표 (에디터·등록 카드 공용)
@@ -4033,15 +4024,21 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   const m=computeDiscountMatrix(plan);
   const [localCircled,setLocalCircled]=useState(()=>new Set());
   if(!m.hasGroup) return null;
-  const anyCoupon=m.cols.some(c=>c.coupon);
   // 값 클릭 시 파란 원 강조 토글. onToggleCircle 있으면 제어형(저장·공유), 없으면 로컬
   const controlled=!!onToggleCircle;
   const circled=controlled?new Set(circledKeys||[]):localCircled;
   const toggleCircle=k=>controlled?onToggleCircle(k):setLocalCircled(prev=>{const s=new Set(prev);s.has(k)?s.delete(k):s.add(k);return s;});
   const cell={padding:compact?"2px 6px":"4px 8px",fontSize:compact?10:11,textAlign:"center",whiteSpace:"nowrap"};
   const th={...cell,color:D.textSub,fontWeight:600,borderBottom:`1px solid ${D.border}`,verticalAlign:"bottom"};
-  // 상품(상품군·상품할인)과 쿠폰 열 사이 구분선만 (개별 열 강조 없음)
-  const divAt=(c,ci)=>(c.coupon&&!m.cols[ci-1]?.coupon)?{borderLeft:`2px solid ${D.borderMid}`}:null;
+  // 구분선:
+  //   - 프런트 → 쿠폰 단독: 첫 쿠폰 열 좌측
+  //   - 쿠폰 단독 → 쿠폰 누적: 첫 combo 열 좌측
+  const divAt=(c,ci)=>{
+    const prev=m.cols[ci-1];
+    if(c.coupon&&!prev?.coupon) return {borderLeft:`2px solid ${D.borderMid}`};
+    if(c.combo&&!prev?.combo) return {borderLeft:`2px solid ${D.borderMid}`};
+    return null;
+  };
   return (
     <div style={{overflowX:"auto",marginTop:6}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
@@ -4052,7 +4049,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
               {c.name?(
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
                   <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                  <span style={{color:D.blue}}>{c.sub}</span>
+                  <span style={{color:c.combo?D.blue:D.textMeta}}>{c.sub}</span>
                 </div>
               ):c.label}
             </th>
@@ -4064,12 +4061,13 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
               <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}} title={r.group}>{r.group}</td>
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
-                const isFinal=anyCoupon?!!c.coupon:c.key==="prod";
+                // 누적(combo) 셀은 강조, 단독 쿠폰 셀은 보조 색, 프런트 셀은 기본 색
+                const isCombo=!!c.combo;
                 const k=(r.group||"전체")+"|"+c.key;
                 return <td key={c.key} onClick={v==null?undefined:()=>toggleCircle(k)}
                   style={{...cell,...divAt(c,ci),cursor:v==null?"default":"pointer",
-                  fontWeight:v==null?500:(isFinal?700:500),
-                  color:v==null?D.textMeta:(isFinal?D.blue:D.textSub)}}>
+                  fontWeight:v==null?500:(isCombo?700:500),
+                  color:v==null?D.textMeta:(isCombo?D.blue:D.textSub)}}>
                   {v==null?"미적용":(circled.has(k)
                     ?<span style={{display:"inline-block",border:`2px solid ${D.blue}`,borderRadius:"50%",padding:compact?"1px 6px":"2px 9px",lineHeight:1}}>{v}%</span>
                     :v+"%")}
@@ -4115,21 +4113,18 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     const nextProductRows=idx>=0
       ?filledProducts.map((r,i)=>i===idx?{...r,rate:String(baseDisc)}:r)
       :[...filledProducts,{group:groupLabel,rate:String(baseDisc)}];
-    // 쿠폰: 기본 쿠폰 + 중복 쿠폰들 — 모두 서로 중복 적용되도록 stacksWith 양방향 설정
+    // 쿠폰 자동 입력: 기본 쿠폰 → cart 타입, 중복 쿠폰들 → product 타입 (사용자가 사후 조정)
     const cleanStacks=stackRates.filter(r=>r>0);
-    const primaryName="29CM 쿠폰";
-    const stackNames=cleanStacks.map((_,i)=>`29CM 중복 쿠폰 ${i+1}`);
-    const allNames=[primaryName,...stackNames];
     const nextCoupons=[
-      {...emptyCouponRow(),name:primaryName,rate:String(primaryCoupon),stack:cleanStacks.length>0,stacksWith:allNames.filter(n=>n!==primaryName)},
-      ...cleanStacks.map((r,i)=>({...emptyCouponRow(true),name:stackNames[i],rate:String(r),stacksWith:allNames.filter(n=>n!==stackNames[i])})),
+      {...emptyCouponRow("cart"),name:"29CM 쿠폰",rate:String(primaryCoupon)},
+      ...cleanStacks.map((r,i)=>({...emptyCouponRow("product"),name:`29CM 중복 쿠폰 ${i+1}`,rate:String(r)})),
     ];
     onChange({
       products:{period:plan.products.period,rows:nextProductRows},
       coupons:nextCoupons,
     });
   };
-  const firstCouponRate=Number((coupons.find(c=>!c.stack&&c.rate)||coupons.find(c=>c.rate)||{}).rate)||10;
+  const firstCouponRate=Number((coupons.find(c=>couponTypeOf(c)==="cart"&&c.rate)||coupons.find(c=>c.rate)||{}).rate)||10;
   // 매트릭스에 쓰이는 상품군 목록 (쿠폰별 적용 여부 토글용)
   const matrixGroups=[...new Set(productRows
     .filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
@@ -4140,24 +4135,10 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     const next=ex.includes(g)?ex.filter(x=>x!==g):[...ex,g];
     const n=[...coupons];n[i]={...c,excludeGroups:next};setCoupons(n);
   };
-  // 중복 가능 여부 토글 — 양방향으로 반영해 두 쿠폰의 stacksWith 가 동기화되도록
-  const toggleStacksWith=(i,otherName)=>{
-    const c=coupons[i];
-    const cur=Array.isArray(c.stacksWith)?c.stacksWith:[];
-    const turningOn=!cur.includes(otherName);
-    const ownName=couponDisplayName(c,i);
-    const arr=[...coupons];
-    arr[i]={...c,stacksWith:turningOn?[...cur,otherName]:cur.filter(x=>x!==otherName)};
-    const targetIdx=coupons.findIndex((other,j)=>j!==i&&couponDisplayName(other,j)===otherName);
-    if(targetIdx>=0){
-      const t=arr[targetIdx];
-      const tCur=Array.isArray(t.stacksWith)?t.stacksWith:[];
-      arr[targetIdx]={...t,
-        stacksWith:turningOn
-          ?(tCur.includes(ownName)?tCur:[...tCur,ownName])
-          :tCur.filter(x=>x!==ownName)};
-    }
-    setCoupons(arr);
+  // 쿠폰 타입 변경
+  const setCouponType=(i,nextType)=>{
+    if(!COUPON_TYPE_BY_KEY[nextType]) return;
+    const n=[...coupons];n[i]={...n[i],type:nextType};setCoupons(n);
   };
 
   const cellInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:5,
@@ -4269,13 +4250,13 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 setDragIdx(i);
               }}
               onDrop={e=>{e.preventDefault();setDragIdx(null);}}
-              style={(()=>{const isStack=(row.stacksWith||[]).length>0;return{
-                border:`1px solid ${dragIdx!==null&&dragIdx!==i?`${D.blue}80`:isStack?`${D.blue}55`:D.border}`,borderRadius:8,
-                padding:"10px 12px",background:isStack?`${D.blue}08`:D.surface,
+              style={(()=>{const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(row)];return{
+                border:`1px solid ${dragIdx!==null&&dragIdx!==i?`${D.blue}80`:tInfo.border}`,borderRadius:8,
+                padding:"10px 12px",background:tInfo.bg,
                 display:"flex",flexDirection:"column",gap:8,
                 opacity:dragIdx===i?0.45:1,
                 transition:"opacity 0.12s, border-color 0.12s"};})()}>
-              {/* 드래그 핸들 · 중복 토글 · 쿠폰명 · 할인율 · 삭제 */}
+              {/* 드래그 핸들 · 타입 세그먼트 · 쿠폰명 · 할인율 · 삭제 */}
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <span draggable="true"
                   onDragStart={e=>{setDragIdx(i);e.dataTransfer.effectAllowed="move";}}
@@ -4285,49 +4266,21 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                     userSelect:"none",flexShrink:0,lineHeight:1}}>
                   ⋮⋮
                 </span>
-                {(()=>{
-                  const nStacks=(row.stacksWith||[]).length;
-                  const isStack=nStacks>0;
-                  const canToggle=coupons.length>1;
-                  // 클릭 시 단독↔중복 일괄 전환 (다른 쿠폰들과 양방향 동기)
-                  const flip=()=>{
-                    if(!canToggle) return;
-                    const ownName=couponDisplayName(row,i);
-                    const others=coupons.map((c,j)=>couponDisplayName(c,j)).filter((_,j)=>j!==i);
-                    const arr=[...coupons];
-                    if(isStack){
-                      // 모두 해제: 자기 stacksWith 비우고, 다른 쿠폰들의 stacksWith 에서 자기 이름 제거
-                      arr[i]={...row,stacksWith:[]};
-                      coupons.forEach((other,j)=>{
-                        if(j===i) return;
-                        arr[j]={...other,stacksWith:(other.stacksWith||[]).filter(n=>n!==ownName)};
-                      });
-                    } else {
-                      // 모두 연결
-                      arr[i]={...row,stacksWith:others};
-                      coupons.forEach((other,j)=>{
-                        if(j===i) return;
-                        const oCur=other.stacksWith||[];
-                        arr[j]={...other,stacksWith:oCur.includes(ownName)?oCur:[...oCur,ownName]};
-                      });
-                    }
-                    setCoupons(arr);
-                  };
-                  return (
-                    <button onClick={flip} disabled={!canToggle}
-                      title={canToggle
-                        ?(isStack?`모든 쿠폰과 중복 적용 중 (${nStacks}개) · 클릭 시 단독으로 전환`:"단독 쿠폰 · 클릭 시 모든 쿠폰과 중복으로 전환")
-                        :"쿠폰이 1개일 때는 단독으로만 사용됩니다"}
-                      style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,
-                        cursor:canToggle?"pointer":"default",borderRadius:6,whiteSpace:"nowrap",
-                        border:`1px solid ${isStack?D.blue:D.border}`,
-                        background:isStack?`${D.blue}14`:D.surface,
-                        color:isStack?D.blue:D.textMeta,
-                        fontFamily:"inherit"}}>
-                      {isStack?`중복 ${nStacks}`:"단독"}
-                    </button>
-                  );
-                })()}
+                {/* 타입 세그먼트 — 상품 · 장바구니 · 분담 (같은 타입 끼리 중복 불가, 분담은 누구와도 중복 불가) */}
+                <div style={{display:"flex",flexShrink:0,borderRadius:6,overflow:"hidden",border:`1px solid ${D.border}`}}>
+                  {COUPON_TYPES.map(t=>{
+                    const active=couponTypeOf(row)===t.key;
+                    return <button key={t.key} type="button" onClick={()=>setCouponType(i,t.key)}
+                      title={t.key==="share"?`${t.label} — 누구와도 중복 적용 안 됨`:`${t.label} — 같은 타입끼리만 중복 불가`}
+                      style={{padding:"4px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        border:"none",
+                        background:active?t.color:"transparent",
+                        color:active?"#fff":D.textMeta,
+                        fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                      {t.short}
+                    </button>;
+                  })}
+                </div>
                 <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
                   style={{...cellInp,flex:"1 1 160px",minWidth:120}} placeholder="쿠폰명 (예: 신규가입 쿠폰)"/>
                 <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
@@ -4354,27 +4307,6 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                     calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료"/>
                 </div>
               </div>
-              {/* 중복 적용 쿠폰 — 다른 쿠폰들과의 중복 여부 선택 */}
-              {coupons.length>1&&(
-                <div style={{display:"flex",alignItems:"flex-start",gap:6,flexWrap:"wrap"}}>
-                  <span style={{fontSize:10,color:D.textMeta,fontWeight:600,width:60,flexShrink:0,paddingTop:3}}>중복 쿠폰</span>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:4,flex:1}}>
-                    {coupons.map((other,j)=>{
-                      if(j===i) return null;
-                      const otherName=couponDisplayName(other,j);
-                      const on=(row.stacksWith||[]).includes(otherName);
-                      return <button key={j} type="button" onClick={()=>toggleStacksWith(i,otherName)}
-                        title={on?`${otherName} 와 중복 적용 중 → 클릭 시 해제`:`${otherName} 와 중복 적용 안 함 → 클릭 시 추가`}
-                        style={{fontSize:10,padding:"2px 9px",borderRadius:12,cursor:"pointer",lineHeight:1.5,
-                          border:`1px solid ${on?D.blue:D.border}`,background:on?`${D.blue}14`:D.surfaceAlt,
-                          color:on?D.blue:D.textMeta,textDecoration:on?"none":"line-through",fontWeight:600,
-                          maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                        {on?"✓ ":""}{otherName}
-                      </button>;
-                    })}
-                  </div>
-                </div>
-              )}
               {/* 적용 상품군 */}
               {matrixGroups.length>0&&(
                 <div style={{display:"flex",alignItems:"flex-start",gap:6,flexWrap:"wrap"}}>
@@ -4397,16 +4329,9 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           ))}
         </div>
         <div style={{display:"flex",gap:6,marginTop:6}}>
-          <button onClick={()=>setCoupons([...coupons,emptyCouponRow(false)])}
+          <button onClick={()=>setCoupons([...coupons,emptyCouponRow("product")])}
             style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
               padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 쿠폰 추가</button>
-          <button onClick={()=>{
-            // 모든 기존 쿠폰들과 자동으로 중복 적용되도록 stacksWith 자동 채움
-            const others=coupons.map((c,j)=>couponDisplayName(c,j));
-            setCoupons([...coupons,{...emptyCouponRow(true),stacksWith:others}]);
-          }}
-            style={{background:`${D.blue}10`,border:`1px dashed ${D.blue}80`,borderRadius:5,
-              padding:"4px 12px",fontSize:11,color:D.blue,cursor:"pointer",fontWeight:600}}>+ 중복 쿠폰 추가</button>
         </div>
       </div>
       </div>
