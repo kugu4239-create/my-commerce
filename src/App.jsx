@@ -6714,19 +6714,19 @@ function SaleCalcModal({ onClose }){
                       <>
                       {/* 가격 차감 흐름 */}
                       <div style={{...rowSty,borderTop:"none"}}>
-                        <span style={labelCol}><span>{N.list} 정가</span></span>
+                        <span style={labelCol}><span>{N.list} 정상 가격</span></span>
                         <span style={amtCol}>₩{wonFmt(listPrice)}</span>
                         <span style={calcCol}>판매가 기준</span>
                       </div>
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
-                          <span style={labelCol}><span>{N.baseDisc} 기본 할인 ({single.baseDisc}%)</span></span>
+                          <span style={labelCol}><span>{N.baseDisc} 기본 할인 금액</span></span>
                           <span style={{...amtCol,color:D.red}}>−₩{wonFmt(frontCut)}</span>
                           <span style={calcCol}>{N.list} × {single.baseDisc}% · 자사 부담</span>
                         </div>
                       )}
                       <div style={totalSty}>
-                        <span style={labelCol}><span>{N.basePrice} 기본 판매 가격 (I열)</span></span>
+                        <span style={labelCol}><span>{N.basePrice} 기본 판매 가격</span></span>
                         <span style={totalAmt}>₩{wonFmt(single.basePrice)}</span>
                         <span style={calcCol}>= {N.list}{single.baseDisc>0?` − ${N.baseDisc}`:""}</span>
                       </div>
@@ -6738,7 +6738,7 @@ function SaleCalcModal({ onClose }){
                         return (
                           <div key={`cs${i}`} style={rowSty}>
                             <span style={labelCol}>
-                              <span>{N.coupons[i]} {s.tInfo.label} ({s.c.rate}%)</span>
+                              <span>{N.coupons[i]} {s.tInfo.label} 금액</span>
                             </span>
                             <span style={{...amtCol,color:D.red}}>−₩{wonFmt(s.cut)}</span>
                             <span style={calcCol}>{refBase} × {s.c.rate}% · {burdenInline}</span>
@@ -6760,12 +6760,12 @@ function SaleCalcModal({ onClose }){
                       {/* 정산 흐름 */}
                       <div style={groupGap}></div>
                       <div style={rowSty}>
-                        <span style={labelCol}><span>{N.fee} 채널 판매 수수료 ({m.feeRate}%)</span></span>
+                        <span style={labelCol}><span>{N.fee} 채널 수수료</span></span>
                         <span style={{...amtCol,color:D.red}}>−₩{wonFmt(m.fee)}</span>
                         <span style={calcCol}>{N.finalPrice} × {m.feeRate}% · 28% − 기본 할인율 10%당 1%p</span>
                       </div>
                       <div style={rowSty}>
-                        <span style={labelCol}><span>{N.refund} 채널 부담 보전 금액</span></span>
+                        <span style={labelCol}><span>{N.refund} 쿠폰 채널 보전 금액</span></span>
                         <span style={{...amtCol,color:m.channelBurden>0?D.blue:D.textMeta}}>+₩{wonFmt(m.channelBurden)}</span>
                         <span style={calcCol}>
                           {channelDetail.length>0
@@ -6774,7 +6774,7 @@ function SaleCalcModal({ onClose }){
                         </span>
                       </div>
                       <div style={totalSty}>
-                        <span style={labelCol}><span>{N.netSettle} 자사 정산 금액</span></span>
+                        <span style={labelCol}><span>{N.netSettle} 정산 금액</span></span>
                         <span style={{...totalAmt,color:D.black}}>₩{wonFmt(m.net)}</span>
                         <span style={calcCol}>= {N.finalPrice} − {N.fee} + {N.refund}</span>
                       </div>
@@ -6784,7 +6784,7 @@ function SaleCalcModal({ onClose }){
                         <>
                           <div style={groupGap}></div>
                           <div style={rowSty}>
-                            <span style={labelCol}><span>{N.supply} 공급 가격 (부가세 포함)</span></span>
+                            <span style={labelCol}><span>{N.supply} 공급가(부가세 합)</span></span>
                             <span style={{...amtCol,color:D.red}}>−₩{wonFmt(supplyIncVat)}</span>
                             <span style={calcCol}>인벤토리 공급가액 ₩{wonFmt(supply)} × 1.1 (부가세 10%)</span>
                           </div>
@@ -6806,7 +6806,7 @@ function SaleCalcModal({ onClose }){
                         </>
                       ):(
                         <div style={{padding:"10px 14px",color:D.textMeta,borderTop:`6px solid ${D.surfaceAlt}`}}>
-                          공급 가격 미연동 — 인벤토리 매칭 시 마진 금액 / 마진율 / 원가율 자동 계산
+                          공급가 미연동 — 인벤토리 매칭 시 마진 금액 / 마진율 / 원가율 자동 계산
                         </div>
                       )}
                       </>
