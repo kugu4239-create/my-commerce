@@ -6520,10 +6520,10 @@ function SaleCalcModal({ onClose }){
                 <tbody>
                   {CALC_SLOTS.map(s=>(
                     <tr key={s.id}>
-                      <td style={{...td,textAlign:"left",fontWeight:600,color:s.color}}>{s.name}</td>
+                      <td style={{...td,textAlign:"left",fontWeight:600,color:D.text}}>{s.name}</td>
                       <td style={{...td,fontSize:12,fontWeight:500}}>{s.range}</td>
                       <td style={{...td,fontSize:12}}>{wonFmt(s.n)}</td>
-                      <td style={{...td,fontWeight:700,color:s.color,background:s.bg}}>{s.disc}%</td>
+                      <td style={{...td,fontWeight:700,color:D.text}}>{s.disc}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -6653,7 +6653,7 @@ function SaleCalcModal({ onClose }){
                 <>
                   {/* 슬롯 + 기본할인율 조정 컨트롤 */}
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"12px 0 10px"}}>
-                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
+                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,border:`1px solid ${D.borderMid}`,color:D.text}}>{slot.name}</span>
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]}</span>
                     <span style={{marginLeft:"auto",fontSize:11,color:D.textSub,display:"flex",alignItems:"center",gap:6}}>
                       기본 할인율 직접 조정
@@ -6677,7 +6677,7 @@ function SaleCalcModal({ onClose }){
                     {/* 메타 헤더 */}
                     <div style={{padding:"10px 12px",borderBottom:`1px solid ${D.borderMid}`,
                       display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,fontSize:11,color:D.textSub}}>
-                      <span style={{color:slot.color,fontWeight:600}}>{slot.name}</span>
+                      <span style={{color:D.text,fontWeight:600}}>{slot.name}</span>
                       <span style={{color:D.textMeta}}>P75 {slot.disc}%</span>
                       <span style={{color:D.textMeta}}>·</span>
                       {selectedScenario.caseNum&&(
@@ -6718,12 +6718,7 @@ function SaleCalcModal({ onClose }){
                       return (
                         <div key={`cs${i}`} style={rowSty}>
                           <span style={labelCol}>
-                            <span>−</span>
-                            <span style={{padding:"1px 6px",borderRadius:3,
-                              background:s.tInfo.bg,color:s.tInfo.color,border:`1px solid ${s.tInfo.border}`,fontWeight:700}}>
-                              {s.tInfo.short}
-                            </span>
-                            <span>쿠폰 {s.c.rate}%</span>
+                            <span>− {s.tInfo.label} {s.c.rate}%</span>
                           </span>
                           <span style={{...amtCol,color:D.red}}>−₩{wonFmt(s.cut)}</span>
                           <span style={calcCol}>₩{wonFmt(s.before)} × {s.c.rate}% · {burdenInline}</span>
@@ -6759,7 +6754,7 @@ function SaleCalcModal({ onClose }){
                       <span style={{...amtCol,color:m.channelBurden>0?D.blue:D.textMeta}}>+₩{wonFmt(m.channelBurden)}</span>
                       <span style={calcCol}>
                         {channelDetail.length>0
-                          ? channelDetail.map((s)=>`${s.tInfo.short} ${s.c.type==="share"?`분담 ${s.c.shareRate}%`:"채널부담"} ₩${wonFmt(s.chPart)}`).join(" / ")
+                          ? channelDetail.map((s)=>`${s.tInfo.label} ${s.c.type==="share"?`(분담 채널 ${s.c.shareRate}%)`:"(채널 전액부담)"} ₩${wonFmt(s.chPart)}`).join(" / ")
                           : "해당 없음"}
                       </span>
                     </div>
@@ -6840,7 +6835,7 @@ function SaleCalcModal({ onClose }){
                           const burden=c.type==="share"
                             ?`분담 자사${100-(c.shareRate||0)}:채널${c.shareRate||0}`
                             :(c.burden==="channel"?"채널부담":"자사부담");
-                          return `${tInfo.short} ${c.rate}% · ${burden}`;
+                          return `${tInfo.label} ${c.rate}% · ${burden}`;
                         }).join(" × ")})</>
                       )}
                       {' · '}유효 쿠폰율 {cpn}%
@@ -6862,9 +6857,9 @@ function SaleCalcModal({ onClose }){
                                 minWidth:160,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(r.list)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>
-                                <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,background:r.slot.bg,color:r.slot.color,fontWeight:600,fontSize:10}}>{r.slot.name}</span>
+                                <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,border:`1px solid ${D.border}`,color:D.text,fontWeight:600,fontSize:10}}>{r.slot.name}</span>
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600}}>{r.slot.disc}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600}}>{r.slot.disc}%</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{cpn}%</td>
                               <td style={{padding:"4px 6px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
                                 <div style={{display:"inline-flex",alignItems:"center",gap:2}}>
@@ -6885,7 +6880,7 @@ function SaleCalcModal({ onClose }){
                               </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
                               </td>
@@ -6956,14 +6951,14 @@ function SaleCalcModal({ onClose }){
                               return (
                                 <tr key={i}>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
-                                    textAlign:"left",fontWeight:600,color:g.slot.color,whiteSpace:"nowrap"}}>
+                                    textAlign:"left",fontWeight:600,color:D.text,whiteSpace:"nowrap"}}>
                                     {g.slot.name} <span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>{g.slot.range}</span>
                                   </td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>{g.count}</td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                     color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{avgBd}%</td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
-                                    color:g.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{avgFr}%</td>
+                                    color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{avgFr}%</td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,whiteSpace:"nowrap",
                                     color:avgM==null?D.textMeta:(avgM>=20?D.green:avgM>=10?D.text:D.red)}}>
                                     {avgM==null?<span style={{fontWeight:400,color:D.textMeta}}>공급가 미매칭</span>:`${avgM}%`}
