@@ -6853,7 +6853,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","채널보전","수수료","자사 정산","공급가 (세포)","원가율","마진","마진율"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","원가율","마진","마진율"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -6889,15 +6889,15 @@ function SaleCalcModal({ onClose }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
-                                ₩{wonFmt(r.selfBurden||0)}
-                              </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.green:D.textMeta,whiteSpace:"nowrap"}}>
-                                ₩{wonFmt(r.channelBurden||0)}
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
+                                {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
                               </td>
                               <td title={`수수료율 ${r.feeRate}% × 결제액 ₩${wonFmt(r.finalPrice||0)}`}
-                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
-                                -₩{wonFmt(r.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({r.feeRate}%)</span>
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.red,whiteSpace:"nowrap"}}>
+                                −₩{wonFmt(r.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({r.feeRate}%)</span>
+                              </td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.blue:D.textMeta,whiteSpace:"nowrap"}}>
+                                {(r.channelBurden||0)>0?`+₩${wonFmt(r.channelBurden)}`:"—"}
                               </td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:600,whiteSpace:"nowrap"}}>
                                 ₩{wonFmt(r.net||0)}
@@ -6926,6 +6926,60 @@ function SaleCalcModal({ onClose }){
                       </table>
                     </div>
                   )}
+                  {processed&&processed.length>0&&(()=>{
+                    // 상품군(slot)별 그룹 — 평균 마진율은 공급가 매칭된 행만 집계
+                    const groups={};
+                    processed.forEach(r=>{
+                      const k=r.slot.id;
+                      if(!groups[k]) groups[k]={slot:r.slot,count:0,matched:0,mSum:0,frSum:0};
+                      groups[k].count++;
+                      groups[k].frSum+=(r.finalDisc||0);
+                      if((r.supply||0)>0){groups[k].matched++;groups[k].mSum+=(r.marginRate||0);}
+                    });
+                    const rows=Object.values(groups).sort((a,b)=>a.slot.min-b.slot.min);
+                    return (
+                      <div style={{marginTop:18,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
+                        <div style={{padding:"9px 12px",fontSize:12,fontWeight:700,color:D.black,
+                          background:D.surfaceAlt,borderBottom:`1px solid ${D.borderMid}`}}>
+                          상품군별 결론 — 평균 할인율 / 평균 마진율
+                        </div>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                          <thead><tr>
+                            {["상품군","상품 수","평균 최종 할인율","평균 마진율"].map((h,i)=>(
+                              <th key={i} style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
+                                textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surface,whiteSpace:"nowrap"}}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {rows.map((g,i)=>{
+                              const avgFr=g.count>0?Math.round(g.frSum/g.count*10)/10:0;
+                              const avgM=g.matched>0?Math.round(g.mSum/g.matched*10)/10:null;
+                              return (
+                                <tr key={i}>
+                                  <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
+                                    textAlign:"left",fontWeight:600,color:g.slot.color,whiteSpace:"nowrap"}}>
+                                    {g.slot.name} <span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>{g.slot.range}</span>
+                                  </td>
+                                  <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>{g.count}</td>
+                                  <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
+                                    color:g.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{avgFr}%</td>
+                                  <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,whiteSpace:"nowrap",
+                                    color:avgM==null?D.textMeta:(avgM>=20?D.green:avgM>=10?D.text:D.red)}}>
+                                    {avgM==null?<span style={{fontWeight:400,color:D.textMeta}}>공급가 미매칭</span>:`${avgM}%`}
+                                    {avgM!=null&&g.matched<g.count&&(
+                                      <span style={{fontSize:9,color:D.textMeta,fontWeight:400,marginLeft:4}}>
+                                        ({g.matched}/{g.count})
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
