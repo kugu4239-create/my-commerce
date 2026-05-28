@@ -6330,14 +6330,18 @@ function SaleCalcModal({ onClose }){
           border:`1px solid ${D.black}`,
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
         <style>{`
+          .salecalc, .salecalc *,
+          .salecalc input, .salecalc button, .salecalc select, .salecalc textarea, .salecalc pre {
+            font-family: 'Pretendard','Noto Sans KR','-apple-system','BlinkMacSystemFont',sans-serif !important;
+            font-size: 12px !important;
+            line-height: 1.5 !important;
+          }
           .salecalc details[open]>summary .chev{transform:rotate(180deg);}
           .salecalc .chev{transition:transform .2s;display:inline-block;}
           @media (max-width: 768px) {
             .salecalc-overlay { padding: 4px !important; align-items: flex-start !important; }
             .salecalc { width: 100% !important; max-width: 100% !important; max-height: calc(100vh - 8px) !important; border-radius: 8px !important; }
-            .salecalc summary { padding: 9px 11px !important; font-size: 12px !important; }
             .salecalc .sc-body { padding: 14px 10px 28px !important; }
-            .salecalc table { font-size: 10px !important; }
             .salecalc table th, .salecalc table td { padding: 5px 6px !important; }
           }
         `}</style>
