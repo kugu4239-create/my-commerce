@@ -6265,12 +6265,42 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       return {...r,...calc,manualBase:undefined,supplyIncVat,costRatio};
     }));
   };
-  const handleFile=async file=>{
+  // 예시 파일 저장/로드 — 최근 업로드 1개를 Supabase 에 보관해 다른 세션에서도 즉시 미리보기
+  const saveExampleFile=async file=>{
+    try{
+      const buf=await file.arrayBuffer();
+      const bytes=new Uint8Array(buf);
+      let bin=""; for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+      const b64=btoa(bin);
+      const db=await getSupabase();
+      await db.from("calc_last_file").upsert({id:1,filename:file.name,content_b64:b64,uploaded_at:new Date().toISOString()});
+    }catch(err){ console.warn("예시 파일 저장 실패",err); }
+  };
+  const loadExampleFile=async()=>{
+    try{
+      const db=await getSupabase();
+      const {data,error}=await db.from("calc_last_file").select("filename,content_b64").eq("id",1).maybeSingle();
+      if(error) throw error;
+      if(!data){ setSummary("저장된 예시 파일이 없습니다. 한 번 업로드해 주세요."); setShowResults(true); return; }
+      const bin=atob(data.content_b64);
+      const bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+      const blob=new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const f=new File([blob],data.filename||"example.xlsx");
+      await handleFile(f,{skipSave:true});
+    }catch(err){
+      console.error("예시 파일 로드 실패",err);
+      setSummary("예시 파일 로드 실패: "+(err?.message||err));
+      setShowResults(true);
+    }
+  };
+  const handleFile=async(file,opts={})=>{
     fnameRef.current=file.name.replace(/\.xlsx?$/i,"");
     try{
       const XLSX=await getXLSX();
       const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellStyles:true});
       wbRef.current=wb;
+      if(!opts.skipSave) saveExampleFile(file);
       const sheet=wb.SheetNames.find(n=>/상품가격|할인가|할인/.test(n))||wb.SheetNames[0];
       sheetRef.current=sheet;
       const ws=wb.Sheets[sheet];
@@ -6849,7 +6879,15 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           </details>
 
           <div style={sec}>
-            <div style={{padding:"11px 14px",fontSize:11,fontWeight:700,borderBottom:`1px solid ${D.border}`,color:D.black}}>4. 29CM 일괄할인 양식 업로드</div>
+            <div style={{padding:"11px 14px",fontSize:11,fontWeight:700,borderBottom:`1px solid ${D.border}`,color:D.black,
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+              <span>4. 29CM 일괄할인 양식 업로드</span>
+              <button onClick={loadExampleFile} title="마지막으로 업로드한 파일을 예시로 불러옵니다"
+                style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:5,
+                  padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.textSub,fontWeight:600}}>
+                &lt;예시파일&gt;
+              </button>
+            </div>
             <div style={{padding:14}}>
               <div onClick={()=>fileRef.current?.click()}
                 onDragOver={e=>{e.preventDefault();setDragOver(true);}}
