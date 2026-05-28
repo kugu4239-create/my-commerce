@@ -4083,7 +4083,29 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                 // 누적(combo) 셀은 강조, 단독 쿠폰 셀은 보조 색, 프런트 셀은 기본 색
                 const isCombo=!!c.combo;
                 const k=(r.group||"전체")+"|"+c.key;
+                // 마우스 오버 툴팁 — 계산 방식 안내
+                const tip=(()=>{
+                  if(c.key==="prod") return `${r.group} 프런트 할인 ${r.rate}%`;
+                  if(v==null){
+                    const ex=(c.indexes||[]).filter(idx=>{
+                      const ec=m.coupons[idx]; const eg=Array.isArray(ec.excludeGroups)?ec.excludeGroups:[]; return eg.includes(r.group);
+                    }).map(idx=>couponDisplayName(m.coupons[idx],idx));
+                    return ex.length?`미적용 — ${ex.join(", ")} 가 ${r.group}에서 제외됨`:"미적용";
+                  }
+                  const parts=[`${r.group} 프런트 할인 ${r.rate}%`];
+                  let hasShare=false;
+                  (c.indexes||[]).forEach(idx=>{
+                    const cp=m.coupons[idx];
+                    const t=COUPON_TYPE_BY_KEY[couponTypeOf(cp)];
+                    if(t.key==="share") hasShare=true;
+                    parts.push(`${couponDisplayName(cp,idx)}(${t.short}) ${+cp.rate||0}%`);
+                  });
+                  let s=parts.join(" × ")+` = ${v}%`;
+                  if(hasShare) s+="\n* 분담 쿠폰은 다른 쿠폰과 조합이 불가합니다.";
+                  return s;
+                })();
                 return <td key={c.key} onClick={v==null?undefined:()=>toggleCircle(k)}
+                  title={tip}
                   style={{...cell,...divAt(c,ci),cursor:v==null?"default":"pointer",
                   fontWeight:v==null?500:(isCombo?700:500),
                   color:v==null?D.textMeta:(isCombo?D.blue:D.textSub)}}>
@@ -5560,7 +5582,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130,flexWrap:"wrap"}}>
                       <span style={{width:7,height:7,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
                       <span style={{fontSize:11,color:D.textMeta}}>{p.platform}</span>
-                      <b style={{fontSize:14,color:D.black}}>{p.name}</b>
+                      <b style={{fontSize:28,color:D.black,lineHeight:1.2}}>{p.name}</b>
                       {canImpact&&(
                         <button onClick={()=>setImpactModal(p)} data-capture-hide
                           style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
