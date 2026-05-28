@@ -4526,19 +4526,30 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
         )}
       </div>
       {value.length>0&&(
-        <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:8,maxWidth:560}}>
-          {value.map((v,i)=>(
-            <div key={v.name+i} style={{display:"flex",alignItems:"center",gap:4,
-              background:D.surfaceAlt,borderRadius:4,padding:"3px 6px"}}>
-              <span style={{flex:"0 0 55%",fontSize:11,color:D.text,
-                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={v.name}>📌 {v.name}</span>
-              <input value={v.memo||""} onChange={e=>setMemo(i,e.target.value)}
-                style={{...pillInp,flex:1,padding:"3px 6px",fontSize:11,background:D.surface}} placeholder="메모"/>
-              <button onClick={()=>remove(i)}
-                style={{background:"none",border:"none",color:D.textMeta,
-                  cursor:"pointer",padding:"0 4px",fontSize:13,lineHeight:1,flexShrink:0}}>✕</button>
+        <div style={{marginTop:8,maxWidth:560}}>
+          {value.length>10&&(
+            <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>
+              총 {value.length}개 · 위 영역 스크롤
             </div>
-          ))}
+          )}
+          {/* 10개 행 고정 높이 + 인너 스크롤. 행 높이(약 28px) × 10 + 약간의 padding */}
+          <div style={{display:"flex",flexDirection:"column",gap:3,
+            maxHeight:value.length>10?300:"none",overflowY:value.length>10?"auto":"visible",
+            border:value.length>10?`1px solid ${D.border}`:"none",
+            borderRadius:value.length>10?6:0,padding:value.length>10?4:0}}>
+            {value.map((v,i)=>(
+              <div key={v.name+i} style={{display:"flex",alignItems:"center",gap:4,
+                background:D.surfaceAlt,borderRadius:4,padding:"3px 6px",flexShrink:0}}>
+                <span style={{flex:"0 0 55%",fontSize:11,color:D.text,
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={v.name}>📌 {v.name}</span>
+                <input value={v.memo||""} onChange={e=>setMemo(i,e.target.value)}
+                  style={{...pillInp,flex:1,padding:"3px 6px",fontSize:11,background:D.surface}} placeholder="메모"/>
+                <button onClick={()=>remove(i)}
+                  style={{background:"none",border:"none",color:D.textMeta,
+                    cursor:"pointer",padding:"0 4px",fontSize:13,lineHeight:1,flexShrink:0}}>✕</button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
