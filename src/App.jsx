@@ -6241,7 +6241,10 @@ function FilePreviewModal({ file, onClose }){
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:D.surface,borderRadius:12,padding:"18px 20px",
-        width:"min(1000px,95vw)",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        width:"min(1000px,95vw)",
+        // 엑셀/CSV 시트 미리보기에서 검색 시 행이 줄어도 모달이 흔들리지 않도록 최소 높이 확보
+        ...(isSheet?{minHeight:"min(720px,85vh)"}:{}),
+        maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
           <b style={{fontSize:14,color:D.black,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>📎 {name}</b>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
