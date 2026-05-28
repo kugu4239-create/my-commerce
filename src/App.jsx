@@ -6338,11 +6338,14 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           border:`1px solid ${D.black}`,
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:11,color:D.text}}>
         <style>{`
-          .salecalc, .salecalc *,
-          .salecalc input, .salecalc button, .salecalc select, .salecalc textarea, .salecalc pre {
+          body .salecalc, body .salecalc *,
+          body .salecalc input, body .salecalc button, body .salecalc select, body .salecalc textarea, body .salecalc pre,
+          body .salecalc th, body .salecalc td, body .salecalc span, body .salecalc div, body .salecalc summary, body .salecalc b {
             font-family: 'Pretendard','Noto Sans KR','-apple-system','BlinkMacSystemFont',sans-serif !important;
             font-size: 11px !important;
             line-height: 1.5 !important;
+            letter-spacing: normal !important;
+            font-stretch: normal !important;
           }
           .salecalc details[open]>summary .chev{transform:rotate(180deg);}
           .salecalc .chev{transition:transform .2s;display:inline-block;}
@@ -6649,13 +6652,13 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 // 공통 스타일 — 라벨 / 금액(왼쪽 중앙) / 계산식(금액 옆) 3컬럼
                 const gridT="minmax(0,170px) minmax(95px,135px) minmax(0,1fr)";
                 const rowSty={display:"grid",gridTemplateColumns:gridT,alignItems:"baseline",gap:14,
-                  padding:"6px 14px",borderTop:`1px solid ${D.border}`,color:D.text};
-                const labelCol={display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap",minWidth:0};
-                const amtCol={textAlign:"right",fontWeight:600,whiteSpace:"nowrap"};
-                const totalAmt={...amtCol,fontWeight:800};
-                const calcCol={color:D.textMeta,minWidth:0};
+                  padding:"6px 14px",borderTop:`1px solid ${D.border}`,color:D.text,fontSize:11,lineHeight:1.5};
+                const labelCol={display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap",minWidth:0,fontSize:11};
+                const amtCol={textAlign:"right",fontWeight:600,whiteSpace:"nowrap",fontSize:11};
+                const totalAmt={...amtCol,fontWeight:800,fontSize:11};
+                const calcCol={color:D.textMeta,minWidth:0,fontSize:11};
                 const totalSty={...rowSty,background:D.surfaceAlt,
-                  borderTop:`1.5px solid ${D.borderMid}`,padding:"8px 14px"};
+                  borderTop:`1.5px solid ${D.borderMid}`,padding:"8px 14px",fontSize:11};
                 const groupGap={borderTop:`6px solid ${D.surfaceAlt}`,padding:0,height:0};
                 return (
                 <>
