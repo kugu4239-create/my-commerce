@@ -6414,7 +6414,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:12,
               paddingBottom:12,borderBottom:`1px dashed ${D.border}`}}>
               <span style={{fontSize:11,color:D.textMeta,fontWeight:700,letterSpacing:"0.04em"}}>자주 쓰는 시나리오</span>
-              <div style={{display:"flex",alignItems:"stretch",gap:10,flexWrap:"wrap",justifyContent:"center",width:"100%"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10,alignItems:"stretch",width:"100%"}}>
                 {[
                   {
                     title:"29CM 지원 쿠폰 15%",
@@ -6453,7 +6453,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                   })();
                   return (
                     <button key={i} type="button" onClick={p.apply} title={p.title}
-                      style={{flex:"1 1 280px",maxWidth:340,minWidth:240,
+                      style={{minWidth:0,
                         background:active?D.black:"transparent",
                         border:`1px ${active?"solid":"dashed"} ${D.black}`,
                         borderRadius:6,padding:"12px 14px",fontSize:11,cursor:"pointer",
