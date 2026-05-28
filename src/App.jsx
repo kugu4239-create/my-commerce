@@ -4056,6 +4056,42 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   };
   return (
     <div style={{overflowX:"auto",marginTop:6,display:"flex",justifyContent:"center"}}>
+      <style>{`
+        .mat-tip:hover::after{
+          content:attr(data-tip);
+          position:absolute;
+          bottom:calc(100% + 6px);
+          left:50%;
+          transform:translateX(-50%);
+          background:${D.black};
+          color:#fff;
+          padding:8px 12px;
+          border-radius:6px;
+          font-size:11px;
+          font-family:'Noto Sans KR','Pretendard',sans-serif;
+          font-weight:400;
+          white-space:pre-line;
+          z-index:1000;
+          pointer-events:none;
+          box-shadow:0 4px 16px rgba(0,0,0,0.22);
+          max-width:340px;
+          width:max-content;
+          line-height:1.55;
+          text-align:left;
+          letter-spacing:-0.01em;
+        }
+        .mat-tip:hover::before{
+          content:'';
+          position:absolute;
+          bottom:calc(100% + 1px);
+          left:50%;
+          transform:translateX(-50%);
+          border:5px solid transparent;
+          border-top-color:${D.black};
+          z-index:1001;
+          pointer-events:none;
+        }
+      `}</style>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
         <thead>
           {/* Row 1: Case N 라벨 — 별도 행으로 분리해 컬럼 좌측 디바이더가 라벨 위로 올라오지 않게 함 */}
@@ -4119,8 +4155,8 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                   return s;
                 })();
                 return <td key={c.key} onClick={v==null?undefined:()=>toggleCircle(k)}
-                  title={tip}
-                  style={{...cell,...divAt(c,ci),cursor:v==null?"default":"pointer",
+                  className="mat-tip" data-tip={tip}
+                  style={{...cell,...divAt(c,ci),cursor:v==null?"default":"pointer",position:"relative",
                   fontWeight:v==null?500:(isCombo?700:500),
                   color:v==null?D.textMeta:(isCombo?D.blue:D.textSub)}}>
                   {v==null?"미적용":(circled.has(k)
@@ -4648,6 +4684,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     })();
   },[]);
   // Promo search
+  const [searchOpen,setSearchOpen]=useState(false);
   const [searchStart,setSearchStart]=useState("");
   const [searchEnd,setSearchEnd]=useState("");
   const [searchCh,setSearchCh]=useState("");
@@ -4912,7 +4949,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{wd&&<span style={{fontSize:12,color:D.textSub,marginLeft:3}}>({wd})</span>}{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
           })}
         </div>
-        <div style={{flex:"1 1 240px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
+        <div style={{flex:pins.length>0?"1 1 240px":"3 1 480px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
           <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>상세 내용</div>
           {p.content||p.memo||"—"}
         </div>
@@ -5701,7 +5738,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
                           color:D.textMeta,cursor:"pointer",padding:"3px 10px",fontSize:11}}>가리기</button>
                     )}
-                    <button onClick={()=>delPromo(p.id)}
+                    <button onClick={()=>{
+                      if(window.confirm(`"${p.name}" 프로모션을 삭제하시겠습니까?\n삭제 후 되돌릴 수 없습니다.`)){
+                        delPromo(p.id);
+                      }
+                    }}
                       style={{background:"transparent",border:`1px solid ${D.red}55`,borderRadius:4,
                         color:D.red,cursor:"pointer",padding:"3px 10px",fontSize:11}}>프로모션 삭제</button>
                   </div>
@@ -5714,9 +5755,17 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         </Card>
       )}
 
-      {/* 프로모션 검색 */}
+      {/* 프로모션 검색 — 기본 닫힘, 헤더 클릭으로 토글 */}
       <Card style={{marginTop:12}}>
-        <div style={{fontWeight:600,fontSize:14,marginBottom:12,color:D.black}}>프로모션 검색</div>
+        <button onClick={()=>setSearchOpen(o=>!o)} type="button"
+          style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",
+            display:"flex",alignItems:"center",gap:6,marginBottom:searchOpen?12:0,
+            fontWeight:600,fontSize:14,color:D.black}}>
+          <span style={{display:"inline-block",transform:searchOpen?"rotate(90deg)":"rotate(0deg)",
+            transition:"transform 0.15s",color:D.textMeta,fontSize:11}}>▶</span>
+          프로모션 검색
+        </button>
+        {searchOpen&&(<>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
           <DateDrop id="searchStart" value={searchStart} onChange={setSearchStart}
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="시작일"/>
@@ -5816,6 +5865,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             </>
           );
         })()}
+        </>)}
       </Card>
 
       {/* 가려진 종료 프로모션 — 페이지 가장 하단. 가리기 버튼으로 숨긴 종료 프로모션만 모아 표시 + 임팩트 분석 진입 */}
@@ -5836,19 +5886,27 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
-              <div key={h.id} style={{position:"relative",border:`1px solid ${D.borderMid}`,borderRadius:10,
-                padding:"14px 16px",background:D.surface,opacity:0.85,
+              <div key={h.id} style={{position:"relative",border:`1px solid ${D.black}`,borderRadius:10,
+                padding:"14px 16px",background:D.surface,opacity:0.92,
                 fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.7}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <input type="checkbox" checked={selHiddenIds.has(h.id)}
-                    onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
-                    style={{cursor:"pointer"}}/>
+                {/* 우측 상단 — 일괄 액션을 위한 체크박스 */}
+                <div data-capture-hide style={{position:"absolute",top:10,right:12,display:"flex",gap:6,alignItems:"center"}}>
+                  <label style={{display:"inline-flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:11,color:D.textMeta}}>
+                    <input type="checkbox" checked={selHiddenIds.has(h.id)}
+                      onChange={ev=>{const s=new Set(selHiddenIds);ev.target.checked?s.add(h.id):s.delete(h.id);setSelHiddenIds(s);}}
+                      style={{cursor:"pointer"}}/>
+                    선택
+                  </label>
+                </div>
+                {/* 채널 + 이름 + 임팩트 분석 — 진행 중 카드와 동일 형태 */}
+                <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130,flexWrap:"wrap",marginTop:14}}>
                   <span style={{width:7,height:7,borderRadius:"50%",background:chColor(h.platform),flexShrink:0}}/>
                   <span style={{fontSize:11,color:D.textMeta}}>{h.platform}</span>
-                  <b style={{fontSize:14,color:D.black}}>{h.name}</b>
-                  <button onClick={()=>setImpactModal(h)}
-                    style={{marginLeft:6,background:D.black,color:"#fff",border:"none",borderRadius:5,
-                      padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600}}>임팩트 분석</button>
+                  <b style={{fontSize:28,color:D.black,lineHeight:1.2}}>{h.name}</b>
+                  <button onClick={()=>setImpactModal(h)} data-capture-hide
+                    style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
+                      padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:4}}>임팩트 분석</button>
+                  <span style={{fontSize:11,fontWeight:500,color:D.red,marginLeft:4}}>· 가려진 종료 프로모션</span>
                 </div>
                 {promoDetailBody(h)}
               </div>
@@ -6757,7 +6815,6 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
               <table className="impact-hoverable" style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
-                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>메모</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>직전 ({lenDays}일)</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>프로모션 ({lenDays}일)</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>증감</th>
@@ -6765,8 +6822,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                 <tbody>
                   {pinnedComparison.map((p,i)=>(
                     <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
-                      <td style={{padding:"5px 7px",color:D.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>{p.name}</td>
-                      <td style={{padding:"5px 7px",color:D.textMeta,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.memo}>{p.memo||"—"}</td>
+                      <td style={{padding:"5px 7px",color:D.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.memo?`${p.name} · ${p.memo}`:p.name}>{p.name}</td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.prev.toLocaleString()}장</td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{p.promo.toLocaleString()}장</td>
                       <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,
