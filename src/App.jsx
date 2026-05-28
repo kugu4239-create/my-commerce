@@ -6503,9 +6503,13 @@ function SaleCalcModal({ onClose }){
             </div>
           </details>
 
-          <details className="sec" style={sec}>
+          <details className="sec" style={sec} open>
             <summary style={summarySty}>3. 단일 정가 시뮬레이션 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
+              <div style={{margin:"0 0 10px",padding:"8px 12px",background:"#fff8ec",border:`1px solid ${D.amber}55`,
+                borderRadius:6,fontSize:11,color:D.text,lineHeight:1.6}}>
+                💡 기본 할인율을 직접 조정 가능하며, 구간에 적합한 할인율을 다시 보려면 재검색하세요.
+              </div>
               {/* 인벤토리 상품 검색 — 선택 시 정가/공급가 자동 채움 */}
               <div style={{position:"relative",marginBottom:10}}>
                 <label style={{fontSize:11,color:D.textMeta,marginBottom:3,display:"block"}}>인벤토리에서 상품 검색 (선택 시 정가·공급가 자동 입력)</label>
