@@ -6567,6 +6567,34 @@ function SaleCalcModal({ onClose }){
                 const costRatio=single.finalPrice>0&&supply>0?Math.round(supply/single.finalPrice*1000)/10:0;
                 return (
                 <div style={{marginTop:12,padding:16,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10}}>
+                  {/* 적용 쿠폰 시나리오 — 한눈에 보이는 요약 */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10,
+                    padding:"8px 10px",background:"#eef3ff",border:`1px solid ${D.blue}55`,borderRadius:6}}>
+                    <span style={{fontSize:10,color:D.blue,fontWeight:700,letterSpacing:"0.04em"}}>적용 시나리오</span>
+                    {selectedScenario.caseNum&&(
+                      <span style={{background:D.blue,color:"#fff",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:3}}>
+                        Case {selectedScenario.caseNum}
+                      </span>
+                    )}
+                    <span style={{fontSize:12,color:D.text,fontWeight:600}}>
+                      {selectedScenario.label||`기본 쿠폰 ${cpn}%`}
+                    </span>
+                    <span style={{fontSize:11,color:D.textSub}}>→ 유효 쿠폰율 {cpn}%</span>
+                    {(selectedScenario.items||[]).length>0&&(
+                      <span style={{marginLeft:"auto",display:"flex",gap:4,flexWrap:"wrap"}}>
+                        {selectedScenario.items.map((c,idx)=>{
+                          const tInfo=COUPON_TYPE_BY_KEY[c.type];
+                          const burdenLabel=c.type==="share"?`분담(채널${c.shareRate||0}%)`:(c.burden==="channel"?"채널부담":"자사부담");
+                          return (
+                            <span key={idx} style={{fontSize:10,padding:"1px 6px",borderRadius:3,
+                              background:tInfo.bg,color:tInfo.color,border:`1px solid ${tInfo.border}`,whiteSpace:"nowrap"}}>
+                              {tInfo.short} {c.rate}% · {burdenLabel}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </div>
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}% · 수수료 {m.feeRate}%</span>
