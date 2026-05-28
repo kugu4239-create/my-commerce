@@ -6101,8 +6101,41 @@ function SaleCalcModal({ onClose }){
   const cpn=selectedScenario.eff;
   const slot=calcClassify(listPrice||0);
   const single=listPrice>0?calcReverse(listPrice,slot.disc,cpn):null;
-  // 인벤토리 공급가 맵 — 최근 스냅샷 기준 (이름·코드 키)
+  // 부담 주체별 차감액 계산 → 자사 매출 → 수수료 → 마진
+  // 프런트 할인(기본 할인율)은 항상 자사부담. 각 쿠폰은 burden(self/channel) 혹은 share 의 shareRate(채널부담률) 에 따라 분배.
+  const computeMargin=useCallback((list,baseDisc,items,supply)=>{
+    if(!list) return {revenue:0,fee:0,feeRate:28,net:0,margin:0,marginRate:0,selfBurden:0,channelBurden:0};
+    let priceAfter=list*(1-baseDisc/100);
+    let selfBurden=list*(baseDisc/100); // 프런트는 자사
+    let channelBurden=0;
+    (items||[]).forEach(c=>{
+      const cut=priceAfter*((c.rate||0)/100);
+      if(c.type==="share"){
+        const channelPart=cut*((c.shareRate||0)/100);
+        channelBurden+=channelPart;
+        selfBurden+=cut-channelPart;
+      } else if(c.burden==="channel") {
+        channelBurden+=cut;
+      } else {
+        selfBurden+=cut;
+      }
+      priceAfter-=cut;
+    });
+    // 채널 수수료율 = 28% − 기본 세일율(baseDisc) 10% 단위마다 -1%p (최소 0)
+    const fr=Math.max(0,28-Math.floor(baseDisc/10));
+    const revenue=Math.round((list-selfBurden)/10)*10; // 자사 매출 (10원 단위)
+    const fee=Math.round(revenue*(fr/100)/10)*10;
+    const net=revenue-fee;
+    const margin=net-(supply||0);
+    const marginRate=net>0?Math.round(margin/net*1000)/10:0;
+    return {revenue,fee,feeRate:fr,net,margin,marginRate,selfBurden:Math.round(selfBurden),channelBurden:Math.round(channelBurden)};
+  },[]);
+  // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
   const [invMap,setInvMap]=useState({});
+  const [invProducts,setInvProducts]=useState([]); // [{name,code,selling,supply}]
+  // 단일 시뮬 검색·선택 상태
+  const [singleQuery,setSingleQuery]=useState("");
+  const [singleSelected,setSingleSelected]=useState(null); // {name,code,selling,supply}
   useEffect(()=>{
     let alive=true;
     (async()=>{
@@ -6112,7 +6145,7 @@ function SaleCalcModal({ onClose }){
         const d=latest?.[0]?.snapshot_date; if(!d||!alive) return;
         let all=[],from=0;const PAGE=1000;
         while(true){
-          const {data,error}=await db.from("inventory_snapshot").select("product_name,product_code,supply_price")
+          const {data,error}=await db.from("inventory_snapshot").select("product_name,product_code,supply_price,selling_price")
             .eq("snapshot_date",d).range(from,from+PAGE-1);
           if(error||!data||data.length===0) break;
           all=all.concat(data);
@@ -6121,13 +6154,19 @@ function SaleCalcModal({ onClose }){
         }
         if(!alive) return;
         const m={};
+        const productMap={};
         all.forEach(r=>{
           const n=(r.product_name||"").trim();
           if(n) m["n:"+n]=r.supply_price||0;
           const c=(r.product_code||"").trim();
           if(c) m["c:"+c]=r.supply_price||0;
+          // 상품 목록 (이름 중복 제거 — 같은 이름이 있으면 마지막 값 사용)
+          if(n&&!productMap[n]){
+            productMap[n]={name:n,code:c,selling:r.selling_price||0,supply:r.supply_price||0};
+          }
         });
         setInvMap(m);
+        setInvProducts(Object.values(productMap).sort((a,b)=>a.name.localeCompare(b.name,"ko")));
       }catch{}
     })();
     return()=>{alive=false;};
@@ -6164,10 +6203,11 @@ function SaleCalcModal({ onClose }){
         }
         const supply=supplyOf(r.name,r.code);
         const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
-        return {...r,slot:s,...calc,manualBase,supply,costRatio};
+        const m=computeMargin(r.list,calc.baseDisc,selectedScenario.items||[],supply);
+        return {...r,slot:s,...calc,manualBase,supply,costRatio,...m};
       });
     });
-  },[cpn,supplyOf]);
+  },[cpn,supplyOf,computeMargin,selectedScenario]);
 
   // 사용자가 기본 할인율을 직접 수정하면 기본 판매가·최종가·원가율 즉시 재계산
   const updateBaseDisc=(rowIdx,newBase)=>{
@@ -6226,7 +6266,8 @@ function SaleCalcModal({ onClose }){
         const calc=calcReverse(r.list,s.disc,cpn);
         const supply=supplyOf(r.name,r.code);
         const costRatio=calc.finalPrice>0&&supply>0?Math.round(supply/calc.finalPrice*1000)/10:0;
-        return {...r,slot:s,...calc,supply,costRatio};
+        const m=computeMargin(r.list,calc.baseDisc,selectedScenario.items||[],supply);
+        return {...r,slot:s,...calc,supply,costRatio,...m};
       }));
       setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행) · 인벤토리 매칭 ${rows.filter(r=>supplyOf(r.name,r.code)>0).length}건`);
     }catch(err){ setShowResults(true); setProcessed([]); setSummary("파일 읽기 실패: "+(err?.message||err)); }
@@ -6443,19 +6484,66 @@ function SaleCalcModal({ onClose }){
           <details className="sec" style={sec}>
             <summary style={summarySty}>3. 단일 정가 시뮬레이션 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
+              {/* 인벤토리 상품 검색 — 선택 시 정가/공급가 자동 채움 */}
+              <div style={{position:"relative",marginBottom:10}}>
+                <label style={{fontSize:11,color:D.textMeta,marginBottom:3,display:"block"}}>인벤토리에서 상품 검색 (선택 시 정가·공급가 자동 입력)</label>
+                <input type="search" value={singleQuery}
+                  onChange={e=>{setSingleQuery(e.target.value);}}
+                  placeholder={invProducts.length===0?"인벤토리 데이터 로딩 중…":`상품명 검색 (${invProducts.length}개 인덱스됨)`}
+                  style={{...inNum,width:"min(360px,100%)",textAlign:"left"}}/>
+                {singleQuery.trim().length>0&&(()=>{
+                  const kw=singleQuery.trim().toLowerCase();
+                  const matches=invProducts.filter(p=>p.name.toLowerCase().includes(kw)).slice(0,12);
+                  if(matches.length===0) return <div style={{marginTop:4,fontSize:11,color:D.textMeta}}>일치 상품 없음</div>;
+                  return (
+                    <div style={{position:"absolute",zIndex:10,top:"100%",left:0,right:0,marginTop:2,
+                      maxHeight:280,overflowY:"auto",background:D.surface,border:`1px solid ${D.border}`,borderRadius:6,
+                      boxShadow:"0 4px 16px rgba(0,0,0,0.12)"}}>
+                      {matches.map((p,i)=>(
+                        <div key={i} onClick={()=>{
+                          setSingleSelected(p);
+                          setListPrice(p.selling||0);
+                          setSingleQuery("");
+                        }}
+                          style={{padding:"7px 10px",fontSize:12,cursor:"pointer",
+                            borderBottom:i<matches.length-1?`1px solid ${D.border}`:"none",
+                            display:"flex",justifyContent:"space-between",gap:8}}>
+                          <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                          <span style={{color:D.textMeta,fontSize:11,whiteSpace:"nowrap"}}>
+                            ₩{wonFmt(p.selling||0)} · 공급 ₩{wonFmt(p.supply||0)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
               <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:14,background:D.surfaceAlt,borderRadius:6}}>
                 <label style={{fontSize:12,color:D.textSub,minWidth:40}}>정가</label>
                 <input type="range" min="50000" max="300000" step="1000" value={Math.min(300000,Math.max(50000,listPrice||50000))}
-                  onChange={e=>setListPrice(parseInt(e.target.value)||0)} style={{flex:1,minWidth:120,accentColor:D.black}}/>
+                  onChange={e=>{setListPrice(parseInt(e.target.value)||0);setSingleSelected(null);}} style={{flex:1,minWidth:120,accentColor:D.black}}/>
                 <input type="number" min="0" step="1000" value={listPrice}
-                  onChange={e=>setListPrice(Math.max(0,parseInt(e.target.value)||0))} style={inNum}/>
+                  onChange={e=>{setListPrice(Math.max(0,parseInt(e.target.value)||0));setSingleSelected(null);}} style={inNum}/>
                 <span style={{fontSize:12,color:D.textSub}}>원</span>
+                {singleSelected&&(
+                  <span style={{marginLeft:"auto",fontSize:11,color:D.blue,fontWeight:600,
+                    background:"#eef3ff",border:`1px solid ${D.blue}55`,borderRadius:4,padding:"3px 8px"}}>
+                    📌 {singleSelected.name} · 공급가 ₩{wonFmt(singleSelected.supply||0)}
+                    <button onClick={()=>setSingleSelected(null)}
+                      style={{marginLeft:6,background:"none",border:"none",color:D.textMeta,cursor:"pointer",padding:0,fontSize:12}}>✕</button>
+                  </span>
+                )}
               </div>
-              {single&&(
+              {single&&(()=>{
+                // 공급가 매칭 (선택된 상품 우선, 없으면 invMap 에서 자동 매칭)
+                const supply=singleSelected?singleSelected.supply:supplyOf(singleSelected?.name||"",singleSelected?.code||"");
+                const m=computeMargin(listPrice,single.baseDisc,selectedScenario.items||[],supply);
+                const costRatio=single.finalPrice>0&&supply>0?Math.round(supply/single.finalPrice*1000)/10:0;
+                return (
                 <div style={{marginTop:12,padding:16,background:D.surface,border:`1px solid ${D.border}`,borderRadius:10}}>
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,background:slot.bg,color:slot.color}}>{slot.name}</span>
-                    <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}%</span>
+                    <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]} · 쿠폰율 {cpn}% · 수수료 {m.feeRate}%</span>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10}}>
                     {[
@@ -6465,16 +6553,27 @@ function SaleCalcModal({ onClose }){
                       {l:"기본 판매가 (I열)",v:`₩${wonFmt(single.basePrice)}`,hl:true},
                       {l:"최종 노출가",v:`₩${wonFmt(single.finalPrice)}`},
                       {l:"최종 할인율 (쿠폰 포함)",v:`${single.finalDisc}%`,c:slot.color},
+                      {l:`자사 매출 (자사부담 차감)`,v:`₩${wonFmt(m.revenue)}`},
+                      {l:`채널 수수료 (${m.feeRate}%)`,v:`-₩${wonFmt(m.fee)}`,c:D.textSub},
+                      {l:`자사 정산 (수수료 차감)`,v:`₩${wonFmt(m.net)}`},
+                      ...(supply>0?[
+                        {l:"공급가",v:`₩${wonFmt(supply)}`},
+                        {l:"마진",v:`₩${wonFmt(m.margin)} (${m.marginRate}%)`,c:m.margin>=0?D.green:D.red,hl:true},
+                        {l:"원가율",v:`${costRatio}%`,c:costRatio>=50?D.red:costRatio>=35?D.amber:D.green},
+                      ]:[
+                        {l:"공급가 / 마진 / 원가율",v:"인벤토리 매칭 필요",c:D.textMeta},
+                      ]),
                     ].map((s,i)=>(
                       <div key={i} style={{padding:"10px 12px",borderRadius:6,
                         background:s.hl?"#eef3ff":D.surfaceAlt,border:s.hl?`1px solid ${D.blue}`:"none"}}>
                         <div style={{fontSize:10,color:D.textMeta,marginBottom:4}}>{s.l}</div>
-                        <div style={{fontSize:16,fontWeight:600,color:s.hl?D.blue:(s.c||D.text)}}>{s.v}</div>
+                        <div style={{fontSize:s.l==="공급가 / 마진 / 원가율"?12:16,fontWeight:600,color:s.hl?D.blue:(s.c||D.text)}}>{s.v}</div>
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
           </details>
 
@@ -6505,7 +6604,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","공급가","원가율"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","공급가","원가율","마진","마진율"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -6547,6 +6646,16 @@ function SaleCalcModal({ onClose }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,
                                 color:r.supply>0?(r.costRatio>=50?D.red:r.costRatio>=35?D.amber:D.green):D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`${r.costRatio}%`:"—"}
+                              </td>
+                              <td title={`자사 매출 ₩${wonFmt(r.revenue||0)} − 수수료 ${r.feeRate}% ₩${wonFmt(r.fee||0)} − 공급가 ₩${wonFmt(r.supply||0)} = 마진`}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
+                                  color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
+                                {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
+                              </td>
+                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
+                                color:r.supply>0?((r.marginRate||0)>=20?D.green:(r.marginRate||0)>=10?D.text:D.red):D.textMeta,
+                                fontWeight:700,whiteSpace:"nowrap"}}>
+                                {r.supply>0?`${r.marginRate||0}%`:"—"}
                               </td>
                             </tr>
                           ))}
