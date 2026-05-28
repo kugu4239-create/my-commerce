@@ -4055,25 +4055,37 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   return (
     <div style={{overflowX:"auto",marginTop:6,display:"flex",justifyContent:"center"}}>
       <table style={{borderCollapse:"collapse",fontSize:compact?10:11}}>
-        <thead><tr>
-          <th style={{...th,textAlign:"left"}}>상품군</th>
-          {m.cols.map((c,ci)=>(
-            <th key={c.key} style={{...th,...divAt(c,ci)}} title={c.label}>
-              {c.name?(
-                <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <thead>
+          {/* Row 1: Case N 라벨 — 별도 행으로 분리해 컬럼 좌측 디바이더가 라벨 위로 올라오지 않게 함 */}
+          {m.cols.some(c=>c.combo&&c.caseNum)&&(
+            <tr>
+              <th style={{padding:"0 0 4px",border:"none"}}/>
+              {m.cols.map(c=>(
+                <th key={"case"+c.key} style={{padding:"0 8px 4px",border:"none",textAlign:"center"}}>
                   {c.combo&&c.caseNum&&(
-                    <span style={{fontSize:compact?9:10,fontWeight:700,color:D.blue,
-                      letterSpacing:"0.04em",marginBottom:2}}>
+                    <span style={{fontSize:compact?9:10,fontWeight:700,color:D.blue,letterSpacing:"0.04em"}}>
                       Case {c.caseNum}
                     </span>
                   )}
-                  <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                  <span style={{color:c.combo?D.blue:D.textMeta}}>{c.sub}</span>
-                </div>
-              ):c.label}
-            </th>
-          ))}
-        </tr></thead>
+                </th>
+              ))}
+            </tr>
+          )}
+          {/* Row 2: 기존 컬럼 헤더 (디바이더는 이 행부터 시작) */}
+          <tr>
+            <th style={{...th,textAlign:"left"}}>상품군</th>
+            {m.cols.map((c,ci)=>(
+              <th key={c.key} style={{...th,...divAt(c,ci)}} title={c.label}>
+                {c.name?(
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+                    <span style={{maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                    <span style={{color:c.combo?D.blue:D.textMeta}}>{c.sub}</span>
+                  </div>
+                ):c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
         <tbody>
           {m.rows.map((r,i)=>(
             <tr key={i}>
@@ -4838,8 +4850,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     const visiblePins=pins.slice(0,PIN_LIMIT);
     const hiddenCount=Math.max(0,pins.length-PIN_LIMIT);
     return (
-    <div style={{marginTop:10}}>
-      {/* 상단 정보 행 */}
+    <div style={{marginTop:30}}>
+      {/* 상단 정보 행 — 프로모션명 아래 3배 여백 (10 → 30) */}
       <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
         <div style={{flex:"0 0 auto",minWidth:120}}>
           <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>기간</div>
@@ -5579,7 +5591,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     const ichg=(p.start_date&&p.start_date.slice(0,10)<=today)?promoRevenueChg(p,revenues,storeSales).chg:null;
                     const canImpact=!!(p.start_date&&p.start_date.slice(0,10)<=today);
                     return (
-                    <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130,flexWrap:"wrap"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,paddingRight:130,flexWrap:"wrap",marginTop:14}}>
                       <span style={{width:7,height:7,borderRadius:"50%",background:chColor(p.platform),flexShrink:0}}/>
                       <span style={{fontSize:11,color:D.textMeta}}>{p.platform}</span>
                       <b style={{fontSize:28,color:D.black,lineHeight:1.2}}>{p.name}</b>
