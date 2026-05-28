@@ -6206,6 +6206,8 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   //   (직전 동기간도 lenDays 기준이라 같은 만큼 하루 당겨짐) · 종료 다음날부터는 전체 기간 집계
   //   - 어제가 시작일보다 이르면(시작 당일) 시작일로 클램프
   const isOngoing=promoEndRaw>=todayStr;
+  // 오늘 시작(혹은 미래 시작) — 비교/그래프가 의미 없으므로 "아직 집계 전" 안내로 대체
+  const startsToday=promoStart>=todayStr;
   const promoEnd=isOngoing
     ?(yesterdayStr>=promoStart?yesterdayStr:promoStart)
     :promoEndRaw;
@@ -6343,39 +6345,51 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           </div>
         </div>
 
-        {/* 매출 요약 */}
-        <div style={{display:"flex",gap:14,marginTop:14,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
-          <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
-            <span style={{color:D.textMeta}}>직전 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(prevTotal)}</b>
-          </div>
-          <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
-            <span style={{color:D.textMeta}}>프로모션 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(promoTotal)}</b>
-          </div>
-          {chg!==null&&(
-            <div style={{padding:"7px 12px",background:chg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:chg>=0?D.green:D.red}}>
-              <span>증감</span> <b style={{marginLeft:6}}>{chg>=0?"+":""}{chg.toFixed(1)}%</b>
+        {startsToday?(
+          <div style={{margin:"18px 0 22px",padding:"40px 24px",background:D.surfaceAlt,
+            border:`1px dashed ${D.border}`,borderRadius:8,textAlign:"center"}}>
+            <div style={{fontSize:15,fontWeight:700,color:D.text,marginBottom:6}}>아직 집계 전</div>
+            <div style={{fontSize:12,color:D.textSub,lineHeight:1.7}}>
+              오늘 시작한 프로모션입니다 · 익일부터 일자별 매출이 집계되어 비교 그래프가 표시됩니다.
             </div>
-          )}
-        </div>
-
-        {/* 일별 매출 추이 */}
-        <div style={{marginTop:6,marginBottom:18}}>
-          <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
-            일별 매출 — 직전 동일기간(점선) → 프로모션 기간(실선)
           </div>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={dailyRevenue} margin={{top:30,right:24,left:0,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
-              <XAxis dataKey="date" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"/>
-              <YAxis tick={{fontSize:10,fill:D.textMeta}} tickFormatter={v=>fmtWonShort(v)}/>
-              <Tooltip formatter={(v)=>v==null?"":fmtWon(v)} labelFormatter={d=>d}/>
-              <ReferenceLine x={promoStart} stroke={D.red} strokeDasharray="4 3"
-                label={{value:"프로모션 시작",position:"insideTop",offset:-18,fill:D.red,fontSize:11,fontWeight:600}}/>
-              <Line type="monotone" dataKey="prev"  name="직전 매출"  stroke={D.textMeta} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false}/>
-              <Line type="monotone" dataKey="promo" name="프로모션 매출" stroke={chColor(ch)||D.blue} strokeWidth={2} dot={false} connectNulls={false}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        ):(
+          <>
+            {/* 매출 요약 */}
+            <div style={{display:"flex",gap:14,marginTop:14,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
+              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
+                <span style={{color:D.textMeta}}>직전 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(prevTotal)}</b>
+              </div>
+              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
+                <span style={{color:D.textMeta}}>프로모션 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(promoTotal)}</b>
+              </div>
+              {chg!==null&&(
+                <div style={{padding:"7px 12px",background:chg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:chg>=0?D.green:D.red}}>
+                  <span>증감</span> <b style={{marginLeft:6}}>{chg>=0?"+":""}{chg.toFixed(1)}%</b>
+                </div>
+              )}
+            </div>
+
+            {/* 일별 매출 추이 */}
+            <div style={{marginTop:6,marginBottom:18}}>
+              <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+                일별 매출 — 직전 동일기간(점선) → 프로모션 기간(실선)
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={dailyRevenue} margin={{top:30,right:24,left:0,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:D.textMeta}} interval="preserveStartEnd"/>
+                  <YAxis tick={{fontSize:10,fill:D.textMeta}} tickFormatter={v=>fmtWonShort(v)}/>
+                  <Tooltip formatter={(v)=>v==null?"":fmtWon(v)} labelFormatter={d=>d}/>
+                  <ReferenceLine x={promoStart} stroke={D.red} strokeDasharray="4 3"
+                    label={{value:"프로모션 시작",position:"insideTop",offset:-18,fill:D.red,fontSize:11,fontWeight:600}}/>
+                  <Line type="monotone" dataKey="prev"  name="직전 매출"  stroke={D.textMeta} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false}/>
+                  <Line type="monotone" dataKey="promo" name="프로모션 매출" stroke={chColor(ch)||D.blue} strokeWidth={2} dot={false} connectNulls={false}/>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        )}
 
         {/* 핀셋 상품 — 전/후 비교 (핀셋 상품 있을 때만 노출) */}
         {pinned.length>0&&(
