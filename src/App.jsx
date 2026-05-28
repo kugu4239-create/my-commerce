@@ -4114,11 +4114,24 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     const next=ex.includes(g)?ex.filter(x=>x!==g):[...ex,g];
     const n=[...coupons];n[i]={...c,excludeGroups:next};setCoupons(n);
   };
+  // 중복 가능 여부 토글 — 양방향으로 반영해 두 쿠폰의 stacksWith 가 동기화되도록
   const toggleStacksWith=(i,otherName)=>{
     const c=coupons[i];
     const cur=Array.isArray(c.stacksWith)?c.stacksWith:[];
-    const next=cur.includes(otherName)?cur.filter(x=>x!==otherName):[...cur,otherName];
-    const n=[...coupons];n[i]={...c,stacksWith:next};setCoupons(n);
+    const turningOn=!cur.includes(otherName);
+    const ownName=couponDisplayName(c,i);
+    const arr=[...coupons];
+    arr[i]={...c,stacksWith:turningOn?[...cur,otherName]:cur.filter(x=>x!==otherName)};
+    const targetIdx=coupons.findIndex((other,j)=>j!==i&&couponDisplayName(other,j)===otherName);
+    if(targetIdx>=0){
+      const t=arr[targetIdx];
+      const tCur=Array.isArray(t.stacksWith)?t.stacksWith:[];
+      arr[targetIdx]={...t,
+        stacksWith:turningOn
+          ?(tCur.includes(ownName)?tCur:[...tCur,ownName])
+          :tCur.filter(x=>x!==ownName)};
+    }
+    setCoupons(arr);
   };
 
   const cellInp={background:D.surface,border:`1px solid ${D.border}`,borderRadius:5,
