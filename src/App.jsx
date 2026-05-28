@@ -6651,6 +6651,16 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
           </>
         )}
 
+        {/* 할인율 매트릭스 — 그래프 아래 (프로모션 카드와 동일 뷰 재사용) */}
+        {computeDiscountMatrix(promo.discount_plan||{}).hasGroup&&(
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+              할인율 매트릭스
+            </div>
+            <DiscountPlanView plan={promo.discount_plan} marks={promo.discount_marks||{}} compact={false}/>
+          </div>
+        )}
+
         {/* 핀셋 상품 — 전/후 비교 (핀셋 상품 있을 때만 노출) */}
         {pinned.length>0&&(
           <div style={{marginBottom:18}}>
