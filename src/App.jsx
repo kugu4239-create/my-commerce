@@ -6440,16 +6440,31 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       setStackCoupons([]);setScenarioIdx(0);
                     },
                   },
-                ].map((p,i)=>(
-                  <button key={i} type="button" onClick={p.apply} title={p.title}
-                    style={{flex:"1 1 280px",maxWidth:340,minWidth:240,background:"transparent",
-                      border:`1px dashed ${D.black}`,borderRadius:6,padding:"12px 14px",fontSize:11,cursor:"pointer",
-                      color:D.text,fontFamily:"inherit",letterSpacing:"-0.01em",lineHeight:1.55,textAlign:"left",
-                      display:"flex",flexDirection:"column",gap:6}}>
-                    <span style={{fontWeight:700,fontSize:11,color:D.black}}>{p.title}</span>
-                    <span style={{fontSize:11,color:D.textSub,fontWeight:400}}>{p.detail}</span>
-                  </button>
-                ))}
+                ].map((p,i)=>{
+                  // 현재 상태가 해당 프리셋과 일치하면 active (다크 컬러 전환)
+                  const active=(()=>{
+                    const s0=stackCoupons[0];
+                    if(i===0) return cpnPrimary===15&&primaryType==="cart"&&stackCoupons.length===0;
+                    if(i===1) return cpnPrimary===15&&primaryType==="cart"&&stackCoupons.length===1
+                      &&s0?.type==="product"&&Number(s0?.rate)===10;
+                    if(i===2) return cpnPrimary===29&&primaryType==="share"&&Number(primaryShareRate)===40
+                      &&stackCoupons.length===0;
+                    return false;
+                  })();
+                  return (
+                    <button key={i} type="button" onClick={p.apply} title={p.title}
+                      style={{flex:"1 1 280px",maxWidth:340,minWidth:240,
+                        background:active?D.black:"transparent",
+                        border:`1px ${active?"solid":"dashed"} ${D.black}`,
+                        borderRadius:6,padding:"12px 14px",fontSize:11,cursor:"pointer",
+                        color:active?"#fff":D.text,fontFamily:"inherit",letterSpacing:"-0.01em",lineHeight:1.55,textAlign:"left",
+                        display:"flex",flexDirection:"column",gap:6,
+                        boxShadow:active?"0 2px 8px rgba(0,0,0,0.18)":"none"}}>
+                      <span style={{fontWeight:700,fontSize:11,color:active?"#fff":D.black}}>{p.title}</span>
+                      <span style={{fontSize:11,color:active?"rgba(255,255,255,0.85)":D.textSub,fontWeight:400}}>{p.detail}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {/* 기본 쿠폰 행 */}
