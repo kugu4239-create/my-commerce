@@ -8932,8 +8932,9 @@ function parseInvFile(file,onResult,onError){
       if(!raw||raw.length<2){onError(uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)"));return;}
       const headers=raw[0].map(h=>String(h||"").trim());
       const colMap=mapInvCols(headers);
-      const FIELD_LABELS={product_name:"상품명",current_stock_qty:"현재고",snapshot_date:"데이터날짜",first_inbound_date:"처음입고일"};
-      const required=["product_name","current_stock_qty","snapshot_date","first_inbound_date"];
+      // 데이터날짜 컬럼은 더 이상 필수 아님 — 업로드 시점에 사용자가 직접 선택. 파일에 있으면 기본값으로 활용.
+      const FIELD_LABELS={product_name:"상품명",current_stock_qty:"현재고",first_inbound_date:"처음입고일"};
+      const required=["product_name","current_stock_qty","first_inbound_date"];
       const missing=required.filter(f=>colMap[f]===undefined).map(f=>FIELD_LABELS[f]);
       if(missing.length>0){
         onError(uploadErrColumns({
@@ -8972,7 +8973,7 @@ function parseInvFile(file,onResult,onError){
             _r_monthly:getNum("_r_monthly"),
           }:{}),
         };
-      }).filter(r=>r.product_name&&r.snapshot_date&&r.first_inbound_date);
+      }).filter(r=>r.product_name&&r.first_inbound_date);
       onResult(rows);
     }catch(err){onError(uploadErrParse(String(err?.message||err)));}
   };
@@ -8993,6 +8994,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   const [histLoading,setHistLoading]=useState(false);
   const [conflictInfo,setConflictInfo]=useState(null);
   const [showModal,setShowModal]=useState(false);
+  const [dateModalOpen,setDateModalOpen]=useState(false);
   const [histFilter,setHistFilter]=useState("");
   const [selDates,setSelDates]=useState(new Set());
   const [delConfirm,setDelConfirm]=useState(false);
@@ -9031,8 +9033,10 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
     parseInvFile(f,parsed=>{
       setUploadStatus(null);setStatusMsg("");
       if(!parsed.length){setUploadStatus("error");setStatusMsg("유효한 데이터 행이 없습니다");return;}
+      // 파일에 데이터날짜 컬럼이 있으면 기본값으로, 없으면 오늘 날짜를 기본값으로
       const dates=[...new Set(parsed.map(r=>r.snapshot_date).filter(Boolean))].sort();
-      setSnapDate(dates[dates.length-1]||null);
+      const today=new Date().toISOString().slice(0,10);
+      setSnapDate(dates[dates.length-1]||today);
       setParsedRows(parsed);
     },err=>{setUploadStatus("error");setStatusMsg(err);});
   },[]);
@@ -9047,7 +9051,8 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
         if(de) throw new Error(de.message);
       }
       // Strip reorder-specific fields before inserting to inventory_snapshot
-      const invRows=parsedRows.map(({_r_avail,_r_incoming,_r_weekly,_r_monthly,...rest})=>rest);
+      // 모든 행의 snapshot_date 를 사용자가 선택한 snapDate 로 통일 (파일 컬럼은 더 이상 신뢰하지 않음)
+      const invRows=parsedRows.map(({_r_avail,_r_incoming,_r_weekly,_r_monthly,...rest})=>({...rest,snapshot_date:snapDate}));
       const CHUNK=500;
       let insertedAny=false;
       for(let i=0;i<invRows.length;i+=CHUNK){
@@ -9112,7 +9117,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           <div style={{marginBottom:6}}>
             <span style={{color:"#7EC8A4",fontWeight:700,fontSize:13}}>인벤토리 트렌드</span>
             <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
-              {["상품명","상품코드","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량","데이터날짜"].map(c=>(
+              {["상품명","상품코드","옵션","판매가","공급가","현재고","처음입고일","처음입고수량","누적입고","마지막입고일","마지막입고수량","마지막배송일","누적배송수량"].map(c=>(
                 <span key={c} style={{background:"rgba(126,200,164,0.1)",border:"1px solid rgba(126,200,164,0.25)",
                   borderRadius:4,padding:"1px 6px",fontSize:12,color:"#7EC8A4",fontFamily:"monospace"}}>{c}</span>
               ))}
@@ -9149,14 +9154,43 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       {parsedRows.length>0&&uploadStatus!=="uploading"&&(
         <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:DC.sub}}>
-            데이터날짜: <span style={{color:DC.text,fontWeight:600}}>{snapDate}</span>
-            {` — ${parsedRows.length.toLocaleString()}개 SKU`}
+            {`${parsedRows.length.toLocaleString()}개 SKU 준비됨`}
           </span>
-          <button onClick={handleUploadClick}
+          <button onClick={()=>setDateModalOpen(true)}
             style={{background:"#7EC8A4",color:"#0a1a12",border:"none",borderRadius:6,
               padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
             업로드
           </button>
+        </div>
+      )}
+
+      {/* 데이터 날짜 선택 모달 — 업로드 버튼 클릭 시 노출 */}
+      {dateModalOpen&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:12,padding:28,maxWidth:380,width:"90%"}}>
+            <div style={{fontWeight:700,fontSize:15,color:"#F0F0F0",marginBottom:8}}>데이터 날짜 선택</div>
+            <div style={{fontSize:12,color:"#888",lineHeight:1.7,marginBottom:16}}>
+              업로드할 인벤토리 스냅샷의 기준 날짜를 선택해 주세요. 모든 행에 동일한 날짜가 적용됩니다.
+              <br/>{parsedRows.length.toLocaleString()}개 SKU
+            </div>
+            <input type="date" value={snapDate||""} onChange={e=>setSnapDate(e.target.value)}
+              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:"1px solid #333",
+                borderRadius:6,padding:"8px 10px",fontSize:13,color:"#F0F0F0",colorScheme:"dark",
+                fontFamily:"inherit",marginBottom:18}}/>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setDateModalOpen(false)}
+                style={{background:"transparent",color:"#888",border:"1px solid #333",borderRadius:6,padding:"6px 16px",fontSize:12,cursor:"pointer"}}>취소</button>
+              <button onClick={()=>{
+                if(!snapDate) return;
+                setDateModalOpen(false);
+                handleUploadClick();
+              }} disabled={!snapDate}
+                style={{background:snapDate?"#7EC8A4":"#3a4a40",color:"#0a1a12",border:"none",borderRadius:6,
+                  padding:"6px 16px",fontSize:12,fontWeight:700,cursor:snapDate?"pointer":"default"}}>
+                확인
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
