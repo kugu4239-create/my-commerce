@@ -5498,6 +5498,39 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         )}
       </Card>
 
+      {/* 오른쪽 도트 네비 — 등록 프로모션을 수직으로 나열, 클릭 시 해당 카드로 스크롤 */}
+      {(()=>{
+        const navPromos=[...promos].filter(p=>!hiddenIds.has(p.id)).sort((a,b)=>a.start_date>b.start_date?1:-1);
+        if(navPromos.length===0) return null;
+        return (
+          <div data-capture-hide style={{position:"fixed",right:10,top:"22vh",zIndex:80,
+            display:"flex",flexDirection:"column",gap:6,maxHeight:"70vh",overflowY:"auto",
+            padding:"8px 10px",background:`${D.surface}f2`,border:`1px solid ${D.border}`,borderRadius:8,
+            boxShadow:"0 2px 12px rgba(0,0,0,0.08)",
+            fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+            <div style={{fontSize:9,color:D.textMeta,fontWeight:700,letterSpacing:"0.06em",marginBottom:2}}>프로모션 바로가기</div>
+            {navPromos.map(p=>(
+              <button key={p.id} onClick={()=>{
+                const el=promoCardRefs.current[p.id];
+                if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+              }} title={`${p.platform} · ${p.name}`}
+                style={{display:"flex",alignItems:"center",gap:6,
+                  background:"transparent",border:"none",padding:"3px 4px",borderRadius:4,
+                  cursor:"pointer",textAlign:"left",fontFamily:"inherit",
+                  maxWidth:240,overflow:"hidden"}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:chColor(p.platform),flexShrink:0,
+                  border:isEnded(p)?`1px solid ${D.border}`:"none",opacity:isEnded(p)?0.55:1}}/>
+                <span style={{fontSize:10,color:D.textMeta,flexShrink:0}}>·</span>
+                <span style={{fontSize:11,color:D.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                  textDecoration:isEnded(p)?"line-through":"none",opacity:isEnded(p)?0.6:1}}>
+                  {p.platform} · {p.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* 등록된 프로모션 — 카드 목록 */}
       {promos.filter(p=>!hiddenIds.has(p.id)).length>0&&(
         <Card>
