@@ -4638,8 +4638,14 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [editPromoForm,setEditPromoForm]=useState({});
   const startEditPromo=p=>{setEditingPromoId(p.id);setEditPromoForm({name:p.name,platform:p.platform,start_date:p.start_date,end_date:p.end_date,content:p.content||p.memo||"",discount_plan:p.discount_plan||{products:[],coupons:[]},pinned_products:p.pinned_products||[],submit_date:p.submit_date||""});};
   const savePromoEdit=()=>{
+    const savedId=editingPromoId;
     patchPromo(editingPromoId,{...editPromoForm,memo:editPromoForm.content,discount_plan:cleanDiscountPlan(editPromoForm.discount_plan)});
     setEditingPromoId(null);
+    // 수정 완료 후 해당 카드로 화면 스크롤
+    setTimeout(()=>{
+      const el=promoCardRefs.current[savedId];
+      if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
+    },80);
   };
   const nowStr=new Date().toISOString().slice(0,16);
   const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
