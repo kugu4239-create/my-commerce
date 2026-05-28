@@ -6829,15 +6829,10 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
                             <span style={calcCol}>마진 금액을 정상 가격으로 나눈 정상가 대비 이익률입니다.</span>
                           </div>
-                          <div style={rowSty}>
-                            <span style={labelCol}><span>원가율</span></span>
-                            <span style={{...amtCol,color:costRatio>=50?D.red:costRatio>=35?D.amber:D.green}}>{costRatio}%</span>
-                            <span style={calcCol}>공급가를 실 판매액으로 나눈 노출가 대비 원가 비율입니다.</span>
-                          </div>
                         </>
                       ):(
                         <div style={{padding:"10px 14px",color:D.textMeta,borderTop:`6px solid ${D.surfaceAlt}`}}>
-                          공급가 미연동 — 인벤토리 매칭 시 마진 금액 / 마진율 / 원가율 자동 계산
+                          공급가 미연동 — 인벤토리 매칭 시 마진 금액 / 마진율 자동 계산
                         </div>
                       )}
                       </>
@@ -6894,7 +6889,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","원가율","마진","마진율"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마진율"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -6947,11 +6942,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`₩${wonFmt(r.supplyIncVat||Math.round(r.supply*1.1))}`:"—"}
                               </td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,
-                                color:r.supply>0?(r.costRatio>=50?D.red:r.costRatio>=35?D.amber:D.green):D.textMeta,whiteSpace:"nowrap"}}>
-                                {r.supply>0?`${r.costRatio}%`:"—"}
-                              </td>
-                              <td title={`결제액 ₩${wonFmt(r.finalPrice||0)} − 수수료(${r.feeRate}%) ₩${wonFmt(r.fee||0)} + 채널보전 ₩${wonFmt(r.channelBurden||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = 마진`}
+                              <td title={`결제액 ₩${wonFmt(r.finalPrice||0)} − 수수료(${r.feeRate}%) ₩${wonFmt(r.fee||0)} + 채널보전 ₩${wonFmt(r.channelBurden||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = 마진 (마진율 = 마진 ÷ 정상가)`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                   color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
                                 {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
