@@ -6090,10 +6090,10 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       const tInfo=COUPON_TYPE_BY_KEY[c.type];
       sc.push({label:`${tInfo.short} ${c.rate}%`,items:[c]});
     });
-    // 쌍: 장바구니 × 상품 — "장바구니 15% + 상품 10%" 형식
+    // 쌍: 상품 × 장바구니 — 상품 쿠폰을 먼저 적용한 뒤 장바구니 쿠폰 적용
     by.cart.forEach(cc=>{
       by.product.forEach(pp=>{
-        sc.push({label:`장바구니 ${cc.rate}% + 상품 ${pp.rate}%`,items:[cc,pp]});
+        sc.push({label:`상품 ${pp.rate}% + 장바구니 ${cc.rate}%`,items:[pp,cc]});
       });
     });
     sc.forEach(s=>{
