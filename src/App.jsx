@@ -6833,6 +6833,23 @@ function SaleCalcModal({ onClose }){
                     )}
                   </div>
                   {processed&&processed.length>0&&(
+                    <div style={{margin:"0 0 10px",fontSize:12,color:D.black,fontWeight:700,lineHeight:1.55}}>
+                      적용 시나리오
+                      {selectedScenario.caseNum&&<> · Case {selectedScenario.caseNum}</>}
+                      {' · '}{selectedScenario.label||`기본 쿠폰 ${cpn}%`}
+                      {(selectedScenario.items||[]).length>0&&(
+                        <> ({(selectedScenario.items||[]).map(c=>{
+                          const tInfo=COUPON_TYPE_BY_KEY[c.type];
+                          const burden=c.type==="share"
+                            ?`분담 자사${100-(c.shareRate||0)}:채널${c.shareRate||0}`
+                            :(c.burden==="channel"?"채널부담":"자사부담");
+                          return `${tInfo.short} ${c.rate}% · ${burden}`;
+                        }).join(" × ")})</>
+                      )}
+                      {' · '}유효 쿠폰율 {cpn}%
+                    </div>
+                  )}
+                  {processed&&processed.length>0&&(
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
