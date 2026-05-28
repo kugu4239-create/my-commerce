@@ -6836,6 +6836,11 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             <span style={{...totalAmt,color:m.margin>=0?D.green:D.red}}>₩{wonFmt(m.margin)}</span>
                             <span style={calcCol}>정산 금액에서 공급가를 차감한, 자사가 남기는 이익입니다.</span>
                           </div>
+                          <div style={rowSty}>
+                            <span style={labelCol}><span>마진율</span></span>
+                            <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
+                            <span style={calcCol}>마진 금액을 정상 가격으로 나눈 정상가 대비 이익률입니다.</span>
+                          </div>
                           {(()=>{
                             // 최소 마진 기본 세일율 — 마진이 0이 되는 시점의 기본 할인율(0.1% 정밀도)
                             let lastValid=null;
@@ -6860,11 +6865,6 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               </div>
                             );
                           })()}
-                          <div style={rowSty}>
-                            <span style={labelCol}><span>마진율</span></span>
-                            <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
-                            <span style={calcCol}>마진 금액을 정상 가격으로 나눈 정상가 대비 이익률입니다.</span>
-                          </div>
                         </>
                       ):(
                         <div style={{padding:"10px 14px",color:D.textMeta,borderTop:`6px solid ${D.surfaceAlt}`}}>
