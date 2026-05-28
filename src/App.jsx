@@ -6155,7 +6155,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
     const supplyIncVat=Math.round((supply||0)*1.1);       // 공급가 (세포) = 인벤토리 공급가액 × 1.1
     const margin=net-supplyIncVat;
-    const marginRate=net>0?Math.round(margin/net*1000)/10:0;
+    const marginRate=list>0?Math.round(margin/list*1000)/10:0;
     return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,marginRate,supplyIncVat};
   },[]);
   // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
@@ -6827,7 +6827,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                           <div style={rowSty}>
                             <span style={labelCol}><span>마진율</span></span>
                             <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
-                            <span style={calcCol}>마진 금액을 정산 금액으로 나눈 정산액 대비 이익률입니다.</span>
+                            <span style={calcCol}>마진 금액을 정상 가격으로 나눈 정상가 대비 이익률입니다.</span>
                           </div>
                           <div style={rowSty}>
                             <span style={labelCol}><span>원가율</span></span>
