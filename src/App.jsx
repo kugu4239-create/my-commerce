@@ -5971,7 +5971,15 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 
       {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
       {filePreview&&<FilePreviewModal file={filePreview} onClose={()=>setFilePreview(null)}/>}
-      {calcOpen&&<SaleCalcModal onClose={()=>setCalcOpen(false)}/>}
+      {calcOpen&&<SaleCalcModal onClose={()=>setCalcOpen(false)}
+        onCreatePromo={(prefill)=>{
+          setForm({name:"",platform:prefill.platform||"29CM",start_date:"",end_date:"",
+            memo:prefill.content||"",content:prefill.content||"",files:[],
+            discount_plan:prefill.discount_plan||{products:{period:{start:"",end:""},rows:[]},coupons:[]},
+            pinned_products:[],submit_date:""});
+          setShowForm(true);
+          setCalcOpen(false);
+        }}/>}
       {pinnedModal&&<PinnedListModal promo={pinnedModal.promo} onToggleHighlight={idx=>togglePinHighlight(pinnedModal.promo,idx)} onClose={()=>setPinnedModal(null)}/>}
     </div>
   );
@@ -6040,7 +6048,7 @@ const calcReverse=(list,p75,coupon)=>{
   const finalDisc=list>0?Math.round((1-finalPrice/list)*1000)/10:0;
   return {baseDisc, basePrice, finalPrice, finalDisc};
 };
-function SaleCalcModal({ onClose }){
+function SaleCalcModal({ onClose, onCreatePromo }){
   const [coupon,setCoupon]=useState(10);
   const [primaryType,setPrimaryType]=useState("cart"); // 기본 쿠폰 타입
   const [primaryBurden,setPrimaryBurden]=useState("self"); // self=자사부담, channel=채널부담
@@ -6993,6 +7001,56 @@ function SaleCalcModal({ onClose }){
                             })}
                           </tbody>
                         </table>
+                        {onCreatePromo&&(
+                          <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
+                            <button onClick={()=>{
+                              // 상품군 → products.rows
+                              const productRows=rows.map(g=>{
+                                const avgBd=g.count>0?Math.round(g.bdSum/g.count*10)/10:0;
+                                return {group:`${g.slot.name} (${g.slot.range})`,rate:String(avgBd)};
+                              });
+                              // 입력된 모든 쿠폰 → coupons (시나리오에 포함된 1개가 아니라 입력된 전체)
+                              const couponRows=allCoupons.map((c,i)=>{
+                                const tInfo=COUPON_TYPE_BY_KEY[c.type];
+                                return {
+                                  ...emptyCouponRow(c.type),
+                                  name:`${tInfo.short} 쿠폰 ${i===0?"(기본)":`#${i}`}`,
+                                  rate:String(c.rate),
+                                  burden:c.burden,
+                                  shareRate:c.shareRate,
+                                };
+                              });
+                              // 프로모션 내용 텍스트 — 상품군별 평균/마진 + 적용 시나리오
+                              const groupLines=rows.map(g=>{
+                                const avgBd=g.count>0?Math.round(g.bdSum/g.count*10)/10:0;
+                                const avgFr=g.count>0?Math.round(g.frSum/g.count*10)/10:0;
+                                const avgM=g.matched>0?Math.round(g.mSum/g.matched*10)/10:null;
+                                return `• ${g.slot.name} ${g.slot.range} · ${g.count}개 · 기본할인 ${avgBd}% · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마진율 ${avgM}% (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
+                              }).join("\n");
+                              const couponLines=allCoupons.map(c=>{
+                                const tInfo=COUPON_TYPE_BY_KEY[c.type];
+                                const burdenLabel=c.type==="share"
+                                  ?`분담 자사${100-(c.shareRate||0)}:채널${c.shareRate||0}`
+                                  :(c.burden==="channel"?"채널부담":"자사부담");
+                                return `• ${tInfo.label} ${c.rate}% · ${burdenLabel}`;
+                              }).join("\n");
+                              const scenarioLine=selectedScenario.caseNum?`Case ${selectedScenario.caseNum} · ${selectedScenario.label} · 케이스 총합 할인율 ${cpn}%`:`기본 쿠폰 ${cpn}%`;
+                              const content=`[적용 시나리오]\n${scenarioLine}\n\n[입력된 쿠폰]\n${couponLines}\n\n[상품군별 결론]\n${groupLines}`;
+                              onCreatePromo({
+                                platform:"29CM",
+                                content,
+                                discount_plan:{
+                                  products:{period:{start:"",end:""},rows:productRows},
+                                  coupons:couponRows,
+                                },
+                              });
+                            }}
+                              style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+                                padding:"9px 22px",fontSize:11,cursor:"pointer",fontWeight:700}}>
+                              + 29CM 프로모션 추가하기
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
