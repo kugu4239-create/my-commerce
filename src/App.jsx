@@ -6728,33 +6728,35 @@ function SaleCalcModal({ onClose }){
                       <div style={totalSty}>
                         <span style={labelCol}><span>{N.basePrice} 기본 판매 가격</span></span>
                         <span style={totalAmt}>₩{wonFmt(single.basePrice)}</span>
-                        <span style={calcCol}>= {N.list}{single.baseDisc>0?` − ${N.baseDisc}`:""}</span>
+                        <span style={calcCol}>정상 가격에서 기본 할인을 차감한 노출 판매가입니다.</span>
                       </div>
                       {couponSteps.length>0?couponSteps.map((s,i)=>{
-                        const burdenInline=s.slfPart>0&&s.chPart>0
-                          ? `${s.burdenDesc} · 자사 ₩${wonFmt(s.slfPart)} / 채널 ₩${wonFmt(s.chPart)}`
-                          : (s.chPart>0?`${s.burdenDesc} · 채널 ₩${wonFmt(s.chPart)}`:`${s.burdenDesc}`);
-                        const refBase=i===0?N.basePrice:`(${N.basePrice} − ${N.coupons.slice(0,i).join(" − ")})`;
+                        const burdenSentence = s.c.type==="share"
+                          ? `자사 ${100-(s.c.shareRate||0)}% / 채널 ${s.c.shareRate||0}%로 분담합니다 (자사 ₩${wonFmt(s.slfPart)} · 채널 ₩${wonFmt(s.chPart)}).`
+                          : (s.c.burden==="channel"
+                              ? `29CM 채널이 전액 부담합니다 (채널 보전 ₩${wonFmt(s.chPart)}).`
+                              : `자사가 전액 부담하는 할인액입니다.`);
+                        const refLabel=i===0?"기본 판매가":`직전 단계 판매가`;
                         return (
                           <div key={`cs${i}`} style={rowSty}>
                             <span style={labelCol}>
                               <span>{N.coupons[i]} {s.tInfo.label} 금액</span>
                             </span>
                             <span style={{...amtCol,color:D.red}}>−₩{wonFmt(s.cut)} <span style={{color:D.textMeta,fontWeight:400}}>({s.c.rate}%)</span></span>
-                            <span style={calcCol}>{refBase} × {s.c.rate}% · {burdenInline}</span>
+                            <span style={calcCol}>{refLabel} × {(s.c.rate/100).toFixed(s.c.rate%1===0?2:3)} · {burdenSentence}</span>
                           </div>
                         );
                       }):(
                         <div style={rowSty}>
                           <span style={labelCol}><span style={{color:D.textMeta}}>쿠폰 미적용</span></span>
                           <span style={{...amtCol,color:D.textMeta}}>—</span>
-                          <span style={calcCol}></span>
+                          <span style={calcCol}>적용된 쿠폰이 없습니다.</span>
                         </div>
                       )}
                       <div style={totalSty}>
                         <span style={labelCol}><span>{N.finalPrice} 실제 판매 가격</span></span>
                         <span style={{...totalAmt,color:D.black}}>₩{wonFmt(single.finalPrice)}</span>
-                        <span style={calcCol}>= {couponSumExpr} · 최종 노출 가격 / 고객 결제액 · 최종 할인율 {single.finalDisc}%</span>
+                        <span style={calcCol}>쿠폰까지 적용된 최종 노출가로, 고객이 실제 결제하는 금액입니다 (케이스 총합 할인율 {single.finalDisc}%).</span>
                       </div>
 
                       {/* 정산 흐름 */}
@@ -6762,21 +6764,21 @@ function SaleCalcModal({ onClose }){
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.fee} 채널 수수료</span></span>
                         <span style={{...amtCol,color:D.red}}>−₩{wonFmt(m.fee)} <span style={{color:D.textMeta,fontWeight:400}}>({m.feeRate}%)</span></span>
-                        <span style={calcCol}>{N.finalPrice} × {m.feeRate}% · 28% − 기본 할인율 10%당 1%p</span>
+                        <span style={calcCol}>실 판매액 × {(m.feeRate/100).toFixed(2)} · 기본 28%에서 기본 할인율 10%당 1%p씩 차감되어 {m.feeRate}%가 부과됩니다.</span>
                       </div>
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.refund} 쿠폰 채널 보전 금액</span></span>
                         <span style={{...amtCol,color:m.channelBurden>0?D.blue:D.textMeta}}>+₩{wonFmt(m.channelBurden)}</span>
                         <span style={calcCol}>
                           {channelDetail.length>0
-                            ? channelDetail.map((s)=>`${s.tInfo.label} ${s.c.type==="share"?`(분담 채널 ${s.c.shareRate}%)`:"(채널 전액 부담)"} ₩${wonFmt(s.chPart)}`).join(" / ")
-                            : "해당 없음"}
+                            ? `${channelDetail.map((s)=>`${s.tInfo.label} ${s.c.type==="share"?`(분담 채널 ${s.c.shareRate}%)`:"(채널 전액 부담)"} ₩${wonFmt(s.chPart)}`).join(" / ")} · 채널이 부담한 쿠폰 금액을 자사에 보전합니다.`
+                            : "채널이 부담하는 쿠폰이 없어 보전 금액이 발생하지 않습니다."}
                         </span>
                       </div>
                       <div style={totalSty}>
                         <span style={labelCol}><span>{N.netSettle} 정산 금액</span></span>
                         <span style={{...totalAmt,color:D.black}}>₩{wonFmt(m.net)}</span>
-                        <span style={calcCol}>= {N.finalPrice} − {N.fee} + {N.refund}</span>
+                        <span style={calcCol}>실 판매액에서 수수료를 빼고 채널 보전을 더한, 자사가 실제로 수령하는 정산액입니다.</span>
                       </div>
 
                       {/* 마진 흐름 */}
@@ -6786,22 +6788,22 @@ function SaleCalcModal({ onClose }){
                           <div style={rowSty}>
                             <span style={labelCol}><span>{N.supply} 공급가(부가세 합)</span></span>
                             <span style={{...amtCol,color:D.red}}>−₩{wonFmt(supplyIncVat)}</span>
-                            <span style={calcCol}>인벤토리 공급가액 ₩{wonFmt(supply)} × 1.1 (부가세 10%)</span>
+                            <span style={calcCol}>인벤토리 공급가액 ₩{wonFmt(supply)} × 1.1 · 부가세 10%를 포함한 실 원가입니다.</span>
                           </div>
                           <div style={totalSty}>
                             <span style={labelCol}><span>{N.margin} 마진 금액</span></span>
                             <span style={{...totalAmt,color:m.margin>=0?D.green:D.red}}>₩{wonFmt(m.margin)}</span>
-                            <span style={calcCol}>= {N.netSettle} − {N.supply}</span>
+                            <span style={calcCol}>정산 금액에서 공급가를 차감한, 자사가 남기는 이익입니다.</span>
                           </div>
                           <div style={rowSty}>
                             <span style={labelCol}><span>마진율</span></span>
                             <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
-                            <span style={calcCol}>{N.margin} ÷ {N.netSettle}</span>
+                            <span style={calcCol}>마진 금액을 정산 금액으로 나눈 정산액 대비 이익률입니다.</span>
                           </div>
                           <div style={rowSty}>
                             <span style={labelCol}><span>원가율</span></span>
                             <span style={{...amtCol,color:costRatio>=50?D.red:costRatio>=35?D.amber:D.green}}>{costRatio}%</span>
-                            <span style={calcCol}>{N.supply} ÷ {N.finalPrice}</span>
+                            <span style={calcCol}>공급가를 실 판매액으로 나눈 노출가 대비 원가 비율입니다.</span>
                           </div>
                         </>
                       ):(
