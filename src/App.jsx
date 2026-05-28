@@ -6716,13 +6716,13 @@ function SaleCalcModal({ onClose }){
                       <div style={{...rowSty,borderTop:"none"}}>
                         <span style={labelCol}><span>{N.list} 정상 가격</span></span>
                         <span style={amtCol}>₩{wonFmt(listPrice)}</span>
-                        <span style={calcCol}>판매가 기준</span>
+                        <span style={calcCol}></span>
                       </div>
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
                           <span style={labelCol}><span>{N.baseDisc} 기본 할인 금액</span></span>
                           <span style={{...amtCol,color:D.red}}>−₩{wonFmt(frontCut)} <span style={{color:D.textMeta,fontWeight:400}}>({single.baseDisc}%)</span></span>
-                          <span style={calcCol}>{N.list} × {single.baseDisc}% · 자사 부담</span>
+                          <span style={calcCol}>정상 가격 × {(single.baseDisc/100).toFixed(single.baseDisc%1===0?2:3)} · 자사가 부담하는 프런트 할인액입니다.</span>
                         </div>
                       )}
                       <div style={totalSty}>
