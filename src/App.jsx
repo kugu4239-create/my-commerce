@@ -5955,21 +5955,22 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
   },[cpnPrimary]);
   const hlCol=couponCols.reduce((best,c)=>Math.abs(c-cpnPrimary)<Math.abs(best-cpnPrimary)?c:best,couponCols[0]);
 
-  // (구간, 기본 쿠폰)에서 P75 목표를 맞추는 프런트 할인율 역산 + 올림 규칙
-  const derivedFront=(slot,primary)=>{
+  // (구간, 기본 쿠폰) → {raw 역산값, front 올림 적용 후, final 검증 최종}
+  const compute=(slot,primary)=>{
     const factorFinal=1-slot.disc/100, factorCoupon=(1-primary/100)*stackFactor;
-    if(factorCoupon<=0) return 0;
+    if(factorCoupon<=0) return {raw:0,front:0,final:0};
     let bf=factorFinal/factorCoupon; if(bf>1) bf=1;
-    return roundUpBaseDisc(Math.round((1-bf)*1000)/10);
+    const raw=Math.round((1-bf)*1000)/10;
+    const front=roundUpBaseDisc(raw);
+    const final=Math.round((1-(1-front/100)*(1-primary/100)*stackFactor)*1000)/10;
+    return {raw,front,final};
   };
-  // 검증: 도출된 프런트 + 기본 쿠폰 + 중복 누적 시 실제 최종 할인율
-  const finalDisc=(front,primary)=>Math.round((1-(1-front/100)*(1-primary/100)*stackFactor)*1000)/10;
 
   const handleApply=(slot,primary)=>{
-    const front=derivedFront(slot,primary);
+    const {raw,front,final}=compute(slot,primary);
     onApply({tier:slot,baseDisc:front,primaryCoupon:primary,stackRates});
-    setRecent({tierName:slot.name,range:slot.range,baseDisc:front,primaryCoupon:primary,
-      stackRates:[...stackRates],finalDisc:finalDisc(front,primary),p75:slot.disc});
+    setRecent({tierName:slot.name,range:slot.range,baseDisc:front,raw,primaryCoupon:primary,
+      stackRates:[...stackRates],finalDisc:final,p75:slot.disc});
     setTimeout(()=>setRecent(r=>r&&r.tierName===slot.name&&r.primaryCoupon===primary?null:r),2500);
   };
 
@@ -6030,7 +6031,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
           <div>
             <div style={{fontSize:12,fontWeight:700,color:D.black,marginBottom:6}}>
               2. 구간 × 쿠폰율 — 도출 프런트 할인율
-              <span style={{color:D.textMeta,fontWeight:400}}> · 굵은 값=프런트 · 작은 값=쿠폰 적용 후 실제 최종 할인율 · ★=입력 기본 쿠폰 · 셀 클릭 시 자동 입력</span>
+              <span style={{color:D.textMeta,fontWeight:400}}> · 굵은 값=올림 규칙 적용 후 프런트 · raw=올림 전 역산값(다를 때만 노출) · → =쿠폰 적용 후 실제 최종 할인율 · ★=입력 기본 쿠폰 · 셀 클릭 시 자동 입력</span>
             </div>
             <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -6057,9 +6058,9 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
                         <div style={{fontSize:9,color:D.textSub,fontWeight:500}}>{s.range}</div>
                       </td>
                       {couponCols.map(c=>{
-                        const front=derivedFront(s,c);
-                        const fin=finalDisc(front,c);
+                        const {raw,front,final:fin}=compute(s,c);
                         const isHL=c===hlCol;
+                        const rounded=raw!==front;
                         return(
                           <td key={c} onClick={()=>handleApply(s,c)}
                             style={{padding:"7px 9px",textAlign:"center",cursor:"pointer",
@@ -6068,6 +6069,9 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
                               outline:isHL?`2px solid ${s.color}`:"none",outlineOffset:"-2px",
                               transition:"background 0.12s"}}>
                             <div style={{fontSize:13,fontWeight:700,color:s.color,lineHeight:1.2}}>{front}%</div>
+                            {rounded&&(
+                              <div style={{fontSize:9,color:D.textMeta,lineHeight:1.2,opacity:.8}}>raw {raw}%</div>
+                            )}
                             <div style={{fontSize:9,color:D.textMeta,lineHeight:1.3}}>→ {fin}%</div>
                           </td>
                         );
@@ -6088,7 +6092,9 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
               borderRadius:6,fontSize:12,color:D.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{color:D.green,fontWeight:700}}>✓ 추가됨</span>
               <span>
-                {recent.tierName} ({recent.range}) · 기본 {recent.baseDisc}% · 쿠폰 {recent.primaryCoupon}%
+                {recent.tierName} ({recent.range}) · 프런트 {recent.baseDisc}%
+                {recent.raw!==undefined&&recent.raw!==recent.baseDisc&&` (raw ${recent.raw}%)`}
+                {" · 쿠폰 "}{recent.primaryCoupon}%
                 {recent.stackRates&&recent.stackRates.length>0&&` (+중복 ${recent.stackRates.filter(r=>r>0).join("/")}%)`}
                 {" → 최종 "}{recent.finalDisc}%
               </span>
