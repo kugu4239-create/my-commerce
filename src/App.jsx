@@ -5598,8 +5598,6 @@ const calcClassify=list=>{for(const s of CALC_SLOTS) if(list>=s.min&&list<s.max)
 const wonFmt=n=>new Intl.NumberFormat("ko-KR").format(Math.round(n));
 // 기본 할인율 일의 자리가 6~9면 다음 10단위로 올림 (예: 7→10, 16~19→20, 26~29→30)
 const roundUpBaseDisc=d=>d%10>=6?Math.ceil(d/10)*10:d;
-// 실제 최종 세일율을 5% 단위 구간으로 분류 (예: 23.5% → "20~25%")
-const saleTier=d=>{const lo=Math.floor(d/5)*5;return `${lo}~${lo+5}%`;};
 const calcReverse=(list,p75,coupon)=>{
   const factorFinal=1-p75/100, factorCoupon=1-coupon/100;
   if(factorCoupon<=0) return {baseDisc:0,basePrice:list,finalPrice:list,finalDisc:0};
@@ -5787,7 +5785,6 @@ function SaleCalcModal({ onClose }){
                       {l:"기본 판매가 (I열)",v:`₩${wonFmt(single.basePrice)}`,hl:true},
                       {l:"최종 노출가",v:`₩${wonFmt(single.finalPrice)}`},
                       {l:"최종 할인율 (쿠폰 포함)",v:`${single.finalDisc}%`,c:slot.color},
-                      {l:"세일 구간 (5%)",v:saleTier(single.finalDisc),c:slot.color},
                     ].map((s,i)=>(
                       <div key={i} style={{padding:"10px 12px",borderRadius:6,
                         background:s.hl?"#eef3ff":D.surfaceAlt,border:s.hl?`1px solid ${D.blue}`:"none"}}>
@@ -5828,7 +5825,7 @@ function SaleCalcModal({ onClose }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","세일 구간 (5%)"].map((h,i)=>(
+                          {["상품명","정가 (E열)","분류","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
@@ -5848,9 +5845,6 @@ function SaleCalcModal({ onClose }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
-                                <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,background:r.slot.bg,color:r.slot.color,fontWeight:600,fontSize:10}}>{saleTier(r.finalDisc)}</span>
-                              </td>
                             </tr>
                           ))}
                         </tbody>
