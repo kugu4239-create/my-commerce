@@ -6129,7 +6129,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   },[listPrice,slot.disc,cpn,singleManualBase]);
   // 부담 주체별 차감액 계산 → 자사 매출 → 수수료 → 마진
   // 프런트 할인(기본 할인율)은 항상 자사부담. 각 쿠폰은 burden(self/channel) 혹은 share 의 shareRate(채널부담률) 에 따라 분배.
-  // 정산 모델 (해석 B + 수수료 정상가 기준): 수수료는 정상가 기준 부과,
+  // 정산 모델 (해석 B + 수수료 기본 판매가 기준): 수수료는 기본 판매가 기준 부과,
   //                      채널 보전(channelBurden) 은 수수료 없이 그대로 정산에 가산.
   //                      net = finalPrice − fee + channelBurden
   // 부가세 처리 (옵션 B · 양쪽 VAT 포함): 인벤토리 공급가는 세전(공급가액) 이므로
@@ -6154,9 +6154,10 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     });
     // 채널 수수료율 = 28% − 기본 세일율(baseDisc) 10% 단위마다 -1%p (최소 0)
     const fr=Math.max(0,28-Math.floor(baseDisc/10));
+    const basePriceR=Math.round(list*(1-baseDisc/100)/10)*10; // 기본 판매가 (쿠폰 적용 전)
     const finalPriceR=Math.round(priceAfter/10)*10;       // 고객 결제액 (10원 단위)
     const channelBurdenR=Math.round(channelBurden/10)*10; // 채널 보전 (10원 단위)
-    const fee=Math.round(list*(fr/100)/10)*10;            // 수수료는 정상가 기준 (29CM 정산 규정)
+    const fee=Math.round(basePriceR*(fr/100)/10)*10;      // 수수료는 기본 판매가 기준
     const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
     const supplyIncVat=Math.round((supply||0)*1.1);       // 공급가 (세포) = 인벤토리 공급가액 × 1.1
     const margin=net-supplyIncVat;
@@ -6810,7 +6811,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.fee} 채널 수수료</span></span>
                         <span style={{...amtCol,color:D.red}}>−₩{wonFmt(m.fee)} <span style={{color:D.textMeta,fontWeight:400}}>({m.feeRate}%)</span></span>
-                        <span style={calcCol}>정상 가격 × {(m.feeRate/100).toFixed(2)} · 기본 28%에서 기본 할인율 10%당 1%p씩 차감되어 {m.feeRate}%가 부과됩니다.</span>
+                        <span style={calcCol}>{N.basePrice} 기본 판매 가격 × {(m.feeRate/100).toFixed(2)} · 기본 28%에서 기본 할인율 10%당 1%p씩 차감되어 {m.feeRate}%가 부과됩니다.</span>
                       </div>
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.refund} 쿠폰 채널 보전 금액</span></span>
@@ -6977,7 +6978,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
                               </td>
-                              <td title={`수수료율 ${r.feeRate}% × 정상가 ₩${wonFmt(r.list||0)}`}
+                              <td title={`수수료율 ${r.feeRate}% × 기본 판매가 ₩${wonFmt(r.basePrice||0)}`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.red,whiteSpace:"nowrap"}}>
                                 −₩{wonFmt(r.fee||0)} <span style={{fontSize:11,color:D.textMeta}}>({r.feeRate}%)</span>
                               </td>
