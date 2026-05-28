@@ -6070,15 +6070,18 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
   // 입력된 모든 쿠폰 (이름·타입·부담 주체·분담률 포함)
   const allCoupons=useMemo(()=>{
-    const list=[{rate:cpnPrimary,type:primaryType,burden:primaryBurden,shareRate:primaryShareRate,label:"기본"}];
+    // 장바구니 쿠폰은 자사가 발행할 수 없으므로 burden 을 항상 channel 로 고정
+    const burdenFor=(type,b)=>type==="cart"?"channel":(b||"self");
+    const list=[{rate:cpnPrimary,type:primaryType,burden:burdenFor(primaryType,primaryBurden),shareRate:primaryShareRate,label:"기본"}];
     stackCoupons.forEach((s,i)=>{
       const r=Number(s.rate);
       const rate=isNaN(r)||r<0?0:Math.min(r,60);
       const sr=Number(s.shareRate);
+      const type=s.type||"product";
       list.push({
         rate,
-        type:s.type||"product",
-        burden:s.burden||"self",
+        type,
+        burden:burdenFor(type,s.burden),
         shareRate:isNaN(sr)?50:Math.max(0,Math.min(100,sr)),
         label:`Case ${i+1}`,
       });
@@ -6448,8 +6451,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
-              {/* 부담 주체 세그먼트 — share 타입은 shareRate 로 분담 결정되어 숨김 */}
-              {primaryType!=="share"&&(
+              {/* 부담 주체 세그먼트 — share/cart 타입은 자사 부담 옵션 없음 (share=shareRate, cart=29CM 채널 발행) */}
+              {primaryType==="product"&&(
                 <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
                   {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
                     const active=primaryBurden===b.k;
@@ -6494,8 +6497,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                         fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
                   })}
                 </div>
-                {/* 부담 주체 세그먼트 — share 타입은 shareRate 로 분담 결정되어 숨김 */}
-                {t!=="share"&&(
+                {/* 부담 주체 세그먼트 — share/cart 타입은 자사 부담 옵션 없음 */}
+                {t==="product"&&(
                   <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
                     {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
                       const active=burden===b.k;
