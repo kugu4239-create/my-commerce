@@ -6928,9 +6928,10 @@ function SaleCalcModal({ onClose }){
                     const groups={};
                     processed.forEach(r=>{
                       const k=r.slot.id;
-                      if(!groups[k]) groups[k]={slot:r.slot,count:0,matched:0,mSum:0,frSum:0};
+                      if(!groups[k]) groups[k]={slot:r.slot,count:0,matched:0,mSum:0,frSum:0,bdSum:0};
                       groups[k].count++;
                       groups[k].frSum+=(r.finalDisc||0);
+                      groups[k].bdSum+=(r.baseDisc||0);
                       if((r.supply||0)>0){groups[k].matched++;groups[k].mSum+=(r.marginRate||0);}
                     });
                     const rows=Object.values(groups).sort((a,b)=>a.slot.min-b.slot.min);
@@ -6938,11 +6939,11 @@ function SaleCalcModal({ onClose }){
                       <div style={{marginTop:18,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
                         <div style={{padding:"9px 12px",fontSize:12,fontWeight:700,color:D.black,
                           background:D.surfaceAlt,borderBottom:`1px solid ${D.borderMid}`}}>
-                          상품군별 결론 — 평균 할인율 / 평균 마진율
+                          상품군별 결론 — 평균 기본 할인율 / 평균 최종 할인율 / 평균 마진율
                         </div>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                           <thead><tr>
-                            {["상품군","상품 수","평균 최종 할인율","평균 마진율"].map((h,i)=>(
+                            {["상품군","상품 수","평균 기본 할인율","평균 최종 할인율","평균 마진율"].map((h,i)=>(
                               <th key={i} style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
                                 textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surface,whiteSpace:"nowrap"}}>{h}</th>
                             ))}
@@ -6950,6 +6951,7 @@ function SaleCalcModal({ onClose }){
                           <tbody>
                             {rows.map((g,i)=>{
                               const avgFr=g.count>0?Math.round(g.frSum/g.count*10)/10:0;
+                              const avgBd=g.count>0?Math.round(g.bdSum/g.count*10)/10:0;
                               const avgM=g.matched>0?Math.round(g.mSum/g.matched*10)/10:null;
                               return (
                                 <tr key={i}>
@@ -6958,6 +6960,8 @@ function SaleCalcModal({ onClose }){
                                     {g.slot.name} <span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>{g.slot.range}</span>
                                   </td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>{g.count}</td>
+                                  <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
+                                    color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{avgBd}%</td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                     color:g.slot.color,fontWeight:600,whiteSpace:"nowrap"}}>{avgFr}%</td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,whiteSpace:"nowrap",
