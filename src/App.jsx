@@ -3921,6 +3921,31 @@ function normalizePlan(p){
       ?{...c,stacksWith:stackNames.filter(n=>n!==couponDisplayName(c,i))}
       :c);
   }
+  // stacksWith 정리
+  // 1) 현재 쿠폰 이름 목록에 없는 stale 항목 제거 + 자기 참조 제거
+  // 2) 양방향 동기(union): A 가 B 를 listed 하면 B 도 A 를 listed 하도록 채움
+  //    (편집기의 symmetric toggle 이 있어도, 레거시 데이터·이름 변경 등으로 한쪽만 남는 경우가 있어 매 로드 시 보강)
+  if(coupons.length>0){
+    const displayNames=coupons.map((c,i)=>couponDisplayName(c,i));
+    const nameSet=new Set(displayNames);
+    coupons=coupons.map((c,i)=>{
+      const ownName=displayNames[i];
+      const sw=(c.stacksWith||[]).filter(n=>nameSet.has(n)&&n!==ownName);
+      return {...c,stacksWith:sw};
+    });
+    coupons=coupons.map((c,i)=>{
+      const ownName=displayNames[i];
+      const sw=[...(c.stacksWith||[])];
+      coupons.forEach((other,j)=>{
+        if(j===i) return;
+        const oName=displayNames[j];
+        if((other.stacksWith||[]).includes(ownName)&&!sw.includes(oName)){
+          sw.push(oName);
+        }
+      });
+      return {...c,stacksWith:sw};
+    });
+  }
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
     return{
@@ -4262,13 +4287,45 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 </span>
                 {(()=>{
                   const nStacks=(row.stacksWith||[]).length;
+                  const isStack=nStacks>0;
+                  const canToggle=coupons.length>1;
+                  // 클릭 시 단독↔중복 일괄 전환 (다른 쿠폰들과 양방향 동기)
+                  const flip=()=>{
+                    if(!canToggle) return;
+                    const ownName=couponDisplayName(row,i);
+                    const others=coupons.map((c,j)=>couponDisplayName(c,j)).filter((_,j)=>j!==i);
+                    const arr=[...coupons];
+                    if(isStack){
+                      // 모두 해제: 자기 stacksWith 비우고, 다른 쿠폰들의 stacksWith 에서 자기 이름 제거
+                      arr[i]={...row,stacksWith:[]};
+                      coupons.forEach((other,j)=>{
+                        if(j===i) return;
+                        arr[j]={...other,stacksWith:(other.stacksWith||[]).filter(n=>n!==ownName)};
+                      });
+                    } else {
+                      // 모두 연결
+                      arr[i]={...row,stacksWith:others};
+                      coupons.forEach((other,j)=>{
+                        if(j===i) return;
+                        const oCur=other.stacksWith||[];
+                        arr[j]={...other,stacksWith:oCur.includes(ownName)?oCur:[...oCur,ownName]};
+                      });
+                    }
+                    setCoupons(arr);
+                  };
                   return (
-                    <span title={nStacks>0?`다른 쿠폰 ${nStacks}개와 중복 적용 설정됨 (아래 칩으로 변경)`:"단독 쿠폰 — 아래 칩으로 중복 적용 쿠폰 선택"}
-                      style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,borderRadius:6,whiteSpace:"nowrap",
-                        border:`1px solid ${nStacks>0?D.blue:D.border}`,
-                        background:nStacks>0?`${D.blue}14`:D.surface,color:nStacks>0?D.blue:D.textMeta}}>
-                      {nStacks>0?`중복 ${nStacks}`:"단독"}
-                    </span>
+                    <button onClick={flip} disabled={!canToggle}
+                      title={canToggle
+                        ?(isStack?`모든 쿠폰과 중복 적용 중 (${nStacks}개) · 클릭 시 단독으로 전환`:"단독 쿠폰 · 클릭 시 모든 쿠폰과 중복으로 전환")
+                        :"쿠폰이 1개일 때는 단독으로만 사용됩니다"}
+                      style={{flexShrink:0,padding:"5px 11px",fontSize:11,fontWeight:600,
+                        cursor:canToggle?"pointer":"default",borderRadius:6,whiteSpace:"nowrap",
+                        border:`1px solid ${isStack?D.blue:D.border}`,
+                        background:isStack?`${D.blue}14`:D.surface,
+                        color:isStack?D.blue:D.textMeta,
+                        fontFamily:"inherit"}}>
+                      {isStack?`중복 ${nStacks}`:"단독"}
+                    </button>
                   );
                 })()}
                 <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
