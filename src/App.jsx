@@ -4385,8 +4385,9 @@ function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compa
   const hasAny=cleanedProducts.length||cleanedCoupons.length||p.products.period.start;
   if(!hasAny) return <span style={{color:D.textMeta,fontSize:11}}>—</span>;
 
-  const badgeFs=compact?11:12;
-  const badgePad=compact?"2px 7px":"3px 10px";
+  // 뱃지 크기: compact 11/2x7, non-compact 도 -30% 스케일로 같게 작게 유지
+  const badgeFs=compact?11:9;
+  const badgePad=compact?"2px 7px":"2px 7px";
   return (
     <div style={{fontSize:compact?11:12,lineHeight:1.75,minWidth:compact?140:0,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
       {/* 상품군 할인율 — 뱃지 형태. 클릭 시 흑백 전환 마킹(저장·공유) */}
@@ -4884,7 +4885,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       </div>
       {/* 하단: 할인율 매트릭스 — 카드 전체 폭으로 펼침 */}
       {computeDiscountMatrix(p.discount_plan||{}).hasGroup&&(
-        <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${D.border}`}}>
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px dashed ${D.border}`}}>
           <div style={{fontSize:10,color:D.textMeta,marginBottom:6,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>할인율 매트릭스</div>
           <DiscountPlanView plan={p.discount_plan} marks={p.discount_marks||{}}
             onToggleGroup={g=>toggleMark(p,"groups",g)} onToggleCircle={k=>toggleMark(p,"circles",k)}
@@ -5461,7 +5462,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
               return (
               <div key={p.id} ref={el=>{promoCardRefs.current[p.id]=el;}}
-                style={{position:"relative",border:`1px solid ${D.border}`,borderRadius:10,
+                style={{position:"relative",border:`1px solid ${D.borderMid}`,borderRadius:10,
                   padding:"14px 16px",background:D.surface,opacity:ended&&!isEditing?0.78:1,
                   fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.7}}>
                 {isEditing?(
@@ -5710,7 +5711,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[...hiddenLog].sort((a,b)=>b.hidden_at>a.hidden_at?1:-1).map(h=>(
-              <div key={h.id} style={{position:"relative",border:`1px solid ${D.border}`,borderRadius:10,
+              <div key={h.id} style={{position:"relative",border:`1px solid ${D.borderMid}`,borderRadius:10,
                 padding:"14px 16px",background:D.surface,opacity:0.85,
                 fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.7}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
