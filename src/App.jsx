@@ -6355,17 +6355,19 @@ function SaleCalcModal({ onClose }){
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
-              {/* 부담 주체 세그먼트 */}
-              <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                  const active=primaryBurden===b.k;
-                  return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
-                    title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                    style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                      border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
-                      fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                })}
-              </div>
+              {/* 부담 주체 세그먼트 — share 타입은 shareRate 로 분담 결정되어 숨김 */}
+              {primaryType!=="share"&&(
+                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
+                    const active=primaryBurden===b.k;
+                    return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
+                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
+                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
+                  })}
+                </div>
+              )}
               <input type="number" min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
               <span style={{fontSize:12,color:D.blue}}>%</span>
@@ -6399,17 +6401,20 @@ function SaleCalcModal({ onClose }){
                         fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
                   })}
                 </div>
-                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                    const active=burden===b.k;
-                    return <button key={b.k} type="button"
-                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
-                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                        border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
-                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                  })}
-                </div>
+                {/* 부담 주체 세그먼트 — share 타입은 shareRate 로 분담 결정되어 숨김 */}
+                {t!=="share"&&(
+                  <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                    {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
+                      const active=burden===b.k;
+                      return <button key={b.k} type="button"
+                        onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
+                        title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
+                        style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                          border:"none",padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",
+                          fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
+                    })}
+                  </div>
+                )}
                 <input type="number" min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:70}}/>
