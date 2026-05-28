@@ -5596,11 +5596,17 @@ const CALC_SLOTS=[
 const CALC_CONDS={S1:"정가 < ₩100,000",S2:"₩100,000 ≤ 정가 < ₩150,000",S3:"₩150,000 ≤ 정가 < ₩200,000",S4:"₩200,000 ≤ 정가 < ₩250,000",S5:"정가 ≥ ₩250,000"};
 const calcClassify=list=>{for(const s of CALC_SLOTS) if(list>=s.min&&list<s.max) return s; return CALC_SLOTS[CALC_SLOTS.length-1];};
 const wonFmt=n=>new Intl.NumberFormat("ko-KR").format(Math.round(n));
+// 기본 할인율 일의 자리가 6~9면 다음 10단위로 올림 (예: 7→10, 16~19→20, 26~29→30)
+const roundUpBaseDisc=d=>d%10>=6?Math.ceil(d/10)*10:d;
 const calcReverse=(list,p75,coupon)=>{
   const factorFinal=1-p75/100, factorCoupon=1-coupon/100;
   if(factorCoupon<=0) return {baseDisc:0,basePrice:list,finalPrice:list};
   let baseFactor=factorFinal/factorCoupon; if(baseFactor>1) baseFactor=1;
-  return {baseDisc:Math.round((1-baseFactor)*1000)/10, basePrice:Math.round(list*baseFactor/10)*10, finalPrice:Math.round(Math.round(list*baseFactor/10)*10*factorCoupon/10)*10};
+  // 올림 규칙 적용 후, 올림된 할인율로 가격 재계산
+  const baseDisc=roundUpBaseDisc(Math.round((1-baseFactor)*1000)/10);
+  baseFactor=1-baseDisc/100;
+  const basePrice=Math.round(list*baseFactor/10)*10;
+  return {baseDisc, basePrice, finalPrice:Math.round(basePrice*factorCoupon/10)*10};
 };
 function SaleCalcModal({ onClose }){
   const [coupon,setCoupon]=useState(10);
@@ -5695,6 +5701,12 @@ function SaleCalcModal({ onClose }){
             <span>P75 할인율 = 최종 목표</span>
             <span>판매가 <b style={{color:D.black}}>10원 단위</b></span>
           </div>
+          <div style={{fontSize:11.5,lineHeight:1.65,color:D.textSub,padding:"10px 12px",
+            background:"#fff8ec",border:`1px solid ${D.amber}`,borderRadius:6,marginBottom:12}}>
+            <b style={{color:D.black}}>할인율 올림 규칙</b> — 29CM 할인 규정상 10% 단위마다 판매수수료가 1%p 낮아지므로,
+            기본 할인율의 <b style={{color:D.black}}>일의 자리가 6~9이면 다음 10% 단위로 올림</b>합니다 (예: 7%→10%, 16~19%→20%).
+            올림된 할인율로 기본 판매가·최종 노출가를 재계산합니다.
+          </div>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"12px 14px",
             background:"#eef3ff",border:`1px solid ${D.blue}`,borderRadius:6,marginBottom:16}}>
             <label style={{fontSize:13,fontWeight:700,color:D.blue}}>쿠폰율 (전 페이지 적용)</label>
@@ -5732,12 +5744,15 @@ function SaleCalcModal({ onClose }){
             <div style={{padding:"4px 14px 14px"}}>
               <pre style={{fontFamily:"'SF Mono',Menlo,Consolas,monospace",fontSize:11,padding:12,
                 background:D.surfaceAlt,borderRadius:6,lineHeight:1.7,whiteSpace:"pre",overflowX:"auto",color:D.text,margin:0}}>{`// 최종 = 기본 × 쿠폰 (곱연산)
-기본 판매가 (I열) = 정가 × (1 − P75/100) ÷ (1 − 쿠폰율/100)
 기본 할인율       = 1 − (1 − P75/100) ÷ (1 − 쿠폰율/100)
+  └ 일의 자리 6~9면 다음 10%로 올림 (예: 7→10%, 16~19→20%)
+    (29CM 규정: 10% 단위마다 판매수수료 1%p 절감)
+기본 판매가 (I열) = 정가 × (1 − 기본 할인율/100)
 최종 노출가       = 기본 판매가 × (1 − 쿠폰율/100)
-                  = 정가 × (1 − P75/100)         (검증)
 
 ※ 판매가는 10원 단위 반올림 (29CM 규정)
+※ 올림 규칙 적용 시 올림된 할인율로 가격을 재계산하므로
+   최종 할인이 P75 목표보다 커질 수 있음
 ※ 쿠폰율이 P75보다 크면 기본 할인 0%, 정가 그대로 I열 입력`}</pre>
             </div>
           </details>
@@ -5765,7 +5780,7 @@ function SaleCalcModal({ onClose }){
                       {l:"최종 목표 (P75)",v:`${slot.disc}%`,c:slot.color},
                       {l:"기본 할인율",v:`${single.baseDisc}%`},
                       {l:"기본 판매가 (I열)",v:`₩${wonFmt(single.basePrice)}`,hl:true},
-                      {l:"최종 노출가 (검증)",v:`₩${wonFmt(single.finalPrice)}`},
+                      {l:"최종 노출가",v:`₩${wonFmt(single.finalPrice)}`},
                     ].map((s,i)=>(
                       <div key={i} style={{padding:"10px 12px",borderRadius:6,
                         background:s.hl?"#eef3ff":D.surfaceAlt,border:s.hl?`1px solid ${D.blue}`:"none"}}>
