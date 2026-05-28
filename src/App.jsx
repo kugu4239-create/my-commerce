@@ -6803,6 +6803,27 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             <span style={{...totalAmt,color:m.margin>=0?D.green:D.red}}>₩{wonFmt(m.margin)}</span>
                             <span style={calcCol}>정산 금액에서 공급가를 차감한, 자사가 남기는 이익입니다.</span>
                           </div>
+                          {(()=>{
+                            // 최소 마진 기본 세일율 — 마진이 0이 되는 시점의 기본 할인율(0.1% 정밀도)
+                            let lastValid=null;
+                            for(let bd=0; bd<=80.05; bd=Math.round((bd+0.1)*10)/10){
+                              const mm=computeMargin(listPrice,bd,selectedScenario.items||[],supply);
+                              if(mm.margin>=0) lastValid=bd;
+                            }
+                            return (
+                              <div style={rowSty}>
+                                <span style={labelCol}><span>최소 마진 기본 세일율</span></span>
+                                <span style={{...amtCol,color:lastValid!=null?D.text:D.textMeta}}>
+                                  {lastValid!=null?`${lastValid}%`:"적용 불가"}
+                                </span>
+                                <span style={calcCol}>
+                                  {lastValid!=null
+                                    ? `마진이 0원이 되는 시점의 기본 할인율로, 이 비율을 초과하면 적자가 발생합니다 (현재 기본 할인율 ${single.baseDisc}%).`
+                                    : "현재 쿠폰/시나리오 조건에서는 어떤 기본 할인율로도 마진이 0 이상이 되지 않습니다."}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           <div style={rowSty}>
                             <span style={labelCol}><span>마진율</span></span>
                             <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
