@@ -7540,6 +7540,7 @@ function OwnMallSaleCalcModal({ onClose }){
   const [coupons,setCoupons]=useState([]);        // [{name,rate}] 멤버십 쿠폰(교차 불가)
   const [selCoupon,setSelCoupon]=useState(-1);    // -1 = 쿠폰 없음
   const [limit,setLimit]=useState(50);
+  const [search,setSearch]=useState("");   // 표 내 검색 (상품명·할인율)
   const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
   const [sampleMsg,setSampleMsg]=useState("");    // 샘플 저장/로드 상태 메시지
   const modalCardRef=useRef(null);
@@ -7625,6 +7626,10 @@ function OwnMallSaleCalcModal({ onClose }){
     XLSX.writeFile(wb,`자사몰_세일율${couponName?"_"+couponName:""}_${dayjs().format("YYYYMMDD")}.xlsx`);
   };
   const numCell={padding:"4px 6px",textAlign:"right"};
+  // 표 내 검색 — 상품명 또는 할인율(%) 부분일치. 검색 중에는 전체 매칭 표시(limit 미적용).
+  const q=search.trim().toLowerCase();
+  const filtered=q?rows.filter(r=>(r.name||"").toLowerCase().includes(q)||String(r.rate).includes(q)):rows;
+  const shown=q?filtered:filtered.slice(0,limit);
   return (
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -7720,7 +7725,13 @@ function OwnMallSaleCalcModal({ onClose }){
               </div>
             )}
 
-            <div style={{overflow:"auto",maxHeight:"55vh"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="상품명 또는 할인율로 검색"
+                style={{...inNum,width:280,maxWidth:"60vw"}}/>
+              {q&&<span style={{fontSize:11,color:D.textMeta}}>{filtered.length.toLocaleString()}개 검색됨 · 전체 {rows.length.toLocaleString()}</span>}
+              {q&&<button onClick={()=>setSearch("")} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.textSub}}>✕ 초기화</button>}
+            </div>
+            <div style={{overflow:"auto",height:"55vh"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap"}}>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
@@ -7737,7 +7748,7 @@ function OwnMallSaleCalcModal({ onClose }){
                   <th style={{...numCell,fontWeight:500}}>마진율</th>
                 </tr></thead>
                 <tbody>
-                  {rows.slice(0,limit).map((r)=>(
+                  {shown.map((r)=>(
                     <tr key={r.code+r.idx} style={{borderBottom:`1px solid ${D.border}`}}>
                       <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>{r.code}</td>
                       <td style={{padding:"4px 6px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name}</td>
@@ -7760,7 +7771,7 @@ function OwnMallSaleCalcModal({ onClose }){
                   ))}
                 </tbody>
               </table>
-              {rows.length>limit&&(
+              {!q&&rows.length>limit&&(
                 <div style={{textAlign:"center",marginTop:10}}>
                   <button onClick={()=>setLimit(l=>l+100)} style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 14px",fontSize:12,cursor:"pointer",color:D.textSub}}>더 보기 ({(rows.length-limit).toLocaleString()}개 남음)</button>
                 </div>
