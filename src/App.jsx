@@ -4312,7 +4312,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                     style={cellInp} placeholder="예: 신상품, 전체"/>
                 </td>
                 <td style={{padding:"3px 4px"}}>
-                  <input type="number" value={row.rate} onChange={e=>{const n=[...productRows];n[i]={...row,rate:e.target.value};setProductRows(n);}}
+                  <input type="number" onWheel={e=>e.currentTarget.blur()} value={row.rate} onChange={e=>{const n=[...productRows];n[i]={...row,rate:e.target.value};setProductRows(n);}}
                     style={cellInp} placeholder="0" min="0" max="100"/>
                 </td>
                 <td style={{padding:"3px 4px",textAlign:"right"}}>
@@ -4399,7 +4399,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 <input value={row.name} onChange={e=>{const n=[...coupons];n[i]={...row,name:e.target.value};setCoupons(n);}}
                   style={{...cellInp,width:280,maxWidth:"100%",flex:"0 0 auto"}} placeholder="쿠폰명 (예: 신규가입 쿠폰)"/>
                 <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-                  <input type="number" value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
+                  <input type="number" onWheel={e=>e.currentTarget.blur()} value={row.rate} onChange={e=>{const n=[...coupons];n[i]={...row,rate:e.target.value};setCoupons(n);}}
                     style={{...cellInp,width:couponUnitOf(row)==="won"?86:62,textAlign:"right"}}
                     placeholder="0" min="0" max={couponUnitOf(row)==="won"?undefined:"100"}/>
                   {/* % / 원 토글 — 작은 세그먼트 */}
@@ -6275,15 +6275,12 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const v=Math.max(0,Math.min(100,Number(newBase)||0));
     setProcessed(prev=>prev.map((r,i)=>{
       if(i!==rowIdx) return r;
-      const baseFactor=1-v/100;
-      const basePrice=Math.round(r.list*baseFactor/10)*10;
-      const factorCoupon=1-cpn/100;
-      const finalPrice=Math.round(basePrice*factorCoupon/10)*10;
-      const finalDisc=r.list>0?Math.round((1-finalPrice/r.list)*1000)/10:0;
+      const basePrice=Math.round(r.list*(1-v/100)/10)*10;
       const supply=r.supply||0;
       const supplyIncVat=Math.round(supply*1.1);
-      const costRatio=finalPrice>0&&supply>0?Math.round(supplyIncVat/finalPrice*1000)/10:0;
-      return {...r,baseDisc:v,basePrice,finalPrice,finalDisc,manualBase:v,supplyIncVat,costRatio};
+      const m=computeMargin(r.list,v,selectedScenario.items||[],supply);
+      const finalDisc=r.list>0?Math.round((1-m.finalPrice/r.list)*1000)/10:0;
+      return {...r,baseDisc:v,basePrice,manualBase:v,supplyIncVat,finalDisc,...m};
     }));
   };
   const resetBaseDisc=(rowIdx)=>{
@@ -6293,8 +6290,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       const calc=calcReverse(r.list,s.disc,cpn);
       const supply=r.supply||0;
       const supplyIncVat=Math.round(supply*1.1);
-      const costRatio=calc.finalPrice>0&&supply>0?Math.round(supplyIncVat/calc.finalPrice*1000)/10:0;
-      return {...r,...calc,manualBase:undefined,supplyIncVat,costRatio};
+      const m=computeMargin(r.list,calc.baseDisc,selectedScenario.items||[],supply);
+      return {...r,...calc,manualBase:undefined,supplyIncVat,...m};
     }));
   };
   // 예시 파일 저장/로드 — 최근 업로드 1개를 Supabase 에 보관해 다른 세션에서도 즉시 미리보기
@@ -6411,6 +6408,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           }
           .salecalc details[open]>summary .chev{transform:rotate(180deg);}
           .salecalc .chev{transition:transform .2s;display:inline-block;}
+          .salecalc input[type="number"]::-webkit-inner-spin-button,
+          .salecalc input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+          .salecalc input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
           @media (max-width: 768px) {
             .salecalc-overlay { padding: 4px !important; align-items: flex-start !important; }
             .salecalc { width: 100% !important; max-width: 100% !important; max-height: calc(100vh - 8px) !important; border-radius: 8px !important; }
@@ -6515,13 +6515,13 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                   })}
                 </div>
               )}
-              <input type="number" min="0" max="60" step="1" value={coupon}
+              <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
               <span style={{fontSize:11,color:D.blue}}>%</span>
               {primaryType==="share"&&(
                 <>
                   <span style={{fontSize:11,color:D.textMeta}}>채널 분담</span>
-                  <input type="number" min="0" max="100" step="1" value={primaryShareRate}
+                  <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={primaryShareRate}
                     onChange={e=>setPrimaryShareRate(Number(e.target.value)||0)} style={{...inNum,width:60}}/>
                   <span style={{fontSize:11,color:D.textMeta}}>%</span>
                 </>
@@ -6562,14 +6562,14 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     })}
                   </div>
                 )}
-                <input type="number" min="0" max="60" step="1" value={sc.rate}
+                <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:70}}/>
                 <span style={{fontSize:11,color:D.blue}}>%</span>
                 {t==="share"&&(
                   <>
                     <span style={{fontSize:11,color:D.textMeta}}>채널 분담</span>
-                    <input type="number" min="0" max="100" step="1" value={sc.shareRate==null?50:sc.shareRate}
+                    <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={sc.shareRate==null?50:sc.shareRate}
                       onChange={e=>{const n=[...stackCoupons];n[i]={...sc,shareRate:Number(e.target.value)||0};setStackCoupons(n);}}
                       style={{...inNum,width:60}}/>
                     <span style={{fontSize:11,color:D.textMeta}}>%</span>
@@ -6699,7 +6699,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 <label style={{fontSize:11,color:D.textSub,minWidth:40}}>정가</label>
                 <input type="range" min="50000" max="300000" step="1000" value={Math.min(300000,Math.max(50000,listPrice||50000))}
                   onChange={e=>{setListPrice(parseInt(e.target.value)||0);setSingleSelected(null);}} style={{flex:1,minWidth:120,accentColor:D.black}}/>
-                <input type="number" min="0" step="1000" value={listPrice}
+                <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" step="1000" value={listPrice}
                   onChange={e=>{setListPrice(Math.max(0,parseInt(e.target.value)||0));setSingleSelected(null);}} style={inNum}/>
                 <span style={{fontSize:11,color:D.textSub}}>원</span>
                 {singleSelected&&(
@@ -6758,7 +6758,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     <span style={{fontSize:11,color:D.textSub}}>{CALC_CONDS[slot.id]}</span>
                     <span style={{marginLeft:"auto",fontSize:11,color:D.textSub,display:"flex",alignItems:"center",gap:6}}>
                       기본 할인율 직접 조정
-                      <input type="number" step="0.1" min="0" max="100"
+                      <input type="number" onWheel={e=>e.currentTarget.blur()} step="0.1" min="0" max="100"
                         value={singleManualBase!=null?singleManualBase:single.baseDisc}
                         onChange={e=>setSingleManualBase(e.target.value===""?null:Math.max(0,Math.min(100,Number(e.target.value)||0)))}
                         style={{width:64,padding:"3px 6px",fontSize:11,textAlign:"right",
@@ -7012,7 +7012,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{cpn}%</td>
                               <td style={{padding:"4px 6px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
                                 <div style={{display:"inline-flex",alignItems:"center",gap:2}}>
-                                  <input type="number" step="0.1" min="0" max="100" value={r.baseDisc}
+                                  <input type="number" onWheel={e=>e.currentTarget.blur()} step="0.1" min="0" max="100" value={r.baseDisc}
                                     onChange={e=>updateBaseDisc(i,e.target.value)}
                                     title={r.manualBase!=null?"사용자 수정 — 클릭으로 재계산값으로 복귀":"기본 역산값"}
                                     style={{width:54,padding:"3px 5px",fontSize:11,textAlign:"right",
@@ -7253,7 +7253,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
             borderRadius:6,marginBottom:14}}>
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <label style={{fontSize:13,fontWeight:700,color:D.blue}}>1. 쿠폰율 입력</label>
-              <input type="number" min="0" max="60" step="1" value={coupon}
+              <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={inNum}/>
               <span style={{fontSize:12,color:D.blue}}>% (기본)</span>
               <button onClick={()=>setStackCoupons([...stackCoupons,{rate:""}])}
@@ -7270,7 +7270,7 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
             {stackCoupons.map((sc,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
                 <span style={{fontSize:11,color:D.blue,fontWeight:600,minWidth:80}}>Case {i+1}</span>
-                <input type="number" min="0" max="60" step="1" value={sc.rate}
+                <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={inNum}/>
                 <span style={{fontSize:12,color:D.blue}}>%</span>
@@ -10619,7 +10619,7 @@ function InvBubblePlot({DC,snapshotDates,stopRef,onExportData}){
               padding:"5px 10px",fontSize:12,color:DC.text,flex:1,minWidth:120,outline:"none",fontFamily:"inherit"}}/>
           <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:DC.sub,flexShrink:0}}>
             <span>최소재고</span>
-            <input type="number" min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
+            <input type="number" onWheel={e=>e.currentTarget.blur()} min={1} value={minStock} onChange={e=>setMinStock(Math.max(1,parseInt(e.target.value)||1))}
               style={{width:52,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
                 padding:"4px 6px",fontSize:12,color:DC.text,textAlign:"center",fontFamily:"inherit"}}/>
           </div>
