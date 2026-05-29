@@ -4676,28 +4676,28 @@ function HighlightEditor({ value, onChange, placeholder, minHeight, inputStyle }
   return (
     <div>
       <div style={{display:"flex",gap:4,marginBottom:4,flexWrap:"wrap"}}>
-        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#fff59d")}
-          title="선택한 텍스트 노랑 하이라이트"
-          style={{background:"#fff59d",border:`1px solid ${D.borderMid}`,borderRadius:4,
-            padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#333"}}>
-          🖍 노랑
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#cdd9e6")}
+          title="선택한 텍스트 뮤트 블루 하이라이트"
+          style={{background:"#cdd9e6",border:`1px solid ${D.borderMid}`,borderRadius:4,
+            padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#2d3e54"}}>
+          블루
         </button>
-        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#ffd6d6")}
-          title="선택한 텍스트 빨강 하이라이트"
-          style={{background:"#ffd6d6",border:`1px solid ${D.borderMid}`,borderRadius:4,
-            padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#333"}}>
-          🖍 빨강
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#e6cdcd")}
+          title="선택한 텍스트 뮤트 레드 하이라이트"
+          style={{background:"#e6cdcd",border:`1px solid ${D.borderMid}`,borderRadius:4,
+            padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#5b3030"}}>
+          레드
         </button>
-        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#d2eaff")}
-          title="선택한 텍스트 파랑 하이라이트"
-          style={{background:"#d2eaff",border:`1px solid ${D.borderMid}`,borderRadius:4,
-            padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#333"}}>
-          🖍 파랑
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#cfcec8")}
+          title="선택한 텍스트 연한 차콜 하이라이트"
+          style={{background:"#cfcec8",border:`1px solid ${D.borderMid}`,borderRadius:4,
+            padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#3d3d36"}}>
+          차콜
         </button>
         <button type="button" onMouseDown={e=>e.preventDefault()} onClick={clearHighlight}
           title="선택 영역 하이라이트 해제"
           style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
-            padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>
+            padding:"3px 10px",fontSize:11,cursor:"pointer",color:D.textSub}}>
           해제
         </button>
       </div>
