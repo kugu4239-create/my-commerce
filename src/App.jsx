@@ -4845,7 +4845,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
     },80);
   };
-  const nowStr=new Date().toISOString().slice(0,16);
+  // 한국시(KST) 현재 시각 YYYY-MM-DDTHH:MM — end_date(KST 기준)와 비교해 종료 판정 (UTC면 9시간 늦게 종료 처리됨)
+  const nowStr=new Date(Date.now()+32400000).toISOString().slice(0,16);
   const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
   const readFileData=(file,cb)=>{const r=new FileReader();r.onload=e=>cb({name:file.name,type:file.type,data:e.target.result});r.readAsDataURL(file);};
 
