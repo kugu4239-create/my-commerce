@@ -4631,6 +4631,88 @@ function PinnedProductPicker({ value=[], onChange, orders=[] }) {
   );
 }
 
+// 프로모션 상세 내용 — 하이라이트 가능한 contentEditable 에디터
+function HighlightEditor({ value, onChange, placeholder, minHeight, inputStyle }){
+  const ref=useRef(null);
+  const lastSyncRef=useRef("");
+  useEffect(()=>{
+    if(ref.current&&(value||"")!==lastSyncRef.current){
+      ref.current.innerHTML=value||"";
+      lastSyncRef.current=value||"";
+    }
+  },[value]);
+  const updateOnChange=()=>{
+    if(!ref.current) return;
+    const html=ref.current.innerHTML;
+    lastSyncRef.current=html;
+    onChange(html);
+  };
+  const applyHighlight=(color)=>{
+    const sel=window.getSelection();
+    if(!sel||sel.rangeCount===0||sel.isCollapsed) return;
+    try{
+      document.execCommand("styleWithCSS",false,true);
+      document.execCommand("hiliteColor",false,color);
+    }catch{
+      try{ document.execCommand("backColor",false,color); }catch{}
+    }
+    updateOnChange();
+  };
+  const clearHighlight=()=>{
+    const sel=window.getSelection();
+    if(!sel||sel.rangeCount===0||sel.isCollapsed) return;
+    try{
+      document.execCommand("styleWithCSS",false,true);
+      document.execCommand("hiliteColor",false,"transparent");
+    }catch{}
+    updateOnChange();
+  };
+  const handlePaste=e=>{
+    e.preventDefault();
+    const text=(e.clipboardData||window.clipboardData).getData("text/plain");
+    document.execCommand("insertText",false,text);
+    updateOnChange();
+  };
+  return (
+    <div>
+      <div style={{display:"flex",gap:4,marginBottom:4,flexWrap:"wrap"}}>
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#fff59d")}
+          title="선택한 텍스트 노랑 하이라이트"
+          style={{background:"#fff59d",border:`1px solid ${D.borderMid}`,borderRadius:4,
+            padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#333"}}>
+          🖍 노랑
+        </button>
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#ffd6d6")}
+          title="선택한 텍스트 빨강 하이라이트"
+          style={{background:"#ffd6d6",border:`1px solid ${D.borderMid}`,borderRadius:4,
+            padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#333"}}>
+          🖍 빨강
+        </button>
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>applyHighlight("#d2eaff")}
+          title="선택한 텍스트 파랑 하이라이트"
+          style={{background:"#d2eaff",border:`1px solid ${D.borderMid}`,borderRadius:4,
+            padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:700,color:"#333"}}>
+          🖍 파랑
+        </button>
+        <button type="button" onMouseDown={e=>e.preventDefault()} onClick={clearHighlight}
+          title="선택 영역 하이라이트 해제"
+          style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
+            padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>
+          해제
+        </button>
+      </div>
+      <div ref={ref} contentEditable suppressContentEditableWarning
+        onInput={updateOnChange} onBlur={updateOnChange} onPaste={handlePaste}
+        data-placeholder={placeholder||""}
+        style={{minHeight:minHeight||144,padding:"8px 10px",fontSize:13,
+          border:`1px solid ${D.border}`,borderRadius:5,background:D.surface,
+          lineHeight:1.5,outline:"none",color:D.text,whiteSpace:"pre-wrap",
+          fontFamily:"'Noto Sans KR','Pretendard',sans-serif",overflowWrap:"break-word",
+          ...inputStyle}}/>
+    </div>
+  );
+}
+
 function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [promos,setPromos]=useState(getPromosCache);
   const [showForm,setShowForm]=useState(false);
@@ -4958,7 +5040,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         </div>
         <div style={{flex:pins.length>0?"1 1 240px":"3 1 480px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
           <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>상세 내용</div>
-          {p.content||p.memo||"—"}
+          {(p.content||p.memo)
+            ? <div dangerouslySetInnerHTML={{__html:(p.content||p.memo)}}/>
+            : "—"}
         </div>
         {pins.length>0&&(
           <div style={{flex:"2 1 280px",minWidth:200}}>
@@ -5244,9 +5328,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           </div>
           <div style={{marginTop:10,display:"grid",gridTemplateColumns:"3fr 1fr",gap:8}}>
             <div>
-              <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>프로모션 내용</div>
-              <textarea value={form.content||form.memo||""} onChange={e=>setForm(f=>({...f,content:e.target.value,memo:e.target.value}))}
-                style={{...inp,resize:"vertical",minHeight:144,lineHeight:1.5}} placeholder="할인율, 대상 상품, 조건 등 (선택)"/>
+              <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>프로모션 내용 <span style={{opacity:.6,fontWeight:400}}>(드래그 후 하이라이트 가능)</span></div>
+              <HighlightEditor value={form.content||form.memo||""}
+                onChange={v=>setForm(f=>({...f,content:v,memo:v}))}
+                placeholder="할인율, 대상 상품, 조건 등 (선택)" minHeight={144}/>
             </div>
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:4}}>첨부 파일 <span style={{opacity:.6}}>(최대 3개)</span></div>
@@ -5730,9 +5815,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     </div>
                     <div style={{marginBottom:8,display:"grid",gridTemplateColumns:"3fr 1fr",gap:8}}>
                       <div>
-                        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>프로모션 내용</div>
-                        <textarea value={editPromoForm.content} onChange={e=>setEditPromoForm(f=>({...f,content:e.target.value}))}
-                          style={{...inp3,resize:"vertical",minHeight:80,lineHeight:1.6}} placeholder="할인율, 대상 상품, 조건 등"/>
+                        <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>프로모션 내용 <span style={{opacity:.6,fontWeight:400}}>(드래그 후 하이라이트 가능)</span></div>
+                        <HighlightEditor value={editPromoForm.content||""}
+                          onChange={v=>setEditPromoForm(f=>({...f,content:v}))}
+                          placeholder="할인율, 대상 상품, 조건 등" minHeight={80}/>
                       </div>
                       <div>
                         <div style={{fontSize:11,color:D.textMeta,marginBottom:3}}>제출일</div>
