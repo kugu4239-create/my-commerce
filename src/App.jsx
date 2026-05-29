@@ -63,6 +63,7 @@ const D = {
 };
 const CH_COLOR={"자사몰":"#7EADD4","29CM":"#7EB89E","무신사":"#9E92C8"};
 const chColor=ch=>CH_COLOR[ch]||"#A8B8C8";
+const MUTE_BLUE="#5E81AC"; // 이익률(베타) 뱃지·모달 뮤트 블루 테마
 
 // ─────────────────────────────────────────────
 // UTILS
@@ -5913,11 +5914,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       )}
                       {canImpact&&p.platform==="자사몰"&&(
                         <button onClick={()=>setProfitModal(p)} data-capture-hide title="이익률 계산 (베타 테스트 중)"
-                          style={{background:"transparent",color:D.amber,border:`1px solid ${D.amber}`,borderRadius:5,
+                          style={{background:"transparent",color:MUTE_BLUE,border:`1px solid ${MUTE_BLUE}`,borderRadius:5,
                             padding:"3px 9px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:4,
                             position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:4}}>
                           이익률 계산
-                          <span style={{fontSize:8,fontWeight:800,color:"#fff",background:D.amber,borderRadius:3,padding:"1px 4px"}}>베타</span>
+                          <span style={{fontSize:8,fontWeight:800,color:"#fff",background:MUTE_BLUE,borderRadius:3,padding:"1px 4px"}}>베타</span>
                         </button>
                       )}
                       {ended&&<span style={{fontSize:11,fontWeight:500,color:D.red,marginLeft:4}}>· 종료된 프로모션</span>}
@@ -7539,7 +7540,6 @@ function OwnMallSaleCalcModal({ onClose }){
   const [rates,setRates]=useState({});           // 상품별 할인율 % (index→값, 기본 10)
   const [coupons,setCoupons]=useState([]);        // [{name,rate}] 멤버십 쿠폰(교차 불가)
   const [selCoupon,setSelCoupon]=useState(-1);    // -1 = 쿠폰 없음
-  const [limit,setLimit]=useState(50);
   const [search,setSearch]=useState("");   // 표 내 검색 (상품명·할인율)
   const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
   const [sampleMsg,setSampleMsg]=useState("");    // 샘플 저장/로드 상태 메시지
@@ -7629,7 +7629,7 @@ function OwnMallSaleCalcModal({ onClose }){
   // 표 내 검색 — 상품명 또는 할인율(%) 부분일치. 검색 중에는 전체 매칭 표시(limit 미적용).
   const q=search.trim().toLowerCase();
   const filtered=q?rows.filter(r=>(r.name||"").toLowerCase().includes(q)||String(r.rate).includes(q)):rows;
-  const shown=q?filtered:filtered.slice(0,limit);
+  const shown=filtered; // 전체 로드 (더보기 없음)
   return (
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -7771,11 +7771,6 @@ function OwnMallSaleCalcModal({ onClose }){
                   ))}
                 </tbody>
               </table>
-              {!q&&rows.length>limit&&(
-                <div style={{textAlign:"center",marginTop:10}}>
-                  <button onClick={()=>setLimit(l=>l+100)} style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 14px",fontSize:12,cursor:"pointer",color:D.textSub}}>더 보기 ({(rows.length-limit).toLocaleString()}개 남음)</button>
-                </div>
-              )}
             </div>
           </>)}
         </div>
@@ -8286,7 +8281,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
             <div style={{fontWeight:700,fontSize:16,color:D.black}}>
               {promo.name}
               <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 이익률 분석</span>
-              <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:"#fff",background:D.amber,
+              <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:"#fff",background:MUTE_BLUE,
                 padding:"2px 7px",borderRadius:10,verticalAlign:"middle"}}>베타</span>
             </div>
             <div style={{fontSize:11,color:D.textMeta,marginTop:5,lineHeight:1.7}}>
@@ -8308,7 +8303,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
           </div>
         </div>
 
-        <div style={{fontSize:11,color:D.textSub,background:`${D.amber}10`,border:`1px solid ${D.amber}33`,
+        <div style={{fontSize:11,color:D.textSub,background:`${MUTE_BLUE}10`,border:`1px solid ${MUTE_BLUE}33`,
           borderRadius:6,padding:"7px 10px",marginBottom:12,lineHeight:1.6}}>
           베타 테스트 중 · 자사몰은 <b>상품별 실결제액을 알 수 없어</b> 주문 단위로 비교합니다 — <b>주문 결제금액 vs 주문 상품 원가합</b>(공급가×1.1).
           이익금 = 결제금액 − 원가합 · 이익률은 <b>결제금액 분모</b> 기준(실제 판매가 대비), 할인율은 정상가 대비.
@@ -8342,9 +8337,9 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
             </div>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:14}}>
               집계 주문 {totals.orders.toLocaleString()}건 · 판매수량 {totals.units.toLocaleString()}장
-              {excluded.length>0&&<span style={{color:D.amber}}> · 가격 미등록 {excluded.length}건 제외</span>}
-              {abnormal>0&&<span style={{color:D.amber}}> · 비정상 주문번호 {abnormal}건 제외</span>}
-              {cancelled>0&&<span style={{color:D.amber}}> · 취소 포함 주문 {cancelled}건 제외</span>}
+              {excluded.length>0&&<span style={{color:MUTE_BLUE}}> · 가격 미등록 {excluded.length}건 제외</span>}
+              {abnormal>0&&<span style={{color:MUTE_BLUE}}> · 비정상 주문번호 {abnormal}건 제외</span>}
+              {cancelled>0&&<span style={{color:MUTE_BLUE}}> · 취소 포함 주문 {cancelled}건 제외</span>}
             </div>
 
             <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
@@ -8429,7 +8424,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
 
             {excluded.length>0&&(
               <div style={{marginTop:16}}>
-                <div style={{fontSize:12,fontWeight:600,color:D.amber,marginBottom:6}}>가격 미등록 제외 ({excluded.length}건)</div>
+                <div style={{fontSize:12,fontWeight:600,color:MUTE_BLUE,marginBottom:6}}>가격 미등록 제외 ({excluded.length}건)</div>
                 <div style={{fontSize:11,color:D.textMeta,lineHeight:1.7}}>
                   인벤토리/가격 DB에 정상가·공급가가 없어 제외된 주문입니다. 인벤토리 업로더의 "가격 DB" 모드로 해당 상품 가격을 등록하면 집계됩니다.
                   <div style={{marginTop:4,maxHeight:120,overflowY:"auto"}}>
