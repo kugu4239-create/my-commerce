@@ -4,8 +4,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   define: {
+    // 빌드는 UTC CI에서 돌지만 표기는 한국시(KST, UTC+9)로 통일
     __BUILD_TIME__: JSON.stringify(
-      new Date().toISOString().slice(0,16).replace('T',' ')
+      new Date(Date.now()+32400000).toISOString().slice(0,16).replace('T',' ')+' KST'
     ),
   },
   build: {
