@@ -183,6 +183,28 @@ const normCS = raw => {
 // '배송'(총 출고)은 반품·교환을 부분집합으로 포함한다. (반품률 분모 = 총 출고)
 const wasShipped = s => s === "배송" || s === "반품" || s === "교환";
 
+// 상품명 정규화 — SaleCalcModal 내부 정의(normProdName)와 동일 동작을 유지해야 한다
+// (calc_supply_override 의 norm_name 키가 양쪽에서 일치해야 매칭됨). 인벤토리 "가격 DB" 업로드와
+// 이익률 계산 훅(useInventoryPricing)에서 상품 매칭에 공통 사용.
+const normProdName = s => String(s||"").trim().toLowerCase()
+  .replace(/[​‌‍ ﻿]/g,"")
+  .replace(/[\s_·•~\-]*\d+\s*colou?rs?\b/gi,"")
+  .replace(/\[[^\]]*\]/g,"")
+  .replace(/\([^)]*\)/g,"")
+  .replace(/[_·•~]+/g,"")
+  .replace(/\s+/g,"").trim();
+
+// 이익률 집계 대상 판정 — 취소/교환/반품(환불) 주문만 제외하고
+// 배송·주문·접수·발주 등 그 외 상태는 모두 포함한다.
+// 내부 status(정규화) + raw_status(원본 CS처리 텍스트) 양쪽을 확인.
+const PROFIT_EXCLUDE_STATUS = new Set(["취소","반품","교환"]);
+const isProfitCountable = r => {
+  if(PROFIT_EXCLUDE_STATUS.has(r.status)) return false;
+  const raw=String(r.raw_status||"").toLowerCase().replace(/\s/g,"");
+  if(/취소|환불|반품|교환|cancel|refund|return|exchange/.test(raw)) return false;
+  return true;
+};
+
 function fmtEokMan(n){
   const eok=Math.floor(n/1e8);
   const man=Math.round((n%1e8)/1e4);
@@ -4721,6 +4743,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [form,setForm]=useState({name:"",platform:"자사몰",start_date:"",end_date:"",memo:"",content:"",files:[],discount_plan:{products:[],coupons:[]},pinned_products:[],submit_date:""});
   const today=localDate(0); // 로컬(KST) 날짜 — UTC 변환 시 새벽에 하루 밀려 오늘 시작 프로모션의 임팩트 버튼이 사라지던 문제 방지
   const [impactModal,setImpactModal]=useState(null);
+  const [profitModal,setProfitModal]=useState(null); // 이익률 계산(베타) 모달 — 자사몰 한정
   const [filePreview,setFilePreview]=useState(null);
   const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
   const [viewEnd,setViewEnd]=useState(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().slice(0,10);});
@@ -5877,6 +5900,15 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                             width:18,height:18,borderRadius:"50%",background:D.blue,color:"#fff",
                             fontSize:12,fontWeight:800,lineHeight:1,flexShrink:0}}>!</span>
                       )}
+                      {canImpact&&p.platform==="자사몰"&&(
+                        <button onClick={()=>setProfitModal(p)} data-capture-hide title="이익률 계산 (베타 테스트 중)"
+                          style={{background:"transparent",color:D.amber,border:`1px solid ${D.amber}`,borderRadius:5,
+                            padding:"3px 9px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:4,
+                            position:"relative",zIndex:2,display:"inline-flex",alignItems:"center",gap:4}}>
+                          이익률 계산
+                          <span style={{fontSize:8,fontWeight:800,color:"#fff",background:D.amber,borderRadius:3,padding:"1px 4px"}}>베타</span>
+                        </button>
+                      )}
                       {ended&&<span style={{fontSize:11,fontWeight:500,color:D.red,marginLeft:4}}>· 종료된 프로모션</span>}
                     </div>
                     );
@@ -6067,6 +6099,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       )}
 
       {impactModal&&<PromoImpactModal promo={impactModal} onClose={()=>setImpactModal(null)} revenues={revenues} storeSales={storeSales} orders={orders}/>}
+      {profitModal&&<ProfitCalcModal promo={profitModal} orders={orders} onClose={()=>setProfitModal(null)}/>}
       {filePreview&&<FilePreviewModal file={filePreview} onClose={()=>setFilePreview(null)}/>}
       {calcOpen&&<SaleCalcModal onClose={()=>setCalcOpen(false)}
         onCreatePromo={(prefill)=>{
@@ -7742,6 +7775,328 @@ function FilePreviewModal({ file, onClose }){
           <div style={{fontSize:10,color:D.textMeta,marginTop:6}}>
             ※ 처음 {MAXR}행만 표시 ({q?`매치 ${filteredData.length.toLocaleString()}행 중`:`전체 ${dataRows.length.toLocaleString()}행 중`})
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 프로모션 이익률 분석 (베타)
+//   정상가 = 인벤토리 selling_price (또는 가격 DB), 원가 = 공급가 × 1.1 (부가세 포함)
+//   매출  = 자사몰 주문의 payment_amount (주문 단위, 중복 제거). 취소/교환/반품 제외.
+//   이익금 = 실판매 − 원가, 이익률 = 이익금 ÷ 정상가매출 (정상가 분모), 할인율 = (정상가−실판매)/정상가
+// ─────────────────────────────────────────────
+// 가격 소스 훅: calc_supply_override(가격 DB, 최우선) → 최근 inventory_snapshot 폴백
+function useInventoryPricing(){
+  const [invMap,setInvMap]=useState({}); // n:/z:/c: → {selling,supply}
+  const [ovMap,setOvMap]=useState({});   // norm_name → {selling,supply}
+  const [ready,setReady]=useState(false);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const {data:latest}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false}).limit(1);
+        const d=latest?.[0]?.snapshot_date;
+        if(!d) return;
+        let all=[],from=0;const PAGE=1000;
+        while(true){
+          const {data,error}=await db.from("inventory_snapshot").select("product_name,product_code,supply_price,selling_price")
+            .eq("snapshot_date",d).range(from,from+PAGE-1);
+          if(error||!data||data.length===0) break;
+          all=all.concat(data);
+          if(data.length<PAGE) break;
+          from+=PAGE;
+        }
+        if(!alive) return;
+        const m={};
+        all.forEach(r=>{
+          const v={selling:r.selling_price||0,supply:r.supply_price||0};
+          const n=(r.product_name||"").trim();
+          const nz=normProdName(n);
+          const c=(r.product_code||"").trim();
+          if(n&&!m["n:"+n]) m["n:"+n]=v;
+          if(nz&&!m["z:"+nz]) m["z:"+nz]=v;
+          if(c&&!m["c:"+c]) m["c:"+c]=v;
+        });
+        setInvMap(m);
+      }catch{}
+      finally{ if(alive) setReady(true); }
+    })();
+    return()=>{alive=false;};
+  },[]);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        let all=[],from=0;const PAGE=1000;
+        while(true){
+          const {data,error}=await db.from("calc_supply_override").select("norm_name,supply_price,selling_price").range(from,from+PAGE-1);
+          if(error||!data||data.length===0) break;
+          all=all.concat(data);
+          if(data.length<PAGE) break;
+          from+=PAGE;
+        }
+        if(!alive) return;
+        const m={};
+        all.forEach(r=>{ if(r.norm_name) m[r.norm_name]={selling:r.selling_price||0,supply:r.supply_price||0}; });
+        setOvMap(m);
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  // 상품 → {selling,supply,matched} : 오버라이드(필드별) 우선, 인벤토리 폴백 + 정규화/부분일치
+  const priceOf=useCallback((name,code)=>{
+    const raw=(name||"").trim();
+    const nz=normProdName(raw);
+    let selling=0,supply=0;
+    const ov=nz?ovMap[nz]:null;
+    if(ov){ selling=ov.selling||0; supply=ov.supply||0; }
+    const fill=v=>{ if(v){ if(!selling) selling=v.selling||0; if(!supply) supply=v.supply||0; } };
+    if((!selling||!supply)&&code) fill(invMap["c:"+String(code).trim()]);
+    if((!selling||!supply)&&raw)  fill(invMap["n:"+raw]);
+    if((!selling||!supply)&&nz)   fill(invMap["z:"+nz]);
+    if((!selling||!supply)&&nz){
+      const zk=Object.keys(invMap).filter(k=>k.startsWith("z:"));
+      for(const k of zk){ const kn=k.slice(2); if(kn.length>=4&&(kn.includes(nz)||nz.includes(kn))){ fill(invMap[k]); break; } }
+    }
+    return {selling,supply,matched:selling>0&&supply>0};
+  },[invMap,ovMap]);
+  return {priceOf,ready};
+}
+
+// 순수 계산 — 프로모션 기간 자사몰 주문의 건별/합계 이익금·이익률 (정상가 분모)
+function computePromoProfit(orders, promo, priceOf){
+  const dayMs=86400000;
+  const todayStr=localDate(0), yesterdayStr=localDate(-1);
+  const promoStart=String(promo.start_date||"").slice(0,10);
+  const promoEndRaw=String(promo.end_date||"").slice(0,10);
+  const isOngoing=promoEndRaw>=todayStr;
+  const promoEnd=isOngoing?(yesterdayStr>=promoStart?yesterdayStr:promoStart):promoEndRaw;
+  const startsToday=promoStart>=todayStr;
+  const lenDays=(promoStart&&promoEnd)?Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs)+1:0;
+  const period={promoStart,promoEnd,isOngoing,startsToday,lenDays};
+  const emptyTotals={regular:0,actual:0,cost:0,profit:0,discRate:null,profitRate:null,orders:0,units:0};
+  if(!promoStart||!promoEnd||startsToday||!orders?.length) return {rows:[],excluded:[],period,totals:emptyTotals};
+  // 자사몰 · 기간 · 취소/교환/반품 제외 → 주문번호로 그룹 (payment_amount 는 주문 단위)
+  const byOrder={};
+  orders.forEach(r=>{
+    if((r.channel||"")!=="자사몰") return;
+    const d=r.order_date; if(!d||d<promoStart||d>promoEnd) return;
+    if(!isProfitCountable(r)) return;
+    const oid=r.order_no||r.order_id; if(!oid) return;
+    if(!byOrder[oid]) byOrder[oid]={order_no:oid,order_date:d,payment:0,lines:[]};
+    const pa=r.payment_amount||0; if(pa>byOrder[oid].payment) byOrder[oid].payment=pa;
+    byOrder[oid].lines.push({name:r.product_name||"미분류",option:r.option_name||"",qty:r.qty||1});
+  });
+  const rows=[],excluded=[];
+  let tReg=0,tAct=0,tCost=0,tUnits=0;
+  Object.values(byOrder).forEach(o=>{
+    let reg=0,cost=0,units=0,missing=false;
+    const lines=o.lines.map(ln=>{
+      const p=priceOf(ln.name);
+      const supplyVat=Math.round((p.supply||0)*1.1);
+      const lineReg=(p.selling||0)*ln.qty;
+      const lineCost=supplyVat*ln.qty;
+      if(!p.matched) missing=true;
+      reg+=lineReg; cost+=lineCost; units+=ln.qty;
+      return {...ln,selling:p.selling||0,supplyVat,lineReg,lineCost,matched:p.matched};
+    });
+    const actual=o.payment||0;
+    const rec={order_no:o.order_no,order_date:o.order_date,lines,units,regular:reg,actual,cost,
+      discRate:reg>0?(reg-actual)/reg*100:null,
+      profit:actual-cost,
+      profitRate:reg>0?(actual-cost)/reg*100:null};
+    if(missing||reg<=0){ excluded.push(rec); return; }
+    rows.push(rec);
+    tReg+=reg; tAct+=actual; tCost+=cost; tUnits+=units;
+  });
+  rows.sort((a,b)=>b.profit-a.profit);
+  const totals={regular:tReg,actual:tAct,cost:tCost,profit:tAct-tCost,
+    discRate:tReg>0?(tReg-tAct)/tReg*100:null,
+    profitRate:tReg>0?(tAct-tCost)/tReg*100:null,
+    orders:rows.length,units:tUnits};
+  return {rows,excluded,period,totals};
+}
+
+function ProfitCalcModal({ promo, orders=[], onClose }){
+  const {priceOf,ready}=useInventoryPricing();
+  const {rows,excluded,period,totals}=useMemo(()=>computePromoProfit(orders,promo,priceOf),[orders,promo,priceOf]);
+  const [expanded,setExpanded]=useState(()=>new Set());
+  const [limit,setLimit]=useState(100);
+  const modalCardRef=useRef(null);
+  const ch=promo.platform;
+  const won=n=>"₩"+Math.round(n||0).toLocaleString();
+  const pct=v=>v==null?"—":`${v.toFixed(1)}%`;
+  const toggle=oid=>setExpanded(s=>{const n=new Set(s);n.has(oid)?n.delete(oid):n.add(oid);return n;});
+  return (
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:14,padding:"24px 28px",
+          width:"min(960px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>
+              {promo.name}
+              <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· 이익률 분석</span>
+              <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:"#fff",background:D.amber,
+                padding:"2px 7px",borderRadius:10,verticalAlign:"middle"}}>베타</span>
+            </div>
+            <div style={{fontSize:11,color:D.textMeta,marginTop:5,lineHeight:1.7}}>
+              <div>
+                <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
+                <b style={{color:D.text,fontWeight:600}}>{ch}</b> · 주문일 기준 · 취소/교환/반품 제외
+              </div>
+              <div>
+                <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>분석 기간</span>
+                {period.promoStart} ~ {period.promoEnd} <span style={{color:D.textSub}}>({period.lenDays}일{period.isOngoing?", 시작일 ~ 어제":""})</span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <CaptureBtn cardRef={modalCardRef} filename={`이익률_${promo.name}_${period.promoStart}_${period.promoEnd}`} DC={{border:D.border,sub:D.textMeta}}/>
+            <button onClick={onClose}
+              style={{background:"none",border:`1px solid ${D.border}`,borderRadius:6,
+                padding:"4px 10px",fontSize:12,cursor:"pointer",color:D.textMeta}}>✕ 닫기</button>
+          </div>
+        </div>
+
+        <div style={{fontSize:11,color:D.textSub,background:`${D.amber}10`,border:`1px solid ${D.amber}33`,
+          borderRadius:6,padding:"7px 10px",marginBottom:12,lineHeight:1.6}}>
+          베타 테스트 중 · 정상가 = 인벤토리 판매가, 원가 = 공급가 × 1.1(부가세 포함), 실판매 = 자사몰 결제금액(주문 단위).
+          이익률은 <b>정상가 매출 분모</b> 기준입니다.
+        </div>
+
+        {period.startsToday?(
+          <div style={{margin:"18px 0",padding:"40px 24px",background:D.surfaceAlt,border:`1px dashed ${D.border}`,borderRadius:8,textAlign:"center"}}>
+            <div style={{fontSize:15,fontWeight:700,color:D.text,marginBottom:6}}>아직 집계 전</div>
+            <div style={{fontSize:12,color:D.textSub}}>오늘 시작한 프로모션입니다 · 익일부터 주문이 집계됩니다.</div>
+          </div>
+        ):!ready?(
+          <div style={{padding:40,textAlign:"center",color:D.textMeta,fontSize:13}}>가격 데이터 불러오는 중…</div>
+        ):(
+          <>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
+              {[["정상가 매출",won(totals.regular)],["실판매 매출",won(totals.actual)],
+                ["할인율",pct(totals.discRate)],["원가(VAT 포함)",won(totals.cost)]].map(([k,v])=>(
+                <div key={k} style={{padding:"8px 14px",background:D.surfaceAlt,borderRadius:8}}>
+                  <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>{k}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:D.text}}>{v}</div>
+                </div>
+              ))}
+              <div style={{padding:"8px 14px",background:totals.profit>=0?`${D.green}12`:`${D.red}12`,borderRadius:8}}>
+                <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>이익금</div>
+                <div style={{fontSize:15,fontWeight:800,color:totals.profit>=0?D.green:D.red}}>{won(totals.profit)}</div>
+              </div>
+              <div style={{padding:"8px 14px",background:(totals.profitRate||0)>=0?`${D.green}12`:`${D.red}12`,borderRadius:8}}>
+                <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>이익률 (정상가 분모)</div>
+                <div style={{fontSize:15,fontWeight:800,color:(totals.profitRate||0)>=0?D.green:D.red}}>{pct(totals.profitRate)}</div>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:D.textMeta,marginBottom:14}}>
+              집계 주문 {totals.orders.toLocaleString()}건 · 판매수량 {totals.units.toLocaleString()}장
+              {excluded.length>0&&<span style={{color:D.amber}}> · 가격 미등록 {excluded.length}건 제외</span>}
+            </div>
+
+            <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+              전체 주문건 — 건당 계산 (행 클릭 시 술식 펼침)
+            </div>
+            {rows.length===0?(
+              <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
+                해당 기간·채널의 집계 가능한 주문이 없습니다.
+              </div>
+            ):(
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
+                    <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>주문번호</th>
+                    <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>주문일</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>정상가매출</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>실판매</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>할인율</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>이익금</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>이익률</th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.slice(0,limit).map(r=>(
+                      <React.Fragment key={r.order_no}>
+                        <tr onClick={()=>toggle(r.order_no)} style={{borderBottom:`1px solid ${D.border}`,cursor:"pointer"}}>
+                          <td style={{padding:"5px 7px",color:D.text}}>{expanded.has(r.order_no)?"▾":"▸"} {r.order_no}</td>
+                          <td style={{padding:"5px 7px",color:D.textSub}}>{r.order_date}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{won(r.regular)}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{won(r.actual)}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",color:D.textMeta}}>{pct(r.discRate)}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</td>
+                        </tr>
+                        {expanded.has(r.order_no)&&(
+                          <tr style={{borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
+                            <td colSpan={7} style={{padding:"8px 14px"}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:8}}>
+                                <thead><tr style={{color:D.textMeta}}>
+                                  <th style={{textAlign:"left",fontWeight:500,padding:"2px 6px"}}>상품</th>
+                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>수량</th>
+                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>정상가</th>
+                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>정상가매출</th>
+                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>공급가×1.1</th>
+                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>원가합계</th>
+                                </tr></thead>
+                                <tbody>
+                                  {r.lines.map((ln,i)=>(
+                                    <tr key={i}>
+                                      <td style={{padding:"2px 6px",color:D.text}}>{ln.name}{ln.option?` · ${ln.option}`:""}</td>
+                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{ln.qty}</td>
+                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.selling)}</td>
+                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.lineReg)}</td>
+                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.supplyVat)}</td>
+                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.lineCost)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div style={{fontSize:11,color:D.textSub,lineHeight:1.9,fontFamily:"monospace"}}>
+                                <div>정상가매출 = {won(r.regular)} · 실판매(결제) = {won(r.actual)}</div>
+                                <div>할인율 = ({won(r.regular)} − {won(r.actual)}) ÷ {won(r.regular)} = <b>{pct(r.discRate)}</b></div>
+                                <div>원가(VAT 포함) = {won(r.cost)}</div>
+                                <div>이익금 = {won(r.actual)} − {won(r.cost)} = <b style={{color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</b></div>
+                                <div>이익률 = {won(r.profit)} ÷ {won(r.regular)} = <b style={{color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</b></div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+                {rows.length>limit&&(
+                  <div style={{textAlign:"center",marginTop:10}}>
+                    <button onClick={()=>setLimit(l=>l+100)}
+                      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 14px",fontSize:12,cursor:"pointer",color:D.textSub}}>
+                      더 보기 ({(rows.length-limit).toLocaleString()}건 남음)
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {excluded.length>0&&(
+              <div style={{marginTop:16}}>
+                <div style={{fontSize:12,fontWeight:600,color:D.amber,marginBottom:6}}>가격 미등록 제외 ({excluded.length}건)</div>
+                <div style={{fontSize:11,color:D.textMeta,lineHeight:1.7}}>
+                  인벤토리/가격 DB에 정상가·공급가가 없어 제외된 주문입니다. 인벤토리 업로더의 "가격 DB" 모드로 해당 상품 가격을 등록하면 집계됩니다.
+                  <div style={{marginTop:4,maxHeight:120,overflowY:"auto"}}>
+                    {[...new Set(excluded.flatMap(e=>e.lines.filter(l=>!l.matched).map(l=>l.name)))].slice(0,40).map((nm,i)=>(
+                      <span key={i} style={{display:"inline-block",background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:4,padding:"1px 6px",margin:"2px",fontSize:10}}>{nm}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -10172,6 +10527,46 @@ function parseInvFile(file,onResult,onError){
   reader.readAsArrayBuffer(file);
 }
 
+// 가격 데이터베이스용 파서 — 날짜/재고 없이 상품명·판매가(정상가)·공급가만 파싱.
+// calc_supply_override(norm_name 유니크)에 업서트되어 이익률 계산·할인율 계산기의 가격 소스로 쓰인다.
+function parsePriceDbFile(file,onResult,onError){
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      const XLSX=await getXLSX();
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:"YYYY-MM-DD"});
+      if(!raw||raw.length<2){onError(uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)"));return;}
+      const headers=raw[0].map(h=>String(h||"").trim());
+      const colMap=mapInvCols(headers);
+      if(colMap.product_name===undefined||(colMap.selling_price===undefined&&colMap.supply_price===undefined)){
+        onError(uploadErrColumns({
+          missing:[colMap.product_name===undefined?"상품명":null,(colMap.selling_price===undefined&&colMap.supply_price===undefined)?"판매가 또는 공급가":null].filter(Boolean),
+          required:["상품명","판매가","공급가"],
+          headers,
+        }));
+        return;
+      }
+      const get=(r,f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
+      const getWon=(r,f)=>colMap[f]!==undefined?Math.max(0,Math.round(parseFloat(String(r[colMap[f]]||"0").replace(/,/g,""))||0)):0;
+      const seen=new Set();const rows=[];
+      raw.slice(1).forEach(r=>{
+        const name=get(r,"product_name");if(!name) return;
+        const selling=getWon(r,"selling_price");
+        const supply=getWon(r,"supply_price");
+        if(selling<=0&&supply<=0) return;
+        const nz=normProdName(name);if(!nz||seen.has(nz)) return;seen.add(nz);
+        rows.push({product_name:name,norm_name:nz,selling_price:selling,supply_price:supply,updated_at:new Date().toISOString()});
+      });
+      if(rows.length===0){onError("매칭 가능한 행이 없습니다 — 판매가 또는 공급가가 0보다 큰 행이 있는지 확인하세요");return;}
+      onResult(rows);
+    }catch(err){onError(uploadErrParse(String(err?.message||err)));}
+  };
+  reader.onerror=()=>onError(uploadErrParse("파일 읽기 도중 시스템 오류가 발생했습니다"));
+  reader.readAsArrayBuffer(file);
+}
+
 // ─────────────────────────────────────────────
 // INVENTORY UPLOADER
 // ─────────────────────────────────────────────
@@ -10190,6 +10585,8 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   const [selDates,setSelDates]=useState(new Set());
   const [delConfirm,setDelConfirm]=useState(false);
   const [dragOver,setDragOver]=useState(false);
+  const [uploadMode,setUploadMode]=useState("snapshot"); // "snapshot"(날짜별 스냅샷) | "priceDb"(가격 데이터베이스용)
+  const [priceRows,setPriceRows]=useState([]); // 가격 DB 모드 파싱 결과
 
   const loadHistory=useCallback(async()=>{
     setHistLoading(true);
@@ -10220,7 +10617,14 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 
   const handleFile=useCallback(f=>{
     if(!f) return;
-    setFile(f);setUploadStatus("parsing");setStatusMsg("파일 파싱 중...");setParsedRows([]);setSnapDate(null);
+    setFile(f);setUploadStatus("parsing");setStatusMsg("파일 파싱 중...");setParsedRows([]);setPriceRows([]);setSnapDate(null);
+    if(uploadMode==="priceDb"){
+      parsePriceDbFile(f,rows=>{
+        setUploadStatus(null);setStatusMsg("");
+        setPriceRows(rows);
+      },err=>{setUploadStatus("error");setStatusMsg(err);});
+      return;
+    }
     parseInvFile(f,parsed=>{
       setUploadStatus(null);setStatusMsg("");
       if(!parsed.length){setUploadStatus("error");setStatusMsg("유효한 데이터 행이 없습니다");return;}
@@ -10230,7 +10634,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       setSnapDate(dates[dates.length-1]||today);
       setParsedRows(parsed);
     },err=>{setUploadStatus("error");setStatusMsg(err);});
-  },[]);
+  },[uploadMode]);
 
   const doUpload=useCallback(async(replace=false)=>{
     if(!parsedRows.length||!snapDate) return;
@@ -10266,6 +10670,22 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
     }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
   },[parsedRows,snapDate,loadHistory,onUploaded,onReorderDone]);
 
+  // 가격 DB 업서트 — calc_supply_override (norm_name 유니크) 에 정상가/공급가 갱신
+  const doPriceDbUpload=useCallback(async()=>{
+    if(!priceRows.length) return;
+    setUploadStatus("uploading");setStatusMsg("가격 DB 저장 중...");
+    try{
+      const db=await getSupabase();
+      const CHUNK=500;
+      for(let i=0;i<priceRows.length;i+=CHUNK){
+        const{error}=await db.from("calc_supply_override").upsert(priceRows.slice(i,i+CHUNK),{onConflict:"norm_name"});
+        if(error) throw new Error(error.message);
+      }
+      setUploadStatus("done");setStatusMsg(`가격 DB ${priceRows.length.toLocaleString()}건 갱신 완료 (이익률 계산에 사용)`);
+      setFile(null);setPriceRows([]);
+    }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
+  },[priceRows]);
+
   const handleUploadClick=useCallback(async()=>{
     if(!parsedRows.length||!snapDate) return;
     const db=await getSupabase();
@@ -10293,6 +10713,20 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 
   return(
     <div>
+      {/* 업로드 모드 토글 — 스냅샷(날짜별) / 가격 DB(날짜 없음, 판매가·공급가만) */}
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        {[["snapshot","스냅샷 (날짜별)"],["priceDb","가격 DB (판매가·공급가)"]].map(([m,label])=>(
+          <button key={m} onClick={()=>{setUploadMode(m);setFile(null);setParsedRows([]);setPriceRows([]);setUploadStatus(null);setStatusMsg("");setSnapDate(null);}}
+            style={{flex:1,background:uploadMode===m?"#7EC8A4":"transparent",color:uploadMode===m?"#0a1a12":DC.sub,
+              border:`1px solid ${uploadMode===m?"#7EC8A4":DC.border}`,borderRadius:6,padding:"6px 10px",
+              fontSize:12,fontWeight:700,cursor:"pointer"}}>{label}</button>
+        ))}
+      </div>
+      {uploadMode==="priceDb"&&(
+        <div style={{fontSize:11,color:DC.dim,lineHeight:1.6,marginBottom:8}}>
+          날짜 입력 없이 상품의 <b style={{color:DC.sub}}>판매가(정상가)·공급가</b>만 저장합니다. 이익률 계산(베타)의 가격 소스로 사용되며, 같은 상품명은 최신 값으로 갱신됩니다.
+        </div>
+      )}
       {/* Drop zone */}
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
@@ -10304,6 +10738,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       >
         <div style={{fontSize:22,opacity:.45,marginBottom:6}}>⬆</div>
         <div style={{fontSize:13,fontWeight:600,color:DC.text,marginBottom:10}}>Excel / CSV 드래그 &amp; 드롭</div>
+        {uploadMode==="snapshot"?(
         <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
           <div style={{marginBottom:6}}>
             <span style={{color:"#7EC8A4",fontWeight:700,fontSize:13}}>인벤토리 트렌드</span>
@@ -10325,6 +10760,20 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           </div>
           <div style={{color:DC.dim,fontSize:12}}>인벤토리 트렌드 / 리오더 계산기의 공통 데이터 소스가 됩니다.</div>
         </div>
+        ):(
+        <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
+          <div style={{marginBottom:6}}>
+            <span style={{color:"#C8A87B",fontWeight:700,fontSize:13}}>가격 데이터베이스</span>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
+              {["상품명","판매가","공급가"].map(c=>(
+                <span key={c} style={{background:"rgba(200,168,123,0.1)",border:"1px solid rgba(200,168,123,0.25)",
+                  borderRadius:4,padding:"1px 6px",fontSize:12,color:"#C8A87B",fontFamily:"monospace"}}>{c}</span>
+              ))}
+            </div>
+          </div>
+          <div style={{color:DC.dim,fontSize:12}}>상품명 + 판매가/공급가만 있으면 됩니다 (날짜·재고 불필요).</div>
+        </div>
+        )}
         {file&&<div style={{marginTop:6,fontSize:13,color:"#7EC8A4"}}>{file.name}</div>}
       </div>
 
@@ -10341,8 +10790,8 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
         </div>
       )}
 
-      {/* Upload action */}
-      {parsedRows.length>0&&uploadStatus!=="uploading"&&(
+      {/* Upload action — 스냅샷 모드 */}
+      {uploadMode==="snapshot"&&parsedRows.length>0&&uploadStatus!=="uploading"&&(
         <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:DC.sub}}>
             {`${parsedRows.length.toLocaleString()}개 SKU 준비됨`}
@@ -10351,6 +10800,20 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
             style={{background:"#7EC8A4",color:"#0a1a12",border:"none",borderRadius:6,
               padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
             업로드
+          </button>
+        </div>
+      )}
+
+      {/* Upload action — 가격 DB 모드 */}
+      {uploadMode==="priceDb"&&priceRows.length>0&&uploadStatus!=="uploading"&&(
+        <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:DC.sub}}>
+            {`가격 ${priceRows.length.toLocaleString()}건 준비됨 (판매가 ${priceRows.filter(r=>r.selling_price>0).length.toLocaleString()} · 공급가 ${priceRows.filter(r=>r.supply_price>0).length.toLocaleString()})`}
+          </span>
+          <button onClick={doPriceDbUpload}
+            style={{background:"#C8A87B",color:"#1a1206",border:"none",borderRadius:6,
+              padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            가격 DB 저장
           </button>
         </div>
       )}
