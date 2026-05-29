@@ -8275,7 +8275,8 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
         display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
         style={{background:D.surface,borderRadius:14,padding:"24px 28px",
-          width:"min(960px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+          width:"min(960px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)",
+          WebkitTextSizeAdjust:"100%",textSizeAdjust:"100%"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
           <div>
             <div style={{fontWeight:700,fontSize:16,color:D.black}}>
