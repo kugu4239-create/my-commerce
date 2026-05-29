@@ -6190,13 +6190,14 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           from+=PAGE;
         }
         if(!alive) return;
-        // 상품명 정규화 — 색상/사이즈 옵션 접미사·괄호·구분자·공백 모두 제거
+        // 상품명 정규화 — 보이지 않는 문자, 옵션 접미사, 괄호, 구분자, 공백 모두 제거
         const norm=s=>String(s||"").trim().toLowerCase()
-          .replace(/_+\s*\d+\s*colors?\b/gi,"")  // _2COLORS / _ 3 COLOR
-          .replace(/\[[^\]]*\]/g,"")              // [BLACK]
-          .replace(/\([^)]*\)/g,"")               // (M) (BLACK)
-          .replace(/[_·•~]+/g,"")                 // 구분자
-          .replace(/\s+/g,"").trim();             // 공백 전부 제거 (띄어쓰기 차이 무시)
+          .replace(/[​‌‍ ﻿]/g,"")          // ZWSP / NBSP / BOM 제거
+          .replace(/[\s_·•~\-]*\d+\s*colou?rs?\b/gi,"")            // _2COLORS / 2COLORS / ·2COLOR / 2 colours
+          .replace(/\[[^\]]*\]/g,"")                                 // [BLACK]
+          .replace(/\([^)]*\)/g,"")                                  // (M) (BLACK)
+          .replace(/[_·•~]+/g,"")                                    // 구분자
+          .replace(/\s+/g,"").trim();                                // 공백 전부 제거
         const m={};
         const productMap={};
         all.forEach(r=>{
@@ -6993,8 +6994,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
                           {["상품명","정가 (E열)","구간","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마진율"].map((h,i)=>(
-                            <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,
-                              textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                            <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
+                              textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
+                              position:"sticky",top:0,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
@@ -7030,7 +7032,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               <td title={`최종 노출가 = 기본 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
                               <td title={`최종 할인율 = 1 − (실 판매액 ₩${wonFmt(r.finalPrice)} ÷ 정상가 ₩${wonFmt(r.list)}) = ${r.finalDisc}% (정상가 대비 총 할인)`}
-                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
+                                  color:(r.finalDisc||0)>=30?D.red:(r.finalDisc||0)>=20?D.amber:D.green,
+                                  fontWeight:700,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
                               <td title={`정상가 ₩${wonFmt(r.list)} × 기본 할인율 ${r.baseDisc}% = ₩${wonFmt(Math.round((r.list||0)*((r.baseDisc||0)/100)))} 프런트 할인분 + 자사부담 쿠폰 차감액 합산 (자사 부담 → 마진 차감 대상)`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
