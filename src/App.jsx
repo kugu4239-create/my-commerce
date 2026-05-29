@@ -7530,7 +7530,6 @@ function parseMallProductFile(file,onResult,onError){
   }
 }
 
-const MALL_CALC_SAMPLE_KEY="merryon_mall_calc_sample";
 function OwnMallSaleCalcModal({ onClose }){
   const [products,setProducts]=useState([]);
   const [fileName,setFileName]=useState("");
@@ -7540,18 +7539,38 @@ function OwnMallSaleCalcModal({ onClose }){
   const [coupons,setCoupons]=useState([]);        // [{name,rate}] 멤버십 쿠폰(교차 불가)
   const [selCoupon,setSelCoupon]=useState(-1);    // -1 = 쿠폰 없음
   const [limit,setLimit]=useState(50);
-  const [sample,setSample]=useState(()=>{ try{ const s=localStorage.getItem(MALL_CALC_SAMPLE_KEY); return s?JSON.parse(s):null; }catch{ return null; } });
+  const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
   const modalCardRef=useRef(null);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
   const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
+  // 마지막 업로드 파일을 Supabase(mall_calc_last_file, 단일 행)에 보관 → 다른 세션에서도 한 번에 불러오기
+  useEffect(()=>{ let alive=true; (async()=>{ try{ const db=await getSupabase(); const {data}=await db.from("mall_calc_last_file").select("filename,uploaded_at").eq("id",1).maybeSingle(); if(alive&&data) setSample({filename:data.filename,uploaded_at:data.uploaded_at}); }catch{} })(); return()=>{alive=false;}; },[]);
+  const saveSample=async file=>{
+    try{
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      let bin=""; for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+      const db=await getSupabase();
+      await db.from("mall_calc_last_file").upsert({id:1,filename:file.name,content_b64:btoa(bin),uploaded_at:new Date().toISOString()});
+      setSample({filename:file.name});
+    }catch(err){ console.warn("샘플 파일 저장 실패",err); }
+  };
+  const loadSample=async()=>{
+    try{
+      const db=await getSupabase();
+      const {data,error}=await db.from("mall_calc_last_file").select("filename,content_b64").eq("id",1).maybeSingle();
+      if(error) throw error;
+      if(!data){ setStatus("저장된 샘플 파일이 없습니다 — 한 번 업로드해 주세요."); return; }
+      const bin=atob(data.content_b64); const bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+      const file=new File([bytes],data.filename||"sample.csv");
+      setFileName(file.name);setStatus("샘플 파일 파싱 중…");setProducts([]);setRates({});
+      parseMallProductFile(file,rows=>loadProducts(rows,file.name),err=>setStatus("오류: "+err));
+    }catch(err){ setStatus("샘플 로드 실패: "+(err?.message||err)); }
+  };
   const handleFile=f=>{
     if(!f) return;
     setFileName(f.name);setStatus("파싱 중…");setProducts([]);setRates({});
-    parseMallProductFile(f,rows=>{
-      loadProducts(rows,f.name);
-      // 마지막 업로드 파일을 샘플로 보관 (다음에 클릭 한 번으로 불러오기)
-      try{ const s={fileName:f.name,products:rows,savedAt:new Date().toISOString()}; localStorage.setItem(MALL_CALC_SAMPLE_KEY,JSON.stringify(s)); setSample(s); }catch{ /* quota */ }
-    }, err=>{ setStatus("오류: "+err); });
+    parseMallProductFile(f,rows=>{ loadProducts(rows,f.name); saveSample(f); }, err=>{ setStatus("오류: "+err); });
   };
   const couponRate=selCoupon>=0?Math.max(0,Math.min(100,Number(coupons[selCoupon]?.rate)||0)):0;
   const couponName=selCoupon>=0?(coupons[selCoupon]?.name||`쿠폰 ${selCoupon+1}`):"";
@@ -7594,8 +7613,9 @@ function OwnMallSaleCalcModal({ onClose }){
   return (
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
+      <div ref={modalCardRef} onClick={e=>e.stopPropagation()} className="mallcalc"
         style={{background:D.surface,borderRadius:14,width:"min(1100px,97vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        <style>{`.mallcalc input[type="number"]::-webkit-inner-spin-button,.mallcalc input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}.mallcalc input[type="number"]{-moz-appearance:textfield;appearance:textfield;}.mallcalc thead th{position:sticky;top:0;background:${D.surface};z-index:2;box-shadow:inset 0 -1px 0 ${D.border};}.mallcalc tbody tr:hover td{background:${D.surfaceAlt};}`}</style>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
           padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
           <b style={{fontSize:13,color:D.black,fontWeight:700}}>자사몰 세일율 계산기
@@ -7619,9 +7639,9 @@ function OwnMallSaleCalcModal({ onClose }){
 
           {sample&&(
             <div style={{marginBottom:14}}>
-              <button onClick={()=>loadProducts(sample.products,sample.fileName)}
+              <button onClick={loadSample}
                 style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",color:D.text}}>
-                📎 샘플 파일 불러오기 — {sample.fileName} ({(sample.products?.length||0).toLocaleString()}개)
+                📎 샘플 파일 불러오기 — {sample.filename}
               </button>
             </div>
           )}
@@ -7682,7 +7702,7 @@ function OwnMallSaleCalcModal({ onClose }){
               </div>
             )}
 
-            <div style={{overflowX:"auto"}}>
+            <div style={{overflow:"auto",maxHeight:"55vh"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap"}}>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
@@ -8162,25 +8182,31 @@ function computePromoProfit(orders, promo, priceOf){
   const emptyTotals={regular:0,actual:0,cost:0,profit:0,discRate:null,profitRate:null,orders:0,units:0};
   if(!promoStart||!promoEnd||startsToday||!orders?.length) return {rows:[],excluded:[],period,totals:emptyTotals,abnormal:0,cancelled:0};
   // 자사몰 · 기간 → 주문번호로 그룹. payment_amount 는 주문 단위.
-  //   · 취소/교환/반품 라인이 하나라도 있으면(부분취소 포함) 주문 전체를 제외 — 결제금액과 잔여 상품 원가합이 정합하지 않으므로.
-  //   · 결제금액이 0인 주문(전체취소·환불로 순결제 0)도 제외.
+  //   · 동일 주문번호에 취소/교환/반품 라인이 하나라도 있으면(부분취소 포함) 주문 전체를 제외.
+  //     (취소 라인은 기간·번호형식과 무관하게 먼저 수집 → 해당 주문번호를 통째 제외)
   //   · 비정상 주문번호(YYYYMMDD-XXXXXXX 형식 아님)도 제외.
+  const cancelledNos=new Set();
+  orders.forEach(r=>{
+    if((r.channel||"")!=="자사몰") return;
+    if(isProfitCountable(r)) return;
+    const oid=r.order_no||r.order_id; if(oid) cancelledNos.add(String(oid).trim());
+  });
   const byOrder={};
   let abnormal=0; const seenAbnormal=new Set();
   orders.forEach(r=>{
     if((r.channel||"")!=="자사몰") return;
     const d=r.order_date; if(!d||d<promoStart||d>promoEnd) return;
-    const oid=r.order_no||r.order_id; if(!oid) return;
-    if(!/^\d{8}-\d+$/.test(String(oid).trim())){ if(!seenAbnormal.has(oid)){seenAbnormal.add(oid);abnormal++;} return; }
-    if(!byOrder[oid]) byOrder[oid]={order_no:oid,order_date:d,payment:0,lines:[],hasCancel:false};
+    if(!isProfitCountable(r)) return; // 취소 라인 자체는 합산 제외(주문은 cancelledNos 로 통째 제외)
+    const oid=String(r.order_no||r.order_id||"").trim(); if(!oid) return;
+    if(!/^\d{8}-\d+$/.test(oid)){ if(!seenAbnormal.has(oid)){seenAbnormal.add(oid);abnormal++;} return; }
+    if(!byOrder[oid]) byOrder[oid]={order_no:oid,order_date:d,payment:0,lines:[]};
     const pa=r.payment_amount||0; if(pa>byOrder[oid].payment) byOrder[oid].payment=pa;
-    if(!isProfitCountable(r)){ byOrder[oid].hasCancel=true; return; } // 취소/교환/반품 라인 표시
     byOrder[oid].lines.push({name:r.product_name||"미분류",option:r.option_name||"",qty:r.qty||1});
   });
   const rows=[],excluded=[]; let cancelled=0;
   let tReg=0,tAct=0,tCost=0,tUnits=0;
   Object.values(byOrder).forEach(o=>{
-    if(o.hasCancel||o.payment<=0){ cancelled++; return; } // 취소 라인 포함(부분취소) 또는 결제금액 0(전체취소·환불) → 통째 제외
+    if(cancelledNos.has(o.order_no)){ cancelled++; return; } // 동일 주문번호에 취소 있음 → 통째 제외
     if(!o.lines.length) return;
     let reg=0,cost=0,units=0,missing=false;
     const lines=o.lines.map(ln=>{
@@ -8289,7 +8315,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
               집계 주문 {totals.orders.toLocaleString()}건 · 판매수량 {totals.units.toLocaleString()}장
               {excluded.length>0&&<span style={{color:D.amber}}> · 가격 미등록 {excluded.length}건 제외</span>}
               {abnormal>0&&<span style={{color:D.amber}}> · 비정상 주문번호 {abnormal}건 제외</span>}
-              {cancelled>0&&<span style={{color:D.amber}}> · 취소·무결제 주문 {cancelled}건 제외</span>}
+              {cancelled>0&&<span style={{color:D.amber}}> · 취소 포함 주문 {cancelled}건 제외</span>}
             </div>
 
             <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
