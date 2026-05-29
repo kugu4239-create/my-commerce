@@ -8213,8 +8213,8 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
 
         <div style={{fontSize:11,color:D.textSub,background:`${D.amber}10`,border:`1px solid ${D.amber}33`,
           borderRadius:6,padding:"7px 10px",marginBottom:12,lineHeight:1.6}}>
-          베타 테스트 중 · 정상가 = 인벤토리 판매가, 원가 = 공급가 × 1.1(부가세 포함), 실판매 = 자사몰 결제금액(주문 단위).
-          이익률은 <b>정상가 매출 분모</b> 기준입니다.
+          베타 테스트 중 · 자사몰은 <b>상품별 실결제액을 알 수 없어</b> 주문 단위로 비교합니다 — <b>주문 결제금액 vs 주문 상품 원가합</b>(공급가×1.1).
+          이익금 = 결제금액 − 원가합 · 이익률은 <b>정상가 분모</b> 기준(정상가 = 인벤토리 판매가).
         </div>
 
         {period.startsToday?(
@@ -8227,8 +8227,8 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
         ):(
           <>
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
-              {[["정상가 매출",won(totals.regular)],["실판매 매출",won(totals.actual)],
-                ["할인율",pct(totals.discRate)],["원가(VAT 포함)",won(totals.cost)]].map(([k,v])=>(
+              {[["결제금액 합",won(totals.actual)],["원가합(VAT 포함)",won(totals.cost)],
+                ["정상가 매출",won(totals.regular)],["할인율",pct(totals.discRate)]].map(([k,v])=>(
                 <div key={k} style={{padding:"8px 14px",background:D.surfaceAlt,borderRadius:8}}>
                   <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>{k}</div>
                   <div style={{fontSize:15,fontWeight:700,color:D.text}}>{v}</div>
@@ -8249,7 +8249,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
             </div>
 
             <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
-              전체 주문건 — 건당 계산 (행 클릭 시 술식 펼침)
+              주문 단위 계산 — 행 클릭 시 주문 상품 구성·술식 (결제금액 vs 원가합)
             </div>
             {rows.length===0?(
               <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
@@ -8261,8 +8261,8 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                     <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>주문번호</th>
                     <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>주문일</th>
-                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>정상가매출</th>
-                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>실판매</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>결제금액</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>원가합</th>
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>할인율</th>
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>이익금</th>
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>이익률</th>
@@ -8273,8 +8273,8 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                         <tr onClick={()=>toggle(r.order_no)} style={{borderBottom:`1px solid ${D.border}`,cursor:"pointer"}}>
                           <td style={{padding:"5px 7px",color:D.text}}>{expanded.has(r.order_no)?"▾":"▸"} {r.order_no}</td>
                           <td style={{padding:"5px 7px",color:D.textSub}}>{r.order_date}</td>
-                          <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{won(r.regular)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{won(r.actual)}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{won(r.cost)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",color:D.textMeta}}>{pct(r.discRate)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</td>
@@ -8305,10 +8305,9 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                                 </tbody>
                               </table>
                               <div style={{fontSize:11,color:D.textSub,lineHeight:1.9,fontFamily:"monospace"}}>
-                                <div>정상가매출 = {won(r.regular)} · 실판매(결제) = {won(r.actual)}</div>
-                                <div>할인율 = ({won(r.regular)} − {won(r.actual)}) ÷ {won(r.regular)} = <b>{pct(r.discRate)}</b></div>
-                                <div>원가(VAT 포함) = {won(r.cost)}</div>
-                                <div>이익금 = {won(r.actual)} − {won(r.cost)} = <b style={{color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</b></div>
+                                <div>결제금액 = {won(r.actual)} · 정상가매출 = {won(r.regular)} · 원가합 = {won(r.cost)}</div>
+                                <div>할인율 = (정상가 {won(r.regular)} − 결제 {won(r.actual)}) ÷ {won(r.regular)} = <b>{pct(r.discRate)}</b></div>
+                                <div>이익금 = 결제금액 {won(r.actual)} − 원가합 {won(r.cost)} = <b style={{color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</b></div>
                                 <div>이익률 = {won(r.profit)} ÷ {won(r.regular)} = <b style={{color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</b></div>
                               </div>
                             </td>
