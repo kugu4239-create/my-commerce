@@ -7545,30 +7545,30 @@ function OwnMallSaleCalcModal({ onClose }){
   const modalCardRef=useRef(null);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
   const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
-  // 마지막 업로드 파일(Supabase mall_calc_last_file)을 모달 열 때 자동으로 불러와 채운다(초기 = 샘플 로드 상태).
+  // 마지막 업로드의 파싱 결과(상품 목록)를 Supabase(mall_calc_last_file)에 보관 → 원본 파일이 커도(수십 MB) 안전.
+  //   content_b64 컬럼에 base64 대신 상품 JSON 을 저장한다(텍스트 컬럼이라 호환). 모달 열 때 자동 로드.
+  const sampleToProducts=raw=>{ try{ const p=JSON.parse(raw||""); return Array.isArray(p)?p:null; }catch{ return null; } };
   useEffect(()=>{ let alive=true;
     (async()=>{
       try{
         const db=await getSupabase();
         const {data,error}=await db.from("mall_calc_last_file").select("filename,content_b64").eq("id",1).maybeSingle();
         if(error||!data||!alive) return;
+        const prods=sampleToProducts(data.content_b64);
+        if(!prods||!prods.length) return;
         setSample({filename:data.filename});
-        const bin=atob(data.content_b64); const bytes=new Uint8Array(bin.length);
-        for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-        const file=new File([bytes],data.filename||"sample.csv");
-        parseMallProductFile(file,rows=>{ if(alive){ loadProducts(rows,file.name); setSampleMsg(`📎 샘플 파일 자동 로드됨 — ${data.filename||""}`); } },()=>{});
+        loadProducts(prods,data.filename||"샘플");
+        setSampleMsg(`📎 샘플 자동 로드됨 — ${data.filename||""} (${prods.length.toLocaleString()}개)`);
       }catch{}
     })();
     return()=>{alive=false;};
   },[]);
-  const saveSample=async file=>{
+  const saveSample=async(name,rows)=>{
     try{
-      const bytes=new Uint8Array(await file.arrayBuffer());
-      let bin=""; for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
       const db=await getSupabase();
-      const {error}=await db.from("mall_calc_last_file").upsert({id:1,filename:file.name,content_b64:btoa(bin),uploaded_at:new Date().toISOString()});
+      const {error}=await db.from("mall_calc_last_file").upsert({id:1,filename:name,content_b64:JSON.stringify(rows),uploaded_at:new Date().toISOString()});
       if(error) throw error;
-      setSample({filename:file.name}); setSampleMsg("📎 샘플로 저장됨 — 다음에 이 모달을 열면 자동 로드됩니다");
+      setSample({filename:name}); setSampleMsg(`📎 샘플로 저장됨 (${rows.length.toLocaleString()}개) — 다음에 이 모달을 열면 자동 로드됩니다`);
     }catch(err){ setSampleMsg("⚠ 샘플 저장 실패: "+(err?.message||err)); }
   };
   const loadSample=async()=>{
@@ -7576,18 +7576,16 @@ function OwnMallSaleCalcModal({ onClose }){
       const db=await getSupabase();
       const {data,error}=await db.from("mall_calc_last_file").select("filename,content_b64").eq("id",1).maybeSingle();
       if(error) throw error;
-      if(!data){ setStatus("저장된 샘플 파일이 없습니다 — 한 번 업로드해 주세요."); return; }
-      const bin=atob(data.content_b64); const bytes=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-      const file=new File([bytes],data.filename||"sample.csv");
-      setFileName(file.name);setStatus("샘플 파일 파싱 중…");setProducts([]);setRates({});
-      parseMallProductFile(file,rows=>loadProducts(rows,file.name),err=>setStatus("오류: "+err));
-    }catch(err){ setStatus("샘플 로드 실패: "+(err?.message||err)); }
+      const prods=sampleToProducts(data?.content_b64);
+      if(!prods||!prods.length){ setSampleMsg("저장된 샘플이 없습니다 — 파일을 한 번 업로드해 주세요."); return; }
+      loadProducts(prods,data.filename||"샘플");
+      setSampleMsg(`📎 샘플 불러옴 — ${data.filename||""} (${prods.length.toLocaleString()}개)`);
+    }catch(err){ setSampleMsg("샘플 로드 실패: "+(err?.message||err)); }
   };
   const handleFile=f=>{
     if(!f) return;
     setFileName(f.name);setStatus("파싱 중…");setProducts([]);setRates({});
-    parseMallProductFile(f,rows=>{ loadProducts(rows,f.name); saveSample(f); }, err=>{ setStatus("오류: "+err); });
+    parseMallProductFile(f,rows=>{ loadProducts(rows,f.name); saveSample(f.name,rows); }, err=>{ setStatus("오류: "+err); });
   };
   const couponRate=selCoupon>=0?Math.max(0,Math.min(100,Number(coupons[selCoupon]?.rate)||0)):0;
   const couponName=selCoupon>=0?(coupons[selCoupon]?.name||`쿠폰 ${selCoupon+1}`):"";
