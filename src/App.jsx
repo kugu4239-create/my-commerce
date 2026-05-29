@@ -6190,16 +6190,25 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           from+=PAGE;
         }
         if(!alive) return;
+        // 상품명 정규화 — 색상/사이즈 옵션 접미사·괄호·구분자·공백 모두 제거
+        const norm=s=>String(s||"").trim().toLowerCase()
+          .replace(/_+\s*\d+\s*colors?\b/gi,"")  // _2COLORS / _ 3 COLOR
+          .replace(/\[[^\]]*\]/g,"")              // [BLACK]
+          .replace(/\([^)]*\)/g,"")               // (M) (BLACK)
+          .replace(/[_·•~]+/g,"")                 // 구분자
+          .replace(/\s+/g,"").trim();             // 공백 전부 제거 (띄어쓰기 차이 무시)
         const m={};
         const productMap={};
         all.forEach(r=>{
+          const sp=r.supply_price||0;
           const n=(r.product_name||"").trim();
-          if(n) m["n:"+n]=r.supply_price||0;
+          const nz=norm(n);
           const c=(r.product_code||"").trim();
-          if(c) m["c:"+c]=r.supply_price||0;
-          // 상품 목록 (이름 중복 제거 — 같은 이름이 있으면 마지막 값 사용)
+          if(n&&!m["n:"+n]) m["n:"+n]=sp;
+          if(nz&&!m["z:"+nz]) m["z:"+nz]=sp;
+          if(c&&!m["c:"+c]) m["c:"+c]=sp;
           if(n&&!productMap[n]){
-            productMap[n]={name:n,code:c,selling:r.selling_price||0,supply:r.supply_price||0};
+            productMap[n]={name:n,code:c,selling:r.selling_price||0,supply:sp};
           }
         });
         setInvMap(m);
@@ -6208,15 +6217,28 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     })();
     return()=>{alive=false;};
   },[]);
-  // 상품명/코드 → 공급가 매칭 (정확 일치 → 부분 포함 fallback)
+  // 상품명/코드 → 공급가 매칭
+  //  1) 정확 코드 일치
+  //  2) 원본명 정확 일치
+  //  3) 정규화된 이름 정확 일치 (옵션 접미사·괄호·구분자 제거)
+  //  4) 정규화된 이름끼리 부분 포함 (≥ 4글자)
   const supplyOf=useCallback((name,code)=>{
     if(code){const v=invMap["c:"+String(code).trim()]; if(v) return v;}
-    const n=(name||"").trim(); if(!n) return 0;
-    if(invMap["n:"+n]) return invMap["n:"+n];
-    const keys=Object.keys(invMap).filter(k=>k.startsWith("n:"));
-    for(const k of keys){
+    const raw=(name||"").trim(); if(!raw) return 0;
+    if(invMap["n:"+raw]) return invMap["n:"+raw];
+    const norm=s=>String(s||"").trim().toLowerCase()
+      .replace(/_+\s*\d+\s*colors?\b/gi,"")
+      .replace(/\[[^\]]*\]/g,"")
+      .replace(/\([^)]*\)/g,"")
+      .replace(/[_·•~]+/g,"")
+      .replace(/\s+/g,"").trim();
+    const nz=norm(raw); if(!nz) return 0;
+    if(invMap["z:"+nz]) return invMap["z:"+nz];
+    // fallback — 정규화 키끼리 부분 포함 (양방향, 4자 이상)
+    const zkeys=Object.keys(invMap).filter(k=>k.startsWith("z:"));
+    for(const k of zkeys){
       const kn=k.slice(2);
-      if(kn.length>=4&&(kn.includes(n)||n.includes(kn))) return invMap[k];
+      if(kn.length>=4&&(kn.includes(nz)||nz.includes(kn))) return invMap[k];
     }
     return 0;
   },[invMap]);
