@@ -6060,9 +6060,10 @@ const calcReverse=(list,p75,coupon)=>{
   return {baseDisc, basePrice, finalPrice, finalDisc};
 };
 function SaleCalcModal({ onClose, onCreatePromo }){
-  const [coupon,setCoupon]=useState(10);
+  // 디폴트 — 자주 쓰는 시나리오 첫번째(29CM 지원 쿠폰 15% · 장바구니 · 채널부담)
+  const [coupon,setCoupon]=useState(15);
   const [primaryType,setPrimaryType]=useState("cart"); // 기본 쿠폰 타입
-  const [primaryBurden,setPrimaryBurden]=useState("self"); // self=자사부담, channel=채널부담
+  const [primaryBurden,setPrimaryBurden]=useState("channel"); // self=자사부담, channel=채널부담
   const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
   const [stackCoupons,setStackCoupons]=useState([]); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
   const [scenarioIdx,setScenarioIdx]=useState(0); // 선택한 시나리오 인덱스
