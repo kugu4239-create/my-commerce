@@ -6075,6 +6075,18 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   const fileRef=useRef(null);
   const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
   const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
+  // 현재 상태가 프리셋과 일치하는지 — 일치하면 시나리오 영역을 페이드 처리
+  const presetActiveIdx=(()=>{
+    const s0=stackCoupons[0];
+    if(cpnPrimary===15&&primaryType==="cart"&&stackCoupons.length===0) return 0;
+    if(cpnPrimary===15&&primaryType==="cart"&&stackCoupons.length===1&&s0?.type==="product"&&Number(s0?.rate)===10) return 1;
+    if(cpnPrimary===29&&primaryType==="share"&&Number(primaryShareRate)===40&&stackCoupons.length===0) return 2;
+    return -1;
+  })();
+  const resetPreset=()=>{
+    setCoupon(0);setPrimaryType("product");setPrimaryBurden("self");setPrimaryShareRate(50);
+    setStackCoupons([]);setScenarioIdx(0);
+  };
   // 입력된 모든 쿠폰 (이름·타입·부담 주체·분담률 포함)
   const allCoupons=useMemo(()=>{
     // 장바구니 쿠폰은 자사가 발행할 수 없으므로 burden 을 항상 channel 로 고정
@@ -6474,16 +6486,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     },
                   },
                 ].map((p,i)=>{
-                  // 현재 상태가 해당 프리셋과 일치하면 active (다크 컬러 전환)
-                  const active=(()=>{
-                    const s0=stackCoupons[0];
-                    if(i===0) return cpnPrimary===15&&primaryType==="cart"&&stackCoupons.length===0;
-                    if(i===1) return cpnPrimary===15&&primaryType==="cart"&&stackCoupons.length===1
-                      &&s0?.type==="product"&&Number(s0?.rate)===10;
-                    if(i===2) return cpnPrimary===29&&primaryType==="share"&&Number(primaryShareRate)===40
-                      &&stackCoupons.length===0;
-                    return false;
-                  })();
+                  const active=presetActiveIdx===i;
                   return (
                     <button key={i} type="button" onClick={p.apply} title={p.title}
                       style={{minWidth:0,
@@ -6591,9 +6594,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
               </div>
               );
             })}
-            {/* 시나리오 선택 — 타입 규칙 기반 가능한 조합 */}
+            {/* 시나리오 선택 — 타입 규칙 기반 가능한 조합 (프리셋 적용 시 페이드) */}
             {scenarios.length>0&&(
-              <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${D.blue}33`}}>
+              <div style={{position:"relative",marginTop:12,paddingTop:10,borderTop:`1px solid ${D.blue}33`}}>
                 <div style={{fontSize:11,color:D.blue,fontWeight:700,marginBottom:6}}>
                   유효 시나리오 선택
                 </div>
@@ -6611,11 +6614,26 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 <div style={{fontSize:11,color:D.blue,marginTop:8,fontWeight:700}}>
                   선택 시나리오의 케이스 총합 할인율: {cpn}% (계산기·1·3·4 에 적용)
                 </div>
+                <div style={{fontSize:11,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
+                  최종 할인율 = 1 − ∏(1−rate) of 선택 시나리오의 쿠폰들. 시나리오 미선택 시 기본 쿠폰 단독값 사용.
+                </div>
+                {presetActiveIdx>=0&&(
+                  <>
+                    <div aria-hidden="true" style={{position:"absolute",inset:0,
+                      background:"rgba(255,255,255,0.78)",pointerEvents:"none",zIndex:1,borderRadius:6}}/>
+                    <div style={{position:"absolute",inset:0,zIndex:2,
+                      display:"flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,color:D.black,fontWeight:700}}>시나리오 선택이 완료되었습니다</span>
+                      <button type="button" onClick={resetPreset}
+                        style={{background:"transparent",border:`1px solid ${D.black}`,borderRadius:5,
+                          padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:700,color:D.black}}>
+                        시나리오 취소
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
-            <div style={{fontSize:11,color:D.blue,marginTop:8,opacity:.85,lineHeight:1.5}}>
-              최종 할인율 = 1 − ∏(1−rate) of 선택 시나리오의 쿠폰들. 시나리오 미선택 시 기본 쿠폰 단독값 사용.
-            </div>
           </div>
 
           <details className="sec" style={sec} open>
