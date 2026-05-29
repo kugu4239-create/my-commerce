@@ -8125,21 +8125,27 @@ function computePromoProfit(orders, promo, priceOf){
   const lenDays=(promoStart&&promoEnd)?Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs)+1:0;
   const period={promoStart,promoEnd,isOngoing,startsToday,lenDays};
   const emptyTotals={regular:0,actual:0,cost:0,profit:0,discRate:null,profitRate:null,orders:0,units:0};
-  if(!promoStart||!promoEnd||startsToday||!orders?.length) return {rows:[],excluded:[],period,totals:emptyTotals};
-  // 자사몰 · 기간 · 취소/교환/반품 제외 → 주문번호로 그룹 (payment_amount 는 주문 단위)
+  if(!promoStart||!promoEnd||startsToday||!orders?.length) return {rows:[],excluded:[],period,totals:emptyTotals,abnormal:0,cancelled:0};
+  // 자사몰 · 기간 → 주문번호로 그룹. payment_amount 는 주문 단위.
+  //   · 취소/교환/반품 라인이 하나라도 있으면(부분취소 포함) 주문 전체를 제외 — 결제금액과 잔여 상품 원가합이 정합하지 않으므로.
+  //   · 비정상 주문번호(YYYYMMDD-XXXXXXX 형식 아님)도 제외.
   const byOrder={};
+  let abnormal=0; const seenAbnormal=new Set();
   orders.forEach(r=>{
     if((r.channel||"")!=="자사몰") return;
     const d=r.order_date; if(!d||d<promoStart||d>promoEnd) return;
-    if(!isProfitCountable(r)) return;
     const oid=r.order_no||r.order_id; if(!oid) return;
-    if(!byOrder[oid]) byOrder[oid]={order_no:oid,order_date:d,payment:0,lines:[]};
+    if(!/^\d{8}-\d+$/.test(String(oid).trim())){ if(!seenAbnormal.has(oid)){seenAbnormal.add(oid);abnormal++;} return; }
+    if(!byOrder[oid]) byOrder[oid]={order_no:oid,order_date:d,payment:0,lines:[],hasCancel:false};
     const pa=r.payment_amount||0; if(pa>byOrder[oid].payment) byOrder[oid].payment=pa;
+    if(!isProfitCountable(r)){ byOrder[oid].hasCancel=true; return; } // 취소/교환/반품 라인 표시
     byOrder[oid].lines.push({name:r.product_name||"미분류",option:r.option_name||"",qty:r.qty||1});
   });
-  const rows=[],excluded=[];
+  const rows=[],excluded=[]; let cancelled=0;
   let tReg=0,tAct=0,tCost=0,tUnits=0;
   Object.values(byOrder).forEach(o=>{
+    if(o.hasCancel){ cancelled++; return; } // 부분/전체 취소 포함 주문 → 통째 제외
+    if(!o.lines.length) return;
     let reg=0,cost=0,units=0,missing=false;
     const lines=o.lines.map(ln=>{
       const p=priceOf(ln.name);
@@ -8164,12 +8170,12 @@ function computePromoProfit(orders, promo, priceOf){
     discRate:tReg>0?(tReg-tAct)/tReg*100:null,
     profitRate:tReg>0?(tAct-tCost)/tReg*100:null,
     orders:rows.length,units:tUnits};
-  return {rows,excluded,period,totals};
+  return {rows,excluded,period,totals,abnormal,cancelled};
 }
 
 function ProfitCalcModal({ promo, orders=[], onClose }){
   const {priceOf,ready}=useInventoryPricing();
-  const {rows,excluded,period,totals}=useMemo(()=>computePromoProfit(orders,promo,priceOf),[orders,promo,priceOf]);
+  const {rows,excluded,period,totals,abnormal,cancelled}=useMemo(()=>computePromoProfit(orders,promo,priceOf),[orders,promo,priceOf]);
   const [expanded,setExpanded]=useState(()=>new Set());
   const [limit,setLimit]=useState(100);
   const modalCardRef=useRef(null);
@@ -8228,7 +8234,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
           <>
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
               {[["결제금액 합",won(totals.actual)],["원가합(VAT 포함)",won(totals.cost)],
-                ["정상가 매출",won(totals.regular)],["할인율",pct(totals.discRate)]].map(([k,v])=>(
+                ["할인율",pct(totals.discRate)]].map(([k,v])=>(
                 <div key={k} style={{padding:"8px 14px",background:D.surfaceAlt,borderRadius:8}}>
                   <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>{k}</div>
                   <div style={{fontSize:15,fontWeight:700,color:D.text}}>{v}</div>
@@ -8246,6 +8252,8 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
             <div style={{fontSize:11,color:D.textMeta,marginBottom:14}}>
               집계 주문 {totals.orders.toLocaleString()}건 · 판매수량 {totals.units.toLocaleString()}장
               {excluded.length>0&&<span style={{color:D.amber}}> · 가격 미등록 {excluded.length}건 제외</span>}
+              {abnormal>0&&<span style={{color:D.amber}}> · 비정상 주문번호 {abnormal}건 제외</span>}
+              {cancelled>0&&<span style={{color:D.amber}}> · 취소포함 주문 {cancelled}건 제외</span>}
             </div>
 
             <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
@@ -8287,9 +8295,9 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                                   <th style={{textAlign:"left",fontWeight:500,padding:"2px 6px"}}>상품</th>
                                   <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>수량</th>
                                   <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>정상가</th>
-                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>정상가매출</th>
+                                  <th style={{textAlign:"center",fontWeight:500,padding:"2px 6px"}}>실판매액(결제)</th>
                                   <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>공급가×1.1</th>
-                                  <th style={{textAlign:"right",fontWeight:500,padding:"2px 6px"}}>원가합계</th>
+                                  <th style={{textAlign:"center",fontWeight:500,padding:"2px 6px"}}>원가합계</th>
                                 </tr></thead>
                                 <tbody>
                                   {r.lines.map((ln,i)=>(
@@ -8297,15 +8305,15 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                                       <td style={{padding:"2px 6px",color:D.text}}>{ln.name}{ln.option?` · ${ln.option}`:""}</td>
                                       <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{ln.qty}</td>
                                       <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.selling)}</td>
-                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.lineReg)}</td>
+                                      {i===0&&<td rowSpan={r.lines.length} style={{padding:"2px 6px",textAlign:"center",verticalAlign:"middle",color:D.text,fontWeight:700,borderLeft:`1px solid ${D.border}`,borderRight:`1px solid ${D.border}`}}>{won(r.actual)}</td>}
                                       <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.supplyVat)}</td>
-                                      <td style={{padding:"2px 6px",textAlign:"right",color:D.textSub}}>{won(ln.lineCost)}</td>
+                                      {i===0&&<td rowSpan={r.lines.length} style={{padding:"2px 6px",textAlign:"center",verticalAlign:"middle",color:D.text,fontWeight:700,borderLeft:`1px solid ${D.border}`}}>{won(r.cost)}</td>}
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
-                              <div style={{fontSize:11,color:D.textSub,lineHeight:1.9,fontFamily:"monospace"}}>
-                                <div>결제금액 = {won(r.actual)} · 정상가매출 = {won(r.regular)} · 원가합 = {won(r.cost)}</div>
+                              <div style={{fontSize:12,color:D.textSub,lineHeight:1.9}}>
+                                <div>실판매액(결제) = {won(r.actual)} · 원가합 = {won(r.cost)}</div>
                                 <div>할인율 = (정상가 {won(r.regular)} − 결제 {won(r.actual)}) ÷ {won(r.regular)} = <b>{pct(r.discRate)}</b></div>
                                 <div>이익금 = 결제금액 {won(r.actual)} − 원가합 {won(r.cost)} = <b style={{color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</b></div>
                                 <div>이익률 = {won(r.profit)} ÷ {won(r.regular)} = <b style={{color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</b></div>
