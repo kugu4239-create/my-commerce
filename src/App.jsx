@@ -7541,19 +7541,35 @@ function OwnMallSaleCalcModal({ onClose }){
   const [selCoupon,setSelCoupon]=useState(-1);    // -1 = 쿠폰 없음
   const [limit,setLimit]=useState(50);
   const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
+  const [sampleMsg,setSampleMsg]=useState("");    // 샘플 저장/로드 상태 메시지
   const modalCardRef=useRef(null);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
   const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
-  // 마지막 업로드 파일을 Supabase(mall_calc_last_file, 단일 행)에 보관 → 다른 세션에서도 한 번에 불러오기
-  useEffect(()=>{ let alive=true; (async()=>{ try{ const db=await getSupabase(); const {data}=await db.from("mall_calc_last_file").select("filename,uploaded_at").eq("id",1).maybeSingle(); if(alive&&data) setSample({filename:data.filename,uploaded_at:data.uploaded_at}); }catch{} })(); return()=>{alive=false;}; },[]);
+  // 마지막 업로드 파일(Supabase mall_calc_last_file)을 모달 열 때 자동으로 불러와 채운다(초기 = 샘플 로드 상태).
+  useEffect(()=>{ let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const {data,error}=await db.from("mall_calc_last_file").select("filename,content_b64").eq("id",1).maybeSingle();
+        if(error||!data||!alive) return;
+        setSample({filename:data.filename});
+        const bin=atob(data.content_b64); const bytes=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+        const file=new File([bytes],data.filename||"sample.csv");
+        parseMallProductFile(file,rows=>{ if(alive){ loadProducts(rows,file.name); setSampleMsg(`📎 샘플 파일 자동 로드됨 — ${data.filename||""}`); } },()=>{});
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
   const saveSample=async file=>{
     try{
       const bytes=new Uint8Array(await file.arrayBuffer());
       let bin=""; for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
       const db=await getSupabase();
-      await db.from("mall_calc_last_file").upsert({id:1,filename:file.name,content_b64:btoa(bin),uploaded_at:new Date().toISOString()});
-      setSample({filename:file.name});
-    }catch(err){ console.warn("샘플 파일 저장 실패",err); }
+      const {error}=await db.from("mall_calc_last_file").upsert({id:1,filename:file.name,content_b64:btoa(bin),uploaded_at:new Date().toISOString()});
+      if(error) throw error;
+      setSample({filename:file.name}); setSampleMsg("📎 샘플로 저장됨 — 다음에 이 모달을 열면 자동 로드됩니다");
+    }catch(err){ setSampleMsg("⚠ 샘플 저장 실패: "+(err?.message||err)); }
   };
   const loadSample=async()=>{
     try{
@@ -7638,12 +7654,15 @@ function OwnMallSaleCalcModal({ onClose }){
             {status&&<div style={{marginTop:4,fontSize:11,color:status.startsWith("오류")?D.red:D.textSub}}>{status}</div>}
           </div>
 
-          {sample&&(
-            <div style={{marginBottom:14}}>
-              <button onClick={loadSample}
-                style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",color:D.text}}>
-                📎 샘플 파일 불러오기 — {sample.filename}
-              </button>
+          {(sample||sampleMsg)&&(
+            <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              {sample&&(
+                <button onClick={loadSample}
+                  style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",color:D.text}}>
+                  📎 샘플 파일 불러오기 — {sample.filename}
+                </button>
+              )}
+              {sampleMsg&&<span style={{fontSize:11,color:sampleMsg.startsWith("⚠")?D.red:D.green}}>{sampleMsg}</span>}
             </div>
           )}
 
