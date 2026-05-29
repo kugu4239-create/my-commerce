@@ -8518,7 +8518,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
       if(oid) m[k].orders.add(oid);
     });
     return Object.values(m).map(p=>({...p,orders:p.orders.size}))
-      .sort((a,b)=>b.orders-a.orders||b.qty-a.qty).slice(0,20);
+      .sort((a,b)=>b.qty-a.qty||b.orders-a.orders).slice(0,20);
   },[ch,promoStart,promoEnd,orders]);
 
   // 핀셋 상품 — 프로모션 전/후 주문 수량 비교 (해당 채널 한정, order_date 기준, 모든 상태 = 주문 수량)
@@ -8741,7 +8741,6 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>주문 건</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
                 </tr></thead>
                 <tbody>
@@ -8755,8 +8754,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                             background:`${D.blue}14`,border:`1px solid ${D.blue}55`,borderRadius:4,padding:"1px 5px",whiteSpace:"nowrap"}}>핀셋 상품</span>}
                         </div>
                       </td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.blue,fontWeight:600}}>{p.orders.toLocaleString()}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{p.qty.toLocaleString()}</td>
+                      <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{p.qty.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
