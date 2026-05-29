@@ -7933,29 +7933,33 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         ):(
           <>
             {/* 매출 요약 */}
-            <div style={{display:"flex",gap:14,marginTop:14,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
-              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
-                <span style={{color:D.textMeta}}>직전 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(prevTotal)}</b>
-              </div>
-              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
-                <span style={{color:D.textMeta}}>프로모션 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(promoTotal)}</b>
-              </div>
-              {chg!==null&&(
-                <div style={{padding:"7px 12px",background:chg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:chg>=0?D.green:D.red}}>
-                  <span>증감</span> <b style={{marginLeft:6}}>{chg>=0?"+":""}{chg.toFixed(1)}%</b>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:14,marginBottom:10,fontSize:12}}>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
+                  <span style={{color:D.textMeta}}>직전 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(prevTotal)}</b>
                 </div>
-              )}
-              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
-                <span style={{color:D.textMeta}}>직전 주문</span> <b style={{marginLeft:6}}>{prevOrders.toLocaleString()}건</b>
-              </div>
-              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
-                <span style={{color:D.textMeta}}>프로모션 주문</span> <b style={{marginLeft:6}}>{promoOrders.toLocaleString()}건</b>
-              </div>
-              {orderChg!==null&&(
-                <div style={{padding:"7px 12px",background:orderChg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:orderChg>=0?D.green:D.red}}>
-                  <span>주문 증감</span> <b style={{marginLeft:6}}>{orderChg>=0?"+":""}{orderChg.toFixed(1)}%</b>
+                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}}>
+                  <span style={{color:D.textMeta}}>프로모션 매출</span> <b style={{marginLeft:6}}>{fmtWonShort(promoTotal)}</b>
                 </div>
-              )}
+                {chg!==null&&(
+                  <div style={{padding:"7px 12px",background:chg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:chg>=0?D.green:D.red}}>
+                    <span>매출 증감</span> <b style={{marginLeft:6}}>{chg>=0?"+":""}{chg.toFixed(1)}%</b>
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
+                  <span style={{color:D.textMeta}}>직전 주문 장수</span> <b style={{marginLeft:6}}>{prevOrders.toLocaleString()}건</b>
+                </div>
+                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
+                  <span style={{color:D.textMeta}}>프로모션 주문 장수</span> <b style={{marginLeft:6}}>{promoOrders.toLocaleString()}건</b>
+                </div>
+                {orderChg!==null&&(
+                  <div style={{padding:"7px 12px",background:orderChg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:orderChg>=0?D.green:D.red}}>
+                    <span>주문 증감</span> <b style={{marginLeft:6}}>{orderChg>=0?"+":""}{orderChg.toFixed(1)}%</b>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 일별 매출 추이 */}
