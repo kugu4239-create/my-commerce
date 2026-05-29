@@ -6411,6 +6411,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           .salecalc input[type="number"]::-webkit-inner-spin-button,
           .salecalc input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
           .salecalc input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+          .salecalc table tbody tr:hover td {
+            background-image: linear-gradient(rgba(0,0,0,0.045), rgba(0,0,0,0.045));
+          }
           @media (max-width: 768px) {
             .salecalc-overlay { padding: 4px !important; align-items: flex-start !important; }
             .salecalc { width: 100% !important; max-width: 100% !important; max-height: calc(100vh - 8px) !important; border-radius: 8px !important; }
@@ -7033,8 +7036,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
                               <td title={`최종 할인율 = 1 − (실 판매액 ₩${wonFmt(r.finalPrice)} ÷ 정상가 ₩${wonFmt(r.list)}) = ${r.finalDisc}% (정상가 대비 총 할인)`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
-                                  color:(r.finalDisc||0)>=30?D.red:(r.finalDisc||0)>=20?D.amber:D.green,
-                                  fontWeight:700,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
+                                  background:"#eef3ff",color:D.blue,fontWeight:700,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
                               <td title={`정상가 ₩${wonFmt(r.list)} × 기본 할인율 ${r.baseDisc}% = ₩${wonFmt(Math.round((r.list||0)*((r.baseDisc||0)/100)))} 프런트 할인분 + 자사부담 쿠폰 차감액 합산 (자사 부담 → 마진 차감 대상)`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
