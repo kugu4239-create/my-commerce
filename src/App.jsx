@@ -642,15 +642,18 @@ function CalendarPicker({ mode="single", value, onChange, rangeStart, rangeEnd, 
           const avail = !availableDates || availableDates.has(dateStr);
           const sel = isSelected(dateStr);
           const rng = inRange(dateStr);
+          const isToday = dateStr === today;
           const bg = sel ? C.green : rng ? C.greenBg : "transparent";
-          const col = sel ? "#fff" : avail ? C.text : C.dim;
+          const col = sel ? "#fff" : isToday ? C.green : avail ? C.text : C.dim;
           return (
             <button key={day} onClick={()=>handleClick(dateStr)} disabled={!avail}
+              title={isToday?"오늘":undefined}
               style={{ ...btnBase, background:bg, color:col,
-                fontWeight:sel?700:avail?500:400,
+                fontWeight:(sel||isToday)?700:avail?500:400,
                 cursor:avail?"pointer":"default",
                 outline: (isStart(dateStr)||isEnd(dateStr)) ? `2px solid ${C.green}` : "none",
                 outlineOffset: -1,
+                boxShadow: (!sel && isToday) ? `inset 0 0 0 1.5px ${C.green}` : undefined,
               }}>
               {day}
             </button>
