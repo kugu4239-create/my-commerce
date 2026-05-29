@@ -6275,9 +6275,89 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
   const [invMap,setInvMap]=useState({});
   const [invProducts,setInvProducts]=useState([]); // [{name,code,selling,supply}]
+  // 사용자 업로드 공급가 오버라이드 (calc_supply_override 테이블) — 인벤토리보다 우선
+  const [overrideMap,setOverrideMap]=useState({}); // {normName: supplyPrice}
+  const [overrideStatus,setOverrideStatus]=useState("");
+  const [overrideDrag,setOverrideDrag]=useState(false);
+  const overrideFileRef=useRef(null);
+  // 상품명 정규화 — 인벤토리 / 오버라이드 / supplyOf 모두 공통 사용
+  const normProdName=useCallback(s=>String(s||"").trim().toLowerCase()
+    .replace(/[​‌‍ ﻿]/g,"")
+    .replace(/[\s_·•~\-]*\d+\s*colou?rs?\b/gi,"")
+    .replace(/\[[^\]]*\]/g,"")
+    .replace(/\([^)]*\)/g,"")
+    .replace(/[_·•~]+/g,"")
+    .replace(/\s+/g,"").trim(),[]);
   // 단일 시뮬 검색·선택 상태
   const [singleQuery,setSingleQuery]=useState("");
   const [singleSelected,setSingleSelected]=useState(null); // {name,code,selling,supply}
+  // 오버라이드 로드 + 업로드 / 삭제 핸들러
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        let all=[],from=0;const PAGE=1000;
+        while(true){
+          const {data,error}=await db.from("calc_supply_override").select("norm_name,supply_price").range(from,from+PAGE-1);
+          if(error||!data||data.length===0) break;
+          all=all.concat(data);
+          if(data.length<PAGE) break;
+          from+=PAGE;
+        }
+        if(!alive) return;
+        const m={};
+        all.forEach(r=>{if(r.norm_name) m[r.norm_name]=r.supply_price||0;});
+        setOverrideMap(m);
+        if(Object.keys(m).length>0) setOverrideStatus(`업로드 공급가 ${Object.keys(m).length}건 로드 완료 (인벤토리보다 우선 적용)`);
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  const handleSupplyUpload=async file=>{
+    setOverrideStatus("파일 분석 중…");
+    try{
+      const XLSX=await getXLSX();
+      const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{defval:""});
+      const pickName=r=>String(r["상품명"]??r["product_name"]??r["product"]??r["name"]??r["NAME"]??"").trim();
+      const pickPrice=r=>{
+        const raw=r["공급가"]??r["supply_price"]??r["원가"]??r["공급단가"]??r["cost"]??r["COST"]??0;
+        return Math.max(0,Math.round(Number(String(raw).replace(/[^\d.-]/g,""))||0));
+      };
+      const rows=[]; const seen=new Set();
+      json.forEach(r=>{
+        const nm=pickName(r); const sp=pickPrice(r);
+        if(!nm||sp<=0) return;
+        const nz=normProdName(nm);
+        if(!nz||seen.has(nz)) return; seen.add(nz);
+        rows.push({product_name:nm,norm_name:nz,supply_price:sp,updated_at:new Date().toISOString()});
+      });
+      if(rows.length===0){ setOverrideStatus("매칭 가능한 행 없음 — '상품명'·'공급가' 컬럼이 있는지 확인"); return; }
+      const db=await getSupabase();
+      const BATCH=500;
+      for(let i=0;i<rows.length;i+=BATCH){
+        const slice=rows.slice(i,i+BATCH);
+        const {error}=await db.from("calc_supply_override").upsert(slice,{onConflict:"norm_name"});
+        if(error) throw error;
+      }
+      const nm={...overrideMap};
+      rows.forEach(r=>{nm[r.norm_name]=r.supply_price;});
+      setOverrideMap(nm);
+      setOverrideStatus(`${rows.length}건 저장 완료 · 누적 ${Object.keys(nm).length}건`);
+    }catch(e){ setOverrideStatus("업로드 실패: "+(e?.message||e)); }
+  };
+  const clearOverride=async()=>{
+    if(!window.confirm(`저장된 업로드 공급가 ${Object.keys(overrideMap).length}건을 모두 삭제하시겠습니까?`)) return;
+    try{
+      const db=await getSupabase();
+      const {error}=await db.from("calc_supply_override").delete().gte("id",0);
+      if(error) throw error;
+      setOverrideMap({});
+      setOverrideStatus("업로드 공급가 전체 삭제됨");
+    }catch(e){ setOverrideStatus("삭제 실패: "+(e?.message||e)); }
+  };
   useEffect(()=>{
     let alive=true;
     (async()=>{
@@ -6295,20 +6375,12 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           from+=PAGE;
         }
         if(!alive) return;
-        // 상품명 정규화 — 보이지 않는 문자, 옵션 접미사, 괄호, 구분자, 공백 모두 제거
-        const norm=s=>String(s||"").trim().toLowerCase()
-          .replace(/[​‌‍ ﻿]/g,"")          // ZWSP / NBSP / BOM 제거
-          .replace(/[\s_·•~\-]*\d+\s*colou?rs?\b/gi,"")            // _2COLORS / 2COLORS / ·2COLOR / 2 colours
-          .replace(/\[[^\]]*\]/g,"")                                 // [BLACK]
-          .replace(/\([^)]*\)/g,"")                                  // (M) (BLACK)
-          .replace(/[_·•~]+/g,"")                                    // 구분자
-          .replace(/\s+/g,"").trim();                                // 공백 전부 제거
         const m={};
         const productMap={};
         all.forEach(r=>{
           const sp=r.supply_price||0;
           const n=(r.product_name||"").trim();
-          const nz=norm(n);
+          const nz=normProdName(n);
           const c=(r.product_code||"").trim();
           if(n&&!m["n:"+n]) m["n:"+n]=sp;
           if(nz&&!m["z:"+nz]) m["z:"+nz]=sp;
@@ -6322,23 +6394,21 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       }catch{}
     })();
     return()=>{alive=false;};
-  },[]);
+  },[normProdName]);
   // 상품명/코드 → 공급가 매칭
+  //  0) 사용자 업로드 오버라이드 정규화명 일치 (최우선)
   //  1) 정확 코드 일치
   //  2) 원본명 정확 일치
   //  3) 정규화된 이름 정확 일치 (옵션 접미사·괄호·구분자 제거)
   //  4) 정규화된 이름끼리 부분 포함 (≥ 4글자)
   const supplyOf=useCallback((name,code)=>{
+    const raw=(name||"").trim();
+    const nz=normProdName(raw);
+    if(nz&&overrideMap[nz]) return overrideMap[nz];
     if(code){const v=invMap["c:"+String(code).trim()]; if(v) return v;}
-    const raw=(name||"").trim(); if(!raw) return 0;
+    if(!raw) return 0;
     if(invMap["n:"+raw]) return invMap["n:"+raw];
-    const norm=s=>String(s||"").trim().toLowerCase()
-      .replace(/_+\s*\d+\s*colors?\b/gi,"")
-      .replace(/\[[^\]]*\]/g,"")
-      .replace(/\([^)]*\)/g,"")
-      .replace(/[_·•~]+/g,"")
-      .replace(/\s+/g,"").trim();
-    const nz=norm(raw); if(!nz) return 0;
+    if(!nz) return 0;
     if(invMap["z:"+nz]) return invMap["z:"+nz];
     // fallback — 정규화 키끼리 부분 포함 (양방향, 4자 이상)
     const zkeys=Object.keys(invMap).filter(k=>k.startsWith("z:"));
@@ -6347,7 +6417,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       if(kn.length>=4&&(kn.includes(nz)||nz.includes(kn))) return invMap[k];
     }
     return 0;
-  },[invMap]);
+  },[invMap,overrideMap,normProdName]);
   // 행별 baseDisc 수동 오버라이드 (사용자가 직접 수정한 값) — cpn 변경에도 유지
   useEffect(()=>{
     if(!rawRef.current) return;
@@ -7052,6 +7122,39 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 </>
                 );
               })()}
+            </div>
+          </details>
+
+          <details className="sec" style={sec}>
+            <summary style={summarySty}>
+              공급가 직접 업로드 (xlsx) <span className="chev" style={{color:D.textMeta}}>▾</span>
+            </summary>
+            <div style={{padding:"4px 14px 14px"}}>
+              <div style={{fontSize:11,color:D.textSub,lineHeight:1.6,marginBottom:8}}>
+                <b style={{color:D.black}}>상품명</b>·<b style={{color:D.black}}>공급가</b> 컬럼이 있는 xlsx 를 업로드하면 인벤토리에 없는 상품도 공급가가 매칭됩니다.
+                Supabase 에 저장되어 다음 세션·다른 기기에서도 그대로 유지되며, <b>인벤토리 공급가보다 우선 적용</b>됩니다.
+              </div>
+              <div onClick={()=>overrideFileRef.current?.click()}
+                onDragOver={e=>{e.preventDefault();setOverrideDrag(true);}}
+                onDragLeave={()=>setOverrideDrag(false)}
+                onDrop={e=>{e.preventDefault();setOverrideDrag(false);if(e.dataTransfer.files[0])handleSupplyUpload(e.dataTransfer.files[0]);}}
+                style={{border:`1px dashed ${overrideDrag?D.blue:D.borderMid}`,borderRadius:6,padding:18,textAlign:"center",
+                  cursor:"pointer",background:overrideDrag?"#eef3ff":D.surface}}>
+                <div style={{fontSize:11,color:D.text,marginBottom:3}}>xlsx 파일 끌어다 놓거나 클릭해 업로드</div>
+                <div style={{fontSize:11,color:D.textMeta}}>첫 번째 시트의 헤더에서 '상품명' / '공급가' 컬럼 자동 인식</div>
+                <input ref={overrideFileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
+                  onChange={e=>{if(e.target.files[0])handleSupplyUpload(e.target.files[0]); e.target.value="";}}/>
+              </div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8,gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:D.textSub}}>{overrideStatus||(Object.keys(overrideMap).length>0?`업로드 공급가 ${Object.keys(overrideMap).length}건 적용 중`:"업로드된 공급가 없음")}</span>
+                {Object.keys(overrideMap).length>0&&(
+                  <button onClick={clearOverride}
+                    style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                      padding:"3px 10px",fontSize:11,cursor:"pointer",color:D.textSub,fontWeight:600}}>
+                    전체 초기화
+                  </button>
+                )}
+              </div>
             </div>
           </details>
 
