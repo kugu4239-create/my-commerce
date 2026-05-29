@@ -7737,6 +7737,30 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
 
   const {prevTotal,promoTotal,chg}=promoRevenueChg(promo,revenues,storeSales);
 
+  // 주문 장수 — 주문·배송 데이터 소스(orders)에서 채널·기간 일치 + order_id 유니크 집계
+  const {prevOrders,promoOrders,orderChg}=useMemo(()=>{
+    if(!orders||!orders.length||!promoStart||!promoEnd) return {prevOrders:0,promoOrders:0,orderChg:null};
+    const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+    const matchesCh=r=> ch==="오프라인 스토어" ? OFFLINE.has(r.channel||"") : (r.channel||"")===ch;
+    const prevSeen=new Set(); let prevExtra=0;
+    const promoSeen=new Set(); let promoExtra=0;
+    orders.forEach(r=>{
+      if(!matchesCh(r)) return;
+      const d= ch==="오프라인 스토어" ? (r.sale_date||r.order_date) : r.order_date;
+      if(!d) return;
+      const oid=r.order_no||r.order_id;
+      if(d>=promoStart&&d<=promoEnd){
+        if(oid) promoSeen.add(oid); else promoExtra++;
+      } else if(d>=prevStart&&d<=prevEnd){
+        if(oid) prevSeen.add(oid); else prevExtra++;
+      }
+    });
+    const prevCount=prevSeen.size+prevExtra;
+    const promoCount=promoSeen.size+promoExtra;
+    const oc=prevCount>0?((promoCount-prevCount)/prevCount*100):null;
+    return {prevOrders:prevCount,promoOrders:promoCount,orderChg:oc};
+  },[ch,orders,promoStart,promoEnd,prevStart,prevEnd]);
+
   return (
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,
@@ -7803,6 +7827,17 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
               {chg!==null&&(
                 <div style={{padding:"7px 12px",background:chg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:chg>=0?D.green:D.red}}>
                   <span>증감</span> <b style={{marginLeft:6}}>{chg>=0?"+":""}{chg.toFixed(1)}%</b>
+                </div>
+              )}
+              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
+                <span style={{color:D.textMeta}}>직전 주문</span> <b style={{marginLeft:6}}>{prevOrders.toLocaleString()}건</b>
+              </div>
+              <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
+                <span style={{color:D.textMeta}}>프로모션 주문</span> <b style={{marginLeft:6}}>{promoOrders.toLocaleString()}건</b>
+              </div>
+              {orderChg!==null&&(
+                <div style={{padding:"7px 12px",background:orderChg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:orderChg>=0?D.green:D.red}}>
+                  <span>주문 증감</span> <b style={{marginLeft:6}}>{orderChg>=0?"+":""}{orderChg.toFixed(1)}%</b>
                 </div>
               )}
             </div>
