@@ -327,9 +327,11 @@ function detectFields(columns) {
 // 기간 필터 유틸
 // 로컬 타임존 기준 날짜 문자열 (UTC 기반 toISOString 대신 사용)
 function localDate(offsetDays=0){
-  const d=new Date();d.setDate(d.getDate()+offsetDays);
-  return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+  // 한국 표준시(KST, UTC+9) 기준 YYYY-MM-DD — 브라우저/서버 타임존과 무관하게 동일
+  return new Date(Date.now()+offsetDays*86400000+32400000).toISOString().slice(0,10);
 }
+// Date 객체를 로컬 구성요소로 YYYY-MM-DD 포맷 (toISOString의 UTC 밀림 방지 — 로컬=KST 환경 기준)
+function ymd(d){ return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'); }
 
 function filterByDate(rows, dateField, period, customStart, customEnd, upToYesterday=false) {
   if (period === "all") return rows;
@@ -348,12 +350,10 @@ function filterByDate(rows, dateField, period, customStart, customEnd, upToYeste
     return rows.filter(r => r[dateField] === yStr);
   }
   if (period === "7d") {
-    const c = new Date(); c.setDate(c.getDate()-7);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10) && r[dateField] <= ceiling);
+    return rows.filter(r => r[dateField] >= localDate(-7) && r[dateField] <= ceiling);
   }
   if (period === "14d") {
-    const c = new Date(); c.setDate(c.getDate()-14);
-    return rows.filter(r => r[dateField] >= c.toISOString().slice(0,10) && r[dateField] <= ceiling);
+    return rows.filter(r => r[dateField] >= localDate(-14) && r[dateField] <= ceiling);
   }
   if (period === "1m") {
     const d=new Date(); d.setMonth(d.getMonth()-1);
@@ -576,11 +576,12 @@ function DateRange({ start, end, onStart, onEnd }) {
 // availableDates (optional Set<string>): only these dates are clickable
 function CalendarPicker({ mode="single", value, onChange, rangeStart, rangeEnd, onRangeChange, availableDates, DC:dc }) {
   const C = dc || { bg:"transparent", surface:D.surface, border:D.border, text:D.text, sub:D.textSub, dim:D.textMeta, green:"#1a7a4f", greenBg:"rgba(26,122,79,0.12)" };
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDate(0);
   const initMonth = () => {
-    const base = mode==="range" ? (rangeStart||value||today) : (value||today);
-    const d = new Date(base||today);
-    return { y: d.getFullYear(), m: d.getMonth() };
+    // YYYY-MM-DD 문자열을 직접 파싱(타임존 무관) — new Date(str)는 UTC 파싱이라 월이 밀릴 수 있음
+    const base = (mode==="range" ? (rangeStart||value||today) : (value||today)) || today;
+    const [y,m] = String(base).slice(0,10).split("-").map(Number);
+    return { y: y||Number(today.slice(0,4)), m: (m||1)-1 };
   };
   const [cal, setCal] = useState(initMonth);
   // range picking state: "start" = waiting for start click, "end" = waiting for end click
@@ -880,7 +881,7 @@ function InfoModal({ show, onClose, title, children }) {
 // DATA DELETE SECTION
 // ─────────────────────────────────────────────
 function DataDeleteSection({ table, dateField, label, onDone }) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDate(0);
   const [start,setStart]=useState(today);
   const [end,setEnd]=useState(today);
   const [step,setStep]=useState(0); // 0=idle, 1=confirm1, 2=confirm2
@@ -1663,7 +1664,8 @@ const CH_ORDER=["자사몰","29CM","무신사","오프라인 스토어"];
 const chRank=ch=>{const i=CH_ORDER.indexOf(ch);return i>=0?i:99;};
 
 function getPriorPeriod(period,customStart,customEnd){
-  const fmt=d=>d.toISOString().slice(0,10);
+  // 로컬(KST) 구성요소로 포맷 — toISOString(UTC)는 KST 새벽에 하루 밀림
+  const fmt=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
   if(period==="yd"){
     return{start:localDate(-2),end:localDate(-2)};
   }
@@ -2004,7 +2006,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const c=new Date();
       if(shippingPeriod==="7d") c.setDate(c.getDate()-7);
       else c.setMonth(c.getMonth()-1);
-      const cut=c.toISOString().slice(0,10);
+      const cut=ymd(c);
       const byDay={};
       orders.filter(r=>r.delivery_date>=cut&&r.delivery_date<=today).forEach(r=>{
         const d=r.delivery_date;
@@ -2026,7 +2028,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
     }
     const c=new Date(); c.setMonth(c.getMonth()-3);
-    const cut=c.toISOString().slice(0,10);
+    const cut=ymd(c);
     const byMonth={};
     orders.filter(r=>r.delivery_date>=cut).forEach(r=>{
       const ym=r.delivery_date?.slice(0,7); if(!ym) return;
@@ -2045,10 +2047,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       start=localDate(-1); end=start;
     } else if(returnPeriod==="7d"){
       const d=new Date(); d.setDate(d.getDate()-7);
-      start=d.toISOString().slice(0,10);
+      start=ymd(d);
     } else {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
-      start=d.toISOString().slice(0,10);
+      start=ymd(d);
     }
     const filteredRet=orders.filter(r=>r.delivery_date>=start&&r.delivery_date<=end&&r.channel!=="오프라인 스토어");
     const retByCh={};
@@ -3407,7 +3409,7 @@ function getAgingStage(days){
 }
 
 function InventoryAgingUploader({ onDone }){
-  const today=new Date().toISOString().slice(0,10);
+  const today=localDate(0);
   const [diagDate,setDiagDate]=useState(today);
   const [fileName,setFileName]=useState("");
   const [preview,setPreview]=useState(null);
@@ -3655,8 +3657,8 @@ function LogisticsFlow({ orders, stocks, ts }) {
   const [tablePeriod,setTablePeriod]=useState("1m");
   const [agingKey,setAgingKey]=useState(0);
   const [agingDiagDate,setAgingDiagDate]=useState(()=>{
-    try{return localStorage.getItem("merryon_aging_date")||new Date().toISOString().slice(0,10);}
-    catch{return new Date().toISOString().slice(0,10);}
+    try{return localStorage.getItem("merryon_aging_date")||localDate(0);}
+    catch{return localDate(0);}
   });
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
@@ -3833,7 +3835,7 @@ function LogisticsFlow({ orders, stocks, ts }) {
 const PROMO_PLATFORMS=["자사몰","29CM","무신사","오프라인 스토어"];
 
 function SmallDateButtonPicker({value,onChange}){
-  const todayStr=new Date().toISOString().slice(0,10);
+  const todayStr=localDate(0);
   const datePart=(value&&value.length>=10)?value.slice(0,10):todayStr;
   const [y,m,d]=datePart.split("-").map(Number);
   const [halfYear,setHalfYear]=useState(m<=6?0:1);
@@ -4746,18 +4748,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [impactModal,setImpactModal]=useState(null);
   const [profitModal,setProfitModal]=useState(null); // 이익률 계산(베타) 모달 — 자사몰 한정
   const [filePreview,setFilePreview]=useState(null);
-  const [viewStart,setViewStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);});
-  const [viewEnd,setViewEnd]=useState(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().slice(0,10);});
+  const [viewStart,setViewStart]=useState(()=>localDate(-30));
+  const [viewEnd,setViewEnd]=useState(()=>localDate(30));
   const [viewPeriod,setViewPeriod]=useState("2m");
   const [calOpenFor,setCalOpenFor]=useState(null);
   const handleViewPeriod=v=>{
     setViewPeriod(v);
     if(v==="custom") return;
     const days=v==="1m"?15:v==="2m"?30:45;
-    const s=new Date();s.setDate(s.getDate()-days);
-    const e=new Date();e.setDate(e.getDate()+days);
-    setViewStart(s.toISOString().slice(0,10));
-    setViewEnd(e.toISOString().slice(0,10));
+    setViewStart(localDate(-days));
+    setViewEnd(localDate(days));
   };
 
   const [hoveredPromo,setHoveredPromo]=useState(null);
@@ -5320,7 +5320,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 <div style={{display:"flex",gap:3,marginTop:4}}>
                   {[["T10:00","오전 10시"],["T11:00","오전 11시"],["T23:59","오후 23:59"]].map(([time,tl])=>(
                     <button key={time} onClick={()=>{
-                      const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
+                      const base=form[field]?form[field].slice(0,10):localDate(0);
                       setForm(f=>({...f,[field]:`${base}${time}`}));
                     }} style={{flex:1,fontSize:11,padding:"3px 2px",
                       background:form[field]&&form[field].includes(time)?D.black:D.surfaceAlt,
@@ -5351,7 +5351,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     <input type="time" value={form[field]?form[field].slice(11,16)||"":""}
                       onChange={e=>{
                         const t=e.target.value;
-                        const base=form[field]?form[field].slice(0,10):new Date().toISOString().slice(0,10);
+                        const base=form[field]?form[field].slice(0,10):localDate(0);
                         setForm(f=>({...f,[field]:t?`${base}T${t}`:base}));
                       }}
                       style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:4,
@@ -5813,7 +5813,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                           <div style={{display:"flex",gap:3,marginTop:3,flexWrap:"wrap"}}>
                             {[["T10:00","10시"],["T11:00","11시"],["T23:59","23:59"]].map(([time,tl])=>(
                               <button key={time} onClick={()=>{
-                                const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
+                                const base=(editPromoForm[field]||localDate(0)).slice(0,10);
                                 setEditPromoForm(f=>({...f,[field]:`${base}${time}`}));
                               }} style={{flex:1,fontSize:10,padding:"2px",background:D.surfaceAlt,
                                 border:`1px solid ${D.border}`,borderRadius:3,cursor:"pointer",color:D.textSub}}>{tl}</button>
@@ -5838,7 +5838,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                               <input type="time" value={editPromoForm[field]?editPromoForm[field].slice(11,16)||"":""}
                                 onChange={e=>{
                                   const t=e.target.value;
-                                  const base=(editPromoForm[field]||new Date().toISOString().slice(0,10)).slice(0,10);
+                                  const base=(editPromoForm[field]||localDate(0)).slice(0,10);
                                   setEditPromoForm(f=>({...f,[field]:t?`${base}T${t}`:base}));
                                 }}
                                 style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:4,
@@ -8772,7 +8772,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
 // ─────────────────────────────────────────────
 function CSDataInput() {
   const [csData,setCSData]=useState(getCSData);
-  const today=new Date().toISOString().slice(0,10);
+  const today=localDate(0);
   const [date,setDate]=useState(today);
   const [filterProd,setFilterProd]=useState("");
   const [csvResult,setCsvResult]=useState(null);
@@ -9006,7 +9006,7 @@ function CSDataInput() {
 const REVENUE_CHANNELS = ["자사몰","29CM","무신사"];
 
 function RevenueForm({ onUpdate, histRefreshKey=0 }) {
-  const today=new Date().toISOString().slice(0,10);
+  const today=localDate(0);
   const [date,setDate]=useState(today);
   const [dateMode,setDateMode]=useState("single"); // "single"|"range"
   const [dateEnd,setDateEnd]=useState(today);
@@ -9434,7 +9434,7 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
 // DATA INPUT — 입고 CSV
 // ─────────────────────────────────────────────
 function StockUploader({ onUpdate, histRefreshKey=0 }) {
-  const today=new Date().toISOString().slice(0,10);
+  const today=localDate(0);
   const [startDate,setStartDate]=useState(today);
   const [endDate,setEndDate]=useState(today);
   const [step,setStep]=useState(0);
@@ -10968,7 +10968,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       if(!parsed.length){setUploadStatus("error");setStatusMsg("유효한 데이터 행이 없습니다");return;}
       // 파일에 데이터날짜 컬럼이 있으면 기본값으로, 없으면 오늘 날짜를 기본값으로
       const dates=[...new Set(parsed.map(r=>r.snapshot_date).filter(Boolean))].sort();
-      const today=new Date().toISOString().slice(0,10);
+      const today=localDate(0);
       setSnapDate(dates[dates.length-1]||today);
       setParsedRows(parsed);
     },err=>{setUploadStatus("error");setStatusMsg(err);});
@@ -12595,7 +12595,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     }).join("")+"</tr>").join("");
     const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></body></html>`;
     const blob=new Blob(["﻿"+html],{type:"application/vnd.ms-excel;charset=utf-8;"});
-    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${new Date().toISOString().slice(0,10)}.xls`});
+    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${localDate(0)}.xls`});
     a.click();URL.revokeObjectURL(a.href);
   };
 
@@ -12910,7 +12910,7 @@ function ActiveSkuVolume({orders=[],storeSales=[],DC}){
       else if(period==="6m") d.setMonth(d.getMonth()-6);
       else if(period==="1y") d.setFullYear(d.getFullYear()-1);
       filterStart=[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
-      filterEnd=new Date().toISOString().slice(0,10);
+      filterEnd=localDate(0);
     }
 
     const inRange=(dateStr)=>{
@@ -13851,7 +13851,7 @@ function CaptureBtn({cardRef,filename,DC}){
       const {default:html2canvas}=await import("html2canvas");
       const canvas=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:null,logging:false,height:fullH,windowHeight:fullH});
       restore();
-      const fname=`${filename}_${new Date().toISOString().slice(0,10)}.png`;
+      const fname=`${filename}_${localDate(0)}.png`;
       const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
       const isAndroid=/Android/i.test(navigator.userAgent);
       if(isIOS||isAndroid){
