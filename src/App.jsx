@@ -6318,23 +6318,36 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     setOverrideStatus("파일 분석 중…");
     try{
       const XLSX=await getXLSX();
-      const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+      const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
-      const json=XLSX.utils.sheet_to_json(ws,{defval:""});
-      const pickName=r=>String(r["상품명"]??r["product_name"]??r["product"]??r["name"]??r["NAME"]??"").trim();
-      const pickPrice=r=>{
-        const raw=r["공급가"]??r["supply_price"]??r["원가"]??r["공급단가"]??r["cost"]??r["COST"]??0;
-        return Math.max(0,Math.round(Number(String(raw).replace(/[^\d.-]/g,""))||0));
-      };
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:"YYYY-MM-DD"});
+      if(!raw||raw.length<2){ setOverrideStatus("데이터 행이 없습니다"); return; }
+      // 헤더 행 자동 탐색 (첫 5행 내) — 인벤토리 업로더와 동일 휴리스틱
+      let headerRow=0;
+      for(let i=0;i<Math.min(raw.length,5);i++){
+        const text=(raw[i]||[]).join(" ").toLowerCase();
+        if(/상품명|product_name|product|name|품명/.test(text)
+           &&/공급가|supply_price|원가|cost|단가/.test(text)){
+          headerRow=i; break;
+        }
+      }
+      const headers=(raw[headerRow]||[]).map(h=>String(h||"").trim());
+      const colMap=mapInvCols(headers);   // 기존 인벤토리 업로더의 별칭 매핑 재사용
+      if(colMap.product_name===undefined||colMap.supply_price===undefined){
+        setOverrideStatus(`'상품명' / '공급가' 컬럼을 찾지 못했습니다 — 헤더: ${headers.filter(Boolean).join(" / ")}`);
+        return;
+      }
       const rows=[]; const seen=new Set();
-      json.forEach(r=>{
-        const nm=pickName(r); const sp=pickPrice(r);
+      raw.slice(headerRow+1).forEach(r=>{
+        const nm=String(r[colMap.product_name]||"").trim();
+        const spRaw=String(r[colMap.supply_price]||"").replace(/[^\d.-]/g,"");
+        const sp=Math.max(0,Math.round(Number(spRaw)||0));
         if(!nm||sp<=0) return;
         const nz=normProdName(nm);
         if(!nz||seen.has(nz)) return; seen.add(nz);
         rows.push({product_name:nm,norm_name:nz,supply_price:sp,updated_at:new Date().toISOString()});
       });
-      if(rows.length===0){ setOverrideStatus("매칭 가능한 행 없음 — '상품명'·'공급가' 컬럼이 있는지 확인"); return; }
+      if(rows.length===0){ setOverrideStatus("매칭 가능한 행 없음 — 공급가가 0보다 큰 행이 있는지 확인"); return; }
       const db=await getSupabase();
       const BATCH=500;
       for(let i=0;i<rows.length;i+=BATCH){
@@ -6345,7 +6358,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       const nm={...overrideMap};
       rows.forEach(r=>{nm[r.norm_name]=r.supply_price;});
       setOverrideMap(nm);
-      setOverrideStatus(`${rows.length}건 저장 완료 · 누적 ${Object.keys(nm).length}건`);
+      setOverrideStatus(`${rows.length}건 저장 완료 · 누적 ${Object.keys(nm).length}건 (헤더 ${headerRow+1}행)`);
     }catch(e){ setOverrideStatus("업로드 실패: "+(e?.message||e)); }
   };
   const clearOverride=async()=>{
