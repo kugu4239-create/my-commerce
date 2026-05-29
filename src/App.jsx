@@ -7142,7 +7142,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                           <div style={rowSty}>
                             <span style={labelCol}><span>마진율</span></span>
                             <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
-                            <span style={calcCol}>마진 금액을 정상 가격으로 나눈 정상가 대비 이익률입니다.</span>
+                            <span style={calcCol}>마진 금액을 정산액(자사 실수령)으로 나눈 실수령 기준 이익률입니다.</span>
                           </div>
                           {(()=>{
                             // 최소 마진 기본 세일율 — 마진이 0이 되는 시점의 기본 할인율(0.1% 정밀도)
@@ -7335,7 +7335,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                   color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
                                 {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
                               </td>
-                              <td title={r.supply>0?`마진율 = 마진 ₩${wonFmt(r.margin||0)} ÷ 정상가 ₩${wonFmt(r.list)} × 100 = ${r.marginRate||0}% (정상가 대비 이익률)`:""}
+                              <td title={r.supply>0?`마진율 = 마진 ₩${wonFmt(r.margin||0)} ÷ 정산액 ₩${wonFmt(r.net||0)} × 100 = ${r.marginRate||0}% (정산액·실수령 대비 이익률)`:""}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                 color:r.supply>0?((r.marginRate||0)>=20?D.green:(r.marginRate||0)>=10?D.text:D.red):D.textMeta,
                                 fontWeight:700,whiteSpace:"nowrap"}}>
@@ -8087,7 +8087,7 @@ function FilePreviewModal({ file, onClose }){
 // 프로모션 이익률 분석 (베타)
 //   정상가 = 인벤토리 selling_price (또는 가격 DB), 원가 = 공급가 × 1.1 (부가세 포함)
 //   매출  = 자사몰 주문의 payment_amount (주문 단위, 중복 제거). 취소/교환/반품 제외.
-//   이익금 = 실판매 − 원가, 이익률 = 이익금 ÷ 정상가매출 (정상가 분모), 할인율 = (정상가−실판매)/정상가
+//   이익금 = 결제금액 − 원가합, 이익률 = 이익금 ÷ 결제금액 (결제금액 분모), 할인율 = (정상가−결제금액)/정상가
 // ─────────────────────────────────────────────
 // 가격 소스 훅: calc_supply_override(가격 DB, 최우선) → 최근 inventory_snapshot 폴백
 function useInventoryPricing(){
@@ -8169,7 +8169,7 @@ function useInventoryPricing(){
   return {priceOf,ready};
 }
 
-// 순수 계산 — 프로모션 기간 자사몰 주문의 건별/합계 이익금·이익률 (정상가 분모)
+// 순수 계산 — 프로모션 기간 자사몰 주문의 건별/합계 이익금·이익률 (결제금액 분모)
 function computePromoProfit(orders, promo, priceOf){
   const dayMs=86400000;
   const todayStr=localDate(0), yesterdayStr=localDate(-1);
@@ -8223,7 +8223,7 @@ function computePromoProfit(orders, promo, priceOf){
     const rec={order_no:o.order_no,order_date:o.order_date,lines,units,regular:reg,actual,cost,
       discRate:reg>0?(reg-actual)/reg*100:null,
       profit:actual-cost,
-      profitRate:reg>0?(actual-cost)/reg*100:null};
+      profitRate:actual>0?(actual-cost)/actual*100:null};
     if(missing||reg<=0){ excluded.push(rec); return; }
     rows.push(rec);
     tReg+=reg; tAct+=actual; tCost+=cost; tUnits+=units;
@@ -8231,7 +8231,7 @@ function computePromoProfit(orders, promo, priceOf){
   rows.sort((a,b)=>b.profit-a.profit);
   const totals={regular:tReg,actual:tAct,cost:tCost,profit:tAct-tCost,
     discRate:tReg>0?(tReg-tAct)/tReg*100:null,
-    profitRate:tReg>0?(tAct-tCost)/tReg*100:null,
+    profitRate:tAct>0?(tAct-tCost)/tAct*100:null,
     orders:rows.length,units:tUnits};
   return {rows,excluded,period,totals,abnormal,cancelled};
 }
@@ -8283,7 +8283,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
         <div style={{fontSize:11,color:D.textSub,background:`${D.amber}10`,border:`1px solid ${D.amber}33`,
           borderRadius:6,padding:"7px 10px",marginBottom:12,lineHeight:1.6}}>
           베타 테스트 중 · 자사몰은 <b>상품별 실결제액을 알 수 없어</b> 주문 단위로 비교합니다 — <b>주문 결제금액 vs 주문 상품 원가합</b>(공급가×1.1).
-          이익금 = 결제금액 − 원가합 · 이익률은 <b>정상가 분모</b> 기준(정상가 = 인벤토리 판매가).
+          이익금 = 결제금액 − 원가합 · 이익률은 <b>결제금액 분모</b> 기준(실제 판매가 대비), 할인율은 정상가 대비.
         </div>
 
         {period.startsToday?(
@@ -8308,7 +8308,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                 <div style={{fontSize:15,fontWeight:800,color:totals.profit>=0?D.green:D.red}}>{won(totals.profit)}</div>
               </div>
               <div style={{padding:"8px 14px",background:(totals.profitRate||0)>=0?`${D.green}12`:`${D.red}12`,borderRadius:8}}>
-                <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>이익률 (정상가 분모)</div>
+                <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>이익률 (결제금액 분모)</div>
                 <div style={{fontSize:15,fontWeight:800,color:(totals.profitRate||0)>=0?D.green:D.red}}>{pct(totals.profitRate)}</div>
               </div>
             </div>
@@ -8379,7 +8379,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                                 <div>실판매액(결제) = {won(r.actual)} · 원가합 = {won(r.cost)}</div>
                                 <div>할인율 = (정상가 {won(r.regular)} − 결제 {won(r.actual)}) ÷ {won(r.regular)} = <b>{pct(r.discRate)}</b></div>
                                 <div>이익금 = 결제금액 {won(r.actual)} − 원가합 {won(r.cost)} = <b style={{color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</b></div>
-                                <div>이익률 = {won(r.profit)} ÷ {won(r.regular)} = <b style={{color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</b></div>
+                                <div>이익률 = 이익금 {won(r.profit)} ÷ 결제금액 {won(r.actual)} = <b style={{color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</b></div>
                               </div>
                             </td>
                           </tr>
