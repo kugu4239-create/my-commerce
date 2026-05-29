@@ -7530,59 +7530,72 @@ function parseMallProductFile(file,onResult,onError){
   }
 }
 
+const MALL_CALC_SAMPLE_KEY="merryon_mall_calc_sample";
 function OwnMallSaleCalcModal({ onClose }){
   const [products,setProducts]=useState([]);
   const [fileName,setFileName]=useState("");
   const [status,setStatus]=useState("");
   const [dragOver,setDragOver]=useState(false);
-  const [saleRate,setSaleRate]=useState(10);     // 기본 세일율 %
+  const [rates,setRates]=useState({});           // 상품별 할인율 % (index→값, 기본 10)
   const [coupons,setCoupons]=useState([]);        // [{name,rate}] 멤버십 쿠폰(교차 불가)
   const [selCoupon,setSelCoupon]=useState(-1);    // -1 = 쿠폰 없음
   const [limit,setLimit]=useState(50);
+  const [sample,setSample]=useState(()=>{ try{ const s=localStorage.getItem(MALL_CALC_SAMPLE_KEY); return s?JSON.parse(s):null; }catch{ return null; } });
   const modalCardRef=useRef(null);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
+  const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
   const handleFile=f=>{
     if(!f) return;
-    setFileName(f.name);setStatus("파싱 중…");setProducts([]);
-    parseMallProductFile(f,rows=>{ setProducts(rows); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); },
-      err=>{ setStatus("오류: "+err); });
+    setFileName(f.name);setStatus("파싱 중…");setProducts([]);setRates({});
+    parseMallProductFile(f,rows=>{
+      loadProducts(rows,f.name);
+      // 마지막 업로드 파일을 샘플로 보관 (다음에 클릭 한 번으로 불러오기)
+      try{ const s={fileName:f.name,products:rows,savedAt:new Date().toISOString()}; localStorage.setItem(MALL_CALC_SAMPLE_KEY,JSON.stringify(s)); setSample(s); }catch{ /* quota */ }
+    }, err=>{ setStatus("오류: "+err); });
   };
-  const sr=Math.max(0,Math.min(100,Number(saleRate)||0));
   const couponRate=selCoupon>=0?Math.max(0,Math.min(100,Number(coupons[selCoupon]?.rate)||0)):0;
   const couponName=selCoupon>=0?(coupons[selCoupon]?.name||`쿠폰 ${selCoupon+1}`):"";
-  const rows=useMemo(()=>products.map(p=>{
-    const discounted=Math.round(p.selling*(1-sr/100)*(1-couponRate/100)/10)*10;
-    const discRate=p.selling>0?(1-discounted/p.selling)*100:0;
+  // 곱연산 체인: 판매가 > 할인율 > 할인금액 > 할인가 > 쿠폰율 > 쿠폰금액 > 쿠폰적용가 > 원가 > 마진 > 마진율
+  const rows=useMemo(()=>products.map((p,i)=>{
+    const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
+    const discAmt=Math.round(p.selling*rate/100);
+    const discPrice=p.selling-discAmt;
+    const couponAmt=Math.round(discPrice*couponRate/100);
+    const couponPrice=discPrice-couponAmt;
     const supplyVat=Math.round((p.supply||0)*1.1);
-    const margin=discounted-supplyVat;
-    const marginRate=discounted>0?margin/discounted*100:0;
-    return {...p,discounted,discRate,supplyVat,margin,marginRate};
-  }),[products,sr,couponRate]);
+    const margin=couponPrice-supplyVat;
+    const marginRate=couponPrice>0?margin/couponPrice*100:0;
+    const effDisc=p.selling>0?(1-couponPrice/p.selling)*100:0;
+    return {...p,idx:i,rate,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,marginRate,effDisc};
+  }),[products,rates,couponRate]);
   const agg=useMemo(()=>{
     if(!rows.length) return null;
     const n=rows.length;
     return {n,
-      avgDisc:rows.reduce((s,r)=>s+r.discRate,0)/n,
+      avgDisc:rows.reduce((s,r)=>s+r.effDisc,0)/n,
       avgMargin:rows.reduce((s,r)=>s+r.marginRate,0)/n,
       noCost:rows.filter(r=>!r.supplyVat).length,
       neg:rows.filter(r=>r.margin<0).length};
   },[rows]);
   const won=n=>"₩"+Math.round(n||0).toLocaleString();
   const pct=v=>`${(Math.round(v*10)/10).toFixed(1)}%`;
+  const setRate=(i,v)=>setRates(prev=>({...prev,[i]:v}));
+  const setAllRates=v=>setRates(()=>{const m={};products.forEach((_,i)=>{m[i]=v;});return m;});
   const exportXlsx=async()=>{
     if(!rows.length) return;
     const XLSX=await getXLSX();
     const aoa=[["상품코드","상품명","할인 이후 가격","할인율(%)"],
-      ...rows.map(r=>[r.code,r.name,r.discounted,Math.round(r.discRate*10)/10])];
+      ...rows.map(r=>[r.code,r.name,r.couponPrice,Math.round(r.effDisc*10)/10])];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),"세일율");
-    XLSX.writeFile(wb,`자사몰_세일${sr}%${couponName?"_"+couponName:""}_${dayjs().format("YYYYMMDD")}.xlsx`);
+    XLSX.writeFile(wb,`자사몰_세일율${couponName?"_"+couponName:""}_${dayjs().format("YYYYMMDD")}.xlsx`);
   };
+  const numCell={padding:"4px 6px",textAlign:"right"};
   return (
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
-        style={{background:D.surface,borderRadius:14,width:"min(960px,96vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        style={{background:D.surface,borderRadius:14,width:"min(1100px,97vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
           padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
           <b style={{fontSize:13,color:D.black,fontWeight:700}}>자사몰 세일율 계산기
@@ -7597,32 +7610,43 @@ function OwnMallSaleCalcModal({ onClose }){
             onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}
             onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".csv,.xlsx,.xls";inp.onchange=ev=>handleFile(ev.target.files[0]);inp.click();}}
             style={{border:`1.5px dashed ${dragOver?D.blue:D.border}`,borderRadius:10,padding:18,textAlign:"center",cursor:"pointer",
-              background:dragOver?`${D.blue}08`:D.surfaceAlt,marginBottom:14}}>
+              background:dragOver?`${D.blue}08`:D.surfaceAlt,marginBottom:10}}>
             <div style={{fontSize:13,fontWeight:600,color:D.text,marginBottom:4}}>자사몰 상품 파일 (CSV / Excel) 드래그 &amp; 드롭</div>
             <div style={{fontSize:11,color:D.textMeta}}>상품코드 · 상품명 · 판매가 · 공급가 컬럼 사용 (카페24 상품 엑셀)</div>
             {fileName&&<div style={{marginTop:6,fontSize:12,color:D.blue}}>{fileName}</div>}
             {status&&<div style={{marginTop:4,fontSize:11,color:status.startsWith("오류")?D.red:D.textSub}}>{status}</div>}
           </div>
 
+          {sample&&(
+            <div style={{marginBottom:14}}>
+              <button onClick={()=>loadProducts(sample.products,sample.fileName)}
+                style={{background:D.surfaceAlt,border:`1px solid ${D.border}`,borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",color:D.text}}>
+                📎 샘플 파일 불러오기 — {sample.fileName} ({(sample.products?.length||0).toLocaleString()}개)
+              </button>
+            </div>
+          )}
+
           {products.length>0&&(<>
             <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,borderRadius:10,marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
-                <span style={{fontSize:12,fontWeight:700,color:D.black}}>세일율</span>
-                <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={saleRate}
-                  onChange={e=>setSaleRate(e.target.value)} style={{...inNum,width:80}}/>
-                <span style={{fontSize:12,color:D.blue}}>%</span>
-                <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>판매가 기준 기본 할인 · 최종가 10원 단위 반올림</span>
+                <span style={{fontSize:12,fontWeight:700,color:D.black}}>할인율</span>
+                <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마진율 실시간 반영</span>
+                <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>전체 일괄:</span>
+                {[10,15,20,30].map(v=>(
+                  <button key={v} onClick={()=>setAllRates(v)}
+                    style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
+                ))}
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-                  <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>멤버십 쿠폰 (서로 교차 불가 · 하나만 적용)</span>
+                  <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>멤버십 쿠폰 (서로 교차 불가 · 하나만 적용 · 상품 할인 후 곱연산)</span>
                   <button onClick={()=>setCoupons(c=>[...c,{name:"",rate:5}])}
                     style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:"auto"}}>+ 쿠폰 추가</button>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,cursor:"pointer"}}>
                     <input type="radio" name="mallcoupon" checked={selCoupon===-1} onChange={()=>setSelCoupon(-1)}/>
-                    <span style={{color:D.text}}>쿠폰 없음 (세일만)</span>
+                    <span style={{color:D.text}}>쿠폰 없음</span>
                   </label>
                   {coupons.map((c,i)=>(
                     <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -7637,9 +7661,7 @@ function OwnMallSaleCalcModal({ onClose }){
                     </div>
                   ))}
                 </div>
-                <div style={{fontSize:11,color:D.textSub,marginTop:8}}>
-                  적용: 세일 {sr}%{couponRate>0?` + ${couponName||"멤버십"} ${couponRate}%`:""} → 최종 할인 약 {pct((1-(1-sr/100)*(1-couponRate/100))*100)}
-                </div>
+                {couponRate>0&&<div style={{fontSize:11,color:D.textSub,marginTop:8}}>적용 쿠폰: {couponName||"멤버십"} {couponRate}% (각 상품 할인가에 곱연산)</div>}
               </div>
             </div>
 
@@ -7661,28 +7683,41 @@ function OwnMallSaleCalcModal({ onClose }){
             )}
 
             <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap"}}>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
-                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품코드</th>
-                  <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매가</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>할인 이후 가격</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>할인율</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>원가(VAT)</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>마진</th>
-                  <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>마진율</th>
+                  <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
+                  <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품명</th>
+                  <th style={{...numCell,fontWeight:500}}>판매가</th>
+                  <th style={{...numCell,fontWeight:500}}>할인율</th>
+                  <th style={{...numCell,fontWeight:500}}>할인금액</th>
+                  <th style={{...numCell,fontWeight:500}}>할인가</th>
+                  <th style={{...numCell,fontWeight:500}}>쿠폰율</th>
+                  <th style={{...numCell,fontWeight:500}}>쿠폰금액</th>
+                  <th style={{...numCell,fontWeight:500}}>쿠폰적용가</th>
+                  <th style={{...numCell,fontWeight:500}}>원가(VAT)</th>
+                  <th style={{...numCell,fontWeight:500}}>마진</th>
+                  <th style={{...numCell,fontWeight:500}}>마진율</th>
                 </tr></thead>
                 <tbody>
-                  {rows.slice(0,limit).map((r,i)=>(
-                    <tr key={r.code+i} style={{borderBottom:`1px solid ${D.border}`}}>
-                      <td style={{padding:"5px 7px",color:D.textMeta,fontFamily:"monospace"}}>{r.code}</td>
-                      <td style={{padding:"5px 7px",color:D.text,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.name}>{r.name}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textMeta}}>{won(r.selling)}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{won(r.discounted)}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.blue}}>{pct(r.discRate)}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",color:D.textMeta}}>{r.supplyVat?won(r.supplyVat):"—"}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",fontWeight:600,color:r.margin>=0?D.green:D.red}}>{won(r.margin)}</td>
-                      <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:r.marginRate>=0?D.green:D.red}}>{pct(r.marginRate)}</td>
+                  {rows.slice(0,limit).map((r)=>(
+                    <tr key={r.code+r.idx} style={{borderBottom:`1px solid ${D.border}`}}>
+                      <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>{r.code}</td>
+                      <td style={{padding:"4px 6px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name}</td>
+                      <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}</td>
+                      <td style={numCell}>
+                        <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1"
+                          value={rates[r.idx]??10} onChange={e=>setRate(r.idx,e.target.value)}
+                          style={{width:46,textAlign:"right",background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,padding:"2px 4px",fontSize:11,color:D.text,fontFamily:"inherit"}}/>
+                        <span style={{color:D.textMeta}}> %</span>
+                      </td>
+                      <td style={{...numCell,color:D.textMeta}}>{won(r.discAmt)}</td>
+                      <td style={{...numCell,color:D.textSub}}>{won(r.discPrice)}</td>
+                      <td style={{...numCell,color:D.textMeta}}>{couponRate?pct(couponRate):"—"}</td>
+                      <td style={{...numCell,color:D.textMeta}}>{couponRate?won(r.couponAmt):"—"}</td>
+                      <td style={{...numCell,color:D.text,fontWeight:700}}>{won(r.couponPrice)}</td>
+                      <td style={{...numCell,color:D.textMeta}}>{r.supplyVat?won(r.supplyVat):"—"}</td>
+                      <td style={{...numCell,fontWeight:600,color:r.margin>=0?D.green:D.red}}>{won(r.margin)}</td>
+                      <td style={{...numCell,fontWeight:700,color:r.marginRate>=0?D.green:D.red}}>{pct(r.marginRate)}</td>
                     </tr>
                   ))}
                 </tbody>
