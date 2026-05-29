@@ -8163,6 +8163,7 @@ function computePromoProfit(orders, promo, priceOf){
   if(!promoStart||!promoEnd||startsToday||!orders?.length) return {rows:[],excluded:[],period,totals:emptyTotals,abnormal:0,cancelled:0};
   // 자사몰 · 기간 → 주문번호로 그룹. payment_amount 는 주문 단위.
   //   · 취소/교환/반품 라인이 하나라도 있으면(부분취소 포함) 주문 전체를 제외 — 결제금액과 잔여 상품 원가합이 정합하지 않으므로.
+  //   · 결제금액이 0인 주문(전체취소·환불로 순결제 0)도 제외.
   //   · 비정상 주문번호(YYYYMMDD-XXXXXXX 형식 아님)도 제외.
   const byOrder={};
   let abnormal=0; const seenAbnormal=new Set();
@@ -8179,7 +8180,7 @@ function computePromoProfit(orders, promo, priceOf){
   const rows=[],excluded=[]; let cancelled=0;
   let tReg=0,tAct=0,tCost=0,tUnits=0;
   Object.values(byOrder).forEach(o=>{
-    if(o.hasCancel){ cancelled++; return; } // 부분/전체 취소 포함 주문 → 통째 제외
+    if(o.hasCancel||o.payment<=0){ cancelled++; return; } // 취소 라인 포함(부분취소) 또는 결제금액 0(전체취소·환불) → 통째 제외
     if(!o.lines.length) return;
     let reg=0,cost=0,units=0,missing=false;
     const lines=o.lines.map(ln=>{
@@ -8288,7 +8289,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
               집계 주문 {totals.orders.toLocaleString()}건 · 판매수량 {totals.units.toLocaleString()}장
               {excluded.length>0&&<span style={{color:D.amber}}> · 가격 미등록 {excluded.length}건 제외</span>}
               {abnormal>0&&<span style={{color:D.amber}}> · 비정상 주문번호 {abnormal}건 제외</span>}
-              {cancelled>0&&<span style={{color:D.amber}}> · 취소포함 주문 {cancelled}건 제외</span>}
+              {cancelled>0&&<span style={{color:D.amber}}> · 취소·무결제 주문 {cancelled}건 제외</span>}
             </div>
 
             <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
