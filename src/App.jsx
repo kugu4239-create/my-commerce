@@ -12752,7 +12752,8 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
+            <style>{`.reordercalc tbody tr{transition:background 0.12s;}.reordercalc tbody tr:hover td{background:#f4f4f2;}`}</style>
+            <table className="reordercalc" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
               <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                 <tr>
                   <th style={{padding:"4px 6px",borderBottom:`1px solid ${DC.border}`,width:28}}>
