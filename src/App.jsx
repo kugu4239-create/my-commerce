@@ -5657,9 +5657,14 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 fontFamily:"'Noto Sans KR','Pretendard',sans-serif"};
               return (
               <div key={p.id} ref={el=>{promoCardRefs.current[p.id]=el;}}
-                style={{position:"relative",border:`1px solid ${D.black}`,borderRadius:10,
-                  padding:"14px 16px",background:D.surface,opacity:ended&&!isEditing?0.78:1,
+                style={{position:"relative",border:`1px solid ${ended&&!isEditing?D.borderMid:D.black}`,borderRadius:10,
+                  padding:"14px 16px",background:D.surface,
                   fontFamily:"'Noto Sans KR','Pretendard',sans-serif",lineHeight:1.7}}>
+                {ended&&!isEditing&&(
+                  <div data-capture-hide aria-hidden="true"
+                    style={{position:"absolute",inset:0,borderRadius:10,
+                      background:"rgba(255,255,255,0.62)",pointerEvents:"none",zIndex:1}}/>
+                )}
                 {isEditing?(
                   <div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
@@ -5777,7 +5782,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       {canImpact&&(
                         <button onClick={()=>setImpactModal(p)} data-capture-hide
                           style={{background:D.black,color:"#fff",border:"none",borderRadius:5,
-                            padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:4}}>임팩트 분석</button>
+                            padding:"3px 11px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:4,
+                            position:"relative",zIndex:2}}>임팩트 분석</button>
                       )}
                       {ichg!=null&&ichg>=20&&(
                         <span data-capture-hide title={`직전 동일기간 대비 매출 +${ichg.toFixed(1)}%`}
