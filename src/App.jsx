@@ -4845,7 +4845,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
     },80);
   };
-  const nowStr=new Date().toISOString().slice(0,16);
+  // 한국시(KST) 현재 시각 YYYY-MM-DDTHH:MM — end_date(KST 기준)와 비교해 종료 판정 (UTC면 9시간 늦게 종료 처리됨)
+  const nowStr=new Date(Date.now()+32400000).toISOString().slice(0,16);
   const isEnded=p=>p.end_date&&String(p.end_date)<nowStr;
   const readFileData=(file,cb)=>{const r=new FileReader();r.onload=e=>cb({name:file.name,type:file.type,data:e.target.result});r.readAsDataURL(file);};
 
@@ -13948,7 +13949,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
       let cur=new Date(from.getFullYear(),from.getMonth(),1);
       while(cur<=today&&res.length<60){
         const e=new Date(cur.getFullYear(),cur.getMonth()+1,0);
-        res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:cur.toISOString().slice(0,10),end:e.toISOString().slice(0,10)});
+        res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:ymd(cur),end:ymd(e)});
         cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
       }
     }
@@ -13988,7 +13989,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
         while(cur<=rangeEnd&&res.length<60){
           const e=new Date(cur.getFullYear(),cur.getMonth()+1,0);
           const eC=e>rangeEnd?rangeEnd:e;
-          res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:cur.toISOString().slice(0,10),end:eC.toISOString().slice(0,10)});
+          res.push({label:`${cur.getFullYear()}.${cur.getMonth()+1}`,start:ymd(cur),end:ymd(eC)});
           cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
         }
       }
