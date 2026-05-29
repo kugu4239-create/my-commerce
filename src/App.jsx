@@ -12489,6 +12489,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
   const [sortDir,setSortDir]=useState("asc");
   const [pg,setPg]=useState(0);
   const [selected,setSelected]=useState(()=>new Set());
+  const [copied,setCopied]=useState(false);
   const PG=20;
 
   const load=useCallback(async()=>{
@@ -12571,33 +12572,39 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     }))
   ,[data]);
 
-  const downloadCSV=(source)=>{
-    const target=source||filtered;
-    const cols=[
-      {label:"상품코드",get:r=>r.reorder_product_code||"",align:"left"},
-      {label:"상품명",get:r=>r.reorder_product_name,align:"left"},
-      {label:"옵션",get:r=>r.reorder_option_name,align:"left"},
-      {label:"가용재고",get:r=>(r.reorder_available_stock||0).toLocaleString(),align:"center"},
-      {label:"입고대기",get:r=>(r.reorder_incoming_stock||0).toLocaleString(),align:"center"},
-      {label:"실질 가용재고",get:r=>(r.reorder_effective_stock||0).toLocaleString(),align:"center",bold:true},
-      {label:"1주 판매",get:r=>(r.reorder_weekly_sales||0).toLocaleString(),align:"center"},
-      {label:"4주 판매",get:r=>(r.reorder_monthly_sales||0).toLocaleString(),align:"center"},
-      {label:"예상 일판매",get:r=>(r.reorder_expected_daily_sales||0).toFixed(2),align:"center"},
-      {label:"판매 추세",get:r=>trendTag(r).label,align:"center",colorBy:r=>trendTag(r).color},
-      {label:"재고잔여일",get:r=>(r.reorder_days_left||0).toFixed(1)+"일",align:"center",bold:true,colorBy:r=>(r.reorder_days_left||0)<7?"#C87B7B":"#C8A87B"},
-      {label:"추천 리오더",get:r=>(r.reorder_recommended_qty||0).toLocaleString(),align:"center",bold:true},
-    ];
+  const exportCols=[
+    {label:"상품코드",get:r=>r.reorder_product_code||"",align:"left"},
+    {label:"상품명",get:r=>r.reorder_product_name,align:"left"},
+    {label:"옵션",get:r=>r.reorder_option_name,align:"left"},
+    {label:"가용재고",get:r=>(r.reorder_available_stock||0).toLocaleString(),align:"center"},
+    {label:"입고대기",get:r=>(r.reorder_incoming_stock||0).toLocaleString(),align:"center"},
+    {label:"실질 가용재고",get:r=>(r.reorder_effective_stock||0).toLocaleString(),align:"center",bold:true},
+    {label:"1주 판매",get:r=>(r.reorder_weekly_sales||0).toLocaleString(),align:"center"},
+    {label:"4주 판매",get:r=>(r.reorder_monthly_sales||0).toLocaleString(),align:"center"},
+    {label:"예상 일판매",get:r=>(r.reorder_expected_daily_sales||0).toFixed(2),align:"center"},
+    {label:"판매 추세",get:r=>trendTag(r).label,align:"center",colorBy:r=>trendTag(r).color},
+    {label:"재고잔여일",get:r=>(r.reorder_days_left||0).toFixed(1)+"일",align:"center",bold:true,colorBy:r=>(r.reorder_days_left||0)<7?"#C87B7B":"#C8A87B"},
+    {label:"추천 리오더",get:r=>(r.reorder_recommended_qty||0).toLocaleString(),align:"center",bold:true},
+  ];
+  const buildExportHtml=(target)=>{
     const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    const headerHtml=cols.map(c=>
+    const headerHtml=exportCols.map(c=>
       `<th style="background:#D4F0E1;color:#1a1a1a;border:1px solid #c0d6cb;padding:6px 10px;font-weight:600;text-align:${c.align};font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;font-size:13px;">${esc(c.label)}</th>`
     ).join("");
-    const bodyHtml=target.map(r=>"<tr>"+cols.map(c=>{
+    const bodyHtml=target.map(r=>"<tr>"+exportCols.map(c=>{
       const v=c.get(r);
       const color=c.colorBy?c.colorBy(r):"#1a1a1a";
       const fw=c.bold?700:400;
       return `<td style="border:1px solid #e0e0da;padding:5px 10px;text-align:${c.align};color:${color};font-weight:${fw};font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;font-size:13px;">${esc(v)}</td>`;
     }).join("")+"</tr>").join("");
-    const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></body></html>`;
+    return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></body></html>`;
+  };
+  const buildExportTsv=(target)=>{
+    const cell=v=>String(v??"").replace(/[\t\r\n]+/g," ").trim();
+    return [exportCols.map(c=>c.label).join("\t"),...target.map(r=>exportCols.map(c=>cell(c.get(r))).join("\t"))].join("\n");
+  };
+  const downloadCSV=(source)=>{
+    const html=buildExportHtml(source||filtered);
     const blob=new Blob(["﻿"+html],{type:"application/vnd.ms-excel;charset=utf-8;"});
     const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${localDate(0)}.xls`});
     a.click();URL.revokeObjectURL(a.href);
@@ -12615,6 +12622,35 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     return s;
   });
   const downloadSelected=()=>downloadCSV(filtered.filter(r=>selected.has(rowKey(r))));
+  const copySelected=async()=>{
+    const target=filtered.filter(r=>selected.has(rowKey(r)));
+    if(!target.length) return;
+    const tsv=buildExportTsv(target);
+    const html=buildExportHtml(target);
+    const fallback=()=>{
+      const ta=document.createElement("textarea");
+      ta.value=tsv;ta.style.position="fixed";ta.style.opacity="0";
+      document.body.appendChild(ta);ta.focus();ta.select();
+      try{document.execCommand("copy");}catch{/* noop */}
+      document.body.removeChild(ta);
+    };
+    try{
+      if(navigator.clipboard&&typeof window.ClipboardItem==="function"){
+        await navigator.clipboard.write([new window.ClipboardItem({
+          "text/plain":new Blob([tsv],{type:"text/plain"}),
+          "text/html":new Blob([html],{type:"text/html"}),
+        })]);
+      }else if(navigator.clipboard&&navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(tsv);
+      }else{
+        fallback();
+      }
+    }catch{
+      fallback();
+    }
+    setCopied(true);
+    setTimeout(()=>setCopied(false),1500);
+  };
 
   const trendTag=r=>{const t=r.reorder_trend_ratio||0;return t>=1.2?{label:"↑ 상승",color:"#7EC8A4"}:t>=0.8?{label:"→ 안정",color:"#7B9EC8"}:{label:"↓ 감소",color:"#C87B7B"};};
 
@@ -12741,6 +12777,9 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                   <button onClick={()=>setSelected(new Set())}
                     style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,
                       padding:"4px 10px",fontSize:13,cursor:"pointer"}}>선택 해제</button>
+                  <button onClick={copySelected} title="상품명·옵션 포함 전체 컬럼을 표 형식으로 복사 — 엑셀/구글시트에 바로 붙여넣기"
+                    style={{background:copied?"#7B9EC8":"transparent",color:copied?"#fff":"#7B9EC8",border:"1px solid #7B9EC8",borderRadius:5,
+                      padding:"4px 12px",fontSize:13,cursor:"pointer",fontWeight:600}}>{copied?"복사됨 ✓":"⧉ 선택 복사"}</button>
                   <button onClick={downloadSelected}
                     style={{background:"#7EC8A4",color:"#fff",border:"1px solid #7EC8A4",borderRadius:5,
                       padding:"4px 12px",fontSize:13,cursor:"pointer",fontWeight:600}}>↓ 선택 다운로드</button>
