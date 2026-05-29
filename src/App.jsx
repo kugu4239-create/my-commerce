@@ -6314,7 +6314,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
     const supplyIncVat=Math.round((supply||0)*1.1);       // 공급가 (세포) = 인벤토리 공급가액 × 1.1
     const margin=net-supplyIncVat;
-    const marginRate=list>0?Math.round(margin/list*1000)/10:0;
+    // 마진율 = (정산액 − 원가) ÷ 정산액 (자사 실수령 기준 · 표준 판매가기준 마진율)
+    const marginRate=net>0?Math.round(margin/net*1000)/10:0;
     return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,marginRate,supplyIncVat};
   },[]);
   // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
