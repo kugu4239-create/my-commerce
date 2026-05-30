@@ -11994,7 +11994,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       const PAGE=1000;let from=0;
       while(true){
         const{data:rows}=await db.from("inventory_snapshot")
-          .select("snapshot_date,current_stock_qty,selling_price,last_delivery_date,first_inbound_date")
+          .select("snapshot_date,current_stock_qty,selling_price,supply_price,last_delivery_date,first_inbound_date")
           .gte("snapshot_date",rangeStart)
           .order("snapshot_date",{ascending:true})
           .range(from,from+PAGE-1);
@@ -12003,10 +12003,11 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
           if(rangeEnd&&r.snapshot_date>rangeEnd) return;
           const c=calcInvRow(r);
           if(!map[r.snapshot_date]) map[r.snapshot_date]={};
-          if(!map[r.snapshot_date][c.agingKey]) map[r.snapshot_date][c.agingKey]={count:0,qty:0,value:0};
+          if(!map[r.snapshot_date][c.agingKey]) map[r.snapshot_date][c.agingKey]={count:0,qty:0,value:0,cost:0};
           map[r.snapshot_date][c.agingKey].count++;
           map[r.snapshot_date][c.agingKey].qty+=r.current_stock_qty||0;
           map[r.snapshot_date][c.agingKey].value+=c.currentInventoryValue||0;
+          map[r.snapshot_date][c.agingKey].cost+=(r.current_stock_qty||0)*(r.supply_price||0);
         });
         if(rows.length<PAGE) break;
         from+=PAGE;
@@ -12120,8 +12121,8 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
   const kpi=useMemo(()=>{
     if(!latestDate||!rawByDate[latestDate]) return null;
     const d=rawByDate[latestDate];
-    let total=0,totalQty=0,totalVal=0;
-    INV_AGING_KEYS.forEach(k=>{total+=(d[k]?.count||0);totalQty+=(d[k]?.qty||0);totalVal+=(d[k]?.value||0);});
+    let total=0,totalQty=0,totalVal=0,totalCost=0;
+    INV_AGING_KEYS.forEach(k=>{total+=(d[k]?.count||0);totalQty+=(d[k]?.qty||0);totalVal+=(d[k]?.value||0);totalCost+=(d[k]?.cost||0);});
     const deadQty=d["DEAD"]?.qty||0;const healthyQty=d["HEALTHY"]?.qty||0;
     const qtyByKey={};
     INV_AGING_KEYS.forEach(k=>{
@@ -12129,7 +12130,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
       qtyByKey[k]={qty,pct:totalQty?(qty/totalQty*100).toFixed(1):"0.0",val,valPct:totalVal?(val/totalVal*100).toFixed(1):"0.0",count,skuPct:total?(count/total*100).toFixed(1):"0.0"};
     });
     const deadCount=d["DEAD"]?.count||0;const healthyCount=d["HEALTHY"]?.count||0;
-    return{total,totalQty,totalVal,
+    return{total,totalQty,totalVal,totalCost,
       deadPct:totalQty?((deadQty/totalQty)*100).toFixed(1):"0.0",
       healthyPct:totalQty?((healthyQty/totalQty)*100).toFixed(1):"0.0",
       deadSkuPct:total?((deadCount/total)*100).toFixed(1):"0.0",
@@ -12184,16 +12185,18 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
     <div>
       {/* KPI cards */}
       {kpi&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:18}}>
           {[
             {label:"Dead Stock 비율",value:`${kpi.deadPct}%`,color:"#C87B7B"},
             {label:"Healthy 비율",value:`${kpi.healthyPct}%`,color:"#7EC8A4"},
             {label:"총 현재고",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
-            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B"},
+            {label:"총 재고 금액",value:fmtVal(kpi.totalVal)+"원",color:"#C8A87B",sub:"판매가 기준"},
+            {label:"총 재고 원가",value:fmtVal(kpi.totalCost)+"원",color:MUTE_BLUE,sub:kpi.totalVal>0?`공급가 기준 · 재고금액의 ${Math.round(kpi.totalCost/kpi.totalVal*100)}%`:"공급가 기준"},
           ].map(c=>(
             <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
               <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
               <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
+              {c.sub&&<div style={{fontSize:10,color:DC.dim,marginTop:4}}>{c.sub}</div>}
             </div>
           ))}
         </div>
