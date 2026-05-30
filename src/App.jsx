@@ -6276,7 +6276,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   const single=useMemo(()=>{
     if(!listPrice) return null;
     if(singleManualBase!=null){
-      const bd=Math.max(0,Math.min(100,Number(singleManualBase)||0));
+      const bd=Math.max(0,Math.min(100,parseFloat(singleManualBase)||0));
       const baseFactor=1-bd/100;
       const basePrice=Math.round(listPrice*baseFactor/10)*10;
       const finalPrice=Math.round(basePrice*(1-cpn/100)/10)*10;
@@ -7000,6 +7000,15 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 const groupGap={borderTop:`6px solid ${D.surfaceAlt}`,padding:0,height:0};
                 return (
                 <>
+                  {singleSelected&&(
+                    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"4px 0 14px",padding:"14px 18px",
+                      background:`${MUTE_BLUE}10`,border:`1px solid ${MUTE_BLUE}33`,borderRadius:9}}>
+                      <span style={{fontSize:11,fontWeight:700,color:MUTE_BLUE,letterSpacing:".04em",whiteSpace:"nowrap"}}>📊 분석 상품</span>
+                      <span style={{fontSize:19,fontWeight:800,color:D.black,letterSpacing:"-0.3px",lineHeight:1.25,
+                        flex:"1 1 auto",minWidth:0,wordBreak:"break-word"}}>{singleSelected.name}</span>
+                      <span style={{fontSize:12,color:D.textSub,whiteSpace:"nowrap"}}>정가 ₩{wonFmt(listPrice)} · 공급가 ₩{wonFmt(singleSelected.supply||0)}</span>
+                    </div>
+                  )}
                   {/* 슬롯 + 기본할인율 조정 컨트롤 */}
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"12px 0 10px"}}>
                     <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,border:`1px solid ${D.borderMid}`,color:D.text}}>{slot.name}</span>
@@ -7008,7 +7017,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       기본 할인율 직접 조정
                       <input type="number" onWheel={e=>e.currentTarget.blur()} step="0.1" min="0" max="100"
                         value={singleManualBase!=null?singleManualBase:single.baseDisc}
-                        onChange={e=>setSingleManualBase(e.target.value===""?null:Math.max(0,Math.min(100,Number(e.target.value)||0)))}
+                        onChange={e=>setSingleManualBase(e.target.value)}
+                        onBlur={e=>{const v=e.target.value;setSingleManualBase(v===""?null:String(Math.max(0,Math.min(100,parseFloat(v)||0))));}}
                         style={{width:64,padding:"3px 6px",fontSize:11,textAlign:"right",
                           border:`1px solid ${singleManualBase!=null?D.blue:D.border}`,
                           borderRadius:4,background:singleManualBase!=null?"#eef3ff":D.surface,
@@ -7034,6 +7044,11 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       )}
                       <span style={{color:D.text,fontWeight:600}}>{selectedScenario.label||`기본 쿠폰 ${cpn}%`}</span>
                       <span style={{color:D.textMeta}}>케이스 총합 할인율 {cpn}%</span>
+                      {singleManualBase!=null&&(
+                        <span style={{color:D.blue,fontWeight:700,background:"#eef3ff",border:`1px solid ${D.blue}`,borderRadius:3,padding:"1px 6px"}}>
+                          수동 변경 할인율 {single.baseDisc}%
+                        </span>
+                      )}
                       {singleSelected&&(
                         <>
                           <span style={{color:D.textMeta}}>·</span>
@@ -7067,6 +7082,13 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                         <span style={amtCol}>₩{wonFmt(listPrice)}</span>
                         <span style={calcCol}></span>
                       </div>
+                      {single.baseDisc>0&&(
+                        <div style={rowSty}>
+                          <span style={labelCol}><span>기본 할인율 <span style={{color:D.textMeta,fontWeight:400}}>(프런트 할인율)</span></span></span>
+                          <span style={{...amtCol,color:singleManualBase!=null?D.blue:D.text}}>{single.baseDisc}%{singleManualBase!=null&&<span style={{color:D.blue,fontWeight:400}}> · 수동</span>}</span>
+                          <span style={calcCol}>정상 가격에 적용되는 프런트(기본) 할인율입니다{singleManualBase!=null?" · 직접 변경한 값":""}.</span>
+                        </div>
+                      )}
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
                           <span style={labelCol}><span>{N.baseDisc} 기본 할인 금액</span></span>
@@ -7104,7 +7126,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       )}
                       <div style={totalSty}>
                         <span style={labelCol}><span>{N.finalPrice} 실제 판매 가격</span></span>
-                        <span style={{...totalAmt,color:D.black}}>₩{wonFmt(single.finalPrice)}</span>
+                        <span style={totalAmt}>₩{wonFmt(single.finalPrice)} <span style={{color:D.red,fontWeight:600}}>(정상가 대비 −{single.finalDisc}%)</span></span>
                         <span style={calcCol}>쿠폰까지 적용된 최종 노출가로, 고객이 실제 결제하는 금액입니다 (케이스 총합 할인율 {single.finalDisc}%).</span>
                       </div>
 
@@ -7158,7 +7180,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             }
                             return (
                               <div style={rowSty}>
-                                <span style={labelCol}><span>최소 마진 기본 세일율</span></span>
+                                <span style={labelCol}><span>최소 마진 기본 세일율 {single.baseDisc>0&&<span style={{color:D.textMeta,fontWeight:400}}>(비교대상은 {N.baseDisc})</span>}</span></span>
                                 <span style={{...amtCol,color:lastValid!=null?D.text:D.textMeta}}>
                                   {lastValid!=null?`${lastValid}%`:"적용 불가"}
                                 </span>
