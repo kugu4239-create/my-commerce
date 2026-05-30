@@ -7084,15 +7084,15 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       </div>
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
-                          <span style={labelCol}><span>기본 할인율 <span style={{color:D.textMeta,fontWeight:400}}>(프런트 할인율)</span></span></span>
+                          <span style={labelCol}><span>{N.baseDisc}-1 기본 할인율 <span style={{color:D.textMeta,fontWeight:400}}>(프런트 할인율)</span></span></span>
                           <span style={{...amtCol,color:singleManualBase!=null?D.blue:D.text}}>{single.baseDisc}%{singleManualBase!=null&&<span style={{color:D.blue,fontWeight:400}}> · 수동</span>}</span>
                           <span style={calcCol}>정상 가격에 적용되는 프런트(기본) 할인율입니다{singleManualBase!=null?" · 직접 변경한 값":""}.</span>
                         </div>
                       )}
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
-                          <span style={labelCol}><span>{N.baseDisc} 기본 할인 금액</span></span>
-                          <span style={{...amtCol,color:D.red}}>−₩{wonFmt(frontCut)} <span style={{color:D.textMeta,fontWeight:400}}>({single.baseDisc}%)</span></span>
+                          <span style={labelCol}><span>{N.baseDisc}-2 기본 할인 금액</span></span>
+                          <span style={{...amtCol,color:D.red}}>−₩{wonFmt(frontCut)}</span>
                           <span style={calcCol}>정상 가격 × {(single.baseDisc/100).toFixed(single.baseDisc%1===0?2:3)} · 자사가 부담하는 프런트 할인액입니다.</span>
                         </div>
                       )}
@@ -7180,7 +7180,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             }
                             return (
                               <div style={rowSty}>
-                                <span style={labelCol}><span>최소 마진 기본 세일율 {single.baseDisc>0&&<span style={{color:D.textMeta,fontWeight:400}}>(비교대상은 {N.baseDisc})</span>}</span></span>
+                                <span style={labelCol}><span>최소 마진 기본 세일율 {single.baseDisc>0&&<span style={{color:D.textMeta,fontWeight:400}}>(비교대상은 {N.baseDisc}-1)</span>}</span></span>
                                 <span style={{...amtCol,color:lastValid!=null?D.text:D.textMeta}}>
                                   {lastValid!=null?`${lastValid}%`:"적용 불가"}
                                 </span>
