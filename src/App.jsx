@@ -8613,6 +8613,9 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
               </div>
             </div>
           </div>
+          {!isOngoing&&(
+            <span style={{marginLeft:"auto",alignSelf:"center",flexShrink:0,fontSize:12,fontWeight:700,color:D.red,background:`${D.red}14`,border:`1px solid ${D.red}40`,borderRadius:999,padding:"3px 11px",whiteSpace:"nowrap"}}>종료된 프로모션</span>
+          )}
           <div style={{display:"flex",gap:6,flexShrink:0}}>
             <CaptureBtn cardRef={modalCardRef} filename={`임팩트분석_${promo.name}_${promoStart}_${promoEnd}`} DC={{border:D.border,sub:D.textMeta}}/>
             <button onClick={onClose}
