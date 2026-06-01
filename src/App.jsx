@@ -11295,12 +11295,16 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 async function exportSkuRiskXlsx(rows){
   if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
   const XLSX=await getXLSX();
+  // 컬럼: …판매가(E) · 공급가(F) · 세일율(G, 입력칸) · 세일가(H, 수식) …
   const colDefs=[
     ["상품코드",      r=>r.product_code||""],
     ["상품명",        r=>r.product_name||""],
     ["옵션",          r=>r.option_name||""],
     ["상태",          r=>INV_AGING_DEFS[r.agingKey]?.label||r.agingKey||""],
     ["판매가",        r=>r.selling_price||0],
+    ["공급가",        r=>r.supply_price||0],
+    ["세일율(%)",     ()=>""],   // 사용자 입력 칸 (비워둠)
+    ["세일가",        ()=>""],   // 수식 주입 (아래) — 판매가×(1−세일율/100)
     ["수량(현재고)",   r=>r.current_stock_qty||0],
     ["현재 재고 금액", r=>r.currentInventoryValue||0],
     ["미판매 일수",    r=>r.noSalesDays||0],
@@ -11309,15 +11313,27 @@ async function exportSkuRiskXlsx(rows){
     ["누적배송수량",   r=>r.cumulative_delivery_qty||0],
     ["판매효율(STP)", r=>r.sellThroughProxy||0],
   ];
+  const SELL_COL="E",RATE_COL="G",SALE_COL_IDX=7; // 판매가=E, 세일율=G, 세일가=H(0-based 7)
   const toAOA=list=>[colDefs.map(c=>c[0]),...list.map(r=>colDefs.map(c=>c[1](r)))];
+  const makeSheet=list=>{
+    const ws=XLSX.utils.aoa_to_sheet(toAOA(list));
+    // 세일가 = 세일율 비었으면 판매가, 입력 시 판매가×(1−세일율/100) — 엑셀에서 즉시 재계산
+    list.forEach((r,i)=>{
+      const xlRow=i+2; // 1행=헤더
+      const addr=XLSX.utils.encode_cell({c:SALE_COL_IDX,r:i+1});
+      ws[addr]={t:"n",v:r.selling_price||0,
+        f:`IF(${RATE_COL}${xlRow}="",${SELL_COL}${xlRow},ROUND(${SELL_COL}${xlRow}*(1-${RATE_COL}${xlRow}/100),0))`};
+    });
+    return ws;
+  };
   const wb=XLSX.utils.book_new();
   const sorted=[...rows].sort((a,b)=>
     INV_AGING_KEYS.indexOf(a.agingKey)-INV_AGING_KEYS.indexOf(b.agingKey)
     ||(b.current_stock_qty||0)-(a.current_stock_qty||0));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(toAOA(sorted)),"전체");
+  XLSX.utils.book_append_sheet(wb,makeSheet(sorted),"전체");
   INV_AGING_KEYS.forEach(k=>{
     const list=rows.filter(r=>r.agingKey===k);
-    if(list.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(toAOA(list)),INV_AGING_DEFS[k].label.slice(0,31));
+    if(list.length) XLSX.utils.book_append_sheet(wb,makeSheet(list),INV_AGING_DEFS[k].label.slice(0,31));
   });
   const date=rows[0]?.snapshot_date||dayjs().format("YYYY-MM-DD");
   XLSX.writeFile(wb,`SKU_Risk_${date}.xlsx`);
