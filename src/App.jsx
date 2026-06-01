@@ -11295,9 +11295,24 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 async function exportSkuRiskXlsx(rows){
   if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
   const XLSX=await getXLSX();
-  // 컬럼: …판매가(E) · 공급가(F) · 세일율(G, 입력칸) · 세일가(H, 수식) …
+  // 자사몰 세일 계산기 자료(mall_calc_last_file)의 카페24 상품코드를 상품명으로 매칭
+  const mallCodeByName={};
+  try{
+    const db=await getSupabase();
+    const {data}=await db.from("mall_calc_last_file").select("content_b64").eq("id",1).maybeSingle();
+    if(data?.content_b64){
+      const prods=JSON.parse(data.content_b64);
+      if(Array.isArray(prods)) prods.forEach(p=>{
+        const nz=normProdName(p?.name);
+        if(nz&&p?.code&&!mallCodeByName[nz]) mallCodeByName[nz]=String(p.code).trim();
+      });
+    }
+  }catch{/* 자사몰 자료 없거나 로드 실패 시 카페24 코드는 빈칸 */}
+  const cafe24Of=r=>mallCodeByName[normProdName(r.product_name)]||"";
+  // 컬럼: …상품코드 · 카페24 상품코드 · …판매가(F) · 공급가(G) · 세일율(H, 입력칸) · 세일가(I, 수식) …
   const colDefs=[
     ["상품코드",      r=>r.product_code||""],
+    ["카페24 상품코드", cafe24Of],
     ["상품명",        r=>r.product_name||""],
     ["옵션",          r=>r.option_name||""],
     ["상태",          r=>INV_AGING_DEFS[r.agingKey]?.label||r.agingKey||""],
@@ -11313,7 +11328,7 @@ async function exportSkuRiskXlsx(rows){
     ["누적배송수량",   r=>r.cumulative_delivery_qty||0],
     ["판매효율(STP)", r=>r.sellThroughProxy||0],
   ];
-  const SELL_COL="E",RATE_COL="G",SALE_COL_IDX=7; // 판매가=E, 세일율=G, 세일가=H(0-based 7)
+  const SELL_COL="F",RATE_COL="H",SALE_COL_IDX=8; // 판매가=F, 세일율=H, 세일가=I(0-based 8)
   const toAOA=list=>[colDefs.map(c=>c[0]),...list.map(r=>colDefs.map(c=>c[1](r)))];
   const makeSheet=list=>{
     const ws=XLSX.utils.aoa_to_sheet(toAOA(list));
