@@ -203,6 +203,21 @@ const normCafe24Name = s => String(s||"").split("*")[0].toLowerCase()
   .replace(/\s+/g,"").trim();
 // 색상([BLACK]/[WHITE] …) 제거 키 — 한쪽에만 색상이 있을 때를 위한 폴백 매칭용.
 const cafe24BaseKey = s => normCafe24Name(s).replace(/\[[^\]]*\]/g,"");
+// 색상 토큰 → 대표 hex (KR↔EN 동의어 통합: WHITE≡화이트). 색상으로 인식 안 되면 null.
+function colorToHex(tok){
+  const t=String(tok||"").trim();
+  if(!t) return null;
+  return COLOR_HEX[t]||COLOR_HEX[t.toUpperCase()]||COLOR_HEX[t.toLowerCase()]||null;
+}
+// 문자열에서 색상 hex 추출 — 대괄호 [WHITE] 안이나 옵션값(화이트, 화이트-L 등)에서.
+function extractColorHex(...parts){
+  for(const p of parts){
+    const s=String(p||"");
+    for(const b of (s.match(/\[([^\]]+)\]/g)||[])){ const h=colorToHex(b.slice(1,-1)); if(h) return h; }
+    for(const seg of s.split(/[\s/\-_·•,]+/)){ const h=colorToHex(seg); if(h) return h; }
+  }
+  return null;
+}
 
 // 이익률 집계 대상 판정 — 취소/교환/반품(환불) 주문만 제외하고
 // 배송·주문·접수·발주 등 그 외 상태는 모두 포함한다.
@@ -11433,16 +11448,18 @@ async function exportSkuRiskXlsx(rows){
   if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
   const XLSX=await getXLSX();
   // 카페24 상품코드 DB(cafe24_product_codes)를 상품명으로 매칭.
-  // 2단계: ① 색상 포함 키 정확 매칭 → ② 색상 제거 base 키 폴백(한쪽만 색상 있을 때).
-  //  base 키가 여러 색상으로 갈리면(예: [BROWN]/[IVORY]) 폴백을 비활성화해 오매칭 방지.
+  // ① 색상 포함 키 정확 매칭
+  // ② 색상-hex 매칭: 카페24 [WHITE] ↔ 어드민 옵션 '화이트' (KR↔EN 동의어). base+색상hex 로 양방향 매칭.
+  // ③ 색상 제거 base 키 폴백(양쪽 다 색상 없을 때). base가 여러 색상으로 갈리면 ②·③은 오매칭 방지로 비활성.
   const byColorKey={};            // norm_name(색상 포함) → code
   const baseToCodes={};           // base(색상 제거) → Set(code)
   const baseFirstCode={};         // base → 처음 본 code
+  const byBaseColor={};           // base + "|" + colorHex → code (카페24 [색상]에서 추출)
   try{
     const db=await getSupabase();
     let from=0;const PAGE=1000;
     while(true){
-      const{data,error}=await db.from("cafe24_product_codes").select("norm_name,product_code").range(from,from+PAGE-1);
+      const{data,error}=await db.from("cafe24_product_codes").select("norm_name,product_name,product_code").range(from,from+PAGE-1);
       if(error||!data||data.length===0) break;
       data.forEach(r=>{
         const code=String(r.product_code||"").trim();
@@ -11452,6 +11469,8 @@ async function exportSkuRiskXlsx(rows){
         if(!baseToCodes[b]) baseToCodes[b]=new Set();
         baseToCodes[b].add(code);
         if(baseFirstCode[b]===undefined) baseFirstCode[b]=code;
+        const hex=extractColorHex(r.norm_name,r.product_name);
+        if(hex){ const bk=b+"|"+hex; if(byBaseColor[bk]===undefined) byBaseColor[bk]=code; }
       });
       if(data.length<PAGE) break;
       from+=PAGE;
@@ -11459,9 +11478,11 @@ async function exportSkuRiskXlsx(rows){
   }catch{/* 카페24 코드 DB 없거나 로드 실패 시 카페24 코드는 빈칸 */}
   const cafe24Of=r=>{
     const ck=normCafe24Name(r.product_name);
-    if(byColorKey[ck]) return byColorKey[ck];           // ① 색상 포함 정확 매칭
+    if(byColorKey[ck]) return byColorKey[ck];                 // ① 색상 포함 정확 매칭
     const b=cafe24BaseKey(r.product_name);
-    if(baseToCodes[b]&&baseToCodes[b].size===1) return baseFirstCode[b]; // ② 색상 단일일 때만 폴백
+    const hex=extractColorHex(r.product_name,r.option_name);  // ② 어드민 색상(상품명[..] 또는 옵션)을 hex로
+    if(hex&&byBaseColor[b+"|"+hex]) return byBaseColor[b+"|"+hex];
+    if(baseToCodes[b]&&baseToCodes[b].size===1) return baseFirstCode[b]; // ③ 색상 단일일 때만 base 폴백
     return "";
   };
   // 컬럼: …상품코드 · 카페24 상품코드 · …판매가(F) · 공급가(G) · 세일율(H, 입력칸) · 세일가(I, 수식) …
