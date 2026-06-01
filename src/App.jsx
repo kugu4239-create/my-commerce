@@ -11443,40 +11443,44 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   );
 }
 
-// SKU Risk Bubble — 상태별 상품 엑셀 다운로드 (모달 표시 항목 포함)
-async function exportSkuRiskXlsx(rows){
-  if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
-  const XLSX=await getXLSX();
-  // 카페24 상품코드 DB(cafe24_product_codes)를 상품명으로 매칭.
-  // ① 색상 포함 키 정확 매칭
-  // ② 색상-hex 매칭: 카페24 [WHITE] ↔ 어드민 옵션 '화이트' (KR↔EN 동의어). base+색상hex 로 양방향 매칭.
-  // ③ 색상 제거 base 키 폴백(양쪽 다 색상 없을 때). base가 여러 색상으로 갈리면 ②·③은 오매칭 방지로 비활성.
-  const byColorKey={};            // norm_name(색상 포함) → code
-  const baseToCodes={};           // base(색상 제거) → Set(code)
-  const baseFirstCode={};         // base → 처음 본 code
-  const byBaseColor={};           // base + "|" + colorHex → code (카페24 [색상]에서 추출)
+// 카페24 상품코드 DB 전체 로드 (페이지네이션). 없거나 실패하면 빈 배열.
+async function loadCafe24CodeRows(){
+  const out=[];
   try{
     const db=await getSupabase();
     let from=0;const PAGE=1000;
     while(true){
       const{data,error}=await db.from("cafe24_product_codes").select("norm_name,product_name,product_code").range(from,from+PAGE-1);
       if(error||!data||data.length===0) break;
-      data.forEach(r=>{
-        const code=String(r.product_code||"").trim();
-        if(!r.norm_name||!code) return;
-        byColorKey[r.norm_name]=code;
-        const b=String(r.norm_name).replace(/\[[^\]]*\]/g,"");
-        if(!baseToCodes[b]) baseToCodes[b]=new Set();
-        baseToCodes[b].add(code);
-        if(baseFirstCode[b]===undefined) baseFirstCode[b]=code;
-        const hex=extractColorHex(r.norm_name,r.product_name);
-        if(hex){ const bk=b+"|"+hex; if(byBaseColor[bk]===undefined) byBaseColor[bk]=code; }
-      });
+      out.push(...data);
       if(data.length<PAGE) break;
       from+=PAGE;
     }
-  }catch{/* 카페24 코드 DB 없거나 로드 실패 시 카페24 코드는 빈칸 */}
-  const cafe24Of=r=>{
+  }catch{/* 테이블 없거나 로드 실패 시 빈 배열 */}
+  return out;
+}
+
+// 카페24 코드 매처 생성 — 상품명 매칭 함수 cafe24Of(invRow) 반환.
+// ① 색상 포함 키 정확 매칭
+// ② 색상-hex 매칭: 카페24 [WHITE] ↔ 어드민 옵션 '화이트' (KR↔EN 동의어). base+색상hex 로 양방향 매칭.
+// ③ 색상 제거 base 키 폴백(양쪽 다 색상 없을 때). base가 여러 색상으로 갈리면 ②·③은 오매칭 방지로 비활성.
+function makeCafe24Matcher(cafeRows){
+  const byColorKey={};            // norm_name(색상 포함) → code
+  const baseToCodes={};           // base(색상 제거) → Set(code)
+  const baseFirstCode={};         // base → 처음 본 code
+  const byBaseColor={};           // base + "|" + colorHex → code (카페24 [색상]에서 추출)
+  (cafeRows||[]).forEach(r=>{
+    const code=String(r.product_code||"").trim();
+    if(!r.norm_name||!code) return;
+    byColorKey[r.norm_name]=code;
+    const b=String(r.norm_name).replace(/\[[^\]]*\]/g,"");
+    if(!baseToCodes[b]) baseToCodes[b]=new Set();
+    baseToCodes[b].add(code);
+    if(baseFirstCode[b]===undefined) baseFirstCode[b]=code;
+    const hex=extractColorHex(r.norm_name,r.product_name);
+    if(hex){ const bk=b+"|"+hex; if(byBaseColor[bk]===undefined) byBaseColor[bk]=code; }
+  });
+  return r=>{
     const ck=normCafe24Name(r.product_name);
     if(byColorKey[ck]) return byColorKey[ck];                 // ① 색상 포함 정확 매칭
     const b=cafe24BaseKey(r.product_name);
@@ -11485,6 +11489,130 @@ async function exportSkuRiskXlsx(rows){
     if(baseToCodes[b]&&baseToCodes[b].size===1) return baseFirstCode[b]; // ③ 색상 단일일 때만 base 폴백
     return "";
   };
+}
+
+// 카페24 코드 미매칭 상품 확인·연결 모달 — SKU Risk 의 인벤토리 상품 중
+// 카페24 상품코드가 매칭되지 않은 것을 모아 보여주고, 코드를 직접 입력해 연결(영구 저장)한다.
+function Cafe24UnmatchedModal({ rows, onClose }){
+  const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  const [loading,setLoading]=useState(true);
+  const [unmatched,setUnmatched]=useState([]); // {key,product_name,option_name,qty,codeInput,saved}
+  const [search,setSearch]=useState("");
+  const [savingAll,setSavingAll]=useState(false);
+  const [msg,setMsg]=useState("");
+
+  const compute=useCallback(async()=>{
+    setLoading(true);
+    const cafeRows=await loadCafe24CodeRows();
+    const cafe24Of=makeCafe24Matcher(cafeRows);
+    const seen=new Map();
+    (rows||[]).forEach(r=>{
+      if(cafe24Of(r)) return; // 이미 매칭됨
+      const key=(r.product_name||"")+"__"+(r.option_name||"");
+      if(seen.has(key)){ seen.get(key).qty+=(r.current_stock_qty||0); return; }
+      seen.set(key,{key,product_name:r.product_name||"",option_name:r.option_name||"",
+        qty:(r.current_stock_qty||0),codeInput:"",saved:false});
+    });
+    const list=[...seen.values()].sort((a,b)=>b.qty-a.qty);
+    setUnmatched(list);setLoading(false);
+  },[rows]);
+  useEffect(()=>{compute();},[compute]);
+
+  const setCode=(key,v)=>setUnmatched(prev=>prev.map(u=>u.key===key?{...u,codeInput:v}:u));
+  // 색상-aware norm_name: 상품명에 [색상]이 없고 옵션이 색상이면 [색상] 합성 후 정규화 → 다음 다운로드에서 매칭
+  const normForSave=(name,opt)=>{
+    const hasBracket=/\[[^\]]+\]/.test(name||"");
+    const optTok=String(opt||"").trim();
+    const composed=(!hasBracket&&optTok&&colorToHex(optTok))?`${name} [${optTok}]`:name;
+    return normCafe24Name(composed);
+  };
+  const saveOne=async(u)=>{
+    const code=String(u.codeInput||"").trim();
+    if(!code) return false;
+    const db=await getSupabase();
+    const row={product_name:u.product_name,norm_name:normForSave(u.product_name,u.option_name),
+      product_code:code,updated_at:new Date().toISOString()};
+    const{error}=await db.from("cafe24_product_codes").upsert(row,{onConflict:"norm_name"});
+    return !error;
+  };
+  const handleSaveAll=async()=>{
+    const targets=unmatched.filter(u=>!u.saved&&String(u.codeInput||"").trim());
+    if(!targets.length){setMsg("입력된 코드가 없습니다.");return;}
+    setSavingAll(true);setMsg("저장 중...");
+    let ok=0;
+    for(const u of targets){ if(await saveOne(u)){ok++; setUnmatched(prev=>prev.map(x=>x.key===u.key?{...x,saved:true}:x));} }
+    setSavingAll(false);setMsg(`${ok}건 저장 완료 — 다음 다운로드부터 매칭됩니다.`);
+  };
+
+  const q=search.trim().toLowerCase();
+  const shown=q?unmatched.filter(u=>u.product_name.toLowerCase().includes(q)||(u.option_name||"").toLowerCase().includes(q)):unmatched;
+  const pending=unmatched.filter(u=>!u.saved).length;
+
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,
+        width:"min(720px,96vw)",maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        {/* 헤더 */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"16px 18px",borderBottom:`1px solid ${DC.border}`}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:16,fontWeight:700,color:DC.text}}>카페24 미매칭 상품</span>
+            <span style={{fontSize:12,color:DC.sub}}>{loading?"확인 중…":`${unmatched.length.toLocaleString()}건 · 코드 입력 후 저장하면 다음 다운로드부터 자동 매칭`}</span>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:`1px solid ${DC.border}`,borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",color:DC.sub}}>✕ 닫기</button>
+        </div>
+        {/* 툴바 */}
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderBottom:`1px solid ${DC.border}`,flexWrap:"wrap"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="상품명·옵션 검색"
+            style={{flex:"1 1 180px",background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,padding:"6px 10px",fontSize:13,color:DC.text,outline:"none",fontFamily:"inherit"}}/>
+          <span style={{fontSize:12,color:DC.dim}}>미저장 {pending.toLocaleString()}</span>
+          <button onClick={handleSaveAll} disabled={savingAll}
+            style={{background:"#9E92C8",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:savingAll?"default":"pointer",opacity:savingAll?0.6:1}}>
+            입력한 코드 일괄 저장
+          </button>
+        </div>
+        {msg&&<div style={{padding:"8px 18px",fontSize:12,color:"#5E81AC",borderBottom:`1px solid ${DC.border}`}}>{msg}</div>}
+        {/* 목록 */}
+        <div style={{overflowY:"auto",padding:"4px 0"}}>
+          {loading?(
+            <div style={{textAlign:"center",padding:"48px 0",color:DC.dim,fontSize:13}}>인벤토리·카페24 코드 대조 중…</div>
+          ):unmatched.length===0?(
+            <div style={{textAlign:"center",padding:"48px 0",color:DC.sub,fontSize:14}}>🎉 모든 상품이 카페24 코드와 매칭되었습니다.</div>
+          ):(
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr style={{position:"sticky",top:0,background:DC.bg}}>
+                {["상품명","옵션","현재고","카페24 상품코드 입력"].map((h,i)=>(
+                  <th key={h} style={{textAlign:i>=2?"center":"left",padding:"7px 12px",fontSize:11,fontWeight:600,color:DC.sub,borderBottom:`1px solid ${DC.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {shown.map(u=>(
+                  <tr key={u.key} style={{borderBottom:`1px solid ${DC.border}`,background:u.saved?"rgba(126,200,164,0.12)":"transparent"}}>
+                    <td style={{padding:"6px 12px",color:DC.text,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={u.product_name}>{u.product_name}</td>
+                    <td style={{padding:"6px 12px",color:DC.sub}}>{u.option_name||"—"}</td>
+                    <td style={{padding:"6px 12px",textAlign:"center",color:DC.sub}}>{u.qty.toLocaleString()}</td>
+                    <td style={{padding:"6px 12px",textAlign:"center"}}>
+                      {u.saved
+                        ?<span style={{color:"#5B9A7B",fontWeight:700,fontSize:12}}>✓ {u.codeInput}</span>
+                        :<input value={u.codeInput} onChange={e=>setCode(u.key,e.target.value)} placeholder="예: P0000ABC"
+                           style={{width:140,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,padding:"4px 8px",fontSize:12,color:DC.text,outline:"none",fontFamily:"monospace"}}/>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// SKU Risk Bubble — 상태별 상품 엑셀 다운로드 (모달 표시 항목 포함)
+async function exportSkuRiskXlsx(rows){
+  if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
+  const XLSX=await getXLSX();
+  const cafe24Of=makeCafe24Matcher(await loadCafe24CodeRows());
   // 컬럼: …상품코드 · 카페24 상품코드 · …판매가(F) · 공급가(G) · 세일율(H, 입력칸) · 세일가(I, 수식) …
   const colDefs=[
     ["상품코드",      r=>r.product_code||""],
@@ -14199,6 +14327,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
   const [invRefreshKey]=useState(0);
   const [agingDate,setAgingDate]=useState(null);
   const [bubbleRows,setBubbleRows]=useState([]); // SKU Risk Bubble 현재 로드된 SKU (엑셀 다운로드용)
+  const [unmatchedOpen,setUnmatchedOpen]=useState(false); // 카페24 미매칭 확인 모달
 
   const loadSnapshotDates=useCallback(async()=>{
     const db=await getSupabase();
@@ -14362,6 +14491,12 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:8}}>
           <div style={{fontWeight:600,fontSize:16,color:DC.text,letterSpacing:"-0.2px"}}>SKU Risk Bubble</div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>setUnmatchedOpen(true)} title="카페24 상품코드가 매칭되지 않은 상품 확인·연결"
+              style={{background:"transparent",border:`1px solid #9E92C8`,borderRadius:6,
+                padding:"5px 12px",fontSize:12,fontWeight:600,color:"#9E92C8",cursor:"pointer",
+                display:"flex",alignItems:"center",gap:5}}>
+              ⚠ 카페24 미매칭 확인
+            </button>
             <button onClick={()=>exportSkuRiskXlsx(bubbleRows)} title="상태별 상품 엑셀 다운로드"
               style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,
                 padding:"5px 12px",fontSize:12,fontWeight:600,color:DC.text,cursor:"pointer",
@@ -14373,6 +14508,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
         </div>
         <InvBubblePlot DC={DC} snapshotDates={snapshotDates} stopRef={agingTrendSecRef} onExportData={setBubbleRows}/>
       </div>
+      {unmatchedOpen&&<Cafe24UnmatchedModal rows={bubbleRows} onClose={()=>setUnmatchedOpen(false)}/>}
 
       {/* ③ Aging Trend — 섹션 카드 */}
       <div ref={agingTrendSecRef} style={sectionCard}>
