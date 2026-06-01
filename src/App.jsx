@@ -201,6 +201,8 @@ const normProdName = s => String(s||"").trim().toLowerCase()
 const normCafe24Name = s => String(s||"").split("*")[0].toLowerCase()
   .replace(/[​‌‍ ﻿]/g,"")
   .replace(/\s+/g,"").trim();
+// 색상([BLACK]/[WHITE] …) 제거 키 — 한쪽에만 색상이 있을 때를 위한 폴백 매칭용.
+const cafe24BaseKey = s => normCafe24Name(s).replace(/\[[^\]]*\]/g,"");
 
 // 이익률 집계 대상 판정 — 취소/교환/반품(환불) 주문만 제외하고
 // 배송·주문·접수·발주 등 그 외 상태는 모두 포함한다.
@@ -11430,20 +11432,38 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 async function exportSkuRiskXlsx(rows){
   if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
   const XLSX=await getXLSX();
-  // 카페24 상품코드 DB(cafe24_product_codes)를 상품명(정규화)으로 매칭
-  const cafeCodeByName={};
+  // 카페24 상품코드 DB(cafe24_product_codes)를 상품명으로 매칭.
+  // 2단계: ① 색상 포함 키 정확 매칭 → ② 색상 제거 base 키 폴백(한쪽만 색상 있을 때).
+  //  base 키가 여러 색상으로 갈리면(예: [BROWN]/[IVORY]) 폴백을 비활성화해 오매칭 방지.
+  const byColorKey={};            // norm_name(색상 포함) → code
+  const baseToCodes={};           // base(색상 제거) → Set(code)
+  const baseFirstCode={};         // base → 처음 본 code
   try{
     const db=await getSupabase();
     let from=0;const PAGE=1000;
     while(true){
       const{data,error}=await db.from("cafe24_product_codes").select("norm_name,product_code").range(from,from+PAGE-1);
       if(error||!data||data.length===0) break;
-      data.forEach(r=>{ if(r.norm_name&&r.product_code) cafeCodeByName[r.norm_name]=String(r.product_code).trim(); });
+      data.forEach(r=>{
+        const code=String(r.product_code||"").trim();
+        if(!r.norm_name||!code) return;
+        byColorKey[r.norm_name]=code;
+        const b=String(r.norm_name).replace(/\[[^\]]*\]/g,"");
+        if(!baseToCodes[b]) baseToCodes[b]=new Set();
+        baseToCodes[b].add(code);
+        if(baseFirstCode[b]===undefined) baseFirstCode[b]=code;
+      });
       if(data.length<PAGE) break;
       from+=PAGE;
     }
   }catch{/* 카페24 코드 DB 없거나 로드 실패 시 카페24 코드는 빈칸 */}
-  const cafe24Of=r=>cafeCodeByName[normCafe24Name(r.product_name)]||"";
+  const cafe24Of=r=>{
+    const ck=normCafe24Name(r.product_name);
+    if(byColorKey[ck]) return byColorKey[ck];           // ① 색상 포함 정확 매칭
+    const b=cafe24BaseKey(r.product_name);
+    if(baseToCodes[b]&&baseToCodes[b].size===1) return baseFirstCode[b]; // ② 색상 단일일 때만 폴백
+    return "";
+  };
   // 컬럼: …상품코드 · 카페24 상품코드 · …판매가(F) · 공급가(G) · 세일율(H, 입력칸) · 세일가(I, 수식) …
   const colDefs=[
     ["상품코드",      r=>r.product_code||""],
