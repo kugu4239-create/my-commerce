@@ -10934,6 +10934,43 @@ function parsePriceDbFile(file,onResult,onError){
   reader.readAsArrayBuffer(file);
 }
 
+// 카페24 상품코드 파일 파서 — 상품명 + 상품코드만 추출 (날짜·가격 불필요).
+// cafe24_product_codes(norm_name 유니크)에 업서트되어 SKU Risk 다운로드의 카페24 코드 매칭에 쓰인다.
+function parseCafe24CodeFile(file,onResult,onError){
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      const XLSX=await getXLSX();
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
+      if(!raw||raw.length<2){onError(uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)"));return;}
+      const headers=raw[0].map(h=>String(h||"").trim());
+      const colMap=mapInvCols(headers);
+      if(colMap.product_name===undefined||colMap.product_code===undefined){
+        onError(uploadErrColumns({
+          missing:[colMap.product_name===undefined?"상품명":null,colMap.product_code===undefined?"상품코드":null].filter(Boolean),
+          required:["상품명","상품코드"],
+          headers,
+        }));
+        return;
+      }
+      const get=(r,f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
+      const seen=new Set();const rows=[];
+      raw.slice(1).forEach(r=>{
+        const name=get(r,"product_name");if(!name) return;
+        const code=get(r,"product_code");if(!code) return;
+        const nz=normProdName(name);if(!nz||seen.has(nz)) return;seen.add(nz);
+        rows.push({product_name:name,norm_name:nz,product_code:code,updated_at:new Date().toISOString()});
+      });
+      if(rows.length===0){onError("매칭 가능한 행이 없습니다 — 상품명·상품코드가 모두 있는 행이 있는지 확인하세요");return;}
+      onResult(rows);
+    }catch(err){onError(uploadErrParse(String(err?.message||err)));}
+  };
+  reader.onerror=()=>onError(uploadErrParse("파일 읽기 도중 시스템 오류가 발생했습니다"));
+  reader.readAsArrayBuffer(file);
+}
+
 // ─────────────────────────────────────────────
 // INVENTORY UPLOADER
 // ─────────────────────────────────────────────
@@ -10952,8 +10989,9 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   const [selDates,setSelDates]=useState(new Set());
   const [delConfirm,setDelConfirm]=useState(false);
   const [dragOver,setDragOver]=useState(false);
-  const [uploadMode,setUploadMode]=useState("snapshot"); // "snapshot"(날짜별 스냅샷) | "priceDb"(가격 데이터베이스용)
+  const [uploadMode,setUploadMode]=useState("snapshot"); // "snapshot"(날짜별 스냅샷) | "priceDb"(가격 데이터베이스용) | "cafe24"(카페24 상품코드)
   const [priceRows,setPriceRows]=useState([]); // 가격 DB 모드 파싱 결과
+  const [cafe24Rows,setCafe24Rows]=useState([]); // 카페24 상품코드 모드 파싱 결과
 
   const loadHistory=useCallback(async()=>{
     setHistLoading(true);
@@ -10984,11 +11022,18 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 
   const handleFile=useCallback(f=>{
     if(!f) return;
-    setFile(f);setUploadStatus("parsing");setStatusMsg("파일 파싱 중...");setParsedRows([]);setPriceRows([]);setSnapDate(null);
+    setFile(f);setUploadStatus("parsing");setStatusMsg("파일 파싱 중...");setParsedRows([]);setPriceRows([]);setCafe24Rows([]);setSnapDate(null);
     if(uploadMode==="priceDb"){
       parsePriceDbFile(f,rows=>{
         setUploadStatus(null);setStatusMsg("");
         setPriceRows(rows);
+      },err=>{setUploadStatus("error");setStatusMsg(err);});
+      return;
+    }
+    if(uploadMode==="cafe24"){
+      parseCafe24CodeFile(f,rows=>{
+        setUploadStatus(null);setStatusMsg("");
+        setCafe24Rows(rows);
       },err=>{setUploadStatus("error");setStatusMsg(err);});
       return;
     }
@@ -11053,6 +11098,22 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
     }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
   },[priceRows]);
 
+  // 카페24 상품코드 업서트 — cafe24_product_codes (norm_name 유니크) 에 갱신 (last-write-wins)
+  const doCafe24Upload=useCallback(async()=>{
+    if(!cafe24Rows.length) return;
+    setUploadStatus("uploading");setStatusMsg("카페24 상품코드 저장 중...");
+    try{
+      const db=await getSupabase();
+      const CHUNK=500;
+      for(let i=0;i<cafe24Rows.length;i+=CHUNK){
+        const{error}=await db.from("cafe24_product_codes").upsert(cafe24Rows.slice(i,i+CHUNK),{onConflict:"norm_name"});
+        if(error) throw new Error(error.message);
+      }
+      setUploadStatus("done");setStatusMsg(`카페24 상품코드 ${cafe24Rows.length.toLocaleString()}건 갱신 완료 (SKU Risk 다운로드에 사용)`);
+      setFile(null);setCafe24Rows([]);
+    }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
+  },[cafe24Rows]);
+
   const handleUploadClick=useCallback(async()=>{
     if(!parsedRows.length||!snapDate) return;
     const db=await getSupabase();
@@ -11080,18 +11141,26 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 
   return(
     <div>
-      {/* 업로드 모드 토글 — 스냅샷(날짜별) / 가격 DB(날짜 없음, 판매가·공급가만) */}
+      {/* 업로드 모드 토글 — 스냅샷(날짜별) / 가격 DB(판매가·공급가) / 카페24 상품코드 */}
       <div style={{display:"flex",gap:6,marginBottom:10}}>
-        {[["snapshot","스냅샷 (날짜별)"],["priceDb","가격 DB (판매가·공급가)"]].map(([m,label])=>(
-          <button key={m} onClick={()=>{setUploadMode(m);setFile(null);setParsedRows([]);setPriceRows([]);setUploadStatus(null);setStatusMsg("");setSnapDate(null);}}
-            style={{flex:1,background:uploadMode===m?"#7EC8A4":"transparent",color:uploadMode===m?"#0a1a12":DC.sub,
-              border:`1px solid ${uploadMode===m?"#7EC8A4":DC.border}`,borderRadius:6,padding:"6px 10px",
+        {[["snapshot","스냅샷 (날짜별)"],["priceDb","가격 DB (판매가·공급가)"],["cafe24","카페24 상품코드"]].map(([m,label])=>{
+          const accent=m==="cafe24"?"#9E92C8":"#7EC8A4";
+          return (
+          <button key={m} onClick={()=>{setUploadMode(m);setFile(null);setParsedRows([]);setPriceRows([]);setCafe24Rows([]);setUploadStatus(null);setStatusMsg("");setSnapDate(null);}}
+            style={{flex:1,background:uploadMode===m?accent:"transparent",color:uploadMode===m?(m==="cafe24"?"#fff":"#0a1a12"):DC.sub,
+              border:`1px solid ${uploadMode===m?accent:DC.border}`,borderRadius:6,padding:"6px 10px",
               fontSize:12,fontWeight:700,cursor:"pointer"}}>{label}</button>
-        ))}
+          );
+        })}
       </div>
       {uploadMode==="priceDb"&&(
         <div style={{fontSize:11,color:DC.dim,lineHeight:1.6,marginBottom:8}}>
           날짜 입력 없이 상품의 <b style={{color:DC.sub}}>판매가(정상가)·공급가</b>만 저장합니다. 마진율 계산(베타)의 가격 소스로 사용되며, 같은 상품명은 최신 값으로 갱신됩니다.
+        </div>
+      )}
+      {uploadMode==="cafe24"&&(
+        <div style={{fontSize:11,color:DC.dim,lineHeight:1.6,marginBottom:8}}>
+          날짜 입력 없이 <b style={{color:DC.sub}}>상품명·카페24 상품코드</b>만 영구 저장합니다. SKU Risk 다운로드의 카페24 상품코드 매칭에 사용되며, 같은 상품명은 최신 값으로 갱신됩니다.
         </div>
       )}
       {/* Drop zone */}
@@ -11127,7 +11196,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           </div>
           <div style={{color:DC.dim,fontSize:12}}>인벤토리 트렌드 / 리오더 계산기의 공통 데이터 소스가 됩니다.</div>
         </div>
-        ):(
+        ):uploadMode==="priceDb"?(
         <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
           <div style={{marginBottom:6}}>
             <span style={{color:"#C8A87B",fontWeight:700,fontSize:13}}>가격 데이터베이스</span>
@@ -11139,6 +11208,19 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
             </div>
           </div>
           <div style={{color:DC.dim,fontSize:12}}>상품명 + 판매가/공급가만 있으면 됩니다 (날짜·재고 불필요).</div>
+        </div>
+        ):(
+        <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
+          <div style={{marginBottom:6}}>
+            <span style={{color:"#9E92C8",fontWeight:700,fontSize:13}}>카페24 상품코드</span>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
+              {["상품명","상품코드"].map(c=>(
+                <span key={c} style={{background:"rgba(158,146,200,0.1)",border:"1px solid rgba(158,146,200,0.25)",
+                  borderRadius:4,padding:"1px 6px",fontSize:12,color:"#9E92C8",fontFamily:"monospace"}}>{c}</span>
+              ))}
+            </div>
+          </div>
+          <div style={{color:DC.dim,fontSize:12}}>상품명 + 카페24 상품코드만 있으면 됩니다 (카페24 상품 엑셀 그대로 사용 가능).</div>
         </div>
         )}
         {file&&<div style={{marginTop:6,fontSize:13,color:"#7EC8A4"}}>{file.name}</div>}
@@ -11181,6 +11263,20 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
             style={{background:"#C8A87B",color:"#1a1206",border:"none",borderRadius:6,
               padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
             가격 DB 저장
+          </button>
+        </div>
+      )}
+
+      {/* Upload action — 카페24 상품코드 모드 */}
+      {uploadMode==="cafe24"&&cafe24Rows.length>0&&uploadStatus!=="uploading"&&(
+        <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:DC.sub}}>
+            {`카페24 상품코드 ${cafe24Rows.length.toLocaleString()}건 준비됨`}
+          </span>
+          <button onClick={doCafe24Upload}
+            style={{background:"#9E92C8",color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            카페24 상품코드 저장
           </button>
         </div>
       )}
@@ -11295,20 +11391,20 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 async function exportSkuRiskXlsx(rows){
   if(!rows||!rows.length){alert("다운로드할 데이터가 없습니다. 날짜를 선택해 인벤토리를 불러오세요.");return;}
   const XLSX=await getXLSX();
-  // 자사몰 세일 계산기 자료(mall_calc_last_file)의 카페24 상품코드를 상품명으로 매칭
-  const mallCodeByName={};
+  // 카페24 상품코드 DB(cafe24_product_codes)를 상품명(정규화)으로 매칭
+  const cafeCodeByName={};
   try{
     const db=await getSupabase();
-    const {data}=await db.from("mall_calc_last_file").select("content_b64").eq("id",1).maybeSingle();
-    if(data?.content_b64){
-      const prods=JSON.parse(data.content_b64);
-      if(Array.isArray(prods)) prods.forEach(p=>{
-        const nz=normProdName(p?.name);
-        if(nz&&p?.code&&!mallCodeByName[nz]) mallCodeByName[nz]=String(p.code).trim();
-      });
+    let from=0;const PAGE=1000;
+    while(true){
+      const{data,error}=await db.from("cafe24_product_codes").select("norm_name,product_code").range(from,from+PAGE-1);
+      if(error||!data||data.length===0) break;
+      data.forEach(r=>{ if(r.norm_name&&r.product_code) cafeCodeByName[r.norm_name]=String(r.product_code).trim(); });
+      if(data.length<PAGE) break;
+      from+=PAGE;
     }
-  }catch{/* 자사몰 자료 없거나 로드 실패 시 카페24 코드는 빈칸 */}
-  const cafe24Of=r=>mallCodeByName[normProdName(r.product_name)]||"";
+  }catch{/* 카페24 코드 DB 없거나 로드 실패 시 카페24 코드는 빈칸 */}
+  const cafe24Of=r=>cafeCodeByName[normProdName(r.product_name)]||"";
   // 컬럼: …상품코드 · 카페24 상품코드 · …판매가(F) · 공급가(G) · 세일율(H, 입력칸) · 세일가(I, 수식) …
   const colDefs=[
     ["상품코드",      r=>r.product_code||""],
