@@ -195,6 +195,13 @@ const normProdName = s => String(s||"").trim().toLowerCase()
   .replace(/[_·•~]+/g,"")
   .replace(/\s+/g,"").trim();
 
+// 카페24 상품코드 매칭 전용 정규화 — 공용 normProdName 과 달리 색상 [BLACK]/[BROWN] 등은 보존하고
+// 배송 배지(*오늘 출발, *MM.DD 예약 발송, *당일발송 …)만 제거한다. 띄어쓰기는 무시(유연 매칭).
+// 저장(cafe24_product_codes.norm_name)과 SKU Risk 매칭에 동일하게 사용해 양쪽 키가 일치해야 한다.
+const normCafe24Name = s => String(s||"").split("*")[0].toLowerCase()
+  .replace(/[​‌‍ ﻿]/g,"")
+  .replace(/\s+/g,"").trim();
+
 // 이익률 집계 대상 판정 — 취소/교환/반품(환불) 주문만 제외하고
 // 배송·주문·접수·발주 등 그 외 상태는 모두 포함한다.
 // 내부 status(정규화) + raw_status(원본 CS처리 텍스트) 양쪽을 확인.
@@ -10934,39 +10941,71 @@ function parsePriceDbFile(file,onResult,onError){
   reader.readAsArrayBuffer(file);
 }
 
+// 한글 CSV 디코딩 — UTF-8(BOM) 우선, 깨지면 EUC-KR(CP949)로 폴백. 카페24 내보내기는 보통 EUC-KR.
+function decodeKoreanBytes(u8){
+  if(u8.length>=3&&u8[0]===0xEF&&u8[1]===0xBB&&u8[2]===0xBF){
+    try{ return new TextDecoder("utf-8").decode(u8.subarray(3)); }catch{/* fall through */}
+  }
+  let utf8="";
+  try{ utf8=new TextDecoder("utf-8",{fatal:false}).decode(u8); }catch{ utf8=""; }
+  if(!utf8||utf8.includes("�")){
+    for(const enc of ["euc-kr","cp949","windows-949"]){
+      try{ const t=new TextDecoder(enc).decode(u8); if(t&&!t.includes("�")) return t; }catch{/* try next */}
+    }
+  }
+  return utf8;
+}
+
 // 카페24 상품코드 파일 파서 — 상품명 + 상품코드만 추출 (날짜·가격 불필요).
 // cafe24_product_codes(norm_name 유니크)에 업서트되어 SKU Risk 다운로드의 카페24 코드 매칭에 쓰인다.
+// 카페24 CSV는 EUC-KR·탭 구분이 많아, CSV는 인코딩 폴백+구분자 자동감지(PapaParse)로 처리한다.
 function parseCafe24CodeFile(file,onResult,onError){
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    try{
-      const XLSX=await getXLSX();
-      const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
-      if(!raw||raw.length<2){onError(uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)"));return;}
-      const headers=raw[0].map(h=>String(h||"").trim());
-      const colMap=mapInvCols(headers);
-      if(colMap.product_name===undefined||colMap.product_code===undefined){
-        onError(uploadErrColumns({
-          missing:[colMap.product_name===undefined?"상품명":null,colMap.product_code===undefined?"상품코드":null].filter(Boolean),
-          required:["상품명","상품코드"],
-          headers,
-        }));
-        return;
-      }
-      const get=(r,f)=>colMap[f]!==undefined?String(r[colMap[f]]||"").trim():"";
-      const seen=new Set();const rows=[];
-      raw.slice(1).forEach(r=>{
-        const name=get(r,"product_name");if(!name) return;
-        const code=get(r,"product_code");if(!code) return;
-        const nz=normProdName(name);if(!nz||seen.has(nz)) return;seen.add(nz);
-        rows.push({product_name:name,norm_name:nz,product_code:code,updated_at:new Date().toISOString()});
-      });
-      if(rows.length===0){onError("매칭 가능한 행이 없습니다 — 상품명·상품코드가 모두 있는 행이 있는지 확인하세요");return;}
-      onResult(rows);
-    }catch(err){onError(uploadErrParse(String(err?.message||err)));}
+  const buildRows=raw=>{
+    if(!raw||raw.length<2) return {err:uploadErrParse("파일에 데이터 행이 없습니다 (헤더 행만 있거나 비어있음)")};
+    const headers=raw[0].map(h=>String(h||"").replace(/^﻿/,"").trim());
+    const colMap=mapInvCols(headers);
+    if(colMap.product_name===undefined||colMap.product_code===undefined){
+      return {err:uploadErrColumns({
+        missing:[colMap.product_name===undefined?"상품명":null,colMap.product_code===undefined?"상품코드":null].filter(Boolean),
+        required:["상품명","상품코드"],
+        headers,
+      })};
+    }
+    const get=(r,f)=>colMap[f]!==undefined?String(r[colMap[f]]??"").trim():"";
+    const seen=new Set();const rows=[];
+    raw.slice(1).forEach(r=>{
+      const name=get(r,"product_name");if(!name) return;
+      const code=get(r,"product_code");if(!code) return;
+      const nz=normCafe24Name(name);if(!nz||seen.has(nz)) return;seen.add(nz);
+      rows.push({product_name:name,norm_name:nz,product_code:code,updated_at:new Date().toISOString()});
+    });
+    if(rows.length===0) return {err:"매칭 가능한 행이 없습니다 — 상품명·상품코드가 모두 있는 행이 있는지 확인하세요"};
+    return {rows};
   };
+  const finish=raw=>{ const {rows,err}=buildRows(raw); if(err) onError(err); else onResult(rows); };
+  const ext=(file.name||"").toLowerCase();
+  const reader=new FileReader();
+  if(ext.endsWith(".csv")||ext.endsWith(".tsv")||ext.endsWith(".txt")){
+    // CSV/TSV: 인코딩 폴백 후 PapaParse 구분자 자동감지(쉼표/탭 등)
+    reader.onload=async e=>{
+      try{
+        const Papa=await getPapa();
+        const text=decodeKoreanBytes(new Uint8Array(e.target.result));
+        Papa.parse(text,{header:false,skipEmptyLines:true,
+          complete:res=>finish(res.data),
+          error:err=>onError(uploadErrParse(String(err?.message||err)))});
+      }catch(err){onError(uploadErrParse(String(err?.message||err)));}
+    };
+  }else{
+    reader.onload=async e=>{
+      try{
+        const XLSX=await getXLSX();
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        finish(XLSX.utils.sheet_to_json(ws,{header:1,raw:false}));
+      }catch(err){onError(uploadErrParse(String(err?.message||err)));}
+    };
+  }
   reader.onerror=()=>onError(uploadErrParse("파일 읽기 도중 시스템 오류가 발생했습니다"));
   reader.readAsArrayBuffer(file);
 }
@@ -11404,7 +11443,7 @@ async function exportSkuRiskXlsx(rows){
       from+=PAGE;
     }
   }catch{/* 카페24 코드 DB 없거나 로드 실패 시 카페24 코드는 빈칸 */}
-  const cafe24Of=r=>cafeCodeByName[normProdName(r.product_name)]||"";
+  const cafe24Of=r=>cafeCodeByName[normCafe24Name(r.product_name)]||"";
   // 컬럼: …상품코드 · 카페24 상품코드 · …판매가(F) · 공급가(G) · 세일율(H, 입력칸) · 세일가(I, 수식) …
   const colDefs=[
     ["상품코드",      r=>r.product_code||""],
