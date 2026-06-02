@@ -10737,7 +10737,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
       {tab==="inventory"&&(
         <div style={{background:DC_LIGHT.card,border:`1px solid ${DC_LIGHT.border}`,borderRadius:12,padding:"20px 20px 24px"}}>
           <div style={{fontWeight:600,fontSize:16,color:DC_LIGHT.text,letterSpacing:"-0.2px",marginBottom:16}}>Inventory 업로더</div>
-          <InventoryUploader DC={DC_LIGHT} onUploaded={()=>{}} onReorderDone={()=>{}}/>
+          <InventoryUploader DC={DC_LIGHT} onUploaded={()=>onDataChange?.()} onReorderDone={()=>onDataChange?.()}/>
         </div>
       )}
       {tab==="cs"&&<CSDataInput/>}
@@ -14536,6 +14536,508 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
 }
 
 // ─────────────────────────────────────────────
+// GMV 계산기 — 채널별 목표 매출 → 최종 세일율 역산
+// ─────────────────────────────────────────────
+const GMV_CHANNELS=["자사몰","29CM","오프라인 스토어"];
+const GMV_FEE_DEFAULT={"자사몰":0,"29CM":28,"오프라인 스토어":28};
+// 채널 수수료율 반영 세일율→마진 (실수령 net 기준, 자사몰 실수령=쿠폰적용가 / 29CM·오프라인=정산액)
+function gmvCompute(list,saleRate,supply,feeRate,couponRate=0){
+  const r=Math.max(0,Math.min(100,saleRate||0));
+  const saleAmt=Math.round((list||0)*r/100);
+  const salePrice=(list||0)-saleAmt;                 // 세일 후 노출가
+  const cpn=Math.max(0,Math.min(100,couponRate||0));
+  const couponAmt=Math.round(salePrice*cpn/100);
+  const finalPrice=salePrice-couponAmt;              // 쿠폰까지 적용된 실판매가
+  const fee=Math.round(finalPrice*(feeRate||0)/100); // 채널 수수료
+  const net=finalPrice-fee;                          // 자사 실수령(정산액)
+  const supplyVat=Math.round((supply||0)*1.1);       // 원가(부가세 10% 포함)
+  const margin=net-supplyVat;
+  const marginRate=net>0?Math.round(margin/net*1000)/10:0;
+  const effDisc=(list>0)?Math.round((1-finalPrice/list)*1000)/10:0;
+  return {saleAmt,salePrice,couponAmt,finalPrice,fee,net,supplyVat,margin,marginRate,effDisc};
+}
+// 채널 목표 매출 달성 세일율 = (1 − 목표매출 ÷ 정가GMV) × 100  (0~90 클램프)
+function gmvTargetRate(targetRev,regularGmv){
+  if(!regularGmv||regularGmv<=0) return null;
+  if(!targetRev||targetRev<=0) return 0;
+  const r=(1-targetRev/regularGmv)*100;
+  return Math.max(0,Math.min(90,Math.round(r*10)/10));
+}
+
+function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
+  const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+  const [invRows,setInvRows]=useState([]);       // 최신 inventory_snapshot SKU
+  const [reorderRows,setReorderRows]=useState([]); // reorder_recommendations
+  const [loading,setLoading]=useState(true);
+  const [targets,setTargets]=useState({"자사몰":"","29CM":"","오프라인 스토어":""});
+  const [fixedCost,setFixedCost]=useState("");    // 월 고정금액
+  const [targetProfit,setTargetProfit]=useState(""); // 목표 이익금
+  const [feeRates,setFeeRates]=useState({...GMV_FEE_DEFAULT});
+  const [search,setSearch]=useState("");
+  const [expanded,setExpanded]=useState(null);    // 펼친 상품 key
+  const [cycleCh,setCycleCh]=useState("자사몰");   // 사이클 다이어그램 채널
+  const [showCount,setShowCount]=useState(40);
+  const cardRef=useRef(null);
+
+  // ── 데이터 로드: 최신 inventory_snapshot + reorder_recommendations
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const db=await getSupabase();
+    // 최신 스냅샷 날짜
+    const{data:latest}=await db.from("inventory_snapshot").select("snapshot_date").order("snapshot_date",{ascending:false}).limit(1);
+    const snap=latest?.[0]?.snapshot_date;
+    let inv=[];
+    if(snap){
+      let from=0;const PAGE=1000;
+      while(true){
+        const{data,error}=await db.from("inventory_snapshot")
+          .select("product_name,option_name,product_code,selling_price,supply_price,current_stock_qty,cumulative_delivery_qty,last_delivery_date,first_inbound_date,snapshot_date")
+          .eq("snapshot_date",snap).range(from,from+PAGE-1);
+        if(error||!data||data.length===0) break;
+        inv=inv.concat(data);
+        if(data.length<PAGE) break;
+        from+=PAGE;
+      }
+    }
+    let reo=[];
+    {let from=0;const PAGE=1000;
+      while(true){
+        const{data,error}=await db.from("reorder_recommendations").select("*").range(from,from+PAGE-1);
+        if(error||!data||data.length===0) break;
+        reo=reo.concat(data);
+        if(data.length<PAGE) break;
+        from+=PAGE;
+      }}
+    setInvRows(inv);setReorderRows(reo);setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  // ── 채널 매출·점유율 (대시보드 analyze 동일 소스)
+  const chStats=useMemo(()=>{
+    try{ return analyze(orders,stocks,revenues,storeSales,orders); }catch{ return {channelList:[],totalRevenue:0}; }
+  },[orders,stocks,revenues,storeSales]);
+  const revByCh=useMemo(()=>{
+    const m={};(chStats.channelList||[]).forEach(c=>{m[c.name]={revenue:c.revenue||0,share:parseFloat(c.share)||0};});
+    return m;
+  },[chStats]);
+
+  // ── 상품 모집단: 인벤토리 + 4주발주(reorder) 매칭 → 예상수량·에이징
+  const products=useMemo(()=>{
+    // reorder 매칭 맵 (상품명+옵션 정규화 키)
+    const rkey=(n,o)=>normProdName(n)+"|"+String(o||"").trim().toLowerCase();
+    const reoMap={};
+    reorderRows.forEach(r=>{reoMap[rkey(r.reorder_product_name,r.reorder_option_name)]=r;});
+    const out=invRows.map(r=>{
+      const list=r.selling_price||0, supply=r.supply_price||0;
+      const reo=reoMap[rkey(r.product_name,r.option_name)];
+      const qty4w=reo?reo.reorder_monthly_sales||0:0;
+      const qtyDeliv=r.cumulative_delivery_qty||0;
+      const expectedQty=qty4w>0?qty4w:0; // 4주발주 우선
+      const aging=getAgingKey(calcInvRow(r).noSalesDays);
+      return {key:rkey(r.product_name,r.option_name),name:r.product_name,option:r.option_name||"",code:r.product_code||"",
+        list,supply,qty4w,qtyDeliv,expectedQty,aging,matched:list>0&&supply>0};
+    });
+    // 스테디셀러: 4주발주 상위 + Healthy
+    const sortedQty=[...out].filter(p=>p.qty4w>0).sort((a,b)=>b.qty4w-a.qty4w);
+    const topCut=sortedQty[Math.floor(sortedQty.length*0.2)]?.qty4w||0; // 상위 20% 컷
+    out.forEach(p=>{p.steady=(p.aging==="HEALTHY"&&p.qty4w>0&&p.qty4w>=topCut);});
+    return out;
+  },[invRows,reorderRows]);
+
+  // ── 정가 GMV (예상수량 기준) + 채널별 목표 세일율
+  const regularGmv=useMemo(()=>products.reduce((s,p)=>s+(p.matched?p.list*p.expectedQty:0),0),[products]);
+  const channelCalc=useMemo(()=>{
+    return GMV_CHANNELS.map(ch=>{
+      const target=parseInt(String(targets[ch]).replace(/[^0-9]/g,""),10)||0;
+      const rate=gmvTargetRate(target,regularGmv);
+      const fee=feeRates[ch]||0;
+      // 채널 합계: 이 세일율로 전 상품 판매 시 매출/마진/재입고
+      let rev=0,margin=0,restock=0,cost=0;
+      products.forEach(p=>{
+        if(!p.matched||p.expectedQty<=0) return;
+        const m=gmvCompute(p.list,rate||0,p.supply,fee);
+        rev+=m.finalPrice*p.expectedQty;
+        margin+=m.margin*p.expectedQty;
+        cost+=m.supplyVat*p.expectedQty;
+        restock+=Math.round(p.supply*1.1)*p.qty4w; // 재입고비 = 4주발주 × 공급가×1.1
+      });
+      return {ch,target,rate,fee,rev,margin,restock,cost,curRev:revByCh[ch]?.revenue||0,share:revByCh[ch]?.share||0};
+    });
+  },[products,targets,feeRates,regularGmv,revByCh]);
+
+  const reqMargin=(parseInt(String(targetProfit).replace(/[^0-9]/g,""),10)||0)+(parseInt(String(fixedCost).replace(/[^0-9]/g,""),10)||0);
+  const totalMargin=channelCalc.reduce((s,c)=>s+c.margin,0);
+  const totalRestock=channelCalc.reduce((s,c)=>s+c.restock,0);
+  const netContribution=totalMargin-reqMargin; // 목표 마진 대비 여유
+
+  // ── 표시 상품 (스테디셀러·매칭 우선 + 검색)
+  const shownProducts=useMemo(()=>{
+    const q=search.trim().toLowerCase();
+    let list=products.filter(p=>p.matched);
+    if(q) list=list.filter(p=>p.name.toLowerCase().includes(q)||(p.option||"").toLowerCase().includes(q));
+    list=[...list].sort((a,b)=>(b.steady?1:0)-(a.steady?1:0)||b.qty4w-a.qty4w);
+    return list;
+  },[products,search]);
+  const unmatchedCount=products.filter(p=>!p.matched).length;
+
+  // ── 데이터 출처 각주 (최신 날짜)
+  const maxOf=(arr,f)=>{let mx="";arr.forEach(x=>{const v=f(x);if(v&&v>mx)mx=v;});return mx||"—";};
+  const footnotes=[
+    {label:"인벤토리 스냅샷",date:maxOf(invRows,r=>r.snapshot_date),note:"공급가·판매가·재고"},
+    {label:"리오더(4주발주)",date:maxOf(reorderRows,r=>r.reorder_data_date),note:"예상 판매수량"},
+    {label:"주문·배송",date:maxOf(orders,r=>r.order_date),note:"채널 매출(이지어드민)"},
+    {label:"매장 판매",date:maxOf(storeSales,r=>r.sale_date),note:"오프라인 매출"},
+    {label:"채널 매출",date:maxOf(revenues,r=>r.date),note:"온라인 채널 일자 매출"},
+  ];
+
+  const won=n=>"₩"+Math.round(n||0).toLocaleString();
+  const lbl={fontSize:11,color:DC.sub,marginBottom:4,display:"block"};
+  const inBox={background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,padding:"7px 10px",fontSize:13,color:DC.text,fontFamily:"inherit",width:"100%",outline:"none"};
+
+  return(
+    <div ref={cardRef} style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 48px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+        <span style={{fontWeight:700,fontSize:20,color:DC.text,letterSpacing:"-0.3px"}}>GMV 계산기</span>
+        <span style={{fontSize:12,color:DC.sub}}>채널별 목표 매출 → 적정 최종 세일율·마진율 역산 (베타)</span>
+        {loading&&<span style={{fontSize:11,color:MUTE_BLUE}}>데이터 로딩 중…</span>}
+      </div>
+      <div style={{fontSize:12,color:DC.dim,marginBottom:18}}>데이터 입력 탭의 업로더로 새 데이터가 올라오면 자동으로 다시 계산됩니다.</div>
+
+      {/* 입력 패널 */}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:DC.text,marginBottom:12}}>① 목표 입력</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}}>
+          {GMV_CHANNELS.map(ch=>(
+            <div key={ch} style={{border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                <span style={{width:9,height:9,borderRadius:"50%",background:chColor(ch),display:"inline-block"}}/>
+                <span style={{fontSize:13,fontWeight:600,color:DC.text}}>{ch}</span>
+              </div>
+              <label style={lbl}>목표 매출 (월)</label>
+              <input value={targets[ch]} onChange={e=>setTargets(p=>({...p,[ch]:e.target.value}))}
+                placeholder={revByCh[ch]?`현재 ${won(revByCh[ch].revenue)} 제안`:"예: 50000000"} style={inBox}/>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:7}}>
+                <span style={{fontSize:11,color:DC.dim}}>수수료율</span>
+                <span style={{display:"flex",alignItems:"center",gap:3}}>
+                  <input value={feeRates[ch]} onChange={e=>setFeeRates(p=>({...p,[ch]:Math.max(0,Math.min(100,parseFloat(e.target.value)||0))}))}
+                    type="number" style={{width:48,textAlign:"right",background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,padding:"2px 5px",fontSize:12,color:DC.text}}/>
+                  <span style={{fontSize:11,color:DC.dim}}>%</span>
+                </span>
+              </div>
+              {revByCh[ch]&&<div style={{fontSize:10,color:DC.dim,marginTop:5}}>현재 점유율 {revByCh[ch].share}%</div>}
+            </div>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><label style={lbl}>월 고정금액 (조정치)</label>
+            <input value={fixedCost} onChange={e=>setFixedCost(e.target.value)} placeholder="예: 10000000" style={inBox}/></div>
+          <div><label style={lbl}>목표 이익금 (조정치)</label>
+            <input value={targetProfit} onChange={e=>setTargetProfit(e.target.value)} placeholder="예: 20000000" style={inBox}/></div>
+        </div>
+        <div style={{fontSize:11,color:DC.dim,marginTop:8}}>필요 총마진 = 목표 이익금 + 월 고정금액 = <b style={{color:DC.sub}}>{won(reqMargin)}</b> · 정가 GMV(예상수량 기준) {won(regularGmv)}</div>
+      </div>
+
+      {/* 채널별 요약 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+        {channelCalc.map(c=>(
+          <div key={c.ch} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:chColor(c.ch),display:"inline-block"}}/>
+              <span style={{fontSize:13,fontWeight:700,color:DC.text}}>{c.ch}</span>
+              <span style={{fontSize:10,color:DC.dim,marginLeft:"auto"}}>수수료 {c.fee}%</span>
+            </div>
+            <div style={{fontSize:11,color:DC.sub}}>목표 매출 달성 세일율</div>
+            <div style={{fontSize:26,fontWeight:800,color:c.rate==null?DC.dim:MUTE_BLUE,letterSpacing:"-0.5px",margin:"2px 0 8px"}}>
+              {c.rate==null?"—":`${c.rate}%`}
+            </div>
+            <div style={{fontSize:11,color:DC.sub,lineHeight:1.8}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span>예상 매출</span><b style={{color:DC.text}}>{won(c.rev)}</b></div>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span>예상 마진</span><b style={{color:c.margin>=0?"#1a7a4f":"#c0392b"}}>{won(c.margin)}</b></div>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span>재입고비(4주발주)</span><b style={{color:"#C8A87B"}}>{won(c.restock)}</b></div>
+              {c.target>0&&<div style={{display:"flex",justifyContent:"space-between",color:DC.dim}}><span>목표</span><span>{won(c.target)}</span></div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 필요 마진 가드 */}
+      <div style={{background:netContribution>=0?"rgba(26,122,79,0.07)":"rgba(192,57,43,0.07)",
+        border:`1px solid ${netContribution>=0?"#1a7a4f":"#c0392b"}40`,borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:DC.text}}>
+        예상 총마진 <b>{won(totalMargin)}</b> {netContribution>=0?"≥":"<"} 필요 총마진 <b>{won(reqMargin)}</b> →{" "}
+        <b style={{color:netContribution>=0?"#1a7a4f":"#c0392b"}}>{netContribution>=0?`여유 ${won(netContribution)}`:`부족 ${won(-netContribution)} — 세일율을 낮추거나 목표를 조정하세요`}</b>
+        <span style={{color:DC.dim}}> · 재입고비 합계 {won(totalRestock)}</span>
+      </div>
+
+      {/* 상품별×채널별 매트릭스 */}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:700,color:DC.text}}>② 상품별 · 채널별 세일율 / 마진율 <span style={{fontSize:11,color:DC.dim,fontWeight:400}}>· ★=스테디셀러(4주발주 상위·Healthy) · 행 클릭 시 계산식</span></span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="상품명·옵션 검색" style={{...inBox,width:200}}/>
+        </div>
+        {unmatchedCount>0&&<div style={{fontSize:11,color:"#C8A87B",marginBottom:8}}>⚠ 공급가/판매가 미매칭 {unmatchedCount.toLocaleString()}건은 합계·표에서 제외됨 (인벤토리 가격 DB 보강 시 반영)</div>}
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{borderBottom:`2px solid ${DC.border}`}}>
+              <th style={{textAlign:"left",padding:"6px 8px",color:DC.sub,fontWeight:600}}>상품</th>
+              <th style={{textAlign:"center",padding:"6px 8px",color:DC.sub,fontWeight:600}}>에이징</th>
+              <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}}>정가</th>
+              <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}}>4주발주</th>
+              {GMV_CHANNELS.map(ch=>(
+                <th key={ch} style={{textAlign:"center",padding:"6px 8px",color:chColor(ch),fontWeight:700,minWidth:110}}>{ch}<div style={{fontSize:9,color:DC.dim,fontWeight:400}}>세일율 → 마진율</div></th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {shownProducts.slice(0,showCount).map(p=>{
+                const isExp=expanded===p.key;
+                return(
+                  <React.Fragment key={p.key}>
+                    <tr onClick={()=>setExpanded(isExp?null:p.key)} style={{borderBottom:`1px solid ${DC.border}`,cursor:"pointer",background:isExp?"rgba(94,129,172,0.06)":"transparent"}}>
+                      <td style={{padding:"6px 8px",color:DC.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {p.steady&&<span style={{color:"#C8A020",marginRight:3}}>★</span>}{p.name}{p.option?<span style={{color:DC.dim}}> / {p.option}</span>:null}
+                      </td>
+                      <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:10,fontWeight:600,color:INV_AGING_DEFS[p.aging]?.color}}>{INV_AGING_DEFS[p.aging]?.label||"—"}</span></td>
+                      <td style={{padding:"6px 8px",textAlign:"right",color:DC.sub}}>{won(p.list)}</td>
+                      <td style={{padding:"6px 8px",textAlign:"right",color:DC.sub}}>{p.qty4w.toLocaleString()}</td>
+                      {channelCalc.map(c=>{
+                        const m=gmvCompute(p.list,c.rate||0,p.supply,c.fee);
+                        return(
+                          <td key={c.ch} style={{padding:"6px 8px",textAlign:"center"}}>
+                            <div style={{fontWeight:700,color:DC.text}}>{c.rate==null?"—":`${c.rate}%`}</div>
+                            <div style={{fontSize:11,fontWeight:600,color:m.margin>=0?"#1a7a4f":"#c0392b"}}>{m.marginRate}%</div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {isExp&&(
+                      <tr style={{background:"rgba(94,129,172,0.04)"}}>
+                        <td colSpan={4+GMV_CHANNELS.length} style={{padding:"4px 8px 12px"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
+                            {channelCalc.map(c=>{
+                              const m=gmvCompute(p.list,c.rate||0,p.supply,c.fee);
+                              const restock=Math.round(p.supply*1.1)*p.qty4w;
+                              const calcRow=(k,v,expr)=>(
+                                <div style={{display:"grid",gridTemplateColumns:"86px 92px 1fr",gap:8,fontSize:11,padding:"2px 0",alignItems:"baseline"}}>
+                                  <span style={{color:DC.sub}}>{k}</span><span style={{textAlign:"right",fontWeight:600,color:DC.text}}>{v}</span><span style={{color:DC.dim}}>{expr}</span>
+                                </div>
+                              );
+                              return(
+                                <div key={c.ch} style={{border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 12px",background:DC.card}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
+                                    <span style={{width:8,height:8,borderRadius:"50%",background:chColor(c.ch),display:"inline-block"}}/>
+                                    <span style={{fontSize:12,fontWeight:700,color:DC.text}}>{c.ch}</span>
+                                  </div>
+                                  {calcRow("① 정가",won(p.list),"")}
+                                  {calcRow("② 세일",`−${won(m.saleAmt)}`,`정가 × ${c.rate||0}%`)}
+                                  {calcRow("③ 실판매가",won(m.finalPrice),`정가 × (1−${c.rate||0}%)`)}
+                                  {calcRow("④ 수수료",`−${won(m.fee)}`,`실판매가 × ${c.fee}%`)}
+                                  {calcRow("⑤ 정산액",won(m.net),"실판매가 − 수수료")}
+                                  {calcRow("⑥ 공급가",`−${won(m.supplyVat)}`,`${won(p.supply)} × 1.1`)}
+                                  {calcRow("⑦ 마진",won(m.margin),"정산액 − 공급가")}
+                                  {calcRow("⑦ 마진율",`${m.marginRate}%`,"마진 ÷ 정산액")}
+                                  {calcRow("⑧ 재입고비",won(restock),`4주발주 ${p.qty4w} × 공급가×1.1`)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {shownProducts.length>showCount&&(
+          <button onClick={()=>setShowCount(c=>c+40)} style={{marginTop:10,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,padding:"6px 14px",fontSize:12,color:DC.sub,cursor:"pointer"}}>
+            더 보기 ({(shownProducts.length-showCount).toLocaleString()})
+          </button>
+        )}
+      </div>
+
+      {/* 사이클 다이어그램: 원가 → 실판매가 → 마진 → 재입고 */}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:700,color:DC.text}}>③ 판매 → 마진 → 재입고 사이클</span>
+          <div style={{display:"flex",gap:4}}>
+            {GMV_CHANNELS.map(ch=>(
+              <button key={ch} onClick={()=>setCycleCh(ch)} style={{background:cycleCh===ch?chColor(ch):"transparent",color:cycleCh===ch?"#fff":DC.sub,
+                border:`1px solid ${cycleCh===ch?chColor(ch):DC.border}`,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{ch}</button>
+            ))}
+          </div>
+        </div>
+        {(()=>{
+          const c=channelCalc.find(x=>x.ch===cycleCh)||channelCalc[0];
+          if(!c) return null;
+          const nodes=[
+            {k:"원가 합계",v:c.cost,color:"#c0392b",desc:"공급가×1.1 × 예상수량"},
+            {k:"실제 판매가",v:c.rev,color:chColor(cycleCh),desc:`정가 GMV × (1−${c.rate||0}%)`},
+            {k:"마진",v:c.margin,color:c.margin>=0?"#1a7a4f":"#c0392b",desc:"정산액 − 원가"},
+            {k:"재입고",v:c.restock,color:"#C8A87B",desc:"4주발주 × 공급가×1.1"},
+          ];
+          return(
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"center"}}>
+              {nodes.map((n,i)=>(
+                <React.Fragment key={n.k}>
+                  <div style={{flex:"1 1 130px",minWidth:120,maxWidth:180,textAlign:"center",border:`2px solid ${n.color}`,borderRadius:12,padding:"14px 10px",background:`${n.color}0d`}}>
+                    <div style={{fontSize:11,color:DC.sub,marginBottom:3}}>{n.k}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:n.color,letterSpacing:"-0.3px"}}>{won(n.v)}</div>
+                    <div style={{fontSize:9,color:DC.dim,marginTop:3}}>{n.desc}</div>
+                  </div>
+                  <div style={{color:DC.dim,fontSize:18,flexShrink:0}}>→</div>
+                </React.Fragment>
+              ))}
+              <div style={{flex:"1 1 100%",textAlign:"center",fontSize:11,color:DC.dim,marginTop:4}}>↻ 재입고가 다시 원가로 순환 — 판매·마진으로 다음 재고를 매입하는 구조</div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 채널 워크벤치 (업로드→자동산출→조정→재다운로드) */}
+      <GmvWorkbench DC={DC} channelCalc={channelCalc} feeRates={feeRates}/>
+
+      {/* 각주 */}
+      <div style={{marginTop:18,padding:"12px 16px",background:DC.card,border:`1px solid ${DC.border}`,borderRadius:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:DC.sub,marginBottom:8,letterSpacing:".04em"}}>데이터 출처 · 최신 기준일</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"6px 18px"}}>
+          {footnotes.map(f=>(
+            <div key={f.label} style={{fontSize:11,color:DC.sub}}>
+              <b style={{color:DC.text}}>{f.label}</b> <span style={{color:MUTE_BLUE}}>{f.date}</span> <span style={{color:DC.dim}}>· {f.note}</span>
+            </div>
+          ))}
+          <div style={{fontSize:11,color:DC.dim}}>카페24 매칭은 자사몰 코드 연결에 사용</div>
+        </div>
+        <div style={{fontSize:10,color:DC.dim,marginTop:8,lineHeight:1.6}}>
+          · 채널 매출·점유율은 대시보드와 동일 소스(analyze)입니다. · 오프라인 POS 금액은 정산후(net)지만, 요청에 따라 29CM과 동일한 28% 수수료 모델로 비교합니다.
+          · 마진율 = (정산액 − 공급가×1.1) ÷ 정산액. 자사몰은 수수료 0%(실수령=쿠폰적용가).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// GMV 채널 워크벤치 — 양식 업로드 → 세일율 자동/직접 조정 → 재다운로드 (29CM/자사몰/오프라인 토글)
+function GmvWorkbench({DC,channelCalc,feeRates}){
+  const [ch,setCh]=useState("29CM");
+  const [rows,setRows]=useState([]);     // {code,name,list(selling),supply, rate, coupon}
+  const [fileName,setFileName]=useState("");
+  const [status,setStatus]=useState("");
+  const fee=feeRates[ch]||0;
+  const chRate=channelCalc.find(c=>c.ch===ch)?.rate||0; // GMV 추천 세일율
+
+  const loadRows=(prods)=>{
+    setRows(prods.map(p=>({code:p.code||"",name:p.name,list:p.selling||0,supply:p.supply||0,rate:chRate,coupon:0})));
+    setStatus(`${prods.length.toLocaleString()}개 상품 로드 · 세일율 GMV 추천값(${chRate}%)으로 자동 채움`);
+  };
+  const handleFile=f=>{
+    if(!f) return;
+    setFileName(f.name);setStatus("파싱 중…");
+    parseMallProductFile(f,prods=>loadRows(prods),err=>setStatus("오류: "+err));
+  };
+  // 채널 변경/추천세일율 변경 시 아직 손대지 않은 행은 추천값 추적
+  const setRate=(i,v)=>setRows(prev=>prev.map((r,idx)=>idx===i?{...r,rate:v,_touched:true}:r));
+  const setCoupon=(i,v)=>setRows(prev=>prev.map((r,idx)=>idx===i?{...r,coupon:v}:r));
+  const applyAll=v=>setRows(prev=>prev.map(r=>({...r,rate:v,_touched:true})));
+
+  // 계산
+  const calc=rows.map(r=>{
+    const m=gmvCompute(r.list,parseFloat(r.rate)||0,r.supply,fee,parseFloat(r.coupon)||0);
+    const recM=gmvCompute(r.list,chRate,r.supply,fee);
+    return {...r,...m,recDisc:recM.effDisc,deviation:Math.round((m.effDisc-chRate)*10)/10};
+  });
+  const sumRev=calc.reduce((s,r)=>s+r.finalPrice,0); // 단가 합(수량 미반영, 상대 비교용)
+  const sumMargin=calc.reduce((s,r)=>s+r.margin,0);
+
+  const exportXlsx=async()=>{
+    if(!calc.length) return;
+    const XLSX=await getXLSX();
+    let aoa;
+    if(ch==="자사몰"){
+      aoa=[["상품코드","상품명","할인 이후 가격","할인율(%)"],...calc.map(r=>[r.code,r.name,r.finalPrice,r.effDisc])];
+    }else if(ch==="29CM"){
+      aoa=[["상품코드","상품명","정가","세일율(%)","세일가","마진율(%)"],...calc.map(r=>[r.code,r.name,r.list,r.rate,r.finalPrice,r.marginRate])];
+    }else{ // 오프라인 — 인벤토리 트렌드 형식 + 세일율·세일가·마진율
+      aoa=[["상품코드","상품명","판매가","공급가","세일율(%)","세일가","마진율(%)"],...calc.map(r=>[r.code,r.name,r.list,r.supply,r.rate,r.finalPrice,r.marginRate])];
+    }
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),ch.slice(0,20));
+    XLSX.writeFile(wb,`GMV_${ch}_세일율_${dayjs().format("YYYYMMDD")}.xlsx`);
+  };
+
+  const inSm={width:56,textAlign:"right",background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,padding:"3px 6px",fontSize:12,color:DC.text,fontFamily:"inherit"};
+  const won=n=>"₩"+Math.round(n||0).toLocaleString();
+
+  return(
+    <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:13,fontWeight:700,color:DC.text}}>④ 채널 세일율 워크벤치</span>
+        <span style={{fontSize:11,color:DC.dim}}>양식 업로드 → GMV 추천 세일율 자동 → 직접 조정 → 재다운로드</span>
+        <div style={{display:"flex",gap:4,marginLeft:"auto"}}>
+          {GMV_CHANNELS.map(c=>(
+            <button key={c} onClick={()=>{setCh(c);setRows([]);setFileName("");setStatus("");}}
+              style={{background:ch===c?chColor(c):"transparent",color:ch===c?"#fff":DC.sub,border:`1px solid ${ch===c?chColor(c):DC.border}`,
+                borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{c}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{fontSize:11,color:DC.sub,marginBottom:10}}>
+        {ch==="29CM"&&"29CM 일괄할인/상품 양식(상품코드·상품명·판매가·공급가) 업로드 → 다운로드"}
+        {ch==="자사몰"&&"자사몰 상품 파일(CSV/Excel: 상품코드·상품명·판매가·공급가) 업로드 → 다운로드"}
+        {ch==="오프라인 스토어"&&"이지어드민 인벤토리 트렌드 양식 업로드 → 세일율·세일가 명시 파일 다운로드"}
+        {" · 수수료 "}{fee}% · GMV 추천 세일율 <b style={{color:MUTE_BLUE}}>{chRate}%</b>
+      </div>
+      {/* 업로드 */}
+      <div onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".xlsx,.xls,.csv";inp.onchange=e=>handleFile(e.target.files[0]);inp.click();}}
+        style={{border:`1.5px dashed ${DC.border}`,borderRadius:8,padding:"14px",textAlign:"center",cursor:"pointer",marginBottom:10,fontSize:12,color:DC.sub}}>
+        ⬆ 파일 드래그&드롭 또는 클릭 — {fileName||"상품 파일 업로드"}
+      </div>
+      {status&&<div style={{fontSize:11,color:MUTE_BLUE,marginBottom:10}}>{status}</div>}
+      {calc.length>0&&(
+        <>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:DC.sub}}>전체 세일율 일괄:</span>
+            {[0,5,10,15,20,chRate].filter((v,i,a)=>a.indexOf(v)===i).map(v=>(
+              <button key={v} onClick={()=>applyAll(v)} style={{background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,padding:"3px 9px",fontSize:11,color:DC.sub,cursor:"pointer"}}>{v}%</button>
+            ))}
+            <button onClick={exportXlsx} style={{marginLeft:"auto",background:chColor(ch),color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>↓ {ch} 형식 다운로드</button>
+          </div>
+          <div style={{display:"flex",gap:14,marginBottom:8,fontSize:11,color:DC.sub,flexWrap:"wrap"}}>
+            <span>단가합 {won(sumRev)}</span><span>마진합 {won(sumMargin)}</span>
+            <span style={{color:DC.dim}}>GMV 추천 세일율 {chRate}% 대비 이탈을 행별로 표시</span>
+          </div>
+          <div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{position:"sticky",top:0,background:DC.bg}}>
+                {["상품명","정가","세일율(%)","쿠폰(%)","세일가","목표 대비","마진","마진율"].map((h,i)=>(
+                  <th key={h} style={{textAlign:i===0?"left":i<=1?"right":"center",padding:"6px 8px",fontSize:10,color:DC.sub,fontWeight:600,borderBottom:`1px solid ${DC.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {calc.map((r,i)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${DC.border}`}}>
+                    <td style={{padding:"5px 8px",color:DC.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
+                    <td style={{padding:"5px 8px",textAlign:"right",color:DC.sub}}>{won(r.list)}</td>
+                    <td style={{padding:"5px 8px",textAlign:"center"}}><input value={r.rate} onChange={e=>setRate(i,e.target.value)} type="number" style={inSm}/></td>
+                    <td style={{padding:"5px 8px",textAlign:"center"}}><input value={r.coupon} onChange={e=>setCoupon(i,e.target.value)} type="number" style={inSm}/></td>
+                    <td style={{padding:"5px 8px",textAlign:"right",color:DC.text,fontWeight:600}}>{won(r.finalPrice)}</td>
+                    <td style={{padding:"5px 8px",textAlign:"center",color:Math.abs(r.deviation)<0.05?DC.dim:(r.deviation>0?"#c0392b":"#1a7a4f")}}>{r.deviation>0?"+":""}{r.deviation}%p</td>
+                    <td style={{padding:"5px 8px",textAlign:"right",color:r.margin>=0?"#1a7a4f":"#c0392b"}}>{won(r.margin)}</td>
+                    <td style={{padding:"5px 8px",textAlign:"center",fontWeight:600,color:r.margin>=0?"#1a7a4f":"#c0392b"}}>{r.marginRate}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{fontSize:10,color:DC.dim,marginTop:8}}>
+            쿠폰은 세일율 다음에 곱연산(자사몰 멤버십 쿠폰 방식). 29CM 채널부담 시나리오·자사몰 멤버십 쿠폰 모델을 동일 적용. 목표 대비 = 행 실효 세일율 − GMV 추천 세일율.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // 리오더 계산기 — 독립 페이지 (데이터 컴페어에서 분리)
 // 계산 소스(computeAndSaveReorder)는 '데이터 입력 > 인벤토리' 업로더가 그대로 트리거
 // ─────────────────────────────────────────────
@@ -16504,7 +17006,7 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","promo","input","compare","impact"];
+  const validPages=["dashboard","promo","input","compare","impact","reorder","gmv"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
@@ -16633,6 +17135,7 @@ export default function App() {
     {key:"impact",label:"콘텐츠 임팩트"},
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
+    {key:"gmv",label:"GMV 계산기"},
   ];
 
   const [visible,setVisible]=useState(false);
@@ -16687,6 +17190,7 @@ export default function App() {
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders} stocks={stocks} ts={ts}/>}
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
         {page==="reorder"&&<ReorderPage/>}
+        {page==="gmv"&&<GmvCalculator orders={orders} revenues={revenues} storeSales={storeSales} stocks={stocks}/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
