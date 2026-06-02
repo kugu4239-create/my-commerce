@@ -14539,7 +14539,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
 // GMV 계산기 — 채널별 목표 매출 → 최종 세일율 역산
 // ─────────────────────────────────────────────
 const GMV_CHANNELS=["자사몰","29CM","오프라인 스토어"];
-const GMV_FEE_DEFAULT={"자사몰":0,"29CM":28,"오프라인 스토어":28};
+const GMV_FEE_DEFAULT={"자사몰":3,"29CM":28,"오프라인 스토어":28};
 // 채널 수수료율 반영 세일율→마진 (실수령 net 기준, 자사몰 실수령=쿠폰적용가 / 29CM·오프라인=정산액)
 function gmvCompute(list,saleRate,supply,feeRate,couponRate=0){
   const r=Math.max(0,Math.min(100,saleRate||0));
@@ -14570,12 +14570,39 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const [reorderRows,setReorderRows]=useState([]); // reorder_recommendations
   const [loading,setLoading]=useState(true);
   // 채널별 목표 매출은 입력하지 않음 — 월 고정금액 + 목표 이익금으로 자동 산출(읽기 전용).
-  // 월 고정금액 / 목표 이익금 — 가장 최근 입력값을 localStorage에 저장
+  // 월 고정금액 / 목표 이익금 / 채널 수수료율 — Supabase(gmv_settings) 단일 행에 저장, localStorage 폴백
   const [fixedCost,setFixedCost]=useState(()=>{try{return localStorage.getItem("gmv_fixed_cost")||"";}catch{return "";}});
   const [targetProfit,setTargetProfit]=useState(()=>{try{return localStorage.getItem("gmv_target_profit")||"";}catch{return "";}});
-  useEffect(()=>{try{localStorage.setItem("gmv_fixed_cost",fixedCost);}catch{/* noop */}},[fixedCost]);
-  useEffect(()=>{try{localStorage.setItem("gmv_target_profit",targetProfit);}catch{/* noop */}},[targetProfit]);
   const [feeRates,setFeeRates]=useState({...GMV_FEE_DEFAULT});
+  const settingsLoaded=useRef(false);
+  // 마운트 시 gmv_settings 로드(있으면 입력값 복원)
+  useEffect(()=>{(async()=>{
+    try{
+      const db=await getSupabase();
+      const{data}=await db.from("gmv_settings").select("fixed_cost,target_profit,fee_rates").eq("id",1).maybeSingle();
+      if(data){
+        if(data.fixed_cost!=null) setFixedCost(String(data.fixed_cost||""));
+        if(data.target_profit!=null) setTargetProfit(String(data.target_profit||""));
+        if(data.fee_rates&&typeof data.fee_rates==="object") setFeeRates(p=>({...p,...data.fee_rates}));
+      }
+    }catch{/* 테이블 없거나 로드 실패 시 localStorage 값 유지 */}
+    settingsLoaded.current=true;
+  })();},[]);
+  // 변경 시 저장(디바운스) — localStorage 즉시 + Supabase 업서트
+  useEffect(()=>{
+    try{localStorage.setItem("gmv_fixed_cost",fixedCost);localStorage.setItem("gmv_target_profit",targetProfit);}catch{/* noop */}
+    if(!settingsLoaded.current) return; // 초기 로드 전에는 저장 안 함
+    const t=setTimeout(async()=>{
+      try{
+        const db=await getSupabase();
+        await db.from("gmv_settings").upsert({id:1,
+          fixed_cost:parseInt(String(fixedCost).replace(/[^0-9]/g,""),10)||0,
+          target_profit:parseInt(String(targetProfit).replace(/[^0-9]/g,""),10)||0,
+          fee_rates:feeRates,updated_at:new Date().toISOString()},{onConflict:"id"});
+      }catch{/* noop */}
+    },600);
+    return()=>clearTimeout(t);
+  },[fixedCost,targetProfit,feeRates]);
   const [search,setSearch]=useState("");
   const [expanded,setExpanded]=useState(null);    // 펼친 상품 key
   const [cycleCh,setCycleCh]=useState("자사몰");   // 사이클 다이어그램 채널
@@ -14687,37 +14714,60 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   },[stocks,inboundBySku]);
 
   // ── 최근 한 달 실적: 가장 최근 주문일 기준 30일간 배송 주문(채널별) → 실제 판매수량·실판매가·실효 세일율·마진
+  //   채널별 실판매 매출 산정(주문배송 데이터 기준):
+  //   · 자사몰(MERRYON): 동일 order_no의 [결제금액] 1개가 실제 결제금액(주문 단위, 1회만).
+  //     상품별 세일율은 결제금액을 주문 내 정가비중으로 배분해 추정.
+  //   · 29CM: 동일 order_no 내 [판매가] 합이 실제 결제금액 → 상품(라인)별 판매가 그대로 사용.
+  //   · 오프라인: store_sales 실판매금액(amount, 라인) 그대로.
   const recentActuals=useMemo(()=>{
     const dated=(orders||[]).filter(o=>o.order_date);
     if(!dated.length) return {byKeyCh:{},start:"",end:"",chTotals:{}};
     const end=dated.reduce((mx,o)=>o.order_date>mx?o.order_date:mx,"");
     const start=new Date(new Date(end+"T00:00:00").getTime()-29*86400000).toISOString().slice(0,10);
     const supplyByKey={};products.forEach(p=>{supplyByKey[p.key]={supply:p.supply,list:p.list};});
+    const inWin=o=>o.order_date&&o.order_date>=start&&o.order_date<=end&&o.status==="배송";
     const byKeyCh={}; const chTotals={};
-    GMV_CHANNELS.forEach(c=>{chTotals[c]={qty:0,revenue:0,margin:0};});
+    GMV_CHANNELS.forEach(c=>{chTotals[c]={qty:0,revenue:0,margin:0,listGmv:0};});
+    // 자사몰: order_no별 결제금액(1회) + 라인들의 정가비중으로 실판매 배분
+    const ownOrders={}; // order_no → {payment, lines:[{k,meta,qty}]}
+    const addRow=(ch,k,meta,qty,lineRev)=>{
+      const fee=feeRates[ch]||0;
+      const lineList=meta.list*qty;
+      const lineNet=Math.round(lineRev*(1-fee/100));
+      const lineMargin=lineNet-Math.round((meta.supply||0)*1.1)*qty;
+      const id=k+"@@"+ch;
+      if(!byKeyCh[id]) byKeyCh[id]={qty:0,revenue:0,margin:0,listGmv:0,list:meta.list,supply:meta.supply};
+      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=lineRev; byKeyCh[id].margin+=lineMargin; byKeyCh[id].listGmv+=lineList;
+      chTotals[ch].qty+=qty; chTotals[ch].revenue+=lineRev; chTotals[ch].margin+=lineMargin; chTotals[ch].listGmv+=lineList;
+    };
     (orders||[]).forEach(o=>{
-      if(!o.order_date||o.order_date<start||o.order_date>end) return;
-      if(o.status!=="배송") return; // 실제 출고분만
+      if(!inWin(o)) return;
       const ch=normChannel(o.channel);
       if(!GMV_CHANNELS.includes(ch)) return;
       const k=normProdName(o.product_name)+"|"+String(o.option_name||"").trim().toLowerCase();
       const meta=supplyByKey[k]; if(!meta) return; // 인벤토리 매칭분만
-      const qty=o.qty||0; const sp=o.sale_price||0;
-      // 자사몰은 행별 sale_price가 없을 수 있어 정가×(추정) 대신 sale_price 우선, 없으면 정가
-      const unit=sp>0?sp:meta.list;
-      const fee=feeRates[ch]||0;
-      const net=Math.round(unit*(1-fee/100));
-      const supplyVat=Math.round((meta.supply||0)*1.1);
-      const id=k+"@@"+ch;
-      const listGmv=meta.list*qty; // 정가 기준 GMV (현재 세일율 분모)
-      if(!byKeyCh[id]) byKeyCh[id]={qty:0,revenue:0,margin:0,listGmv:0,list:meta.list,supply:meta.supply};
-      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=unit*qty; byKeyCh[id].margin+=(net-supplyVat)*qty; byKeyCh[id].listGmv+=listGmv;
-      chTotals[ch].qty+=qty; chTotals[ch].revenue+=unit*qty; chTotals[ch].margin+=(net-supplyVat)*qty; chTotals[ch].listGmv+=listGmv;
+      const qty=o.qty||0;
+      if(ch==="자사몰"){
+        const ono=o.order_no||o.order_id||""; if(!ono) return;
+        if(!ownOrders[ono]) ownOrders[ono]={payment:0,lines:[]};
+        if((o.payment_amount||0)>ownOrders[ono].payment) ownOrders[ono].payment=o.payment_amount||0; // 주문당 1회(MAX)
+        ownOrders[ono].lines.push({k,meta,qty});
+      }else{
+        // 29CM·오프라인: 라인 판매가(sale_price=상품 판매가/매장 실판매금액) 그대로
+        addRow(ch,k,meta,qty,(o.sale_price||0)>0?o.sale_price:meta.list*qty);
+      }
+    });
+    // 자사몰 배분: 결제금액을 주문 내 정가매출(정가×수량) 비중으로 라인에 배분
+    Object.values(ownOrders).forEach(ord=>{
+      const totalList=ord.lines.reduce((s,l)=>s+l.meta.list*l.qty,0);
+      const pay=ord.payment>0?ord.payment:totalList; // 결제금액 없으면 정가(세일 0)
+      ord.lines.forEach(l=>{
+        const w=totalList>0?(l.meta.list*l.qty)/totalList:0;
+        addRow("자사몰",l.k,l.meta,l.qty,Math.round(pay*w));
+      });
     });
     return {byKeyCh,start,end,chTotals};
   },[orders,products,feeRates]);
-  // 채널별 정가GMV 보정 (chTotals에 listGmv 키 보장)
-  GMV_CHANNELS.forEach(c=>{ if(recentActuals.chTotals[c]&&recentActuals.chTotals[c].listGmv===undefined) recentActuals.chTotals[c].listGmv=0; });
 
   // ── 현재 이익금(최근 30일 실판매 마진) + 목표 배수 r = (목표이익금 + 월고정금액) ÷ 현재이익금
   const targetProfitN=parseInt(String(targetProfit).replace(/[^0-9]/g,""),10)||0;
@@ -17290,6 +17340,7 @@ export default function App() {
       product_name:r.product_name,
       option_name:r.option_name,
       qty:r.qty,
+      sale_price:r.amount||0,   // 매장 실판매금액(라인) — GMV 현재 세일율(정가 대비) 산출용
       status:r.status,
       order_id:r.order_id,
     }));
