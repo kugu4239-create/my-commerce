@@ -7772,20 +7772,28 @@ function OwnMallSaleCalcModal({ onClose }){
   };
   const couponRate=selCoupon>=0?Math.max(0,Math.min(100,Number(coupons[selCoupon]?.rate)||0)):0;
   const couponName=selCoupon>=0?(coupons[selCoupon]?.name||`쿠폰 ${selCoupon+1}`):"";
+  // 가격 DB(calc_supply_override + 인벤토리 스냅샷) 동기화 — 공급가/정상가 우선 적용
+  const {priceOf,ready:priceReady}=useInventoryPricing();
   // 곱연산 체인: 판매가 > 할인율 > 할인금액 > 할인가 > 쿠폰율 > 쿠폰금액 > 쿠폰적용가 > 원가 > 마진 > 마크업
+  //   · 공급가는 가격 DB(데이터 입력 > 인벤토리 > 가격 DB) 값을 우선 사용하고, 없으면 파일 값
+  //   · 정상가는 파일 값(카페24 판매가)을 우선 사용하고, 없으면 가격 DB 폴백
   const rows=useMemo(()=>products.map((p,i)=>{
     const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
-    const discAmt=Math.round(p.selling*rate/100);
-    const discPrice=p.selling-discAmt;
+    const priced=priceOf?priceOf(p.name,p.code):{selling:0,supply:0};
+    const supply=priced.supply||p.supply||0;
+    const selling=p.selling||priced.selling||0;
+    const discAmt=Math.round(selling*rate/100);
+    const discPrice=selling-discAmt;
     const couponAmt=Math.round(discPrice*couponRate/100);
     const couponPrice=discPrice-couponAmt;
-    const supplyVat=Math.round((p.supply||0)*1.1);
+    const supplyVat=Math.round(supply*1.1);
     const margin=couponPrice-supplyVat;
     // 실수령 마크업 = 실수령액(쿠폰적용가, 자사몰 수수료 0%) ÷ 원가(부가세 포함)
     const markup=supplyVat>0?couponPrice/supplyVat:0;
-    const effDisc=p.selling>0?(1-couponPrice/p.selling)*100:0;
-    return {...p,idx:i,rate,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,markup,effDisc};
-  }),[products,rates,couponRate]);
+    const effDisc=selling>0?(1-couponPrice/selling)*100:0;
+    return {...p,idx:i,rate,selling,supply,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,markup,effDisc,supplyFromDb:priced.supply>0};
+  }),[products,rates,couponRate,priceOf]);
+  const dbMatchedCount=useMemo(()=>rows.filter(r=>r.supplyFromDb).length,[rows]);
   const agg=useMemo(()=>{
     if(!rows.length) return null;
     const n=rows.length;
@@ -7901,6 +7909,7 @@ function OwnMallSaleCalcModal({ onClose }){
                     <div style={{fontSize:15,fontWeight:700,color:D.text}}>{v}</div>
                   </div>
                 ))}
+                {priceReady&&<span style={{fontSize:11,color:dbMatchedCount>0?D.green:D.textMeta}} title="데이터 입력 > 인벤토리 > 가격 DB 와 동기화된 공급가 건수">🔗 가격 DB 매칭 {dbMatchedCount.toLocaleString()}/{rows.length.toLocaleString()}건</span>}
                 {agg.noCost>0&&<span style={{fontSize:11,color:D.amber}}>공급가 미입력 {agg.noCost}개 (마진 과대평가)</span>}
                 {agg.neg>0&&<span style={{fontSize:11,color:D.red}}>역마진 {agg.neg}개</span>}
                 <button onClick={exportXlsx}
