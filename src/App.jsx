@@ -6745,7 +6745,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
           }
           @media (max-width: 768px) {
             .salecalc-overlay { padding: 4px !important; align-items: flex-start !important; }
-            .salecalc { width: 100% !important; max-width: 100% !important; max-height: calc(100vh - 8px) !important; border-radius: 8px !important; }
+            .salecalc { width: 90% !important; max-width: 90% !important; max-height: calc(100vh - 8px) !important; border-radius: 8px !important; }
             .salecalc .sc-body { padding: 14px 10px 28px !important; }
             .salecalc table th, .salecalc table td { padding: 5px 6px !important; }
           }
@@ -7450,10 +7450,23 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                   )}
                                 </div>
                               </td>
-                              <td title={`기본 판매가 = 정상가 ₩${wonFmt(r.list)} × (1 − ${r.baseDisc}%) = ₩${wonFmt(r.basePrice)} (10원 단위 반올림) | I열에 입력되는 노출 판매가`}
-                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>₩{wonFmt(r.basePrice)}</td>
-                              <td title={`최종 노출가 = 기본 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액`}
-                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>₩{wonFmt(r.finalPrice)}</td>
+                              {(()=>{
+                                const sv=r.supplyIncVat||Math.round((r.supply||0)*1.1);
+                                const baseMu=sv>0?Math.round(r.basePrice/sv*100)/100:null;
+                                const finalMu=sv>0?Math.round(r.finalPrice/sv*100)/100:null;
+                                return (<>
+                                  <td title={`기본 판매가 = 정상가 ₩${wonFmt(r.list)} × (1 − ${r.baseDisc}%) = ₩${wonFmt(r.basePrice)} (10원 단위 반올림) | I열에 입력되는 노출 판매가${baseMu!=null?` · 마크업 ×${baseMu.toFixed(2)} (기본가 ÷ 원가)`:""}`}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>
+                                    ₩{wonFmt(r.basePrice)}
+                                    {baseMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:baseMu>3?D.green:D.red}}>×{baseMu.toFixed(2)}</span>}
+                                  </td>
+                                  <td title={`최종 노출가 = 기본 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
+                                    ₩{wonFmt(r.finalPrice)}
+                                    {finalMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:finalMu>3?D.green:D.red}}>×{finalMu.toFixed(2)}</span>}
+                                  </td>
+                                </>);
+                              })()}
                               <td title={`최종 할인율 = 1 − (실 판매액 ₩${wonFmt(r.finalPrice)} ÷ 정상가 ₩${wonFmt(r.list)}) = ${r.finalDisc}% (정상가 대비 총 할인)`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                   background:"#eef3ff",color:D.blue,fontWeight:700,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
@@ -7469,9 +7482,10 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.blue:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.channelBurden||0)>0?`+₩${wonFmt(r.channelBurden)}`:"—"}
                               </td>
-                              <td title={`자사 정산 = 실 판매액 ₩${wonFmt(r.finalPrice||0)} − 채널 수수료 ₩${wonFmt(r.fee||0)} + 채널 보전 ₩${wonFmt(r.channelBurden||0)} = ₩${wonFmt(r.net||0)} (자사 수령액)`}
+                              <td title={`자사 정산 = 실 판매액 ₩${wonFmt(r.finalPrice||0)} − 채널 수수료 ₩${wonFmt(r.fee||0)} + 채널 보전 ₩${wonFmt(r.channelBurden||0)} = ₩${wonFmt(r.net||0)} (자사 수령액)${r.supply>0?` · 마크업 ×${(r.markup||0).toFixed(2)} (정산액 ÷ 원가)`:""}`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:600,whiteSpace:"nowrap"}}>
                                 ₩{wonFmt(r.net||0)}
+                                {r.supply>0&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:(r.markup||0)>3?D.green:D.red}}>×{(r.markup||0).toFixed(2)}</span>}
                               </td>
                               <td title={r.supply>0?`인벤토리 공급가액 ₩${wonFmt(r.supply)} × 1.1 (부가세 10% 포함) = ₩${wonFmt(r.supplyIncVat||Math.round(r.supply*1.1))} (자사 실 원가)`:"인벤토리 매칭 없음 — 공급가 자동 입력 불가"}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
@@ -7685,8 +7699,8 @@ function OwnMallSaleCalcModal({ onClose }){
   const [status,setStatus]=useState("");
   const [dragOver,setDragOver]=useState(false);
   const [rates,setRates]=useState({});           // 상품별 할인율 % (index→값, 기본 10)
-  const [coupons,setCoupons]=useState([]);        // [{name,rate}] 멤버십 쿠폰(교차 불가)
-  const [selCoupon,setSelCoupon]=useState(-1);    // -1 = 쿠폰 없음
+  const [coupons,setCoupons]=useState([{name:"멤버십 10%",rate:10}]); // 기본 쿠폰 10% 자동 추가 (삭제 가능)
+  const [selCoupon,setSelCoupon]=useState(0);     // 기본 쿠폰 선택 (-1 = 쿠폰 없음)
   const [search,setSearch]=useState("");   // 표 내 검색 (상품명·할인율)
   const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
   const [sampleMsg,setSampleMsg]=useState("");    // 샘플 저장/로드 상태 메시지
@@ -7784,7 +7798,7 @@ function OwnMallSaleCalcModal({ onClose }){
     <div onClick={onClose}
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div ref={modalCardRef} onClick={e=>e.stopPropagation()} className="mallcalc"
-        style={{background:D.surface,borderRadius:14,width:"min(1100px,97vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+        style={{background:D.surface,borderRadius:14,width:"90vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <style>{`.mallcalc input[type="number"]::-webkit-inner-spin-button,.mallcalc input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}.mallcalc input[type="number"]{-moz-appearance:textfield;appearance:textfield;}.mallcalc thead th{position:sticky;top:0;background:${D.surface};z-index:2;box-shadow:inset 0 -1px 0 ${D.border};}.mallcalc tbody tr:hover td{background:${D.surfaceAlt};}`}</style>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
           padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:5}}>
@@ -7898,11 +7912,18 @@ function OwnMallSaleCalcModal({ onClose }){
                   <th style={{...numCell,fontWeight:500}}>마크업</th>
                 </tr></thead>
                 <tbody>
-                  {shown.map((r)=>(
+                  {shown.map((r)=>{
+                    const sellMu=r.supplyVat>0?Math.round(r.selling/r.supplyVat*100)/100:null;
+                    const discMu=r.supplyVat>0?Math.round(r.discPrice/r.supplyVat*100)/100:null;
+                    const cpnMu=r.supplyVat>0?Math.round(r.couponPrice/r.supplyVat*100)/100:null;
+                    const muBadge=(v)=>v==null?null:(
+                      <span style={{marginLeft:4,fontSize:10,fontWeight:700,color:v>3?D.green:D.red}}>×{v.toFixed(2)}</span>
+                    );
+                    return (
                     <tr key={r.code+r.idx} style={{borderBottom:`1px solid ${D.border}`}}>
                       <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>{r.code}</td>
                       <td style={{padding:"4px 6px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name}</td>
-                      <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}</td>
+                      <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}{muBadge(sellMu)}</td>
                       <td style={numCell}>
                         <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1"
                           value={rates[r.idx]??10} onChange={e=>setRate(r.idx,e.target.value)}
@@ -7910,15 +7931,16 @@ function OwnMallSaleCalcModal({ onClose }){
                         <span style={{color:D.textMeta}}> %</span>
                       </td>
                       <td style={{...numCell,color:D.textMeta}}>{won(r.discAmt)}</td>
-                      <td style={{...numCell,color:D.textSub}}>{won(r.discPrice)}</td>
+                      <td style={{...numCell,color:D.textSub}}>{won(r.discPrice)}{muBadge(discMu)}</td>
                       <td style={{...numCell,color:D.textMeta}}>{couponRate?pct(couponRate):"—"}</td>
                       <td style={{...numCell,color:D.textMeta}}>{couponRate?won(r.couponAmt):"—"}</td>
-                      <td style={{...numCell,color:D.text,fontWeight:700}}>{won(r.couponPrice)}</td>
+                      <td style={{...numCell,color:D.text,fontWeight:700}}>{won(r.couponPrice)}{muBadge(cpnMu)}</td>
                       <td style={{...numCell,color:D.textMeta}}>{r.supplyVat?won(r.supplyVat):"—"}</td>
                       <td style={{...numCell,fontWeight:600,color:r.margin>=0?D.green:D.red}}>{won(r.margin)}</td>
                       <td style={{...numCell,fontWeight:700,color:r.supplyVat>0?(r.markup>3?D.green:D.red):D.textMeta}}>{r.supplyVat>0?`×${r.markup.toFixed(2)}`:"—"}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
