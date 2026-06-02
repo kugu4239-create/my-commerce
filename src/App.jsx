@@ -6317,7 +6317,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   // 부가세 처리 (옵션 B · 양쪽 VAT 포함): 인벤토리 공급가는 세전(공급가액) 이므로
   //                      마진 계산 시 ×1.1 적용. 결제액은 이미 소비자가(VAT 포함).
   const computeMargin=useCallback((list,baseDisc,items,supply)=>{
-    if(!list) return {finalPrice:0,selfBurden:0,channelBurden:0,fee:0,feeRate:28,net:0,margin:0,marginRate:0,supplyIncVat:0};
+    if(!list) return {finalPrice:0,selfBurden:0,channelBurden:0,fee:0,feeRate:28,net:0,margin:0,markup:0,supplyIncVat:0};
     let priceAfter=list*(1-baseDisc/100);
     let selfBurden=list*(baseDisc/100); // 프런트는 자사
     let channelBurden=0;
@@ -6343,9 +6343,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
     const supplyIncVat=Math.round((supply||0)*1.1);       // 공급가 (세포) = 인벤토리 공급가액 × 1.1
     const margin=net-supplyIncVat;
-    // 마진율 = (정산액 − 원가) ÷ 정산액 (자사 실수령 기준 · 표준 판매가기준 마진율)
-    const marginRate=net>0?Math.round(margin/net*1000)/10:0;
-    return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,marginRate,supplyIncVat};
+    // 실수령 마크업 = 실수령액(정산액) ÷ 원가
+    const markup=supplyIncVat>0?Math.round(net/supplyIncVat*100)/100:0;
+    return {finalPrice:finalPriceR,selfBurden:Math.round(selfBurden),channelBurden:channelBurdenR,fee,feeRate:fr,net,margin,markup,supplyIncVat};
   },[]);
   // 인벤토리 공급가 맵 + 상품 목록 — 최근 스냅샷 기준
   const [invMap,setInvMap]=useState({});
@@ -7191,9 +7191,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             <span style={calcCol}>정산 금액에서 공급가를 차감한, 자사가 남기는 이익입니다.</span>
                           </div>
                           <div style={rowSty}>
-                            <span style={labelCol}><span>마진율</span></span>
-                            <span style={{...amtCol,color:m.margin>=0?D.green:D.red}}>{m.marginRate}%</span>
-                            <span style={calcCol}>마진 금액을 정산액(자사 실수령)으로 나눈 실수령 기준 마진율입니다.</span>
+                            <span style={labelCol}><span>마크업</span></span>
+                            <span style={{...amtCol,color:m.markup>=1.25?D.green:m.markup>=1?D.text:D.red}}>×{(m.markup||0).toFixed(2)}</span>
+                            <span style={calcCol}>실수령액(정산액) ÷ 원가 — 자사 실수령이 원가의 몇 배인지 보여주는 마크업입니다.</span>
                           </div>
                           {(()=>{
                             // 최소 마진 기본 세일율 — 마진이 0이 되는 시점의 기본 할인율(0.1% 정밀도)
@@ -7222,7 +7222,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                         </>
                       ):(
                         <div style={{padding:"10px 14px",color:D.textMeta,borderTop:`6px solid ${D.surfaceAlt}`}}>
-                          공급가 미연동 — 인벤토리 매칭 시 마진 금액 / 마진율 자동 계산
+                          공급가 미연동 — 인벤토리 매칭 시 마진 금액 / 마크업 자동 계산
                         </div>
                       )}
                       </>
@@ -7320,7 +7320,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","구간","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마진율"].map((h,i)=>(
+                          {["상품명","정가 (E열)","구간","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
                               position:"sticky",top:0,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>{h}</th>
@@ -7381,16 +7381,16 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:r.supply>0?D.text:D.textMeta,whiteSpace:"nowrap"}}>
                                 {r.supply>0?`₩${wonFmt(r.supplyIncVat||Math.round(r.supply*1.1))}`:"—"}
                               </td>
-                              <td title={r.supply>0?`마진 = 자사 정산 ₩${wonFmt(r.net||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = ₩${wonFmt(r.margin||0)} | 정상가 ₩${wonFmt(r.list)} 대비 ${r.marginRate||0}% (마진율 = 마진 ÷ 정상가)`:""}
+                              <td title={r.supply>0?`마진 = 자사 정산 ₩${wonFmt(r.net||0)} − 공급가(세포) ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = ₩${wonFmt(r.margin||0)} | 마크업 ×${(r.markup||0).toFixed(2)} (실수령 ÷ 원가)`:""}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                   color:r.supply>0?((r.margin||0)>=0?D.text:D.red):D.textMeta,whiteSpace:"nowrap",fontWeight:600}}>
                                 {r.supply>0?`₩${wonFmt(r.margin||0)}`:"—"}
                               </td>
-                              <td title={r.supply>0?`마진율 = 마진 ₩${wonFmt(r.margin||0)} ÷ 정산액 ₩${wonFmt(r.net||0)} × 100 = ${r.marginRate||0}% (정산액·실수령 대비 마진율)`:""}
+                              <td title={r.supply>0?`마크업 = 실수령액 ₩${wonFmt(r.net||0)} ÷ 원가 ₩${wonFmt(r.supplyIncVat||Math.round((r.supply||0)*1.1))} = ×${(r.markup||0).toFixed(2)} (정산액이 원가의 몇 배인지)`:""}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
-                                color:r.supply>0?((r.marginRate||0)>=20?D.green:(r.marginRate||0)>=10?D.text:D.red):D.textMeta,
+                                color:r.supply>0?((r.markup||0)>=1.25?D.green:(r.markup||0)>=1?D.text:D.red):D.textMeta,
                                 fontWeight:700,whiteSpace:"nowrap"}}>
-                                {r.supply>0?`${r.marginRate||0}%`:"—"}
+                                {r.supply>0?`×${(r.markup||0).toFixed(2)}`:"—"}
                               </td>
                             </tr>
                           ))}
@@ -7399,7 +7399,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     </div>
                   )}
                   {processed&&processed.length>0&&(()=>{
-                    // 상품군(slot)별 그룹 — 평균 마진율은 공급가 매칭된 행만 집계
+                    // 상품군(slot)별 그룹 — 평균 마크업은 공급가 매칭된 행만 집계
                     const groups={};
                     processed.forEach(r=>{
                       const k=r.slot.id;
@@ -7407,18 +7407,18 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       groups[k].count++;
                       groups[k].frSum+=(r.finalDisc||0);
                       groups[k].bdSum+=(r.baseDisc||0);
-                      if((r.supply||0)>0){groups[k].matched++;groups[k].mSum+=(r.marginRate||0);}
+                      if((r.supply||0)>0){groups[k].matched++;groups[k].mSum+=(r.markup||0);}
                     });
                     const rows=Object.values(groups).sort((a,b)=>a.slot.min-b.slot.min);
                     return (
                       <div style={{marginTop:18,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
                         <div style={{padding:"9px 12px",fontSize:11,fontWeight:700,color:D.black,
                           background:D.surfaceAlt,borderBottom:`1px solid ${D.borderMid}`}}>
-                          상품군별 결론 — 평균 기본 할인율 / 평균 최종 할인율 / 평균 마진율
+                          상품군별 결론 — 평균 기본 할인율 / 평균 최종 할인율 / 평균 마크업
                         </div>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                           <thead><tr>
-                            {["상품군","상품 수","평균 기본 할인율","평균 최종 할인율","평균 마진율"].map((h,i)=>(
+                            {["상품군","상품 수","평균 기본 할인율","평균 최종 할인율","평균 마크업"].map((h,i)=>(
                               <th key={i} style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
                                 textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surface,whiteSpace:"nowrap"}}>{h}</th>
                             ))}
@@ -7427,7 +7427,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             {rows.map((g,i)=>{
                               const avgFr=g.count>0?Math.round(g.frSum/g.count*10)/10:0;
                               const avgBd=g.count>0?Math.round(g.bdSum/g.count*10)/10:0;
-                              const avgM=g.matched>0?Math.round(g.mSum/g.matched*10)/10:null;
+                              const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
                               return (
                                 <tr key={i}>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
@@ -7440,8 +7440,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                     color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{avgFr}%</td>
                                   <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,whiteSpace:"nowrap",
-                                    color:avgM==null?D.textMeta:(avgM>=20?D.green:avgM>=10?D.text:D.red)}}>
-                                    {avgM==null?<span style={{fontWeight:400,color:D.textMeta}}>공급가 미매칭</span>:`${avgM}%`}
+                                    color:avgM==null?D.textMeta:(avgM>=1.25?D.green:avgM>=1?D.text:D.red)}}>
+                                    {avgM==null?<span style={{fontWeight:400,color:D.textMeta}}>공급가 미매칭</span>:`×${avgM.toFixed(2)}`}
                                     {avgM!=null&&g.matched<g.count&&(
                                       <span style={{fontSize:9,color:D.textMeta,fontWeight:400,marginLeft:4}}>
                                         ({g.matched}/{g.count})
@@ -7476,8 +7476,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               const groupLines=rows.map(g=>{
                                 const avgBd=g.count>0?Math.round(g.bdSum/g.count*10)/10:0;
                                 const avgFr=g.count>0?Math.round(g.frSum/g.count*10)/10:0;
-                                const avgM=g.matched>0?Math.round(g.mSum/g.matched*10)/10:null;
-                                return `• ${g.slot.name} ${g.slot.range} · ${g.count}개 · 기본할인 ${avgBd}% · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마진율 ${avgM}% (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
+                                const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+                                return `• ${g.slot.name} ${g.slot.range} · ${g.count}개 · 기본할인 ${avgBd}% · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마크업 ×${avgM.toFixed(2)} (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
                               }).join("\n");
                               const couponLines=allCoupons.map(c=>{
                                 const tInfo=COUPON_TYPE_BY_KEY[c.type];
@@ -7519,7 +7519,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
 // 29CM 프로모션 추가/편집 시 사용하는 미니 계산기
 // — 쿠폰율 입력 → 5개 가격 구간(P75 + 역산 기본 할인율) 선택 → 기본×쿠폰 매트릭스 셀 클릭 시 상품군·쿠폰 자동 입력
 // ─────────────────────────────────────────────
-// 자사몰 세일율 계산기 (베타) — 카페24 상품 파일 업로드 → 세일율 입력 → 마진/마진율
+// 자사몰 세일율 계산기 (베타) — 카페24 상품 파일 업로드 → 세일율 입력 → 마진/마크업
 //   · 멤버십 쿠폰은 서로 교차 불가(하나만 적용) · 가격대 구간/제안 할인율 없음
 //   · 엑셀 추출: 상품코드 · 상품명 · 할인 이후 가격 · 할인율
 // ─────────────────────────────────────────────
@@ -7640,7 +7640,7 @@ function OwnMallSaleCalcModal({ onClose }){
   };
   const couponRate=selCoupon>=0?Math.max(0,Math.min(100,Number(coupons[selCoupon]?.rate)||0)):0;
   const couponName=selCoupon>=0?(coupons[selCoupon]?.name||`쿠폰 ${selCoupon+1}`):"";
-  // 곱연산 체인: 판매가 > 할인율 > 할인금액 > 할인가 > 쿠폰율 > 쿠폰금액 > 쿠폰적용가 > 원가 > 마진 > 마진율
+  // 곱연산 체인: 판매가 > 할인율 > 할인금액 > 할인가 > 쿠폰율 > 쿠폰금액 > 쿠폰적용가 > 원가 > 마진 > 마크업
   const rows=useMemo(()=>products.map((p,i)=>{
     const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
     const discAmt=Math.round(p.selling*rate/100);
@@ -7649,16 +7649,19 @@ function OwnMallSaleCalcModal({ onClose }){
     const couponPrice=discPrice-couponAmt;
     const supplyVat=Math.round((p.supply||0)*1.1);
     const margin=couponPrice-supplyVat;
-    const marginRate=couponPrice>0?margin/couponPrice*100:0;
+    // 실수령 마크업 = 실수령액(쿠폰적용가, 자사몰 수수료 0%) ÷ 원가(부가세 포함)
+    const markup=supplyVat>0?couponPrice/supplyVat:0;
     const effDisc=p.selling>0?(1-couponPrice/p.selling)*100:0;
-    return {...p,idx:i,rate,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,marginRate,effDisc};
+    return {...p,idx:i,rate,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,markup,effDisc};
   }),[products,rates,couponRate]);
   const agg=useMemo(()=>{
     if(!rows.length) return null;
     const n=rows.length;
+    const matched=rows.filter(r=>r.supplyVat>0);
     return {n,
       avgDisc:rows.reduce((s,r)=>s+r.effDisc,0)/n,
-      avgMargin:rows.reduce((s,r)=>s+r.marginRate,0)/n,
+      avgMarkup:matched.length>0?matched.reduce((s,r)=>s+r.markup,0)/matched.length:0,
+      matchedCount:matched.length,
       noCost:rows.filter(r=>!r.supplyVat).length,
       neg:rows.filter(r=>r.margin<0).length};
   },[rows]);
@@ -7723,7 +7726,7 @@ function OwnMallSaleCalcModal({ onClose }){
             <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,borderRadius:10,marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 <span style={{fontSize:12,fontWeight:700,color:D.black}}>할인율</span>
-                <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마진율 실시간 반영</span>
+                <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마크업 실시간 반영</span>
                 <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>전체 일괄:</span>
                 {[10,15,20,30].map(v=>(
                   <button key={v} onClick={()=>setAllRates(v)}
@@ -7760,7 +7763,7 @@ function OwnMallSaleCalcModal({ onClose }){
 
             {agg&&(
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
-                {[["상품 수",`${agg.n.toLocaleString()}개`],["평균 할인율",pct(agg.avgDisc)],["평균 마진율",pct(agg.avgMargin)]].map(([k,v])=>(
+                {[["상품 수",`${agg.n.toLocaleString()}개`],["평균 할인율",pct(agg.avgDisc)],["평균 마크업",agg.matchedCount>0?`×${agg.avgMarkup.toFixed(2)}`:"—"]].map(([k,v])=>(
                   <div key={k} style={{padding:"8px 14px",background:D.surfaceAlt,borderRadius:8}}>
                     <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>{k}</div>
                     <div style={{fontSize:15,fontWeight:700,color:D.text}}>{v}</div>
@@ -7795,7 +7798,7 @@ function OwnMallSaleCalcModal({ onClose }){
                   <th style={{...numCell,fontWeight:500}}>쿠폰적용가</th>
                   <th style={{...numCell,fontWeight:500}}>원가(VAT)</th>
                   <th style={{...numCell,fontWeight:500}}>마진</th>
-                  <th style={{...numCell,fontWeight:500}}>마진율</th>
+                  <th style={{...numCell,fontWeight:500}}>마크업</th>
                 </tr></thead>
                 <tbody>
                   {shown.map((r)=>(
@@ -7816,7 +7819,7 @@ function OwnMallSaleCalcModal({ onClose }){
                       <td style={{...numCell,color:D.text,fontWeight:700}}>{won(r.couponPrice)}</td>
                       <td style={{...numCell,color:D.textMeta}}>{r.supplyVat?won(r.supplyVat):"—"}</td>
                       <td style={{...numCell,fontWeight:600,color:r.margin>=0?D.green:D.red}}>{won(r.margin)}</td>
-                      <td style={{...numCell,fontWeight:700,color:r.marginRate>=0?D.green:D.red}}>{pct(r.marginRate)}</td>
+                      <td style={{...numCell,fontWeight:700,color:r.supplyVat>0?(r.markup>=1.25?D.green:r.markup>=1?D.text:D.red):D.textMeta}}>{r.supplyVat>0?`×${r.markup.toFixed(2)}`:"—"}</td>
                     </tr>
                   ))}
                 </tbody>
