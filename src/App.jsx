@@ -7144,11 +7144,16 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       return (
                       <>
                       {/* 가격 차감 흐름 */}
-                      <div style={{...rowSty,borderTop:"none"}}>
-                        <span style={labelCol}><span>{N.list} 정상 가격</span></span>
-                        <span style={amtCol}>₩{wonFmt(listPrice)}</span>
-                        <span style={calcCol}></span>
-                      </div>
+                      {(()=>{
+                        const listMu=supplyIncVat>0?Math.round(listPrice/supplyIncVat*100)/100:null;
+                        return (
+                          <div style={{...rowSty,borderTop:"none"}}>
+                            <span style={labelCol}><span>{N.list} 정상 가격</span></span>
+                            <span style={amtCol}>₩{wonFmt(listPrice)}{listMu!=null&&<span style={{color:listMu>3?D.green:D.red,fontWeight:600}}> (×{listMu.toFixed(2)})</span>}</span>
+                            <span style={calcCol}>{listMu!=null?`정가 ÷ 원가(₩${wonFmt(supplyIncVat)}) = ×${listMu.toFixed(2)} 마크업`:""}</span>
+                          </div>
+                        );
+                      })()}
                       {single.baseDisc>0&&(
                         <div style={rowSty}>
                           <span style={labelCol}><span>{N.baseDisc}-1 기본 할인율 <span style={{color:D.textMeta,fontWeight:400}}>(프런트 할인율)</span></span></span>
@@ -7191,11 +7196,16 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                           <span style={calcCol}>적용된 쿠폰이 없습니다.</span>
                         </div>
                       )}
-                      <div style={totalSty}>
-                        <span style={labelCol}><span>{N.finalPrice} 실제 판매 가격</span></span>
-                        <span style={totalAmt}>₩{wonFmt(single.finalPrice)} <span style={{color:D.red,fontWeight:600}}>(정상가 대비 −{single.finalDisc}%)</span></span>
-                        <span style={calcCol}>쿠폰까지 적용된 최종 노출가로, 고객이 실제 결제하는 금액입니다 (케이스 총합 할인율 {single.finalDisc}%).</span>
-                      </div>
+                      {(()=>{
+                        const finalMu=supplyIncVat>0?Math.round(single.finalPrice/supplyIncVat*100)/100:null;
+                        return (
+                          <div style={totalSty}>
+                            <span style={labelCol}><span>{N.finalPrice} 실제 판매 가격</span></span>
+                            <span style={totalAmt}>₩{wonFmt(single.finalPrice)} <span style={{color:D.red,fontWeight:600}}>(정상가 대비 −{single.finalDisc}%)</span>{finalMu!=null&&<span style={{color:finalMu>3?D.green:D.red,fontWeight:600}}> (×{finalMu.toFixed(2)})</span>}</span>
+                            <span style={calcCol}>쿠폰까지 적용된 최종 노출가로, 고객이 실제 결제하는 금액입니다 (케이스 총합 할인율 {single.finalDisc}%){finalMu!=null?` · 실판매가 ÷ 원가 = ×${finalMu.toFixed(2)} 마크업`:""}.</span>
+                          </div>
+                        );
+                      })()}
 
                       {/* 정산 흐름 */}
                       <div style={groupGap}></div>
@@ -7215,8 +7225,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       </div>
                       <div style={totalSty}>
                         <span style={labelCol}><span>{N.netSettle} 정산 금액</span></span>
-                        <span style={{...totalAmt,color:D.black}}>₩{wonFmt(m.net)}</span>
-                        <span style={calcCol}>실 판매액에서 수수료를 빼고 채널 보전을 더한, 자사가 실제로 수령하는 정산액입니다.</span>
+                        <span style={{...totalAmt,color:D.black}}>₩{wonFmt(m.net)}{supplyIncVat>0&&<span style={{color:m.markup>3?D.green:D.red,fontWeight:600}}> (×{(m.markup||0).toFixed(2)})</span>}</span>
+                        <span style={calcCol}>실 판매액에서 수수료를 빼고 채널 보전을 더한, 자사가 실제로 수령하는 정산액입니다{supplyIncVat>0?` · 정산액 ÷ 원가 = ×${(m.markup||0).toFixed(2)} 마크업`:""}.</span>
                       </div>
 
                       {/* 마진 흐름 */}
