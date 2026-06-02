@@ -7926,7 +7926,21 @@ function OwnMallSaleCalcModal({ onClose }){
               {q&&<button onClick={()=>setSearch("")} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.textSub}}>✕ 초기화</button>}
             </div>
             <div style={{overflow:"auto",height:"55vh"}}>
-              <table style={{width:"auto",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap",tableLayout:"fixed"}}>
+                <colgroup>
+                  <col style={{width:"7%"}}/>
+                  <col style={{width:"17%"}}/>
+                  <col style={{width:"9%"}}/>
+                  <col style={{width:"6%"}}/>
+                  <col style={{width:"7%"}}/>
+                  <col style={{width:"9%"}}/>
+                  <col style={{width:"5%"}}/>
+                  <col style={{width:"7%"}}/>
+                  <col style={{width:"11%"}}/>
+                  <col style={{width:"7%"}}/>
+                  <col style={{width:"8%"}}/>
+                  <col style={{width:"7%"}}/>
+                </colgroup>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품명</th>
