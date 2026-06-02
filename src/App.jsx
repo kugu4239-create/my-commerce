@@ -14570,11 +14570,16 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const [reorderRows,setReorderRows]=useState([]); // reorder_recommendations
   const [loading,setLoading]=useState(true);
   const [targets,setTargets]=useState({"자사몰":"","29CM":"","오프라인 스토어":""});
-  const [fixedCost,setFixedCost]=useState("");    // 월 고정금액
-  const [targetProfit,setTargetProfit]=useState(""); // 목표 이익금
+  const [targetsTouched,setTargetsTouched]=useState(false); // 사용자가 목표 매출을 직접 만졌는지(=제안값 자동채움 중단)
+  // 월 고정금액 / 목표 이익금 — 가장 최근 입력값을 localStorage에 저장
+  const [fixedCost,setFixedCost]=useState(()=>{try{return localStorage.getItem("gmv_fixed_cost")||"";}catch{return "";}});
+  const [targetProfit,setTargetProfit]=useState(()=>{try{return localStorage.getItem("gmv_target_profit")||"";}catch{return "";}});
+  useEffect(()=>{try{localStorage.setItem("gmv_fixed_cost",fixedCost);}catch{/* noop */}},[fixedCost]);
+  useEffect(()=>{try{localStorage.setItem("gmv_target_profit",targetProfit);}catch{/* noop */}},[targetProfit]);
   const [feeRates,setFeeRates]=useState({...GMV_FEE_DEFAULT});
   const [search,setSearch]=useState("");
   const [expanded,setExpanded]=useState(null);    // 펼친 상품 key
+  const [matrixStage,setMatrixStage]=useState("target"); // "recent"(최근 한 달 실적) | "target"(목표 도달 설정)
   const [cycleCh,setCycleCh]=useState("자사몰");   // 사이클 다이어그램 채널
   const [showCount,setShowCount]=useState(40);
   const cardRef=useRef(null);
@@ -14612,37 +14617,117 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   },[]);
   useEffect(()=>{load();},[load]);
 
-  // ── 채널 매출·점유율 (대시보드 analyze 동일 소스)
-  const chStats=useMemo(()=>{
-    try{ return analyze(orders,stocks,revenues,storeSales,orders); }catch{ return {channelList:[],totalRevenue:0}; }
-  },[orders,stocks,revenues,storeSales]);
+  // ── 채널 매출·점유율 — 데이터 컴페어/대시보드와 동일 방식으로 직접 집계(채널명 정확 매칭)
+  //    온라인: revenues(채널별 매출 − 환불), 오프라인: store_sales(배송 − 반품). 점유율 분모=GMV 채널 합.
   const revByCh=useMemo(()=>{
-    const m={};(chStats.channelList||[]).forEach(c=>{m[c.name]={revenue:c.revenue||0,share:parseFloat(c.share)||0};});
+    const onlineByCh={};
+    (revenues||[]).forEach(r=>{
+      const ch=normChannel(r.channel);
+      onlineByCh[ch]=(onlineByCh[ch]||0)+((r.amount||0)-(r.refund_amount||0));
+    });
+    let offline=0;
+    (storeSales||[]).forEach(r=>{
+      if(r.status==="배송") offline+=(r.amount||0);
+      else if(r.status==="반품") offline-=(r.amount||0);
+    });
+    const rev={
+      "자사몰":Math.max(0,onlineByCh["자사몰"]||0),
+      "29CM":Math.max(0,onlineByCh["29CM"]||0),
+      "오프라인 스토어":Math.max(0,offline),
+    };
+    const total=GMV_CHANNELS.reduce((s,ch)=>s+rev[ch],0)||1;
+    const m={};
+    GMV_CHANNELS.forEach(ch=>{ m[ch]={revenue:rev[ch],share:Math.round(rev[ch]/total*1000)/10}; });
     return m;
-  },[chStats]);
+  },[revenues,storeSales]);
+  // 목표 매출 초기 제안값 자동 입력 — 사용자가 아직 직접 만지지 않았을 때, 현재 채널 매출을 제안값으로 미리 채움
+  useEffect(()=>{
+    if(targetsTouched) return;
+    const anyRev=GMV_CHANNELS.some(ch=>(revByCh[ch]?.revenue||0)>0);
+    if(!anyRev) return;
+    setTargets(prev=>{
+      const next={...prev};
+      GMV_CHANNELS.forEach(ch=>{ if(!String(next[ch]||"").trim()) next[ch]=String(revByCh[ch]?.revenue||0); });
+      return next;
+    });
+  },[revByCh,targetsTouched]);
+  const setTarget=(ch,v)=>{setTargetsTouched(true);setTargets(p=>({...p,[ch]:v}));};
 
-  // ── 상품 모집단: 인벤토리 + 4주발주(reorder) 매칭 → 예상수량·에이징
+  // ── 입고 흐름: stock_uploads(입고 CSV)에서 SKU별 최신 입고 + 최근 입고일 집계
+  const inboundBySku=useMemo(()=>{
+    const latest={};
+    (stocks||[]).forEach(r=>{
+      const k=normProdName(r.product_name)+"|"+String(r.option_name||"").trim().toLowerCase();
+      if(!latest[k]||(r.upload_date||"")>(latest[k].upload_date||"")) latest[k]={qty:r.qty||0,upload_date:r.upload_date||""};
+    });
+    return latest;
+  },[stocks]);
+
+  // ── 상품 모집단: 인벤토리 + 4주 판매수량(reorder_monthly_sales) + 입고 흐름 → 예상수량·에이징
+  //    ※ '4주 판매수량'은 실제 리오더 수량이 아니라 최근 4주간 판매(발주합계) 수량 → 향후 판매 추정치로 사용
   const products=useMemo(()=>{
-    // reorder 매칭 맵 (상품명+옵션 정규화 키)
     const rkey=(n,o)=>normProdName(n)+"|"+String(o||"").trim().toLowerCase();
     const reoMap={};
     reorderRows.forEach(r=>{reoMap[rkey(r.reorder_product_name,r.reorder_option_name)]=r;});
     const out=invRows.map(r=>{
+      const k=rkey(r.product_name,r.option_name);
       const list=r.selling_price||0, supply=r.supply_price||0;
-      const reo=reoMap[rkey(r.product_name,r.option_name)];
-      const qty4w=reo?reo.reorder_monthly_sales||0:0;
+      const reo=reoMap[k];
+      const qty4w=reo?reo.reorder_monthly_sales||0:0;   // 최근 4주 판매수량
       const qtyDeliv=r.cumulative_delivery_qty||0;
-      const expectedQty=qty4w>0?qty4w:0; // 4주발주 우선
+      const inb=inboundBySku[k]||null;
+      const expectedQty=qty4w>0?qty4w:0;                // 4주 판매수량 우선(향후 판매 추정)
       const aging=getAgingKey(calcInvRow(r).noSalesDays);
-      return {key:rkey(r.product_name,r.option_name),name:r.product_name,option:r.option_name||"",code:r.product_code||"",
-        list,supply,qty4w,qtyDeliv,expectedQty,aging,matched:list>0&&supply>0};
+      return {key:k,name:r.product_name,option:r.option_name||"",code:r.product_code||"",
+        list,supply,qty4w,qtyDeliv,inboundQty:inb?inb.qty:0,inboundDate:inb?inb.upload_date:"",
+        expectedQty,aging,matched:list>0&&supply>0};
     });
-    // 스테디셀러: 4주발주 상위 + Healthy
+    // 스테디셀러: 4주 판매수량 상위 + Healthy
     const sortedQty=[...out].filter(p=>p.qty4w>0).sort((a,b)=>b.qty4w-a.qty4w);
     const topCut=sortedQty[Math.floor(sortedQty.length*0.2)]?.qty4w||0; // 상위 20% 컷
     out.forEach(p=>{p.steady=(p.aging==="HEALTHY"&&p.qty4w>0&&p.qty4w>=topCut);});
     return out;
-  },[invRows,reorderRows]);
+  },[invRows,reorderRows,inboundBySku]);
+
+  // ── 입고 흐름 요약 (최근 입고일별 입고 수량 추이)
+  const inboundFlow=useMemo(()=>{
+    const byDate={};
+    (stocks||[]).forEach(r=>{const d=r.upload_date||"";if(!d)return;byDate[d]=(byDate[d]||0)+(r.qty||0);});
+    const dates=Object.keys(byDate).sort();
+    const recent=dates.slice(-6).map(d=>({date:d,qty:byDate[d]}));
+    const totalInbound=Object.values(inboundBySku).reduce((s,v)=>s+(v.qty||0),0);
+    return {recent,totalInbound,latestDate:dates[dates.length-1]||"—"};
+  },[stocks,inboundBySku]);
+
+  // ── 최근 한 달 실적: 가장 최근 주문일 기준 30일간 배송 주문(채널별) → 실제 판매수량·실판매가·실효 세일율·마진
+  const recentActuals=useMemo(()=>{
+    const dated=(orders||[]).filter(o=>o.order_date);
+    if(!dated.length) return {byKeyCh:{},start:"",end:"",chTotals:{}};
+    const end=dated.reduce((mx,o)=>o.order_date>mx?o.order_date:mx,"");
+    const start=new Date(new Date(end+"T00:00:00").getTime()-29*86400000).toISOString().slice(0,10);
+    const supplyByKey={};products.forEach(p=>{supplyByKey[p.key]={supply:p.supply,list:p.list};});
+    const byKeyCh={}; const chTotals={};
+    GMV_CHANNELS.forEach(c=>{chTotals[c]={qty:0,revenue:0,margin:0};});
+    (orders||[]).forEach(o=>{
+      if(!o.order_date||o.order_date<start||o.order_date>end) return;
+      if(o.status!=="배송") return; // 실제 출고분만
+      const ch=normChannel(o.channel);
+      if(!GMV_CHANNELS.includes(ch)) return;
+      const k=normProdName(o.product_name)+"|"+String(o.option_name||"").trim().toLowerCase();
+      const meta=supplyByKey[k]; if(!meta) return; // 인벤토리 매칭분만
+      const qty=o.qty||0; const sp=o.sale_price||0;
+      // 자사몰은 행별 sale_price가 없을 수 있어 정가×(추정) 대신 sale_price 우선, 없으면 정가
+      const unit=sp>0?sp:meta.list;
+      const fee=feeRates[ch]||0;
+      const net=Math.round(unit*(1-fee/100));
+      const supplyVat=Math.round((meta.supply||0)*1.1);
+      const id=k+"@@"+ch;
+      if(!byKeyCh[id]) byKeyCh[id]={qty:0,revenue:0,margin:0,list:meta.list};
+      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=unit*qty; byKeyCh[id].margin+=(net-supplyVat)*qty;
+      chTotals[ch].qty+=qty; chTotals[ch].revenue+=unit*qty; chTotals[ch].margin+=(net-supplyVat)*qty;
+    });
+    return {byKeyCh,start,end,chTotals};
+  },[orders,products,feeRates]);
 
   // ── 정가 GMV (예상수량 기준) + 채널별 목표 세일율
   const regularGmv=useMemo(()=>products.reduce((s,p)=>s+(p.matched?p.list*p.expectedQty:0),0),[products]);
@@ -14659,7 +14744,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         rev+=m.finalPrice*p.expectedQty;
         margin+=m.margin*p.expectedQty;
         cost+=m.supplyVat*p.expectedQty;
-        restock+=Math.round(p.supply*1.1)*p.qty4w; // 재입고비 = 4주발주 × 공급가×1.1
+        restock+=Math.round(p.supply*1.1)*p.qty4w; // 재입고비 = 4주 판매수량 × 공급가×1.1
       });
       return {ch,target,rate,fee,rev,margin,restock,cost,curRev:revByCh[ch]?.revenue||0,share:revByCh[ch]?.share||0};
     });
@@ -14684,13 +14769,18 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const maxOf=(arr,f)=>{let mx="";arr.forEach(x=>{const v=f(x);if(v&&v>mx)mx=v;});return mx||"—";};
   const footnotes=[
     {label:"인벤토리 스냅샷",date:maxOf(invRows,r=>r.snapshot_date),note:"공급가·판매가·재고"},
-    {label:"리오더(4주발주)",date:maxOf(reorderRows,r=>r.reorder_data_date),note:"예상 판매수량"},
+    {label:"리오더(4주 판매수량)",date:maxOf(reorderRows,r=>r.reorder_data_date),note:"최근 4주 판매=향후 추정"},
+    {label:"입고(stock_uploads)",date:inboundFlow.latestDate,note:"현재 입고 흐름"},
     {label:"주문·배송",date:maxOf(orders,r=>r.order_date),note:"채널 매출(이지어드민)"},
     {label:"매장 판매",date:maxOf(storeSales,r=>r.sale_date),note:"오프라인 매출"},
     {label:"채널 매출",date:maxOf(revenues,r=>r.date),note:"온라인 채널 일자 매출"},
   ];
 
   const won=n=>"₩"+Math.round(n||0).toLocaleString();
+  // 금액 입력 보조: 숫자만 추출 → 천단위 콤마 표시 / 억천만 읽기
+  const digitsOf=v=>String(v||"").replace(/[^0-9]/g,"");
+  const commaOf=v=>{const d=digitsOf(v);return d?Number(d).toLocaleString():"";};
+  const eokManOf=v=>{const n=parseInt(digitsOf(v),10)||0;if(n<10000)return n>0?n.toLocaleString()+"원":"";const s=fmtEokMan(n);return s.startsWith("0억")?s.slice(2):s;};
   const lbl={fontSize:11,color:DC.sub,marginBottom:4,display:"block"};
   const inBox={background:"transparent",border:`1px solid ${DC.border}`,borderRadius:6,padding:"7px 10px",fontSize:13,color:DC.text,fontFamily:"inherit",width:"100%",outline:"none"};
 
@@ -14714,8 +14804,9 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                 <span style={{fontSize:13,fontWeight:600,color:DC.text}}>{ch}</span>
               </div>
               <label style={lbl}>목표 매출 (월)</label>
-              <input value={targets[ch]} onChange={e=>setTargets(p=>({...p,[ch]:e.target.value}))}
-                placeholder={revByCh[ch]?`현재 ${won(revByCh[ch].revenue)} 제안`:"예: 50000000"} style={inBox}/>
+              <input value={commaOf(targets[ch])} onChange={e=>setTarget(ch,digitsOf(e.target.value))} inputMode="numeric"
+                placeholder={revByCh[ch]?`현재 ${won(revByCh[ch].revenue)} 제안`:"예: 50,000,000"} style={inBox}/>
+              {digitsOf(targets[ch])&&<div style={{fontSize:11,color:MUTE_BLUE,marginTop:3,fontWeight:600}}>{eokManOf(targets[ch])}</div>}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:7}}>
                 <span style={{fontSize:11,color:DC.dim}}>수수료율</span>
                 <span style={{display:"flex",alignItems:"center",gap:3}}>
@@ -14729,10 +14820,12 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
           ))}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><label style={lbl}>월 고정금액 (조정치)</label>
-            <input value={fixedCost} onChange={e=>setFixedCost(e.target.value)} placeholder="예: 10000000" style={inBox}/></div>
-          <div><label style={lbl}>목표 이익금 (조정치)</label>
-            <input value={targetProfit} onChange={e=>setTargetProfit(e.target.value)} placeholder="예: 20000000" style={inBox}/></div>
+          <div><label style={lbl}>월 고정금액 (조정치) <span style={{color:DC.dim,fontWeight:400}}>· 최근 입력값 저장</span></label>
+            <input value={commaOf(fixedCost)} onChange={e=>setFixedCost(digitsOf(e.target.value))} inputMode="numeric" placeholder="예: 10,000,000" style={inBox}/>
+            {digitsOf(fixedCost)&&<div style={{fontSize:11,color:MUTE_BLUE,marginTop:3,fontWeight:600}}>{eokManOf(fixedCost)}</div>}</div>
+          <div><label style={lbl}>목표 이익금 (조정치) <span style={{color:DC.dim,fontWeight:400}}>· 최근 입력값 저장</span></label>
+            <input value={commaOf(targetProfit)} onChange={e=>setTargetProfit(digitsOf(e.target.value))} inputMode="numeric" placeholder="예: 20,000,000" style={inBox}/>
+            {digitsOf(targetProfit)&&<div style={{fontSize:11,color:MUTE_BLUE,marginTop:3,fontWeight:600}}>{eokManOf(targetProfit)}</div>}</div>
         </div>
         <div style={{fontSize:11,color:DC.dim,marginTop:8}}>필요 총마진 = 목표 이익금 + 월 고정금액 = <b style={{color:DC.sub}}>{won(reqMargin)}</b> · 정가 GMV(예상수량 기준) {won(regularGmv)}</div>
       </div>
@@ -14753,7 +14846,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
             <div style={{fontSize:11,color:DC.sub,lineHeight:1.8}}>
               <div style={{display:"flex",justifyContent:"space-between"}}><span>예상 매출</span><b style={{color:DC.text}}>{won(c.rev)}</b></div>
               <div style={{display:"flex",justifyContent:"space-between"}}><span>예상 마진</span><b style={{color:c.margin>=0?"#1a7a4f":"#c0392b"}}>{won(c.margin)}</b></div>
-              <div style={{display:"flex",justifyContent:"space-between"}}><span>재입고비(4주발주)</span><b style={{color:"#C8A87B"}}>{won(c.restock)}</b></div>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span>재입고비(4주 판매수량)</span><b style={{color:"#C8A87B"}}>{won(c.restock)}</b></div>
               {c.target>0&&<div style={{display:"flex",justifyContent:"space-between",color:DC.dim}}><span>목표</span><span>{won(c.target)}</span></div>}
             </div>
           </div>
@@ -14768,11 +14861,24 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         <span style={{color:DC.dim}}> · 재입고비 합계 {won(totalRestock)}</span>
       </div>
 
-      {/* 상품별×채널별 매트릭스 */}
+      {/* 상품별×채널별 매트릭스 — 2단계: 최근 한 달 실적 / 목표 도달 설정 */}
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:13,fontWeight:700,color:DC.text}}>② 상품별 · 채널별 세일율 / 마진율 <span style={{fontSize:11,color:DC.dim,fontWeight:400}}>· ★=스테디셀러(4주발주 상위·Healthy) · 행 클릭 시 계산식</span></span>
+          <span style={{fontSize:13,fontWeight:700,color:DC.text}}>② 상품별 · 채널별 세일율 / 마진율 <span style={{fontSize:11,color:DC.dim,fontWeight:400}}>· ★=스테디셀러 · 행 클릭 시 계산식</span></span>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="상품명·옵션 검색" style={{...inBox,width:200}}/>
+        </div>
+        {/* 단계 토글 */}
+        <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+          {[["recent",`1단계 · 최근 한 달 실적${recentActuals.start?` (${recentActuals.start}~${recentActuals.end})`:""}`],["target","2단계 · 목표 도달 설정"]].map(([k,label])=>(
+            <button key={k} onClick={()=>setMatrixStage(k)}
+              style={{background:matrixStage===k?MUTE_BLUE:"transparent",color:matrixStage===k?"#fff":DC.sub,
+                border:`1px solid ${matrixStage===k?MUTE_BLUE:DC.border}`,borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{label}</button>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:DC.dim,marginBottom:8}}>
+          {matrixStage==="recent"
+            ?"가장 최근 주문일 기준 30일간 실제 배송 데이터 — 채널별 실제 판매수량·실효 세일율·마진율 (지난 한 달 실적)"
+            :"목표 매출에 도달하려면 채널별로 어떤 세일율을 설정해야 하는지 — 그때의 마진율"}
         </div>
         {unmatchedCount>0&&<div style={{fontSize:11,color:"#C8A87B",marginBottom:8}}>⚠ 공급가/판매가 미매칭 {unmatchedCount.toLocaleString()}건은 합계·표에서 제외됨 (인벤토리 가격 DB 보강 시 반영)</div>}
         <div style={{overflowX:"auto"}}>
@@ -14781,9 +14887,10 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
               <th style={{textAlign:"left",padding:"6px 8px",color:DC.sub,fontWeight:600}}>상품</th>
               <th style={{textAlign:"center",padding:"6px 8px",color:DC.sub,fontWeight:600}}>에이징</th>
               <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}}>정가</th>
-              <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}}>4주발주</th>
+              <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}} title="최근 4주 판매수량(향후 판매 추정)">4주 판매</th>
+              <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}} title="최신 입고 수량(stock_uploads)">입고</th>
               {GMV_CHANNELS.map(ch=>(
-                <th key={ch} style={{textAlign:"center",padding:"6px 8px",color:chColor(ch),fontWeight:700,minWidth:110}}>{ch}<div style={{fontSize:9,color:DC.dim,fontWeight:400}}>세일율 → 마진율</div></th>
+                <th key={ch} style={{textAlign:"center",padding:"6px 8px",color:chColor(ch),fontWeight:700,minWidth:110}}>{ch}<div style={{fontSize:9,color:DC.dim,fontWeight:400}}>{matrixStage==="recent"?"판매수량 · 세일율 → 마진율":"세일율 → 마진율"}</div></th>
               ))}
             </tr></thead>
             <tbody>
@@ -14798,7 +14905,22 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                       <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:10,fontWeight:600,color:INV_AGING_DEFS[p.aging]?.color}}>{INV_AGING_DEFS[p.aging]?.label||"—"}</span></td>
                       <td style={{padding:"6px 8px",textAlign:"right",color:DC.sub}}>{won(p.list)}</td>
                       <td style={{padding:"6px 8px",textAlign:"right",color:DC.sub}}>{p.qty4w.toLocaleString()}</td>
+                      <td style={{padding:"6px 8px",textAlign:"right",color:DC.dim}} title={p.inboundDate?`입고일 ${p.inboundDate}`:""}>{p.inboundQty?p.inboundQty.toLocaleString():"—"}</td>
                       {channelCalc.map(c=>{
+                        if(matrixStage==="recent"){
+                          const a=recentActuals.byKeyCh[p.key+"@@"+c.ch];
+                          if(!a||a.qty<=0) return <td key={c.ch} style={{padding:"6px 8px",textAlign:"center",color:DC.dim}}>—</td>;
+                          const avg=a.revenue/a.qty;
+                          const actDisc=p.list>0?Math.round((1-avg/p.list)*1000)/10:0;
+                          const actMarginRate=a.revenue>0?Math.round(a.margin/(a.revenue*(1-(c.fee||0)/100))*1000)/10:0;
+                          return(
+                            <td key={c.ch} style={{padding:"6px 8px",textAlign:"center"}}>
+                              <div style={{fontSize:11,color:DC.sub}}>{a.qty.toLocaleString()}개</div>
+                              <div style={{fontWeight:700,color:DC.text}}>{actDisc}%</div>
+                              <div style={{fontSize:11,fontWeight:600,color:a.margin>=0?"#1a7a4f":"#c0392b"}}>{actMarginRate}%</div>
+                            </td>
+                          );
+                        }
                         const m=gmvCompute(p.list,c.rate||0,p.supply,c.fee);
                         return(
                           <td key={c.ch} style={{padding:"6px 8px",textAlign:"center"}}>
@@ -14810,7 +14932,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                     </tr>
                     {isExp&&(
                       <tr style={{background:"rgba(94,129,172,0.04)"}}>
-                        <td colSpan={4+GMV_CHANNELS.length} style={{padding:"4px 8px 12px"}}>
+                        <td colSpan={5+GMV_CHANNELS.length} style={{padding:"4px 8px 12px"}}>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
                             {channelCalc.map(c=>{
                               const m=gmvCompute(p.list,c.rate||0,p.supply,c.fee);
@@ -14834,7 +14956,8 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                                   {calcRow("⑥ 공급가",`−${won(m.supplyVat)}`,`${won(p.supply)} × 1.1`)}
                                   {calcRow("⑦ 마진",won(m.margin),"정산액 − 공급가")}
                                   {calcRow("⑦ 마진율",`${m.marginRate}%`,"마진 ÷ 정산액")}
-                                  {calcRow("⑧ 재입고비",won(restock),`4주발주 ${p.qty4w} × 공급가×1.1`)}
+                                  {calcRow("⑧ 재입고비",won(restock),`4주 판매 ${p.qty4w} × 공급가×1.1`)}
+                                  {p.inboundQty>0&&calcRow("입고 흐름",`${p.inboundQty.toLocaleString()}개`,`최신 입고 ${p.inboundDate||""}`)}
                                 </div>
                               );
                             })}
@@ -14855,6 +14978,31 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         )}
       </div>
 
+      {/* 입고 흐름 (stock_uploads) */}
+      <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:700,color:DC.text}}>③ 입고 흐름</span>
+          <span style={{fontSize:11,color:DC.dim}}>입고 데이터(stock_uploads)로 본 현재 입고 흐름 · 최신 {inboundFlow.latestDate} · 누적 입고 {inboundFlow.totalInbound.toLocaleString()}개</span>
+        </div>
+        {inboundFlow.recent.length>0?(
+          <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
+            {inboundFlow.recent.map((d,i)=>{
+              const mx=Math.max(...inboundFlow.recent.map(x=>x.qty))||1;
+              return(
+                <div key={d.date} style={{flex:"1 1 80px",minWidth:70,textAlign:"center"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:DC.text,marginBottom:4}}>{d.qty.toLocaleString()}</div>
+                  <div style={{height:Math.max(6,Math.round(d.qty/mx*70)),background:i===inboundFlow.recent.length-1?MUTE_BLUE:"#7B9EC8",borderRadius:4}}/>
+                  <div style={{fontSize:10,color:DC.dim,marginTop:4}}>{d.date.slice(5)}</div>
+                </div>
+              );
+            })}
+          </div>
+        ):(
+          <div style={{fontSize:12,color:DC.dim,padding:"16px 0",textAlign:"center"}}>입고 데이터가 없습니다 — 데이터 입력 &gt; 입고 업로더로 등록하면 표시됩니다.</div>
+        )}
+        <div style={{fontSize:10,color:DC.dim,marginTop:8}}>입고일별 입고 수량 합계(최근 6개 업로드일). 상품별 최신 입고 수량은 ② 표의 ‘입고’ 컬럼에 표시됩니다.</div>
+      </div>
+
       {/* 사이클 다이어그램: 원가 → 실판매가 → 마진 → 재입고 */}
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:8,flexWrap:"wrap"}}>
@@ -14873,7 +15021,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
             {k:"원가 합계",v:c.cost,color:"#c0392b",desc:"공급가×1.1 × 예상수량"},
             {k:"실제 판매가",v:c.rev,color:chColor(cycleCh),desc:`정가 GMV × (1−${c.rate||0}%)`},
             {k:"마진",v:c.margin,color:c.margin>=0?"#1a7a4f":"#c0392b",desc:"정산액 − 원가"},
-            {k:"재입고",v:c.restock,color:"#C8A87B",desc:"4주발주 × 공급가×1.1"},
+            {k:"재입고",v:c.restock,color:"#C8A87B",desc:"4주 판매수량 × 공급가×1.1"},
           ];
           return(
             <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"center"}}>
