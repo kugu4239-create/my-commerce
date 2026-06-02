@@ -14703,16 +14703,18 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
       const k=normProdName(o.product_name)+"|"+String(o.option_name||"").trim().toLowerCase();
       const meta=supplyByKey[k]; if(!meta) return; // 인벤토리 매칭분만
       const qty=o.qty||0; const sp=o.sale_price||0;
-      // 자사몰은 행별 sale_price가 없을 수 있어 정가×(추정) 대신 sale_price 우선, 없으면 정가
-      const unit=sp>0?sp:meta.list;
       const fee=feeRates[ch]||0;
-      const net=Math.round(unit*(1-fee/100));
-      const supplyVat=Math.round((meta.supply||0)*1.1);
+      // sale_price는 EasyAdmin 파서가 동일 (주문·상품·옵션) 행을 합산한 '라인 실판매 매출'(수량 포함).
+      // 따라서 수량을 다시 곱하지 않는다. sale_price가 0이면(자사몰 등 미상) 정가×수량으로 폴백(=세일율 0).
+      const lineRev=sp>0?sp:meta.list*qty;     // 실판매 매출(라인)
+      const lineList=meta.list*qty;            // 정가 매출(라인) = 세일율 분모
+      const lineNet=Math.round(lineRev*(1-fee/100));
+      const lineCost=Math.round((meta.supply||0)*1.1)*qty;
+      const lineMargin=lineNet-lineCost;
       const id=k+"@@"+ch;
-      const listGmv=meta.list*qty; // 정가 기준 GMV (현재 세일율 분모)
       if(!byKeyCh[id]) byKeyCh[id]={qty:0,revenue:0,margin:0,listGmv:0,list:meta.list,supply:meta.supply};
-      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=unit*qty; byKeyCh[id].margin+=(net-supplyVat)*qty; byKeyCh[id].listGmv+=listGmv;
-      chTotals[ch].qty+=qty; chTotals[ch].revenue+=unit*qty; chTotals[ch].margin+=(net-supplyVat)*qty; chTotals[ch].listGmv+=listGmv;
+      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=lineRev; byKeyCh[id].margin+=lineMargin; byKeyCh[id].listGmv+=lineList;
+      chTotals[ch].qty+=qty; chTotals[ch].revenue+=lineRev; chTotals[ch].margin+=lineMargin; chTotals[ch].listGmv+=lineList;
     });
     return {byKeyCh,start,end,chTotals};
   },[orders,products,feeRates]);
