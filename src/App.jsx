@@ -7055,7 +7055,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 });
                 const channelDetail=couponSteps.filter(s=>s.chPart>0);
                 // 공통 스타일 — 라벨 / 금액(왼쪽 중앙) / 계산식(금액 옆) 3컬럼
-                const gridT="minmax(0,170px) minmax(95px,135px) minmax(0,1fr)";
+                const gridT="minmax(0,170px) minmax(160px,210px) minmax(0,1fr)";
                 const rowSty={display:"grid",gridTemplateColumns:gridT,alignItems:"baseline",gap:14,
                   padding:"6px 14px",borderTop:`1px solid ${D.border}`,color:D.text,fontSize:11,lineHeight:1.5};
                 const labelCol={display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap",minWidth:0,fontSize:11};
