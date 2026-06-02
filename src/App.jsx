@@ -6634,12 +6634,15 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       await db.from("calc_last_file").upsert({id:1,filename:file.name,content_b64:b64,uploaded_at:new Date().toISOString()});
     }catch(err){ console.warn("예시 파일 저장 실패",err); }
   };
-  const loadExampleFile=async()=>{
+  const loadExampleFile=async(opts={})=>{
     try{
       const db=await getSupabase();
       const {data,error}=await db.from("calc_last_file").select("filename,content_b64").eq("id",1).maybeSingle();
       if(error) throw error;
-      if(!data){ setSummary("저장된 예시 파일이 없습니다. 한 번 업로드해 주세요."); setShowResults(true); return; }
+      if(!data){
+        if(!opts.silent){ setSummary("저장된 예시 파일이 없습니다. 한 번 업로드해 주세요."); setShowResults(true); }
+        return;
+      }
       const bin=atob(data.content_b64);
       const bytes=new Uint8Array(bin.length);
       for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
@@ -6648,10 +6651,17 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       await handleFile(f,{skipSave:true});
     }catch(err){
       console.error("예시 파일 로드 실패",err);
-      setSummary("예시 파일 로드 실패: "+(err?.message||err));
-      setShowResults(true);
+      if(!opts.silent){ setSummary("예시 파일 로드 실패: "+(err?.message||err)); setShowResults(true); }
     }
   };
+  // 모달 진입 시 마지막 업로드 예시 파일을 디폴트로 자동 로드
+  const exampleAutoLoaded=useRef(false);
+  useEffect(()=>{
+    if(exampleAutoLoaded.current) return;
+    exampleAutoLoaded.current=true;
+    loadExampleFile({silent:true});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   const handleFile=async(file,opts={})=>{
     fnameRef.current=file.name.replace(/\.xlsx?$/i,"");
     try{
@@ -7398,8 +7408,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     const avgBase=processed.length>0?processed.reduce((s,r)=>s+(r.baseDisc||0),0)/processed.length:0;
                     const avgFinal=processed.length>0?processed.reduce((s,r)=>s+(r.finalDisc||0),0)/processed.length:0;
                     return (
-                      <div style={{margin:"0 0 8px",padding:"10px 14px",background:D.surfaceAlt,borderRadius:6,
-                        display:"flex",alignItems:"center",gap:18,flexWrap:"wrap",fontSize:11,color:D.text}}>
+                      <div style={{margin:"0",padding:"10px 14px",background:D.surfaceAlt,borderRadius:6,
+                        display:"flex",alignItems:"center",gap:18,flexWrap:"wrap",fontSize:11,color:D.text,
+                        position:"sticky",top:61,zIndex:4,border:`1px solid ${D.borderMid}`}}>
                         <span style={{display:"inline-flex",alignItems:"baseline",gap:6}}>
                           <span style={{fontWeight:700,color:D.black}}>평균 마크업</span>
                           {avg==null
@@ -7413,13 +7424,13 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     );
                   })()}
                   {processed&&processed.length>0&&(
-                    <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6}}>
+                    <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
                           {["상품명","정가 (E열)","구간","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
-                              position:"sticky",top:0,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>{h}</th>
+                              position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
@@ -7427,7 +7438,17 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             <tr key={i}>
                               <td title={r.name} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"left",
                                 minWidth:160,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
-                              <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(r.list)}</td>
+                              {(()=>{
+                                const sv=r.supplyIncVat||Math.round((r.supply||0)*1.1);
+                                const listMu=sv>0?Math.round(r.list/sv*100)/100:null;
+                                return (
+                                  <td title={`정가 ₩${wonFmt(r.list)}${listMu!=null?` · 마크업 ×${listMu.toFixed(2)} (정가 ÷ 원가)`:""}`}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
+                                    ₩{wonFmt(r.list)}
+                                    {listMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:listMu>3?D.green:D.red}}>×{listMu.toFixed(2)}</span>}
+                                  </td>
+                                );
+                              })()}
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>
                                 {(r.slot.name||"").replace(/[^0-9]/g,"")||r.slot.id}
                               </td>
@@ -7874,7 +7895,7 @@ function OwnMallSaleCalcModal({ onClose }){
 
             {agg&&(
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
-                {[["상품 수",`${agg.n.toLocaleString()}개`],["평균 할인율",pct(agg.avgDisc)],["평균 마크업",agg.matchedCount>0?`×${agg.avgMarkup.toFixed(2)}`:"—"]].map(([k,v])=>(
+                {[["상품 수",`${agg.n.toLocaleString()}개`],["평균 할인율",`${(Math.round(agg.avgDisc*100)/100).toFixed(2)}%`],["평균 마크업",agg.matchedCount>0?`×${agg.avgMarkup.toFixed(2)}`:"—"]].map(([k,v])=>(
                   <div key={k} style={{padding:"8px 14px",background:D.surfaceAlt,borderRadius:8}}>
                     <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>{k}</div>
                     <div style={{fontSize:15,fontWeight:700,color:D.text}}>{v}</div>
@@ -7896,7 +7917,7 @@ function OwnMallSaleCalcModal({ onClose }){
               {q&&<button onClick={()=>setSearch("")} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.textSub}}>✕ 초기화</button>}
             </div>
             <div style={{overflow:"auto",height:"55vh"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap"}}>
+              <table style={{width:"auto",borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap"}}>
                 <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품명</th>
@@ -7906,7 +7927,7 @@ function OwnMallSaleCalcModal({ onClose }){
                   <th style={{...numCell,fontWeight:500}}>할인가</th>
                   <th style={{...numCell,fontWeight:500}}>쿠폰율</th>
                   <th style={{...numCell,fontWeight:500}}>쿠폰금액</th>
-                  <th style={{...numCell,fontWeight:500}}>쿠폰적용가</th>
+                  <th style={{...numCell,fontWeight:500}}>쿠폰적용가 (최종할인)</th>
                   <th style={{...numCell,fontWeight:500}}>원가(VAT)</th>
                   <th style={{...numCell,fontWeight:500}}>마진</th>
                   <th style={{...numCell,fontWeight:500}}>마크업</th>
@@ -7934,7 +7955,11 @@ function OwnMallSaleCalcModal({ onClose }){
                       <td style={{...numCell,color:D.textSub}}>{won(r.discPrice)}{muBadge(discMu)}</td>
                       <td style={{...numCell,color:D.textMeta}}>{couponRate?pct(couponRate):"—"}</td>
                       <td style={{...numCell,color:D.textMeta}}>{couponRate?won(r.couponAmt):"—"}</td>
-                      <td style={{...numCell,color:D.text,fontWeight:700}}>{won(r.couponPrice)}{muBadge(cpnMu)}</td>
+                      <td style={{...numCell,color:D.text,fontWeight:700}}>
+                        {won(r.couponPrice)}
+                        {muBadge(cpnMu)}
+                        {r.effDisc>0&&<span style={{marginLeft:6,fontSize:10,fontWeight:600,color:D.red}}>−{(Math.round(r.effDisc*10)/10).toFixed(1)}%</span>}
+                      </td>
                       <td style={{...numCell,color:D.textMeta}}>{r.supplyVat?won(r.supplyVat):"—"}</td>
                       <td style={{...numCell,fontWeight:600,color:r.margin>=0?D.green:D.red}}>{won(r.margin)}</td>
                       <td style={{...numCell,fontWeight:700,color:r.supplyVat>0?(r.markup>3?D.green:D.red):D.textMeta}}>{r.supplyVat>0?`×${r.markup.toFixed(2)}`:"—"}</td>
