@@ -14569,8 +14569,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const [invRows,setInvRows]=useState([]);       // 최신 inventory_snapshot SKU
   const [reorderRows,setReorderRows]=useState([]); // reorder_recommendations
   const [loading,setLoading]=useState(true);
-  const [targets,setTargets]=useState({"자사몰":"","29CM":"","오프라인 스토어":""});
-  const [targetsTouched,setTargetsTouched]=useState(false); // 사용자가 목표 매출을 직접 만졌는지(=제안값 자동채움 중단)
+  // 채널별 목표 매출은 입력하지 않음 — 월 고정금액 + 목표 이익금으로 자동 산출(읽기 전용).
   // 월 고정금액 / 목표 이익금 — 가장 최근 입력값을 localStorage에 저장
   const [fixedCost,setFixedCost]=useState(()=>{try{return localStorage.getItem("gmv_fixed_cost")||"";}catch{return "";}});
   const [targetProfit,setTargetProfit]=useState(()=>{try{return localStorage.getItem("gmv_target_profit")||"";}catch{return "";}});
@@ -14579,8 +14578,8 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const [feeRates,setFeeRates]=useState({...GMV_FEE_DEFAULT});
   const [search,setSearch]=useState("");
   const [expanded,setExpanded]=useState(null);    // 펼친 상품 key
-  const [matrixStage,setMatrixStage]=useState("target"); // "recent"(최근 한 달 실적) | "target"(목표 도달 설정)
   const [cycleCh,setCycleCh]=useState("자사몰");   // 사이클 다이어그램 채널
+  const [srcOpen,setSrcOpen]=useState(null);      // 채널 카드 소스 상세 펼침
   const [showCount,setShowCount]=useState(40);
   const cardRef=useRef(null);
 
@@ -14640,18 +14639,6 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
     GMV_CHANNELS.forEach(ch=>{ m[ch]={revenue:rev[ch],share:Math.round(rev[ch]/total*1000)/10}; });
     return m;
   },[revenues,storeSales]);
-  // 목표 매출 초기 제안값 자동 입력 — 사용자가 아직 직접 만지지 않았을 때, 현재 채널 매출을 제안값으로 미리 채움
-  useEffect(()=>{
-    if(targetsTouched) return;
-    const anyRev=GMV_CHANNELS.some(ch=>(revByCh[ch]?.revenue||0)>0);
-    if(!anyRev) return;
-    setTargets(prev=>{
-      const next={...prev};
-      GMV_CHANNELS.forEach(ch=>{ if(!String(next[ch]||"").trim()) next[ch]=String(revByCh[ch]?.revenue||0); });
-      return next;
-    });
-  },[revByCh,targetsTouched]);
-  const setTarget=(ch,v)=>{setTargetsTouched(true);setTargets(p=>({...p,[ch]:v}));};
 
   // ── 입고 흐름: stock_uploads(입고 CSV)에서 SKU별 최신 입고 + 최근 입고일 집계
   const inboundBySku=useMemo(()=>{
@@ -14722,38 +14709,58 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
       const net=Math.round(unit*(1-fee/100));
       const supplyVat=Math.round((meta.supply||0)*1.1);
       const id=k+"@@"+ch;
-      if(!byKeyCh[id]) byKeyCh[id]={qty:0,revenue:0,margin:0,list:meta.list};
-      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=unit*qty; byKeyCh[id].margin+=(net-supplyVat)*qty;
-      chTotals[ch].qty+=qty; chTotals[ch].revenue+=unit*qty; chTotals[ch].margin+=(net-supplyVat)*qty;
+      const listGmv=meta.list*qty; // 정가 기준 GMV (현재 세일율 분모)
+      if(!byKeyCh[id]) byKeyCh[id]={qty:0,revenue:0,margin:0,listGmv:0,list:meta.list,supply:meta.supply};
+      byKeyCh[id].qty+=qty; byKeyCh[id].revenue+=unit*qty; byKeyCh[id].margin+=(net-supplyVat)*qty; byKeyCh[id].listGmv+=listGmv;
+      chTotals[ch].qty+=qty; chTotals[ch].revenue+=unit*qty; chTotals[ch].margin+=(net-supplyVat)*qty; chTotals[ch].listGmv+=listGmv;
     });
     return {byKeyCh,start,end,chTotals};
   },[orders,products,feeRates]);
+  // 채널별 정가GMV 보정 (chTotals에 listGmv 키 보장)
+  GMV_CHANNELS.forEach(c=>{ if(recentActuals.chTotals[c]&&recentActuals.chTotals[c].listGmv===undefined) recentActuals.chTotals[c].listGmv=0; });
 
-  // ── 정가 GMV (예상수량 기준) + 채널별 목표 세일율
-  const regularGmv=useMemo(()=>products.reduce((s,p)=>s+(p.matched?p.list*p.expectedQty:0),0),[products]);
+  // ── 현재 이익금(최근 30일 실판매 마진) + 목표 배수 r = (목표이익금 + 월고정금액) ÷ 현재이익금
+  const targetProfitN=parseInt(String(targetProfit).replace(/[^0-9]/g,""),10)||0;
+  const fixedCostN=parseInt(String(fixedCost).replace(/[^0-9]/g,""),10)||0;
+  const reqMargin=targetProfitN+fixedCostN; // 필요 총마진(목표 이익금 + 월 고정금액)
+  const currentTotalMargin=GMV_CHANNELS.reduce((s,ch)=>s+(recentActuals.chTotals[ch]?.margin||0),0);
+  const targetMultiplier=currentTotalMargin>0?reqMargin/currentTotalMargin:1; // 현재 이익금 대비 목표 배수
+
+  // ── 채널별: 현재 세일율 → 목표 매출(자동) → 권장 세일율 → Δ
   const channelCalc=useMemo(()=>{
     return GMV_CHANNELS.map(ch=>{
-      const target=parseInt(String(targets[ch]).replace(/[^0-9]/g,""),10)||0;
-      const rate=gmvTargetRate(target,regularGmv);
+      const t=recentActuals.chTotals[ch]||{qty:0,revenue:0,margin:0,listGmv:0};
       const fee=feeRates[ch]||0;
-      // 채널 합계: 이 세일율로 전 상품 판매 시 매출/마진/재입고
-      let rev=0,margin=0,restock=0,cost=0;
+      const curRev=t.revenue||0;                 // 최근 30일 실판매 매출(실효가 기준)
+      const listGmv=t.listGmv||0;                // 정가 GMV (분모 고정)
+      const curRate=listGmv>0?Math.max(0,Math.min(95,Math.round((1-curRev/listGmv)*1000)/10)):null; // 현재 실효 세일율
+      const curMargin=t.margin||0;
+      const curMarginRate=curRev>0?Math.round(curMargin/(curRev*(1-fee/100))*1000)/10:0;
+      // 목표 매출 = 현재 매출 × 목표 배수 (점유율 자동 보존)
+      const targetRev=Math.round(curRev*targetMultiplier);
+      // 권장 세일율 = 1 − (목표매출 ÷ 정가GMV), 현재와 동일 분모 → Δ 직관적
+      const recRate=listGmv>0?Math.max(0,Math.min(90,Math.round((1-targetRev/listGmv)*1000)/10)):null;
+      const delta=(recRate!=null&&curRate!=null)?Math.round((recRate-curRate)*10)/10:null;
+      // 권장 세일율 적용 시 예상 마진 (현재 판매수량 고정 가정 → 정가GMV·수량 그대로)
+      // 예상 재입고비 = 예측 판매량(최근 30일 실판매 수량) × 공급가×1.1 — 판 만큼 다시 매입
+      let expMargin=0,restock=0;
       products.forEach(p=>{
-        if(!p.matched||p.expectedQty<=0) return;
-        const m=gmvCompute(p.list,rate||0,p.supply,fee);
-        rev+=m.finalPrice*p.expectedQty;
-        margin+=m.margin*p.expectedQty;
-        cost+=m.supplyVat*p.expectedQty;
-        restock+=Math.round(p.supply*1.1)*p.qty4w; // 재입고비 = 4주 판매수량 × 공급가×1.1
+        const id=p.key+"@@"+ch; const a=recentActuals.byKeyCh[id];
+        if(!a||a.qty<=0) return;
+        const m=gmvCompute(p.list,recRate||0,p.supply,fee);
+        expMargin+=m.margin*a.qty;
+        restock+=Math.round(p.supply*1.1)*a.qty; // 예측 판매량 기준 예상 재입고비
       });
-      return {ch,target,rate,fee,rev,margin,restock,cost,curRev:revByCh[ch]?.revenue||0,share:revByCh[ch]?.share||0};
+      const expMarginRate=targetRev>0?Math.round(expMargin/(targetRev*(1-fee/100))*1000)/10:0;
+      const share=revByCh[ch]?.share||0;
+      return {ch,fee,curRev,listGmv,curRate,curMargin,curMarginRate,targetRev,recRate,delta,expMargin,expMarginRate,restock,share};
     });
-  },[products,targets,feeRates,regularGmv,revByCh]);
+  },[products,recentActuals,feeRates,targetMultiplier,revByCh]);
 
-  const reqMargin=(parseInt(String(targetProfit).replace(/[^0-9]/g,""),10)||0)+(parseInt(String(fixedCost).replace(/[^0-9]/g,""),10)||0);
-  const totalMargin=channelCalc.reduce((s,c)=>s+c.margin,0);
+  const totalTargetRev=channelCalc.reduce((s,c)=>s+c.targetRev,0);
+  const totalExpMargin=channelCalc.reduce((s,c)=>s+c.expMargin,0);
   const totalRestock=channelCalc.reduce((s,c)=>s+c.restock,0);
-  const netContribution=totalMargin-reqMargin; // 목표 마진 대비 여유
+  const netContribution=totalExpMargin-reqMargin; // 예상 마진 − 필요 총마진
 
   // ── 표시 상품 (스테디셀러·매칭 우선 + 검색)
   const shownProducts=useMemo(()=>{
@@ -14793,72 +14800,116 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
       </div>
       <div style={{fontSize:12,color:DC.dim,marginBottom:18}}>데이터 입력 탭의 업로더로 새 데이터가 올라오면 자동으로 다시 계산됩니다.</div>
 
-      {/* 입력 패널 */}
+      {/* ① 목표 입력 — 월 고정금액 + 목표 이익금만(채널별 목표 매출은 자동 산출) */}
       <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:700,color:DC.text,marginBottom:12}}>① 목표 입력</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}}>
-          {GMV_CHANNELS.map(ch=>(
-            <div key={ch} style={{border:`1px solid ${DC.border}`,borderRadius:8,padding:"10px 12px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-                <span style={{width:9,height:9,borderRadius:"50%",background:chColor(ch),display:"inline-block"}}/>
-                <span style={{fontSize:13,fontWeight:600,color:DC.text}}>{ch}</span>
-              </div>
-              <label style={lbl}>목표 매출 (월)</label>
-              <input value={commaOf(targets[ch])} onChange={e=>setTarget(ch,digitsOf(e.target.value))} inputMode="numeric"
-                placeholder={revByCh[ch]?`현재 ${won(revByCh[ch].revenue)} 제안`:"예: 50,000,000"} style={inBox}/>
-              {digitsOf(targets[ch])&&<div style={{fontSize:11,color:MUTE_BLUE,marginTop:3,fontWeight:600}}>{eokManOf(targets[ch])}</div>}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:7}}>
-                <span style={{fontSize:11,color:DC.dim}}>수수료율</span>
-                <span style={{display:"flex",alignItems:"center",gap:3}}>
-                  <input value={feeRates[ch]} onChange={e=>setFeeRates(p=>({...p,[ch]:Math.max(0,Math.min(100,parseFloat(e.target.value)||0))}))}
-                    type="number" style={{width:48,textAlign:"right",background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,padding:"2px 5px",fontSize:12,color:DC.text}}/>
-                  <span style={{fontSize:11,color:DC.dim}}>%</span>
-                </span>
-              </div>
-              {revByCh[ch]&&<div style={{fontSize:10,color:DC.dim,marginTop:5}}>현재 점유율 {revByCh[ch].share}%</div>}
-            </div>
-          ))}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><label style={lbl}>월 고정금액 (조정치) <span style={{color:DC.dim,fontWeight:400}}>· 최근 입력값 저장</span></label>
+        <div style={{fontSize:13,fontWeight:700,color:DC.text,marginBottom:4}}>① 목표 설정 <span style={{fontSize:11,color:DC.dim,fontWeight:400}}>· 월 고정금액·목표 이익금만 입력하면 채널별 목표 매출은 현재 점유율대로 자동 산출</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:10}}>
+          <div><label style={lbl}>월 고정금액 <span style={{color:DC.dim,fontWeight:400}}>· 최근 입력값 저장</span></label>
             <input value={commaOf(fixedCost)} onChange={e=>setFixedCost(digitsOf(e.target.value))} inputMode="numeric" placeholder="예: 10,000,000" style={inBox}/>
             {digitsOf(fixedCost)&&<div style={{fontSize:11,color:MUTE_BLUE,marginTop:3,fontWeight:600}}>{eokManOf(fixedCost)}</div>}</div>
-          <div><label style={lbl}>목표 이익금 (조정치) <span style={{color:DC.dim,fontWeight:400}}>· 최근 입력값 저장</span></label>
+          <div><label style={lbl}>목표 이익금 <span style={{color:DC.dim,fontWeight:400}}>· 최근 입력값 저장</span></label>
             <input value={commaOf(targetProfit)} onChange={e=>setTargetProfit(digitsOf(e.target.value))} inputMode="numeric" placeholder="예: 20,000,000" style={inBox}/>
             {digitsOf(targetProfit)&&<div style={{fontSize:11,color:MUTE_BLUE,marginTop:3,fontWeight:600}}>{eokManOf(targetProfit)}</div>}</div>
         </div>
-        <div style={{fontSize:11,color:DC.dim,marginTop:8}}>필요 총마진 = 목표 이익금 + 월 고정금액 = <b style={{color:DC.sub}}>{won(reqMargin)}</b> · 정가 GMV(예상수량 기준) {won(regularGmv)}</div>
+        {/* 채널 수수료율 (편집) */}
+        <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:12}}>
+          {GMV_CHANNELS.map(ch=>(
+            <span key={ch} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:DC.sub}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:chColor(ch),display:"inline-block"}}/>{ch} 수수료
+              <input value={feeRates[ch]} onChange={e=>setFeeRates(p=>({...p,[ch]:Math.max(0,Math.min(100,parseFloat(e.target.value)||0))}))}
+                type="number" style={{width:46,textAlign:"right",background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,padding:"2px 5px",fontSize:12,color:DC.text}}/>%
+            </span>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:DC.dim,marginTop:10,lineHeight:1.7}}>
+          필요 총마진 = 목표 이익금 + 월 고정금액 = <b style={{color:DC.sub}}>{won(reqMargin)}</b><br/>
+          현재 이익금(최근 30일 실판매 마진) <b style={{color:DC.sub}}>{won(currentTotalMargin)}</b> · 목표 배수 <b style={{color:MUTE_BLUE}}>×{targetMultiplier.toFixed(2)}</b>
+          {" → 채널별 목표 매출 = 현재 매출 × 배수 (점유율 유지)"}
+          {currentTotalMargin<=0&&<span style={{color:"#C8A87B"}}> · ⚠ 최근 실적 마진이 0이라 배수 산출 불가(데이터 보강 필요)</span>}
+        </div>
       </div>
 
-      {/* 채널별 요약 */}
+      {/* 채널별 조정 카드 — 현재 운용 → 목표 도달, 세일율 조정 방향(Δ) + 현재/예상 동시 표기 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
-        {channelCalc.map(c=>(
+        {channelCalc.map(c=>{
+          const cur30={revenue:recentActuals.chTotals[c.ch]?.revenue||0,margin:recentActuals.chTotals[c.ch]?.margin||0};
+          const curRestock=(()=>{let r=0;products.forEach(p=>{const a=recentActuals.byKeyCh[p.key+"@@"+c.ch];if(a&&a.qty>0)r+=Math.round(p.supply*1.1)*a.qty;});return r;})();
+          const up=c.delta!=null&&c.delta>0;   // 세일율 ↑ = 더 할인(빨강)
+          const dn=c.delta!=null&&c.delta<0;   // 세일율 ↓ = 덜 할인(초록)
+          const dCol=up?"#c0392b":dn?"#1a7a4f":DC.dim;
+          const cell=(k,curV,expV,col)=>(
+            <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:6,alignItems:"baseline",fontSize:11,padding:"2px 0"}}>
+              <span style={{color:DC.sub}}>{k}</span>
+              <span style={{color:DC.dim}}>{curV}</span>
+              <span style={{color:DC.dim}}>→</span>
+              <span style={{fontWeight:700,color:col||DC.text}}>{expV}</span>
+            </div>
+          );
+          return(
           <div key={c.ch} style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 16px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:chColor(c.ch),display:"inline-block"}}/>
               <span style={{fontSize:13,fontWeight:700,color:DC.text}}>{c.ch}</span>
               <span style={{fontSize:10,color:DC.dim,marginLeft:"auto"}}>수수료 {c.fee}%</span>
             </div>
-            <div style={{fontSize:11,color:DC.sub}}>목표 매출 달성 세일율</div>
-            <div style={{fontSize:26,fontWeight:800,color:c.rate==null?DC.dim:MUTE_BLUE,letterSpacing:"-0.5px",margin:"2px 0 8px"}}>
-              {c.rate==null?"—":`${c.rate}%`}
+            {/* 세일율: 현재 → 권장 (Δ) */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:9,color:DC.dim}}>현재 세일율</div>
+                <div style={{fontSize:19,fontWeight:800,color:DC.sub}}>{c.curRate==null?"—":`${c.curRate}%`}</div>
+              </div>
+              <div style={{fontSize:18,color:dCol,fontWeight:800}}>▶</div>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:9,color:DC.dim}}>권장 세일율</div>
+                <div style={{fontSize:24,fontWeight:800,color:MUTE_BLUE,letterSpacing:"-0.5px"}}>{c.recRate==null?"—":`${c.recRate}%`}</div>
+              </div>
+              {c.delta!=null&&Math.abs(c.delta)>=0.05&&(
+                <div style={{marginLeft:"auto",textAlign:"right"}}>
+                  <div style={{fontSize:11,fontWeight:800,color:dCol}}>{up?"▲":"▼"} {Math.abs(c.delta)}%p</div>
+                  <div style={{fontSize:9,color:DC.dim}}>{up?"더 할인":"덜 할인"}</div>
+                </div>
+              )}
             </div>
-            <div style={{fontSize:11,color:DC.sub,lineHeight:1.8}}>
-              <div style={{display:"flex",justifyContent:"space-between"}}><span>예상 매출</span><b style={{color:DC.text}}>{won(c.rev)}</b></div>
-              <div style={{display:"flex",justifyContent:"space-between"}}><span>예상 마진</span><b style={{color:c.margin>=0?"#1a7a4f":"#c0392b"}}>{won(c.margin)}</b></div>
-              <div style={{display:"flex",justifyContent:"space-between"}}><span>재입고비(4주 판매수량)</span><b style={{color:"#C8A87B"}}>{won(c.restock)}</b></div>
-              {c.target>0&&<div style={{display:"flex",justifyContent:"space-between",color:DC.dim}}><span>목표</span><span>{won(c.target)}</span></div>}
+            <div style={{fontSize:10,color:dCol,marginBottom:8,minHeight:13}}>
+              {c.delta==null?"":Math.abs(c.delta)<0.05?"현재 수준 유지 시 목표 도달":`세일율을 ${Math.abs(c.delta)}%p ${up?"높여야":"낮춰야"} 목표 달성`}
             </div>
+            {/* 현재 → 예상 동시 표기 */}
+            <div style={{borderTop:`1px solid ${DC.border}`,paddingTop:6}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:6,fontSize:9,color:DC.dim,marginBottom:2}}>
+                <span/><span>최근 한달</span><span/><span>예상</span>
+              </div>
+              {cell("매출",won(cur30.revenue),won(c.targetRev),DC.text)}
+              {cell("마진",won(cur30.margin),won(c.expMargin),c.expMargin>=0?"#1a7a4f":"#c0392b")}
+              {cell("마진율",`${c.curMarginRate}%`,`${c.expMarginRate}%`,c.expMargin>=0?"#1a7a4f":"#c0392b")}
+              {cell("재입고비",won(curRestock),won(c.restock),"#C8A87B")}
+            </div>
+            {/* 데이터 소스 (계산 근거 원본) */}
+            <button onClick={()=>setSrcOpen(srcOpen===c.ch?null:c.ch)}
+              style={{marginTop:8,background:"transparent",border:"none",color:DC.dim,fontSize:10,cursor:"pointer",padding:0,textDecoration:"underline"}}>
+              {srcOpen===c.ch?"▾ 데이터 소스 닫기":"▸ 데이터 소스·계산 근거"}
+            </button>
+            {srcOpen===c.ch&&(
+              <div style={{marginTop:6,padding:"8px 10px",background:DC.bg,borderRadius:6,fontSize:10,color:DC.sub,lineHeight:1.7}}>
+                <div style={{color:DC.dim,marginBottom:3}}>출처: 주문·배송(이지어드민) status=배송, 최근 30일 · 정가/공급가=인벤토리 스냅샷</div>
+                <div>실판매 매출 = Σ(판매가×수량) = <b>{won(c.curRev)}</b> · 판매수량 = <b>{(recentActuals.chTotals[c.ch]?.qty||0).toLocaleString()}개</b></div>
+                <div>정가 GMV = Σ(정가×수량) = <b>{won(c.listGmv)}</b></div>
+                <div>현재 세일율 = 1 − (실판매 ÷ 정가GMV) = 1 − ({won(c.curRev)} ÷ {won(c.listGmv)}) = <b>{c.curRate==null?"—":`${c.curRate}%`}</b></div>
+                <div>현재 마진 = Σ((정산액−공급가×1.1)×수량) = <b>{won(c.curMargin)}</b> · 수수료 {c.fee}%</div>
+                <div>목표 매출 = 현재 매출 × 배수({targetMultiplier.toFixed(2)}) = <b>{won(c.targetRev)}</b></div>
+                <div>권장 세일율 = 1 − (목표매출 ÷ 정가GMV) = <b>{c.recRate==null?"—":`${c.recRate}%`}</b></div>
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 필요 마진 가드 */}
       <div style={{background:netContribution>=0?"rgba(26,122,79,0.07)":"rgba(192,57,43,0.07)",
         border:`1px solid ${netContribution>=0?"#1a7a4f":"#c0392b"}40`,borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:DC.text}}>
-        예상 총마진 <b>{won(totalMargin)}</b> {netContribution>=0?"≥":"<"} 필요 총마진 <b>{won(reqMargin)}</b> →{" "}
-        <b style={{color:netContribution>=0?"#1a7a4f":"#c0392b"}}>{netContribution>=0?`여유 ${won(netContribution)}`:`부족 ${won(-netContribution)} — 세일율을 낮추거나 목표를 조정하세요`}</b>
-        <span style={{color:DC.dim}}> · 재입고비 합계 {won(totalRestock)}</span>
+        예상 총마진 <b>{won(totalExpMargin)}</b> {netContribution>=0?"≥":"<"} 필요 총마진 <b>{won(reqMargin)}</b> →{" "}
+        <b style={{color:netContribution>=0?"#1a7a4f":"#c0392b"}}>{netContribution>=0?`여유 ${won(netContribution)}`:`부족 ${won(-netContribution)} — 목표 이익금/고정비를 조정하세요`}</b>
+        <span style={{color:DC.dim}}> · 총 목표 매출 {won(totalTargetRev)} · 예상 재입고비 {won(totalRestock)}</span>
       </div>
 
       {/* 상품별×채널별 매트릭스 — 2단계: 최근 한 달 실적 / 목표 도달 설정 */}
@@ -14867,18 +14918,8 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
           <span style={{fontSize:13,fontWeight:700,color:DC.text}}>② 상품별 · 채널별 세일율 / 마진율 <span style={{fontSize:11,color:DC.dim,fontWeight:400}}>· ★=스테디셀러 · 행 클릭 시 계산식</span></span>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="상품명·옵션 검색" style={{...inBox,width:200}}/>
         </div>
-        {/* 단계 토글 */}
-        <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-          {[["recent",`1단계 · 최근 한 달 실적${recentActuals.start?` (${recentActuals.start}~${recentActuals.end})`:""}`],["target","2단계 · 목표 도달 설정"]].map(([k,label])=>(
-            <button key={k} onClick={()=>setMatrixStage(k)}
-              style={{background:matrixStage===k?MUTE_BLUE:"transparent",color:matrixStage===k?"#fff":DC.sub,
-                border:`1px solid ${matrixStage===k?MUTE_BLUE:DC.border}`,borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{label}</button>
-          ))}
-        </div>
         <div style={{fontSize:11,color:DC.dim,marginBottom:8}}>
-          {matrixStage==="recent"
-            ?"가장 최근 주문일 기준 30일간 실제 배송 데이터 — 채널별 실제 판매수량·실효 세일율·마진율 (지난 한 달 실적)"
-            :"목표 매출에 도달하려면 채널별로 어떤 세일율을 설정해야 하는지 — 그때의 마진율"}
+          왼쪽 <b style={{color:DC.sub}}>현재</b>(최근 30일 실판매: 수량·세일율·마진율){recentActuals.start?` (${recentActuals.start}~${recentActuals.end})`:""} ▶ 오른쪽 <b style={{color:MUTE_BLUE}}>권장</b>(목표 도달 세일율·마진율, Δ)을 한 셀에 함께 표시
         </div>
         {unmatchedCount>0&&<div style={{fontSize:11,color:"#C8A87B",marginBottom:8}}>⚠ 공급가/판매가 미매칭 {unmatchedCount.toLocaleString()}건은 합계·표에서 제외됨 (인벤토리 가격 DB 보강 시 반영)</div>}
         <div style={{overflowX:"auto"}}>
@@ -14890,7 +14931,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
               <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}} title="최근 4주 판매수량(향후 판매 추정)">4주 판매</th>
               <th style={{textAlign:"right",padding:"6px 8px",color:DC.sub,fontWeight:600}} title="최신 입고 수량(stock_uploads)">입고</th>
               {GMV_CHANNELS.map(ch=>(
-                <th key={ch} style={{textAlign:"center",padding:"6px 8px",color:chColor(ch),fontWeight:700,minWidth:110}}>{ch}<div style={{fontSize:9,color:DC.dim,fontWeight:400}}>{matrixStage==="recent"?"판매수량 · 세일율 → 마진율":"세일율 → 마진율"}</div></th>
+                <th key={ch} style={{textAlign:"center",padding:"6px 8px",color:chColor(ch),fontWeight:700,minWidth:150}}>{ch}<div style={{fontSize:9,color:DC.dim,fontWeight:400}}>현재 세일율·마진율 ▶ 권장 (Δ)</div></th>
               ))}
             </tr></thead>
             <tbody>
@@ -14907,25 +14948,29 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                       <td style={{padding:"6px 8px",textAlign:"right",color:DC.sub}}>{p.qty4w.toLocaleString()}</td>
                       <td style={{padding:"6px 8px",textAlign:"right",color:DC.dim}} title={p.inboundDate?`입고일 ${p.inboundDate}`:""}>{p.inboundQty?p.inboundQty.toLocaleString():"—"}</td>
                       {channelCalc.map(c=>{
-                        if(matrixStage==="recent"){
-                          const a=recentActuals.byKeyCh[p.key+"@@"+c.ch];
-                          if(!a||a.qty<=0) return <td key={c.ch} style={{padding:"6px 8px",textAlign:"center",color:DC.dim}}>—</td>;
-                          const avg=a.revenue/a.qty;
-                          const actDisc=p.list>0?Math.round((1-avg/p.list)*1000)/10:0;
-                          const actMarginRate=a.revenue>0?Math.round(a.margin/(a.revenue*(1-(c.fee||0)/100))*1000)/10:0;
-                          return(
-                            <td key={c.ch} style={{padding:"6px 8px",textAlign:"center"}}>
-                              <div style={{fontSize:11,color:DC.sub}}>{a.qty.toLocaleString()}개</div>
-                              <div style={{fontWeight:700,color:DC.text}}>{actDisc}%</div>
-                              <div style={{fontSize:11,fontWeight:600,color:a.margin>=0?"#1a7a4f":"#c0392b"}}>{actMarginRate}%</div>
-                            </td>
-                          );
-                        }
-                        const m=gmvCompute(p.list,c.rate||0,p.supply,c.fee);
+                        const a=recentActuals.byKeyCh[p.key+"@@"+c.ch];
+                        const hasCur=a&&a.qty>0;
+                        const avg=hasCur?a.revenue/a.qty:0;
+                        const curDisc=hasCur&&p.list>0?Math.round((1-avg/p.list)*1000)/10:null;
+                        const curMR=hasCur&&a.revenue>0?Math.round(a.margin/(a.revenue*(1-(c.fee||0)/100))*1000)/10:null;
+                        const rec=gmvCompute(p.list,c.recRate||0,p.supply,c.fee);
+                        const pDelta=(c.recRate!=null&&curDisc!=null)?Math.round((c.recRate-curDisc)*10)/10:null;
+                        const pUp=pDelta!=null&&pDelta>0;
                         return(
                           <td key={c.ch} style={{padding:"6px 8px",textAlign:"center"}}>
-                            <div style={{fontWeight:700,color:DC.text}}>{c.rate==null?"—":`${c.rate}%`}</div>
-                            <div style={{fontSize:11,fontWeight:600,color:m.margin>=0?"#1a7a4f":"#c0392b"}}>{m.marginRate}%</div>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                              <div style={{minWidth:42}}>
+                                <div style={{fontSize:9,color:DC.dim}}>{hasCur?`${a.qty}개`:"—"}</div>
+                                <div style={{fontWeight:600,color:DC.sub}}>{curDisc==null?"—":`${curDisc}%`}</div>
+                                <div style={{fontSize:10,color:curMR==null?DC.dim:(a.margin>=0?"#1a7a4f":"#c0392b")}}>{curMR==null?"":`${curMR}%`}</div>
+                              </div>
+                              <span style={{color:pDelta==null?DC.dim:(pUp?"#c0392b":"#1a7a4f"),fontWeight:800}}>▶</span>
+                              <div style={{minWidth:42}}>
+                                <div style={{fontSize:9,color:pDelta==null?DC.dim:(pUp?"#c0392b":"#1a7a4f")}}>{pDelta==null?"":`${pUp?"▲":"▼"}${Math.abs(pDelta)}%p`}</div>
+                                <div style={{fontWeight:700,color:MUTE_BLUE}}>{c.recRate==null?"—":`${c.recRate}%`}</div>
+                                <div style={{fontSize:10,fontWeight:600,color:rec.margin>=0?"#1a7a4f":"#c0392b"}}>{rec.marginRate}%</div>
+                              </div>
+                            </div>
                           </td>
                         );
                       })}
@@ -14935,8 +14980,10 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                         <td colSpan={5+GMV_CHANNELS.length} style={{padding:"4px 8px 12px"}}>
                           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
                             {channelCalc.map(c=>{
-                              const m=gmvCompute(p.list,c.rate||0,p.supply,c.fee);
-                              const restock=Math.round(p.supply*1.1)*p.qty4w;
+                              const m=gmvCompute(p.list,c.recRate||0,p.supply,c.fee);
+                              const a=recentActuals.byKeyCh[p.key+"@@"+c.ch];
+                              const soldQty=a?a.qty:0;
+                              const restock=Math.round(p.supply*1.1)*soldQty; // 예측 판매량(최근 30일) 기준
                               const calcRow=(k,v,expr)=>(
                                 <div style={{display:"grid",gridTemplateColumns:"86px 92px 1fr",gap:8,fontSize:11,padding:"2px 0",alignItems:"baseline"}}>
                                   <span style={{color:DC.sub}}>{k}</span><span style={{textAlign:"right",fontWeight:600,color:DC.text}}>{v}</span><span style={{color:DC.dim}}>{expr}</span>
@@ -14947,16 +14994,17 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
                                   <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
                                     <span style={{width:8,height:8,borderRadius:"50%",background:chColor(c.ch),display:"inline-block"}}/>
                                     <span style={{fontSize:12,fontWeight:700,color:DC.text}}>{c.ch}</span>
+                                    <span style={{fontSize:10,color:DC.dim,marginLeft:"auto"}}>권장 세일율 {c.recRate==null?"—":`${c.recRate}%`}</span>
                                   </div>
                                   {calcRow("① 정가",won(p.list),"")}
-                                  {calcRow("② 세일",`−${won(m.saleAmt)}`,`정가 × ${c.rate||0}%`)}
-                                  {calcRow("③ 실판매가",won(m.finalPrice),`정가 × (1−${c.rate||0}%)`)}
+                                  {calcRow("② 세일",`−${won(m.saleAmt)}`,`정가 × ${c.recRate||0}%`)}
+                                  {calcRow("③ 실판매가",won(m.finalPrice),`정가 × (1−${c.recRate||0}%)`)}
                                   {calcRow("④ 수수료",`−${won(m.fee)}`,`실판매가 × ${c.fee}%`)}
                                   {calcRow("⑤ 정산액",won(m.net),"실판매가 − 수수료")}
                                   {calcRow("⑥ 공급가",`−${won(m.supplyVat)}`,`${won(p.supply)} × 1.1`)}
                                   {calcRow("⑦ 마진",won(m.margin),"정산액 − 공급가")}
                                   {calcRow("⑦ 마진율",`${m.marginRate}%`,"마진 ÷ 정산액")}
-                                  {calcRow("⑧ 재입고비",won(restock),`4주 판매 ${p.qty4w} × 공급가×1.1`)}
+                                  {calcRow("⑧ 예상 재입고비",won(restock),`예측 판매 ${soldQty}개 × 공급가×1.1`)}
                                   {p.inboundQty>0&&calcRow("입고 흐름",`${p.inboundQty.toLocaleString()}개`,`최신 입고 ${p.inboundDate||""}`)}
                                 </div>
                               );
@@ -15017,11 +15065,13 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         {(()=>{
           const c=channelCalc.find(x=>x.ch===cycleCh)||channelCalc[0];
           if(!c) return null;
+          // 원가 합계 = 예측 판매량 × 공급가×1.1 (= 예상 재입고비와 동일 모집단)
+          const costTotal=c.restock;
           const nodes=[
-            {k:"원가 합계",v:c.cost,color:"#c0392b",desc:"공급가×1.1 × 예상수량"},
-            {k:"실제 판매가",v:c.rev,color:chColor(cycleCh),desc:`정가 GMV × (1−${c.rate||0}%)`},
-            {k:"마진",v:c.margin,color:c.margin>=0?"#1a7a4f":"#c0392b",desc:"정산액 − 원가"},
-            {k:"재입고",v:c.restock,color:"#C8A87B",desc:"4주 판매수량 × 공급가×1.1"},
+            {k:"원가 합계",v:costTotal,color:"#c0392b",desc:"예측 판매량 × 공급가×1.1"},
+            {k:"실제 판매가(목표)",v:c.targetRev,color:chColor(cycleCh),desc:`정가 GMV × (1−권장 ${c.recRate||0}%)`},
+            {k:"마진",v:c.expMargin,color:c.expMargin>=0?"#1a7a4f":"#c0392b",desc:"정산액 − 원가"},
+            {k:"재입고",v:c.restock,color:"#C8A87B",desc:"예측 판매량 × 공급가×1.1"},
           ];
           return(
             <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"center"}}>
@@ -15071,7 +15121,7 @@ function GmvWorkbench({DC,channelCalc,feeRates}){
   const [fileName,setFileName]=useState("");
   const [status,setStatus]=useState("");
   const fee=feeRates[ch]||0;
-  const chRate=channelCalc.find(c=>c.ch===ch)?.rate||0; // GMV 추천 세일율
+  const chRate=channelCalc.find(c=>c.ch===ch)?.recRate||0; // GMV 권장 세일율
 
   const loadRows=(prods)=>{
     setRows(prods.map(p=>({code:p.code||"",name:p.name,list:p.selling||0,supply:p.supply||0,rate:chRate,coupon:0})));
