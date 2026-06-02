@@ -14694,7 +14694,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
     const start=new Date(new Date(end+"T00:00:00").getTime()-29*86400000).toISOString().slice(0,10);
     const supplyByKey={};products.forEach(p=>{supplyByKey[p.key]={supply:p.supply,list:p.list};});
     const byKeyCh={}; const chTotals={};
-    GMV_CHANNELS.forEach(c=>{chTotals[c]={qty:0,revenue:0,margin:0};});
+    GMV_CHANNELS.forEach(c=>{chTotals[c]={qty:0,revenue:0,margin:0,listGmv:0};});
     (orders||[]).forEach(o=>{
       if(!o.order_date||o.order_date<start||o.order_date>end) return;
       if(o.status!=="배송") return; // 실제 출고분만
@@ -14716,8 +14716,6 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
     });
     return {byKeyCh,start,end,chTotals};
   },[orders,products,feeRates]);
-  // 채널별 정가GMV 보정 (chTotals에 listGmv 키 보장)
-  GMV_CHANNELS.forEach(c=>{ if(recentActuals.chTotals[c]&&recentActuals.chTotals[c].listGmv===undefined) recentActuals.chTotals[c].listGmv=0; });
 
   // ── 현재 이익금(최근 30일 실판매 마진) + 목표 배수 r = (목표이익금 + 월고정금액) ÷ 현재이익금
   const targetProfitN=parseInt(String(targetProfit).replace(/[^0-9]/g,""),10)||0;
