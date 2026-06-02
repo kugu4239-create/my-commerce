@@ -14889,9 +14889,10 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         </div>
         <div style={{fontSize:11,color:DC.dim,marginTop:10,lineHeight:1.7}}>
           필요 총마진 = 목표 이익금 + 월 고정금액 = <b style={{color:DC.sub}}>{won(reqMargin)}</b><br/>
-          현재 이익금(최근 30일 실판매 마진) <b style={{color:DC.sub}}>{won(currentTotalMargin)}</b> · 목표 배수 <b style={{color:MUTE_BLUE}}>×{targetMultiplier.toFixed(2)}</b><br/>
-          최근 한달 재입고비(입고 수량 × 공급가) <b style={{color:"#C8A87B"}}>{won(currentTotalRestock)}</b>
-          {" → 채널별 목표 매출 = 현재 매출 × 배수 (점유율 유지)"}
+          현재 이익금(최근 30일 실판매 마진) <b style={{color:DC.sub}}>{won(currentTotalMargin)}</b> · 목표 배수 <b style={{color:MUTE_BLUE}}>×{targetMultiplier.toFixed(2)}</b> <span style={{color:DC.dim}}>(목표 이익금 ÷ 현재 이익금)</span><br/>
+          재입고비(최근 30일 입고 수량 × 공급가) <b style={{color:"#C8A87B"}}>−{won(currentTotalRestock)}</b><br/>
+          최종 이익금(현재 이익금 − 재입고비) <b style={{color:(currentTotalMargin-currentTotalRestock)>=0?"#1a7a4f":"#c0392b"}}>{won(currentTotalMargin-currentTotalRestock)}</b>
+          {" · 채널별 목표 매출 = 현재 매출 × 배수 (점유율 유지)"}
           {currentTotalMargin<=0&&<span style={{color:"#C8A87B"}}> · ⚠ 최근 실적 마진이 0이라 배수 산출 불가(데이터 보강 필요)</span>}
         </div>
       </div>
