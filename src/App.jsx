@@ -14608,6 +14608,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const [cycleCh,setCycleCh]=useState("자사몰");   // 사이클 다이어그램 채널
   const [srcOpen,setSrcOpen]=useState(null);      // 채널 카드 소스 상세 펼침
   const [showCount,setShowCount]=useState(40);
+  const [mallList,setMallList]=useState({});      // normName → 자사몰(카페24) 정가 — 채널 공통 정가 기준
   const cardRef=useRef(null);
 
   // ── 데이터 로드: 최신 inventory_snapshot + reorder_recommendations
@@ -14639,7 +14640,19 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         if(data.length<PAGE) break;
         from+=PAGE;
       }}
-    setInvRows(inv);setReorderRows(reo);setLoading(false);
+    // 자사몰(카페24) 정가 — mall_calc_last_file의 파싱 상품(JSON: {code,name,selling,supply})에서 정상가 맵
+    let mall={};
+    try{
+      const{data:mf}=await db.from("mall_calc_last_file").select("content_b64").eq("id",1).maybeSingle();
+      if(mf?.content_b64){
+        const prods=JSON.parse(mf.content_b64);
+        if(Array.isArray(prods)) prods.forEach(p=>{
+          const nz=normProdName(p?.name); const sell=Number(p?.selling)||0;
+          if(nz&&sell>0&&!mall[nz]) mall[nz]=sell; // 정규화명 → 자사몰 정가
+        });
+      }
+    }catch{/* 자사몰 정가 없으면 인벤토리 정가로 폴백 */}
+    setInvRows(inv);setReorderRows(reo);setMallList(mall);setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
 
@@ -14685,7 +14698,9 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
     reorderRows.forEach(r=>{reoMap[rkey(r.reorder_product_name,r.reorder_option_name)]=r;});
     const out=invRows.map(r=>{
       const k=rkey(r.product_name,r.option_name);
-      const list=r.selling_price||0, supply=r.supply_price||0;
+      // 정가는 채널 공통으로 자사몰(카페24) 정가 우선 사용(29CM 정가 오입 보정), 없으면 인벤토리 정가
+      const mallPrice=mallList[normProdName(r.product_name)]||0;
+      const list=mallPrice>0?mallPrice:(r.selling_price||0), supply=r.supply_price||0;
       const reo=reoMap[k];
       const qty4w=reo?reo.reorder_monthly_sales||0:0;   // 최근 4주 판매수량
       const qtyDeliv=r.cumulative_delivery_qty||0;
@@ -14701,7 +14716,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
     const topCut=sortedQty[Math.floor(sortedQty.length*0.2)]?.qty4w||0; // 상위 20% 컷
     out.forEach(p=>{p.steady=(p.aging==="HEALTHY"&&p.qty4w>0&&p.qty4w>=topCut);});
     return out;
-  },[invRows,reorderRows,inboundBySku]);
+  },[invRows,reorderRows,inboundBySku,mallList]);
 
   // ── 입고 흐름 요약 (최근 입고일별 입고 수량 추이)
   const inboundFlow=useMemo(()=>{
@@ -14774,7 +14789,8 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const fixedCostN=parseInt(String(fixedCost).replace(/[^0-9]/g,""),10)||0;
   const reqMargin=targetProfitN+fixedCostN; // 필요 총마진(목표 이익금 + 월 고정금액)
   const currentTotalMargin=GMV_CHANNELS.reduce((s,ch)=>s+(recentActuals.chTotals[ch]?.margin||0),0);
-  const targetMultiplier=currentTotalMargin>0?reqMargin/currentTotalMargin:1; // 현재 이익금 대비 목표 배수
+  // 목표 배수 = 목표 이익금 ÷ 현재 이익금 (월 고정금액은 필요 총마진·최종 이익금에만 반영, 배수엔 미포함)
+  const targetMultiplier=(currentTotalMargin>0&&targetProfitN>0)?targetProfitN/currentTotalMargin:1;
   // 최근 한달 재입고비(현재) = Σ(최근 30일 입고 품목 수량 × 공급가) — 입고(stock_uploads) 기준
   const currentTotalRestock=useMemo(()=>{
     if(!(stocks||[]).length) return 0;
@@ -14958,7 +14974,7 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
             </button>
             {srcOpen===c.ch&&(
               <div style={{marginTop:6,padding:"8px 10px",background:DC.bg,borderRadius:6,fontSize:10,color:DC.sub,lineHeight:1.7}}>
-                <div style={{color:DC.dim,marginBottom:3}}>출처: 주문·배송(이지어드민) status=배송, 최근 30일 · 정가/공급가=인벤토리 스냅샷</div>
+                <div style={{color:DC.dim,marginBottom:3}}>출처: 주문·배송(이지어드민) status=배송, 최근 30일 · 정가=자사몰(카페24) 정가 우선(없으면 인벤토리) · 공급가=인벤토리</div>
                 <div>실판매 매출 = Σ(판매가×수량) = <b>{won(c.curRev)}</b> · 판매수량 = <b>{(recentActuals.chTotals[c.ch]?.qty||0).toLocaleString()}개</b></div>
                 <div>정가 GMV = Σ(정가×수량) = <b>{won(c.listGmv)}</b></div>
                 <div>현재 세일율 = 1 − (실판매 ÷ 정가GMV) = 1 − ({won(c.curRev)} ÷ {won(c.listGmv)}) = <b>{c.curRate==null?"—":`${c.curRate}%`}</b></div>
