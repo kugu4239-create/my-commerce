@@ -14775,6 +14775,22 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
   const reqMargin=targetProfitN+fixedCostN; // 필요 총마진(목표 이익금 + 월 고정금액)
   const currentTotalMargin=GMV_CHANNELS.reduce((s,ch)=>s+(recentActuals.chTotals[ch]?.margin||0),0);
   const targetMultiplier=currentTotalMargin>0?reqMargin/currentTotalMargin:1; // 현재 이익금 대비 목표 배수
+  // 최근 한달 재입고비(현재) = Σ(최근 30일 입고 품목 수량 × 공급가) — 입고(stock_uploads) 기준
+  const currentTotalRestock=useMemo(()=>{
+    if(!(stocks||[]).length) return 0;
+    const latest=stocks.reduce((mx,r)=>(r.upload_date||"")>mx?r.upload_date:mx,"");
+    if(!latest) return 0;
+    const from=new Date(new Date(latest+"T00:00:00").getTime()-29*86400000).toISOString().slice(0,10);
+    const supplyByKey={};products.forEach(p=>{supplyByKey[p.key]=p.supply;});
+    let r=0;
+    stocks.forEach(s=>{
+      const d=s.upload_date||""; if(d<from||d>latest) return;
+      const k=normProdName(s.product_name)+"|"+String(s.option_name||"").trim().toLowerCase();
+      const supply=supplyByKey[k]||0;
+      r+=supply*(s.qty||0); // 입고 수량 × 공급가 (재입고 매입원가)
+    });
+    return r;
+  },[stocks,products]);
 
   // ── 채널별: 현재 세일율 → 목표 매출(자동) → 권장 세일율 → Δ
   const channelCalc=useMemo(()=>{
@@ -14873,7 +14889,8 @@ function GmvCalculator({orders=[],revenues=[],storeSales=[],stocks=[]}){
         </div>
         <div style={{fontSize:11,color:DC.dim,marginTop:10,lineHeight:1.7}}>
           필요 총마진 = 목표 이익금 + 월 고정금액 = <b style={{color:DC.sub}}>{won(reqMargin)}</b><br/>
-          현재 이익금(최근 30일 실판매 마진) <b style={{color:DC.sub}}>{won(currentTotalMargin)}</b> · 목표 배수 <b style={{color:MUTE_BLUE}}>×{targetMultiplier.toFixed(2)}</b>
+          현재 이익금(최근 30일 실판매 마진) <b style={{color:DC.sub}}>{won(currentTotalMargin)}</b> · 목표 배수 <b style={{color:MUTE_BLUE}}>×{targetMultiplier.toFixed(2)}</b><br/>
+          최근 한달 재입고비(입고 수량 × 공급가) <b style={{color:"#C8A87B"}}>{won(currentTotalRestock)}</b>
           {" → 채널별 목표 매출 = 현재 매출 × 배수 (점유율 유지)"}
           {currentTotalMargin<=0&&<span style={{color:"#C8A87B"}}> · ⚠ 최근 실적 마진이 0이라 배수 산출 불가(데이터 보강 필요)</span>}
         </div>
