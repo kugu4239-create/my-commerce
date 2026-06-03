@@ -4015,7 +4015,7 @@ function normalizePlan(p){
 function computeDiscountMatrix(plan){
   const p=normalizePlan(plan);
   const groups=p.products.rows.filter(r=>(r.group||"").trim()||(+r.rate||0)>0)
-    .map(r=>({group:(r.group||"").trim()||"전체",rate:+r.rate||0,markup:r.markup?parseFloat(r.markup):null}));
+    .map(r=>({group:(r.group||"").trim()||"전체",rate:+r.rate||0,markup:r.markup?parseFloat(r.markup):null,products:Array.isArray(r.products)?r.products:[],cpn:r.cpn||0}));
   const coupons=p.coupons.filter(c=>(+c.rate||0)>0||(c.name||"").trim());
   const fin=(dp,factor)=>Math.round((1-(1-dp/100)*factor)*1000)/10;
   const exOf=c=>Array.isArray(c.excludeGroups)?c.excludeGroups:[];
@@ -4085,7 +4085,7 @@ function computeDiscountMatrix(plan){
       const factor=idxs.reduce((f,idx)=>f*(1-(+coupons[idx].rate||0)/100),1);
       cells[col.key]=fin(g.rate,factor);
     });
-    return {group:g.group,rate:g.rate,markup:g.markup,cells};
+    return {group:g.group,rate:g.rate,markup:g.markup,products:g.products,cpn:g.cpn,cells};
   });
 
   return {groups,coupons,cols,rows,hasGroup:groups.length>0,hasCoupon:coupons.length>0};
@@ -4095,6 +4095,8 @@ function computeDiscountMatrix(plan){
 function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   const m=computeDiscountMatrix(plan);
   const [localCircled,setLocalCircled]=useState(()=>new Set());
+  // 묶음 상품 보기 — 저장된 매트릭스에서도 클릭 시 인라인 펼침
+  const [bundleOpenIdx,setBundleOpenIdx]=useState(null);
   if(!m.hasGroup) return null;
   // 값 클릭 시 파란 원 강조 토글. onToggleCircle 있으면 제어형(저장·공유), 없으면 로컬
   const controlled=!!onToggleCircle;
@@ -4182,9 +4184,22 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
           </tr>
         </thead>
         <tbody>
-          {m.rows.map((r,i)=>(
-            <tr key={i}>
-              <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis"}} title={r.markup!=null?`${r.group} · 시나리오 적용 마크업 ×${r.markup.toFixed(2)}`:r.group}>
+          {m.rows.map((r,i)=>{
+            const products=Array.isArray(r.products)?r.products:[];
+            const hasBundle=products.length>0;
+            const isOpen=bundleOpenIdx===i;
+            return (<React.Fragment key={i}>
+            <tr>
+              <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis"}} title={r.markup!=null?`${r.group} · 시나리오 적용 마크업 ×${r.markup.toFixed(2)}`:r.group}>
+                {hasBundle&&(
+                  <button onClick={()=>setBundleOpenIdx(isOpen?null:i)}
+                    title={`묶음 상품 ${products.length}개 보기`}
+                    style={{background:isOpen?D.black:"transparent",color:isOpen?"#fff":D.text,
+                      border:`1px solid ${D.borderMid}`,borderRadius:4,
+                      padding:"1px 6px",fontSize:compact?9:10,cursor:"pointer",fontWeight:600,marginRight:6}}>
+                    {isOpen?"▾":"▸"} 묶음 {products.length}
+                  </button>
+                )}
                 {r.group}
                 {r.markup!=null&&!isNaN(r.markup)&&(
                   <span style={{marginLeft:5,fontSize:compact?9:10,fontWeight:700}}>
@@ -4230,7 +4245,67 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                 </td>;
               })}
             </tr>
-          ))}
+            {isOpen&&hasBundle&&(
+              <tr>
+                <td colSpan={1+m.cols.length} style={{padding:"0 6px 8px",background:D.surfaceAlt}}>
+                  <div style={{margin:"4px 0",border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
+                    <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
+                      display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}</span>
+                      <button onClick={()=>setBundleOpenIdx(null)}
+                        style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+                    </div>
+                    <div style={{maxHeight:280,overflow:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                        <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
+                          {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
+                            <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {products.map((p,j)=>{
+                            const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
+                            const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
+                            return (
+                              <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
+                                <td title={p.name} style={{padding:"3px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{won(p.list)}</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{r.cpn||0}%</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>{p.baseDisc||0}%</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:600}}>{won(p.basePrice)}</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:700}}>{p.finalDisc||0}%</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.selfBurden||0)>0?D.red:D.textMeta}}>
+                                  {(p.selfBurden||0)>0?`−${won(p.selfBurden)}`:"—"}
+                                </td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
+                                  {(p.channelBurden||0)>0?`+${won(p.channelBurden)}`:"—"}
+                                </td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>{won(p.net||0)}</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.supply||0)>0?D.text:D.textMeta}}>
+                                  {(p.supply||0)>0?won(sv):"—"}
+                                </td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600,
+                                  color:(p.supply||0)>0?((p.margin||0)>=0?D.text:D.red):D.textMeta}}>
+                                  {(p.supply||0)>0?won(p.margin||0):"—"}
+                                </td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:700,
+                                  color:(p.supply||0)>0?((p.markup||0)>3?D.green:D.red):D.textMeta}}>
+                                  {(p.supply||0)>0?`×${(p.markup||0).toFixed(2)}`:"—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
+            </React.Fragment>);
+          })}
         </tbody>
       </table>
     </div>
