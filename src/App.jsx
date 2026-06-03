@@ -3959,7 +3959,7 @@ function SubmitEodPicker({value,onChange}){
 //     coupons:  [{name,rate,start,end,stack}] }   // stack=true → 중복 적용(곱셈 누적)
 // 구버전 호환 (products 가 배열인 경우 첫 행의 start/end 를 공통 period 로 마이그레이트)
 // ─────────────────────────────────────────────
-function emptyProductRow(){return{group:"",rate:"",markup:"",products:[]};}
+function emptyProductRow(){return{group:"",rate:"",markup:"",cpn:0,products:[]};}
 // 쿠폰 타입 모델 — same-type 끼리 중복 불가, share 는 누구와도 중복 불가, 그 외 cross-type 만 누적
 const COUPON_TYPES=[
   {key:"product",label:"상품 쿠폰",  short:"상품",   color:D.blue,  bg:`${D.blue}10`,  border:`${D.blue}55`},
@@ -3990,7 +3990,7 @@ function normalizePlan(p){
     return{
       products:{
         period:{start:p.products.period?.start||"",end:p.products.period?.end||""},
-        rows:p.products.rows.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",products:Array.isArray(r.products)?r.products:[]})),
+        rows:p.products.rows.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",cpn:r.cpn||0,products:Array.isArray(r.products)?r.products:[]})),
       },
       coupons,
     };
@@ -4001,7 +4001,7 @@ function normalizePlan(p){
     return{
       products:{
         period:{start:first?.start||"",end:first?.end||""},
-        rows:p.products.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",products:Array.isArray(r.products)?r.products:[]})),
+        rows:p.products.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",cpn:r.cpn||0,products:Array.isArray(r.products)?r.products:[]})),
       },
       coupons,
     };
@@ -4409,34 +4409,52 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
             })}
           </tbody>
         </table>
-        {bundleViewIdx!=null&&Array.isArray(productRows[bundleViewIdx]?.products)&&productRows[bundleViewIdx].products.length>0&&(
-          <div style={{marginTop:8,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",maxWidth:520}}>
+        {bundleViewIdx!=null&&Array.isArray(productRows[bundleViewIdx]?.products)&&productRows[bundleViewIdx].products.length>0&&(()=>{
+          const r=productRows[bundleViewIdx];
+          const cpnRow=Number(r.cpn||0)||0;
+          const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
+          return (
+          <div style={{marginTop:8,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
             <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
               display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span>{productRows[bundleViewIdx].group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {productRows[bundleViewIdx].products.length}개</span>
+              <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}</span>
               <button onClick={()=>setBundleViewIdx(null)}
                 style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
             </div>
-            <div style={{maxHeight:240,overflow:"auto"}}>
+            <div style={{maxHeight:280,overflow:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                <thead><tr style={{background:D.surface,color:D.textMeta}}>
-                  <th style={{padding:"4px 8px",textAlign:"left",fontWeight:500,position:"sticky",top:0,background:D.surface}}>상품명</th>
-                  <th style={{padding:"4px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>정가</th>
-                  <th style={{padding:"4px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>기본가</th>
-                  <th style={{padding:"4px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>최종가</th>
-                  <th style={{padding:"4px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>최종할인</th>
-                  <th style={{padding:"4px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>마크업</th>
+                <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
+                  {["상품명","정가","쿠폰율","기본 할인율","기본 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
+                    <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
                 </tr></thead>
                 <tbody>
-                  {productRows[bundleViewIdx].products.map((p,j)=>{
-                    const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
+                  {r.products.map((p,j)=>{
+                    const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
                     return (
                       <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
-                        <td title={p.name} style={{padding:"3px 8px",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
+                        <td title={p.name} style={{padding:"3px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{won(p.list)}</td>
-                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue}}>{won(p.basePrice)}</td>
-                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{won(p.finalPrice)}</td>
-                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,fontWeight:600}}>{(p.finalDisc||0)}%</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{cpnRow}%</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>{p.baseDisc||0}%</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:600}}>{won(p.basePrice)}</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:700}}>{p.finalDisc||0}%</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.selfBurden||0)>0?D.red:D.textMeta}}>
+                          {(p.selfBurden||0)>0?`−${won(p.selfBurden)}`:"—"}
+                        </td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
+                          {(p.channelBurden||0)>0?`+${won(p.channelBurden)}`:"—"}
+                        </td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>{won(p.net||0)}</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.supply||0)>0?D.text:D.textMeta}}>
+                          {(p.supply||0)>0?won(sv):"—"}
+                        </td>
+                        <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600,
+                          color:(p.supply||0)>0?((p.margin||0)>=0?D.text:D.red):D.textMeta}}>
+                          {(p.supply||0)>0?won(p.margin||0):"—"}
+                        </td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:700,
                           color:(p.supply||0)>0?((p.markup||0)>3?D.green:D.red):D.textMeta}}>
                           {(p.supply||0)>0?`×${(p.markup||0).toFixed(2)}`:"—"}
@@ -4448,7 +4466,8 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
               </table>
             </div>
           </div>
-        )}
+          );
+        })()}
         <button onClick={()=>setProductRows([...productRows,emptyProductRow()])}
           style={{marginTop:6,background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
             padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 행 추가</button>
@@ -7689,30 +7708,47 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 </tr>
                                 {expandedGroup===g.baseDisc&&(
                                   <tr><td colSpan={5} style={{padding:"0 10px 10px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
-                                    <div style={{maxHeight:240,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
+                                    <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                                        <thead><tr style={{background:D.surface,color:D.textMeta}}>
-                                          <th style={{padding:"5px 8px",textAlign:"left",fontWeight:500,position:"sticky",top:0,background:D.surface}}>상품명</th>
-                                          <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>정가</th>
-                                          <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>기본가</th>
-                                          <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>최종가</th>
-                                          <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>최종할인</th>
-                                          <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,position:"sticky",top:0,background:D.surface}}>마크업</th>
+                                        <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
+                                          {["상품명","정가","쿠폰율","기본 할인율","기본 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
+                                            <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                                          ))}
                                         </tr></thead>
                                         <tbody>
-                                          {g.products.map((p,j)=>(
+                                          {g.products.map((p,j)=>{
+                                            const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
+                                            return (
                                             <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
                                               <td title={p.name} style={{padding:"4px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(p.list)}</td>
-                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue}}>₩{wonFmt(p.basePrice)}</td>
-                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(p.finalPrice)}</td>
-                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,fontWeight:600}}>{p.finalDisc}%</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{cpn}%</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>{p.baseDisc}%</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:600}}>₩{wonFmt(p.basePrice)}</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>₩{wonFmt(p.finalPrice)}</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:700}}>{p.finalDisc}%</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.selfBurden||0)>0?D.red:D.textMeta}}>
+                                                {(p.selfBurden||0)>0?`−₩${wonFmt(p.selfBurden)}`:"—"}
+                                              </td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−₩{wonFmt(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
+                                                {(p.channelBurden||0)>0?`+₩${wonFmt(p.channelBurden)}`:"—"}
+                                              </td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>₩{wonFmt(p.net||0)}</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:p.supply>0?D.text:D.textMeta}}>
+                                                {p.supply>0?`₩${wonFmt(sv)}`:"—"}
+                                              </td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600,
+                                                color:p.supply>0?((p.margin||0)>=0?D.text:D.red):D.textMeta}}>
+                                                {p.supply>0?`₩${wonFmt(p.margin||0)}`:"—"}
+                                              </td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:700,
                                                 color:p.supply>0?((p.markup||0)>3?D.green:D.red):D.textMeta}}>
                                                 {p.supply>0?`×${(p.markup||0).toFixed(2)}`:"—"}
                                               </td>
                                             </tr>
-                                          ))}
+                                            );
+                                          })}
                                         </tbody>
                                       </table>
                                     </div>
@@ -7726,17 +7762,23 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                         {onCreatePromo&&(
                           <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
                             <button onClick={()=>{
-                              // 기본 세일율 그룹 → products.rows (묶음 상품 리스트 포함)
+                              // 기본 세일율 그룹 → products.rows (묶음 상품 + 계산기 모든 필드 보존)
                               const productRows=rows.map(g=>{
                                 const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
                                 return {
                                   group:`기본 세일율 ${g.baseDisc}%`,
                                   rate:String(g.baseDisc),
                                   markup:avgM!=null?String(avgM):"",
+                                  cpn,
                                   products:g.products.map(p=>({
                                     code:p.code||"",name:p.name||"",
-                                    list:p.list||0,basePrice:p.basePrice||0,finalPrice:p.finalPrice||0,
-                                    finalDisc:p.finalDisc||0,markup:p.markup||0,supply:p.supply||0,
+                                    list:p.list||0,baseDisc:p.baseDisc||0,
+                                    basePrice:p.basePrice||0,finalPrice:p.finalPrice||0,
+                                    finalDisc:p.finalDisc||0,markup:p.markup||0,
+                                    supply:p.supply||0,supplyIncVat:p.supplyIncVat||Math.round((p.supply||0)*1.1),
+                                    selfBurden:p.selfBurden||0,channelBurden:p.channelBurden||0,
+                                    fee:p.fee||0,feeRate:p.feeRate||0,
+                                    net:p.net||0,margin:p.margin||0,
                                   })),
                                 };
                               });
