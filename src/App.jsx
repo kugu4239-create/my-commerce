@@ -6623,6 +6623,30 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       return {...r,...calc,manualBase:undefined,supplyIncVat,...m};
     }));
   };
+  // 전체 기본 할인율 일괄 적용/복귀
+  const applyAllBaseDisc=(newBase)=>{
+    const v=Math.max(0,Math.min(100,Number(newBase)||0));
+    setProcessed(prev=>prev.map(r=>{
+      const basePrice=Math.round(r.list*(1-v/100)/10)*10;
+      const supply=r.supply||0;
+      const supplyIncVat=Math.round(supply*1.1);
+      const m=computeMargin(r.list,v,selectedScenario.items||[],supply);
+      const finalDisc=r.list>0?Math.round((1-m.finalPrice/r.list)*1000)/10:0;
+      return {...r,baseDisc:v,basePrice,manualBase:v,supplyIncVat,finalDisc,...m};
+    }));
+  };
+  const resetAllBaseDisc=()=>{
+    setProcessed(prev=>prev.map(r=>{
+      const s=r.slot;
+      const calc=calcReverse(r.list,s.disc,cpn);
+      const supply=r.supply||0;
+      const supplyIncVat=Math.round(supply*1.1);
+      const m=computeMargin(r.list,calc.baseDisc,selectedScenario.items||[],supply);
+      return {...r,...calc,manualBase:undefined,supplyIncVat,...m};
+    }));
+  };
+  // 일괄 적용 입력값
+  const [bulkBaseDisc,setBulkBaseDisc]=useState("");
   // 예시 파일 저장/로드 — 최근 업로드 1개를 Supabase 에 보관해 다른 세션에서도 즉시 미리보기
   const saveExampleFile=async file=>{
     try{
@@ -7407,9 +7431,10 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     const avg=matched.length>0?matched.reduce((s,r)=>s+(r.markup||0),0)/matched.length:null;
                     const avgBase=processed.length>0?processed.reduce((s,r)=>s+(r.baseDisc||0),0)/processed.length:0;
                     const avgFinal=processed.length>0?processed.reduce((s,r)=>s+(r.finalDisc||0),0)/processed.length:0;
+                    const anyManual=processed.some(r=>r.manualBase!=null);
                     return (
                       <div style={{margin:"0",padding:"10px 14px",background:D.surfaceAlt,borderRadius:6,
-                        display:"flex",alignItems:"center",gap:18,flexWrap:"wrap",fontSize:11,color:D.text,
+                        display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",fontSize:11,color:D.text,
                         position:"sticky",top:61,zIndex:4,border:`1px solid ${D.borderMid}`}}>
                         <span style={{display:"inline-flex",alignItems:"baseline",gap:6}}>
                           <span style={{fontWeight:700,color:D.black}}>평균 마크업</span>
@@ -7417,14 +7442,43 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             ?<span style={{color:D.textMeta}}>공급가 매칭 행 없음</span>
                             :<span style={{fontSize:15,fontWeight:800,color:avg>3?D.green:D.red}}>×{avg.toFixed(2)}</span>}
                         </span>
-                        {avg!=null&&<span style={{color:D.textMeta}}>· 공급가 매칭 {matched.length.toLocaleString()}/{processed.length.toLocaleString()}건 기준</span>}
-                        <span style={{color:D.textMeta}}>· 평균 기본할인 <b style={{color:D.text}}>{(Math.round(avgBase*10)/10)}%</b> · 평균 최종할인 <b style={{color:D.text}}>{(Math.round(avgFinal*10)/10)}%</b></span>
-                        <span style={{marginLeft:"auto",fontSize:11,color:D.textMeta}}>할인율 셀 수정 시 실시간 반영</span>
+                        {avg!=null&&<span style={{color:D.textMeta}}>· 매칭 {matched.length.toLocaleString()}/{processed.length.toLocaleString()}건</span>}
+                        <span style={{color:D.textMeta}}>· 평균 기본 <b style={{color:D.text}}>{(Math.round(avgBase*10)/10)}%</b> · 평균 최종 <b style={{color:D.text}}>{(Math.round(avgFinal*10)/10)}%</b></span>
+                        <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5}}>
+                          <span style={{fontSize:11,color:D.textMeta,fontWeight:600}}>기본 세일율 일괄:</span>
+                          {[10,15,20,25,30,40].map(v=>(
+                            <button key={v} onClick={()=>applyAllBaseDisc(v)}
+                              style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:4,
+                                padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub,fontWeight:600}}>
+                              {v}%
+                            </button>
+                          ))}
+                          <input type="number" min="0" max="100" step="0.1"
+                            value={bulkBaseDisc} onChange={e=>setBulkBaseDisc(e.target.value)}
+                            onKeyDown={e=>{if(e.key==="Enter"&&bulkBaseDisc!==""){applyAllBaseDisc(bulkBaseDisc);setBulkBaseDisc("");}}}
+                            placeholder="직접" onWheel={e=>e.currentTarget.blur()}
+                            style={{width:44,padding:"3px 5px",fontSize:11,textAlign:"right",
+                              border:`1px solid ${D.borderMid}`,borderRadius:4,background:D.surface,color:D.text,fontFamily:"inherit"}}/>
+                          <button onClick={()=>{if(bulkBaseDisc!==""){applyAllBaseDisc(bulkBaseDisc);setBulkBaseDisc("");}}}
+                            disabled={bulkBaseDisc===""}
+                            style={{background:bulkBaseDisc!==""?D.black:D.surface,color:bulkBaseDisc!==""?"#fff":D.textMeta,
+                              border:`1px solid ${bulkBaseDisc!==""?D.black:D.border}`,borderRadius:4,
+                              padding:"3px 8px",fontSize:11,cursor:bulkBaseDisc!==""?"pointer":"default",fontWeight:700}}>
+                            적용
+                          </button>
+                          {anyManual&&(
+                            <button onClick={resetAllBaseDisc} title="모든 행을 역산값으로 복귀"
+                              style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:4,
+                                padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textMeta,fontWeight:600}}>
+                              ↻ 복귀
+                            </button>
+                          )}
+                        </span>
                       </div>
                     );
                   })()}
                   {processed&&processed.length>0&&(
-                    <div style={{overflowX:"auto",border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
+                    <div style={{border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
                           {["상품명","정가 (E열)","구간","P75 목표","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
