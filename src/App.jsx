@@ -64,6 +64,7 @@ const D = {
 const CH_COLOR={"자사몰":"#7EADD4","29CM":"#7EB89E","무신사":"#9E92C8"};
 const chColor=ch=>CH_COLOR[ch]||"#A8B8C8";
 const MUTE_BLUE="#5E81AC"; // 이익률(베타) 뱃지·모달 뮤트 블루 테마
+const MUTE_GREEN="#7CA989"; // 상승 뱃지 등 뮤트 그린 테마
 
 // ─────────────────────────────────────────────
 // UTILS
@@ -6107,8 +6108,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       {ichg!=null&&ichg>=20&&(
                         <span data-capture-hide title={`직전 동일기간 대비 매출 +${ichg.toFixed(1)}%`}
                           style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
-                            width:18,height:18,borderRadius:"50%",background:D.blue,color:"#fff",
-                            fontSize:12,fontWeight:800,lineHeight:1,flexShrink:0}}>!</span>
+                            width:18,height:18,borderRadius:"50%",background:MUTE_GREEN,color:"#fff",
+                            fontSize:13,fontWeight:800,lineHeight:1,flexShrink:0}}>⤴</span>
                       )}
                       {canImpact&&p.platform==="자사몰"&&(
                         <button onClick={()=>setProfitModal(p)} data-capture-hide title="마진율 계산 (베타 테스트 중)"
