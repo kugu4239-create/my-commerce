@@ -4193,16 +4193,16 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
             return (<React.Fragment key={i}>
             <tr>
               <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis"}} title={r.markup!=null?`${r.group} · 시나리오 적용 마크업 ×${r.markup.toFixed(2)}`:r.group}>
+                {r.group}
                 {hasBundle&&(
                   <button onClick={()=>setBundleOpenIdx(isOpen?null:i)}
                     title={`묶음 상품 ${products.length}개 보기`}
-                    style={{background:isOpen?D.black:"transparent",color:isOpen?"#fff":D.text,
-                      border:`1px solid ${D.borderMid}`,borderRadius:4,
-                      padding:"1px 6px",fontSize:compact?9:10,cursor:"pointer",fontWeight:600,marginRight:6}}>
+                    style={{background:isOpen?"#fff":D.black,color:isOpen?D.black:"#fff",
+                      border:`1px solid ${D.black}`,borderRadius:4,
+                      padding:"1px 6px",fontSize:compact?9:10,cursor:"pointer",fontWeight:700,marginLeft:6}}>
                     {isOpen?"▾":"▸"} 묶음 {products.length}
                   </button>
                 )}
-                {r.group}
               </td>
               <td style={{...cell,textAlign:"center",fontWeight:700}}>
                 {r.markup!=null&&!isNaN(r.markup)
