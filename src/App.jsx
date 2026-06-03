@@ -4184,11 +4184,12 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
         <tbody>
           {m.rows.map((r,i)=>(
             <tr key={i}>
-              <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis"}} title={r.markup!=null?`${r.group} · 평균 마크업 ×${r.markup.toFixed(2)}`:r.group}>
+              <td style={{...cell,textAlign:"left",color:D.textSub,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis"}} title={r.markup!=null?`${r.group} · 시나리오 적용 마크업 ×${r.markup.toFixed(2)}`:r.group}>
                 {r.group}
                 {r.markup!=null&&!isNaN(r.markup)&&(
-                  <span style={{marginLeft:5,fontSize:compact?9:10,fontWeight:700,color:r.markup<=3?D.red:D.green}}>
-                    ×{r.markup.toFixed(2)}
+                  <span style={{marginLeft:5,fontSize:compact?9:10,fontWeight:700}}>
+                    <span style={{color:D.green,fontWeight:600,marginRight:3}}>시나리오 적용 마크업</span>
+                    <span style={{color:r.markup<=3?D.red:D.green}}>×{r.markup.toFixed(2)}</span>
                   </span>
                 )}
               </td>
@@ -4340,7 +4341,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
             <th style={{...head,width:22}}/>
             <th style={{...head,width:"42%"}}>상품군</th>
             <th style={{...head,width:"20%"}}>할인율(%)</th>
-            <th style={{...head,width:"26%"}} title="실수령 ÷ 원가 · ×3 이하 적색">평균 마크업</th>
+            <th style={{...head,width:"26%",color:D.green}} title="시나리오(프런트 할인×쿠폰) 적용 후 실수령 ÷ 원가 · ×3 이하 적색">시나리오 적용 마크업</th>
             <th style={{...head,width:"10%"}}/>
           </tr></thead>
           <tbody>
