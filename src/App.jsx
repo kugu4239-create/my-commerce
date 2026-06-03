@@ -7922,7 +7922,7 @@ function OwnMallSaleCalcModal({ onClose }){
                 <span style={{fontSize:12,fontWeight:700,color:D.black}}>할인율</span>
                 <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마크업 실시간 반영</span>
                 <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>전체 일괄:</span>
-                {[10,15,20,30].map(v=>(
+                {[0,10,15,20,30].map(v=>(
                   <button key={v} onClick={()=>setAllRates(v)}
                     style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                 ))}
