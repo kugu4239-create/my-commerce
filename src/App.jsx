@@ -4424,7 +4424,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
             <div style={{maxHeight:280,overflow:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                  {["상품명","정가","쿠폰율","기본 할인율","기본 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
+                  {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
                     <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr></thead>
@@ -6402,7 +6402,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   },[listPrice,cpn,singleManualBase]);
   // 부담 주체별 차감액 계산 → 자사 매출 → 수수료 → 마진
   // 프런트 할인(기본 할인율)은 항상 자사부담. 각 쿠폰은 burden(self/channel) 혹은 share 의 shareRate(채널부담률) 에 따라 분배.
-  // 정산 모델 (해석 B + 수수료 기본 판매가 기준): 수수료는 기본 판매가 기준 부과,
+  // 정산 모델 (해석 B + 수수료 프런트 판매가 기준): 수수료는 프런트 판매가 기준 부과,
   //                      채널 보전(channelBurden) 은 수수료 없이 그대로 정산에 가산.
   //                      net = finalPrice − fee + channelBurden
   // 부가세 처리 (옵션 B · 양쪽 VAT 포함): 인벤토리 공급가는 세전(공급가액) 이므로
@@ -6427,10 +6427,10 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     });
     // 채널 수수료율 = 28% − 기본 세일율(baseDisc) 10% 단위마다 -1%p (최소 0)
     const fr=Math.max(0,28-Math.floor(baseDisc/10));
-    const basePriceR=Math.round(list*(1-baseDisc/100)/10)*10; // 기본 판매가 (쿠폰 적용 전)
+    const basePriceR=Math.round(list*(1-baseDisc/100)/10)*10; // 프런트 판매가 (쿠폰 적용 전)
     const finalPriceR=Math.round(priceAfter/10)*10;       // 고객 결제액 (10원 단위)
     const channelBurdenR=Math.round(channelBurden/10)*10; // 채널 보전 (10원 단위)
-    const fee=Math.round(basePriceR*(fr/100)/10)*10;      // 수수료는 기본 판매가 기준
+    const fee=Math.round(basePriceR*(fr/100)/10)*10;      // 수수료는 프런트 판매가 기준
     const net=finalPriceR-fee+channelBurdenR;             // 자사 정산
     const supplyIncVat=Math.round((supply||0)*1.1);       // 공급가 (세포) = 인벤토리 공급가액 × 1.1
     const margin=net-supplyIncVat;
@@ -6662,7 +6662,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     });
   },[cpn,supplyOf,computeMargin,selectedScenario]);
 
-  // 사용자가 기본 할인율을 직접 수정하면 기본 판매가·최종가·원가율 즉시 재계산
+  // 사용자가 기본 할인율을 직접 수정하면 프런트 판매가·최종가·원가율 즉시 재계산
   const updateBaseDisc=(rowIdx,newBase)=>{
     const v=Math.max(0,Math.min(100,Number(newBase)||0));
     setProcessed(prev=>prev.map((r,i)=>{
@@ -6879,7 +6879,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 {[
                   {
                     title:"29CM 지원 쿠폰 15%",
-                    detail:"장바구니 쿠폰 15% 단독 · 채널 전액 부담 (29CM 채널 발행 쿠폰이므로 자사 부담 없음). 기본 판매가에서 15% 차감 후 결제, 차감액은 정산 시 채널이 보전합니다.",
+                    detail:"장바구니 쿠폰 15% 단독 · 채널 전액 부담 (29CM 채널 발행 쿠폰이므로 자사 부담 없음). 프런트 판매가에서 15% 차감 후 결제, 차감액은 정산 시 채널이 보전합니다.",
                     apply:()=>{
                       setCoupon(15);setPrimaryType("cart");setPrimaryBurden("channel");setPrimaryShareRate(50);
                       setStackCoupons([]);setScenarioIdx(0);
@@ -7076,7 +7076,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
               <div style={{marginTop:10,fontSize:11,lineHeight:1.65,color:D.text}}>
                 <b>할인율 올림 규칙</b> — 29CM 할인 규정상 10% 단위마다 판매수수료가 1%p 낮아지므로,
                 기본 할인율의 <b>일의 자리가 6~9이면 다음 10% 단위로 올림</b>합니다 (예: 7%→10%, 16~19%→20%).
-                올림된 할인율로 기본 판매가·최종 노출가를 재계산합니다.
+                올림된 할인율로 프런트 판매가·최종 노출가를 재계산합니다.
               </div>
             </div>
           </details>
@@ -7089,8 +7089,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
 기본 할인율       = 1 − (1 − P75/100) ÷ (1 − 쿠폰율/100)
   └ 일의 자리 6~9면 다음 10%로 올림 (예: 7→10%, 16~19→20%)
     (29CM 규정: 10% 단위마다 판매수수료 1%p 절감)
-기본 판매가 (I열) = 정가 × (1 − 기본 할인율/100)
-최종 노출가       = 기본 판매가 × (1 − 쿠폰율/100)
+프런트 판매가 (I열) = 정가 × (1 − 기본 할인율/100)
+최종 노출가       = 프런트 판매가 × (1 − 쿠폰율/100)
 
 ※ 판매가는 10원 단위 반올림 (29CM 규정)
 ※ 올림 규칙 적용 시 올림된 할인율로 가격을 재계산하므로
@@ -7294,7 +7294,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                         </div>
                       )}
                       <div style={totalSty}>
-                        <span style={labelCol}><span>{N.basePrice} 기본 판매 가격</span></span>
+                        <span style={labelCol}><span>{N.basePrice} 프런트 판매가</span></span>
                         <span style={totalAmt}>₩{wonFmt(single.basePrice)}</span>
                         <span style={calcCol}>정상 가격에서 기본 할인을 차감한 노출 판매가입니다.</span>
                       </div>
@@ -7304,7 +7304,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                           : (s.c.burden==="channel"
                               ? `29CM 채널이 전액 부담합니다. 정산 시 채널 보전금액으로 이어집니다.`
                               : `자사가 전액 부담하는 할인액입니다.`);
-                        const refLabel=i===0?"기본 판매가":`직전 단계 판매가`;
+                        const refLabel=i===0?"프런트 판매가":`직전 단계 판매가`;
                         return (
                           <div key={`cs${i}`} style={rowSty}>
                             <span style={labelCol}>
@@ -7337,7 +7337,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.fee} 채널 수수료</span></span>
                         <span style={{...amtCol,color:D.red}}>−₩{wonFmt(m.fee)} <span style={{color:D.textMeta,fontWeight:400}}>({m.feeRate}%)</span></span>
-                        <span style={calcCol}>{N.basePrice} 기본 판매 가격 × {(m.feeRate/100).toFixed(2)} · 기본 28%에서 기본 할인율 10%당 1%p씩 차감되어 {m.feeRate}%가 부과됩니다.</span>
+                        <span style={calcCol}>{N.basePrice} 프런트 판매가 × {(m.feeRate/100).toFixed(2)} · 기본 28%에서 기본 할인율 10%당 1%p씩 차감되어 {m.feeRate}%가 부과됩니다.</span>
                       </div>
                       <div style={rowSty}>
                         <span style={labelCol}><span>{N.refund} 쿠폰 채널 보전 금액</span></span>
@@ -7464,7 +7464,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                 style={{border:`1px dashed ${dragOver?D.blue:D.borderMid}`,borderRadius:6,padding:22,textAlign:"center",
                   cursor:"pointer",background:dragOver?"#eef3ff":D.surface}}>
                 <div style={{margin:"0 0 4px",fontSize:11,color:D.text}}>29CM 일괄할인 v2 양식을 끌어다 놓거나 클릭해서 업로드</div>
-                <div style={{fontSize:11,color:D.textMeta}}>E열 정상가 기준 분류 → 쿠폰율 역산한 기본 판매가를 I열에 입력</div>
+                <div style={{fontSize:11,color:D.textMeta}}>E열 정상가 기준 분류 → 쿠폰율 역산한 프런트 판매가를 I열에 입력</div>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
                   onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);e.target.value="";}}/>
               </div>
@@ -7549,7 +7549,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                     <div style={{border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","쿠폰율","기본 할인율","기본 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
+                          {["상품명","정가 (E열)","쿠폰율","기본 할인율","프런트 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
                               position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>{h}</th>
@@ -7595,12 +7595,12 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 const baseMu=sv>0?Math.round(r.basePrice/sv*100)/100:null;
                                 const finalMu=sv>0?Math.round(r.finalPrice/sv*100)/100:null;
                                 return (<>
-                                  <td title={`기본 판매가 = 정상가 ₩${wonFmt(r.list)} × (1 − ${r.baseDisc}%) = ₩${wonFmt(r.basePrice)} (10원 단위 반올림) | I열에 입력되는 노출 판매가${baseMu!=null?` · 마크업 ×${baseMu.toFixed(2)} (기본가 ÷ 원가)`:""}`}
+                                  <td title={`프런트 판매가 = 정상가 ₩${wonFmt(r.list)} × (1 − ${r.baseDisc}%) = ₩${wonFmt(r.basePrice)} (10원 단위 반올림) | I열에 입력되는 노출 판매가${baseMu!=null?` · 마크업 ×${baseMu.toFixed(2)} (기본가 ÷ 원가)`:""}`}
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>
                                     ₩{wonFmt(r.basePrice)}
                                     {baseMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:baseMu>3?D.green:D.red}}>×{baseMu.toFixed(2)}</span>}
                                   </td>
-                                  <td title={`최종 노출가 = 기본 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
+                                  <td title={`최종 노출가 = 프런트 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
                                     ₩{wonFmt(r.finalPrice)}
                                     {finalMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:finalMu>3?D.green:D.red}}>×{finalMu.toFixed(2)}</span>}
@@ -7614,7 +7614,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.selfBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                 {(r.selfBurden||0)>0?`−₩${wonFmt(r.selfBurden)}`:"—"}
                               </td>
-                              <td title={`기본 판매가 ₩${wonFmt(r.basePrice||0)} × 수수료율 ${r.feeRate}% = ₩${wonFmt(r.fee||0)} | 수수료율 = max(0, 28% − floor(기본 할인율 ${r.baseDisc}% / 10)%) = ${r.feeRate}%`}
+                              <td title={`프런트 판매가 ₩${wonFmt(r.basePrice||0)} × 수수료율 ${r.feeRate}% = ₩${wonFmt(r.fee||0)} | 수수료율 = max(0, 28% − floor(기본 할인율 ${r.baseDisc}% / 10)%) = ${r.feeRate}%`}
                                 style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.red,whiteSpace:"nowrap"}}>
                                 −₩{wonFmt(r.fee||0)} <span style={{fontSize:11,color:D.textMeta}}>({r.feeRate}%)</span>
                               </td>
@@ -7711,7 +7711,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                     <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                                          {["상품명","정가","쿠폰율","기본 할인율","기본 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
+                                          {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
                                             <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                                           ))}
                                         </tr></thead>
