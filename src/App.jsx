@@ -4157,7 +4157,6 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
           {m.cols.some(c=>c.combo&&c.caseNum)&&(
             <tr>
               <th style={{padding:"0 0 4px",border:"none"}}/>
-              <th style={{padding:"0 0 4px",border:"none"}}/>
               {m.cols.map(c=>(
                 <th key={"case"+c.key} style={{padding:"0 8px 4px",border:"none",textAlign:"center"}}>
                   {c.combo&&c.caseNum&&(
@@ -4172,7 +4171,6 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
           {/* Row 2: 기존 컬럼 헤더 (디바이더는 이 행부터 시작) */}
           <tr>
             <th style={{...th,textAlign:"left"}}>상품군</th>
-            <th style={{...th,textAlign:"center",color:D.green}} title="시나리오(프런트 할인×쿠폰) 적용 후 실수령 ÷ 원가 · ×3 이하 적색">시나리오 적용 마크업</th>
             {m.cols.map((c,ci)=>(
               <th key={c.key} style={{...th,...divAt(c,ci)}} title={c.label}>
                 {c.name?(
@@ -4203,11 +4201,12 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                   </button>
                 )}
                 {r.group}
-              </td>
-              <td style={{...cell,textAlign:"center",fontWeight:700}}>
-                {r.markup!=null&&!isNaN(r.markup)
-                  ?<span style={{color:r.markup<=3?D.red:D.green}}>×{r.markup.toFixed(2)}</span>
-                  :<span style={{color:D.textMeta,fontWeight:400}}>—</span>}
+                {r.markup!=null&&!isNaN(r.markup)&&(
+                  <span style={{marginLeft:5,fontSize:compact?9:10,fontWeight:700}}>
+                    <span style={{color:D.green,fontWeight:600,marginRight:3}}>시나리오 적용 마크업</span>
+                    <span style={{color:r.markup<=3?D.red:D.green}}>×{r.markup.toFixed(2)}</span>
+                  </span>
+                )}
               </td>
               {m.cols.map((c,ci)=>{
                 const v=r.cells[c.key];
@@ -4248,7 +4247,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
             </tr>
             {isOpen&&hasBundle&&(
               <tr>
-                <td colSpan={2+m.cols.length} style={{padding:"0 6px 8px",background:D.surfaceAlt}}>
+                <td colSpan={1+m.cols.length} style={{padding:"0 6px 8px",background:D.surfaceAlt}}>
                   <div style={{margin:"4px 0",border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
                     <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
                       display:"flex",alignItems:"center",justifyContent:"space-between"}}>
