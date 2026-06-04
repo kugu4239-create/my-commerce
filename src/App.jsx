@@ -6752,10 +6752,12 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   },[cpn,supplyOf,computeMargin,selectedScenario]);
 
   // 사용자가 기본 할인율을 직접 수정하면 프런트 판매가·최종가·원가율 즉시 재계산
-  const updateBaseDisc=(rowIdx,newBase)=>{
+  // rowId(원본 엑셀 row 번호) 기반 — 임시 제거된 행이 있어 shown 의 인덱스가
+  // processed 인덱스와 어긋나도 안전하게 정확한 행을 찾는다
+  const updateBaseDisc=(rowId,newBase)=>{
     const v=Math.max(0,Math.min(100,Number(newBase)||0));
-    setProcessed(prev=>prev.map((r,i)=>{
-      if(i!==rowIdx) return r;
+    setProcessed(prev=>prev.map(r=>{
+      if(r.row!==rowId) return r;
       const basePrice=Math.round(r.list*(1-v/100)/10)*10;
       const supply=r.supply||0;
       const supplyIncVat=Math.round(supply*1.1);
@@ -6764,9 +6766,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
       return {...r,baseDisc:v,basePrice,manualBase:v,supplyIncVat,finalDisc,...m};
     }));
   };
-  const resetBaseDisc=(rowIdx)=>{
-    setProcessed(prev=>prev.map((r,i)=>{
-      if(i!==rowIdx) return r;
+  const resetBaseDisc=(rowId)=>{
+    setProcessed(prev=>prev.map(r=>{
+      if(r.row!==rowId) return r;
       const bd=0; // 디폴트 0%
       const basePrice=Math.round(r.list*(1-bd/100)/10)*10;
       const finalPrice=Math.round(basePrice*(1-cpn/100)/10)*10;
@@ -7718,7 +7720,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               <td style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right"}}>{cpn}%</td>
                               <td style={{padding:"4px 6px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
                                 <select value={Math.round((r.baseDisc||0)/5)*5}
-                                  onChange={e=>updateBaseDisc(i,e.target.value)}
+                                  onChange={e=>updateBaseDisc(r.row,e.target.value)}
                                   title={r.manualBase!=null?"수동 변경됨 — ↻ 로 0%로 복귀":"5% 단위 다이얼"}
                                   style={{padding:"3px 6px",fontSize:11,textAlign:"right",
                                     border:`1px solid ${r.manualBase!=null?D.blue:D.border}`,
@@ -7730,7 +7732,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                                   ))}
                                 </select>
                                 {r.manualBase!=null&&(
-                                  <button onClick={()=>resetBaseDisc(i)} title="0%로 복귀"
+                                  <button onClick={()=>resetBaseDisc(r.row)} title="0%로 복귀"
                                     style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 3px"}}>↻</button>
                                 )}
                               </td>
