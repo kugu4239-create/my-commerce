@@ -6553,6 +6553,8 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode 
   // 일괄 표의 임시 제거 / 체크 — 다운로드/재업로드/리로드 시 복원
   const [removedRows,setRemovedRows]=useState(()=>new Set());
   const [checkedRows,setCheckedRows]=useState(()=>new Set());
+  // 드래그 다중 선택 — null | "add" | "remove"
+  const dragSelectModeRef=useRef(null);
   const fileRef=useRef(null);
   const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
   const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
@@ -7061,6 +7063,20 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode 
     setRemovedRows(prev=>{const next=new Set(prev);checkedRows.forEach(i=>next.add(i));return next;});
     setCheckedRows(new Set());
   };
+  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용
+  const startDragSelectBulk=(rowId,isChecked)=>{
+    dragSelectModeRef.current=isChecked?"remove":"add";
+    setCheckedRows(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(rowId);else next.delete(rowId);return next;});
+  };
+  const enterDragSelectBulk=(rowId)=>{
+    if(!dragSelectModeRef.current) return;
+    setCheckedRows(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(rowId);else next.delete(rowId);return next;});
+  };
+  useEffect(()=>{
+    const onUp=()=>{dragSelectModeRef.current=null;};
+    window.addEventListener("mouseup",onUp);
+    return ()=>window.removeEventListener("mouseup",onUp);
+  },[]);
   const sec={marginBottom:12,border:`1px solid ${D.black}`,borderRadius:10,background:D.surface};
   const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:11,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
   const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:11,width:120,fontFamily:"inherit"};
@@ -7835,11 +7851,14 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode 
                         </tr></thead>
                         <tbody>
                           {shown.map((r,i)=>(
-                            <tr key={i} style={{background:checkedRows.has(r.row)?`${D.red}0a`:"transparent"}}>
+                            <tr key={i}
+                              onMouseEnter={()=>enterDragSelectBulk(r.row)}
+                              style={{background:checkedRows.has(r.row)?`${D.red}0a`:"transparent"}}>
                               <td title={r.name} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"left",
                                 minWidth:160,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                                <input type="checkbox" checked={checkedRows.has(r.row)} onChange={()=>toggleCheckBulk(r.row)}
-                                  title="체크 후 일괄 삭제"
+                                <input type="checkbox" checked={checkedRows.has(r.row)} onChange={()=>{}}
+                                  onMouseDown={e=>{e.preventDefault();startDragSelectBulk(r.row,checkedRows.has(r.row));}}
+                                  title="클릭 또는 드래그로 다중 선택"
                                   style={{marginRight:4,cursor:"pointer",verticalAlign:"middle"}}/>
                                 <button onClick={()=>removeBulkRow(r.row)} title="이 행을 표에서 임시로 제거 (다운로드/재업로드 시 복원)"
                                   style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2,verticalAlign:"middle"}}>✕</button>
@@ -8290,6 +8309,21 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
     setRemovedIdx(prev=>{const next=new Set(prev);checkedIdx.forEach(i=>next.add(i));return next;});
     setCheckedIdx(new Set());
   };
+  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용
+  const dragSelectModeRef=useRef(null);
+  const startDragSelect=(idx,isChecked)=>{
+    dragSelectModeRef.current=isChecked?"remove":"add";
+    setCheckedIdx(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(idx);else next.delete(idx);return next;});
+  };
+  const enterDragSelect=(idx)=>{
+    if(!dragSelectModeRef.current) return;
+    setCheckedIdx(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(idx);else next.delete(idx);return next;});
+  };
+  useEffect(()=>{
+    const onUp=()=>{dragSelectModeRef.current=null;};
+    window.addEventListener("mouseup",onUp);
+    return ()=>window.removeEventListener("mouseup",onUp);
+  },[]);
   const dbMatchedCount=useMemo(()=>rows.filter(r=>r.supplyFromDb).length,[rows]);
   const agg=useMemo(()=>{
     if(!rows.length) return null;
@@ -8546,10 +8580,13 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                       <span style={{marginLeft:4,fontSize:10,fontWeight:700,color:v>3?D.green:D.red}}>×{v.toFixed(2)}</span>
                     );
                     return (
-                    <tr key={r.code+r.idx} style={{borderBottom:`1px solid ${D.border}`,background:checkedIdx.has(r.idx)?`${D.red}0a`:"transparent"}}>
+                    <tr key={r.code+r.idx}
+                      onMouseEnter={()=>enterDragSelect(r.idx)}
+                      style={{borderBottom:`1px solid ${D.border}`,background:checkedIdx.has(r.idx)?`${D.red}0a`:"transparent"}}>
                       <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>
-                        <input type="checkbox" checked={checkedIdx.has(r.idx)} onChange={()=>toggleCheck(r.idx)}
-                          title="체크 후 일괄 삭제"
+                        <input type="checkbox" checked={checkedIdx.has(r.idx)} onChange={()=>{}}
+                          onMouseDown={e=>{e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
+                          title="클릭 또는 드래그로 다중 선택"
                           style={{marginRight:4,cursor:"pointer",verticalAlign:"middle"}}/>
                         <button onClick={()=>removeRow(r.idx)} title="이 상품을 표에서 임시로 제거 (다운로드/재업로드 시 복원)"
                           style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2}}>✕</button>
