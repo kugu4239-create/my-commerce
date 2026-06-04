@@ -6321,7 +6321,15 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           setShowForm(true);
           setCalcOpen(false);
         }}/>}
-      {mallCalcOpen&&<OwnMallSaleCalcModal onClose={()=>setMallCalcOpen(false)}/>}
+      {mallCalcOpen&&<OwnMallSaleCalcModal onClose={()=>setMallCalcOpen(false)}
+        onCreatePromo={(prefill)=>{
+          setForm({name:"",platform:prefill.platform||"자사몰",start_date:"",end_date:"",
+            memo:prefill.content||"",content:prefill.content||"",files:[],
+            discount_plan:prefill.discount_plan||{products:{period:{start:"",end:""},rows:[]},coupons:[]},
+            pinned_products:[],submit_date:""});
+          setShowForm(true);
+          setMallCalcOpen(false);
+        }}/>}
       {pinnedModal&&<PinnedListModal promo={pinnedModal.promo} onToggleHighlight={idx=>togglePinHighlight(pinnedModal.promo,idx)} onClose={()=>setPinnedModal(null)}/>}
     </div>
   );
@@ -7978,7 +7986,7 @@ function parseMallProductFile(file,onResult,onError){
   }
 }
 
-function OwnMallSaleCalcModal({ onClose }){
+function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
   const [products,setProducts]=useState([]);
   const [fileName,setFileName]=useState("");
   const [status,setStatus]=useState("");
@@ -7989,9 +7997,10 @@ function OwnMallSaleCalcModal({ onClose }){
   const [search,setSearch]=useState("");   // 표 내 검색 (상품명·할인율)
   const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
   const [sampleMsg,setSampleMsg]=useState("");    // 샘플 저장/로드 상태 메시지
+  const [removedIdx,setRemovedIdx]=useState(()=>new Set()); // 수기로 제거한 상품 (임시 — 다운로드/재업로드/리로드 시 복원)
   const modalCardRef=useRef(null);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
-  const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
+  const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setRemovedIdx(new Set()); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
   // 마지막 업로드의 파싱 결과(상품 목록)를 Supabase(mall_calc_last_file)에 보관 → 원본 파일이 커도(수십 MB) 안전.
   //   content_b64 컬럼에 base64 대신 상품 JSON 을 저장한다(텍스트 컬럼이라 호환). 모달 열 때 자동 로드.
   const sampleToProducts=raw=>{ try{ const p=JSON.parse(raw||""); return Array.isArray(p)?p:null; }catch{ return null; } };
@@ -8041,22 +8050,28 @@ function OwnMallSaleCalcModal({ onClose }){
   // 곱연산 체인: 판매가 > 할인율 > 할인금액 > 할인가 > 쿠폰율 > 쿠폰금액 > 쿠폰적용가 > 원가 > 마진 > 마크업
   //   · 공급가는 가격 DB(데이터 입력 > 인벤토리 > 가격 DB) 값을 우선 사용하고, 없으면 파일 값
   //   · 정상가는 파일 값(카페24 판매가)을 우선 사용하고, 없으면 가격 DB 폴백
-  const rows=useMemo(()=>products.map((p,i)=>{
-    const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
-    const priced=priceOf?priceOf(p.name,p.code):{selling:0,supply:0};
-    const supply=priced.supply||p.supply||0;
-    const selling=p.selling||priced.selling||0;
-    const discAmt=Math.round(selling*rate/100);
-    const discPrice=selling-discAmt;
-    const couponAmt=Math.round(discPrice*couponRate/100);
-    const couponPrice=discPrice-couponAmt;
-    const supplyVat=Math.round(supply*1.1);
-    const margin=couponPrice-supplyVat;
-    // 실수령 마크업 = 실수령액(쿠폰적용가, 자사몰 수수료 0%) ÷ 원가(부가세 포함)
-    const markup=supplyVat>0?couponPrice/supplyVat:0;
-    const effDisc=selling>0?(1-couponPrice/selling)*100:0;
-    return {...p,idx:i,rate,selling,supply,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,markup,effDisc,supplyFromDb:priced.supply>0};
-  }),[products,rates,couponRate,priceOf]);
+  const rows=useMemo(()=>products
+    .map((p,i)=>({p,i}))
+    .filter(({i})=>!removedIdx.has(i))
+    .map(({p,i})=>{
+      const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
+      const priced=priceOf?priceOf(p.name,p.code):{selling:0,supply:0};
+      const supply=priced.supply||p.supply||0;
+      const selling=p.selling||priced.selling||0;
+      const discAmt=Math.round(selling*rate/100);
+      const discPrice=selling-discAmt;
+      const couponAmt=Math.round(discPrice*couponRate/100);
+      const couponPrice=discPrice-couponAmt;
+      const supplyVat=Math.round(supply*1.1);
+      const margin=couponPrice-supplyVat;
+      // 실수령 마크업 = 실수령액(쿠폰적용가, 자사몰 수수료 0%) ÷ 원가(부가세 포함)
+      const markup=supplyVat>0?couponPrice/supplyVat:0;
+      const effDisc=selling>0?(1-couponPrice/selling)*100:0;
+      return {...p,idx:i,rate,selling,supply,discAmt,discPrice,couponAmt,couponPrice,supplyVat,margin,markup,effDisc,supplyFromDb:priced.supply>0};
+    }),[products,rates,couponRate,priceOf,removedIdx]);
+  // 수기 제거 / 복원
+  const removeRow=(idx)=>setRemovedIdx(prev=>{const next=new Set(prev);next.add(idx);return next;});
+  const restoreAll=()=>setRemovedIdx(new Set());
   const dbMatchedCount=useMemo(()=>rows.filter(r=>r.supplyFromDb).length,[rows]);
   const agg=useMemo(()=>{
     if(!rows.length) return null;
@@ -8081,6 +8096,55 @@ function OwnMallSaleCalcModal({ onClose }){
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),"세일율");
     XLSX.writeFile(wb,`자사몰_세일율${couponName?"_"+couponName:""}_${dayjs().format("YYYYMMDD")}.xlsx`);
+    // 다운로드 직후 제거 상태 초기화 — 제거된 상품 복원
+    if(removedIdx.size>0) setRemovedIdx(new Set());
+  };
+  // + 자사몰 프로모션 추가 — 할인율(rate) 5% 버킷으로 묶고 묶음 상품 리스트 전달
+  const handleCreatePromo=()=>{
+    if(!onCreatePromo||!rows.length) return;
+    const groups={};
+    rows.forEach(r=>{
+      const k=Math.round((r.rate||0)/5)*5;
+      if(!groups[k]) groups[k]={baseDisc:k,products:[],count:0,matched:0,mSum:0,effSum:0};
+      groups[k].count++;
+      groups[k].effSum+=(r.effDisc||0);
+      groups[k].products.push(r);
+      if((r.supplyVat||0)>0){groups[k].matched++;groups[k].mSum+=(r.markup||0);}
+    });
+    const groupArr=Object.values(groups).sort((a,b)=>a.baseDisc-b.baseDisc);
+    const productRows=groupArr.map(g=>{
+      const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+      return {
+        group:`상품 할인 ${g.baseDisc}%`,
+        rate:String(g.baseDisc),
+        markup:avgM!=null?String(avgM):"",
+        cpn:couponRate||0,
+        products:g.products.map(p=>({
+          code:p.code||"",name:p.name||"",
+          list:p.selling||0,baseDisc:p.rate||0,
+          basePrice:p.discPrice||0,finalPrice:p.couponPrice||0,
+          finalDisc:Math.round((p.effDisc||0)*10)/10,markup:p.markup||0,
+          supply:p.supply||0,supplyIncVat:p.supplyVat||0,
+          selfBurden:0,channelBurden:0,fee:0,feeRate:0,
+          net:p.couponPrice||0,margin:p.margin||0,
+        })),
+      };
+    });
+    const couponRows=couponRate>0?[{...emptyCouponRow("product"),name:couponName||"멤버십 쿠폰",rate:String(couponRate)}]:[];
+    const groupLines=groupArr.map(g=>{
+      const avgFr=g.count>0?Math.round(g.effSum/g.count*10)/10:0;
+      const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+      return `• 상품 할인 ${g.baseDisc}% · ${g.count}개 · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마크업 ×${avgM.toFixed(2)} (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
+    }).join("\n");
+    const content=`[자사몰 세일율 계산기]\n쿠폰: ${couponRate>0?`${couponName||"멤버십"} ${couponRate}%`:"없음"}\n\n[기본 세일율별 결론]\n${groupLines}`;
+    onCreatePromo({
+      platform:"자사몰",
+      content,
+      discount_plan:{
+        products:{period:{start:"",end:""},rows:productRows},
+        coupons:couponRows,
+      },
+    });
   };
   const numCell={padding:"4px 6px",textAlign:"right"};
   // 표 내 검색 — 상품명 또는 할인율(%) 부분일치. 검색 중에는 전체 매칭 표시(limit 미적용).
@@ -8176,8 +8240,22 @@ function OwnMallSaleCalcModal({ onClose }){
                 {priceReady&&<span style={{fontSize:11,color:dbMatchedCount>0?D.green:D.textMeta}} title="데이터 입력 > 인벤토리 > 가격 DB 와 동기화된 공급가 건수">🔗 가격 DB 매칭 {dbMatchedCount.toLocaleString()}/{rows.length.toLocaleString()}건</span>}
                 {agg.noCost>0&&<span style={{fontSize:11,color:D.amber}}>공급가 미입력 {agg.noCost}개 (마진 과대평가)</span>}
                 {agg.neg>0&&<span style={{fontSize:11,color:D.red}}>역마진 {agg.neg}개</span>}
+                {removedIdx.size>0&&(
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:D.textSub,
+                    border:`1px dashed ${D.borderMid}`,borderRadius:5,padding:"3px 8px"}}>
+                    🗑 {removedIdx.size}개 제거 <span style={{color:D.textMeta}}>(임시 · 다운로드/재업로드 시 복원)</span>
+                    <button onClick={restoreAll}
+                      style={{background:"transparent",border:"none",cursor:"pointer",color:D.blue,fontSize:11,fontWeight:600,padding:"0 4px"}}>↻ 전체 복원</button>
+                  </span>
+                )}
+                {onCreatePromo&&(
+                  <button onClick={handleCreatePromo}
+                    style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    + 자사몰 프로모션 추가하기
+                  </button>
+                )}
                 <button onClick={exportXlsx}
-                  style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  style={{marginLeft:onCreatePromo?0:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                   엑셀 추출 (코드·상품명·할인가·할인율)
                 </button>
               </div>
@@ -8229,7 +8307,11 @@ function OwnMallSaleCalcModal({ onClose }){
                     );
                     return (
                     <tr key={r.code+r.idx} style={{borderBottom:`1px solid ${D.border}`}}>
-                      <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>{r.code}</td>
+                      <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>
+                        <button onClick={()=>removeRow(r.idx)} title="이 상품을 표에서 임시로 제거 (다운로드/재업로드 시 복원)"
+                          style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2}}>✕</button>
+                        {r.code}
+                      </td>
                       <td style={{padding:"4px 6px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name}</td>
                       <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}{muBadge(sellMu)}</td>
                       <td style={numCell}>
