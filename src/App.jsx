@@ -4098,6 +4098,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   const [localCircled,setLocalCircled]=useState(()=>new Set());
   // 묶음 상품 보기 — 저장된 매트릭스에서도 클릭 시 인라인 펼침
   const [bundleOpenIdx,setBundleOpenIdx]=useState(null);
+  const [bundleSearch,setBundleSearch]=useState(""); // 묶음 펼침 표 내 상품 검색
   const bundleCaptureRef=useRef(null); // 현재 펼쳐진 묶음 영역 이미지 캡처 타깃
   if(!m.hasGroup) return null;
   // 값 클릭 시 파란 원 강조 토글. onToggleCircle 있으면 제어형(저장·공유), 없으면 로컬
@@ -4248,34 +4249,48 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                 </td>;
               })}
             </tr>
-            {isOpen&&hasBundle&&createPortal(
-              <div onClick={()=>setBundleOpenIdx(null)}
+            {isOpen&&hasBundle&&(()=>{
+              const qm=(bundleSearch||"").trim().toLowerCase();
+              const visibleProducts=qm
+                ?products.filter(p=>((p.name||"").toLowerCase().includes(qm))||((p.code||"").toLowerCase().includes(qm)))
+                :products;
+              return createPortal(
+              <div onClick={()=>{setBundleOpenIdx(null);setBundleSearch("");}}
                 style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
                   display:"flex",alignItems:"center",justifyContent:"center",padding:20,
                   fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
                   <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
-                    style={{width:"98vw",maxHeight:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+                    style={{width:"98vw",height:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
                       display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
                     <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
-                      display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-                      <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}</span>
-                      <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+                      display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+                      <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}{qm?` · 검색 ${visibleProducts.length}개`:""}</span>
+                      <span style={{display:"inline-flex",alignItems:"center",gap:6,flex:"1 1 auto",justifyContent:"flex-end",flexWrap:"wrap"}}>
+                        <input value={bundleSearch} onChange={e=>setBundleSearch(e.target.value)}
+                          placeholder="상품명 / 코드 검색"
+                          data-capture-hide
+                          style={{padding:"4px 8px",border:`1px solid ${D.border}`,borderRadius:5,fontSize:11,
+                            background:D.surface,color:D.text,fontFamily:"inherit",width:200}}/>
+                        {qm&&<button data-capture-hide onClick={()=>setBundleSearch("")}
+                          style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 4px"}}>✕ 검색 해제</button>}
+                        <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
                         <CaptureBtn cardRef={bundleCaptureRef}
                           filename={`묶음_${(r.group||`행${i+1}`).replace(/\s+/g,"")}_${products.length}개`}
                           DC={{border:D.border,sub:D.textMeta}}/>
-                        <button onClick={()=>setBundleOpenIdx(null)}
+                        <button onClick={()=>{setBundleOpenIdx(null);setBundleSearch("");}}
                           style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:14}}>✕</button>
+                        </span>
                       </span>
                     </div>
                     <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                             <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
-                          {products.map((p,j)=>{
+                          {visibleProducts.map((p,j)=>{
                             const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
                             const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
                             const prefixSelf=Math.round((p.list||0)*((p.baseDisc||0)/100));
@@ -4307,7 +4322,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                                   style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnChannelAmt>0?D.red:D.textMeta}}>
                                   {cpnChannelAmt>0?`−${won(cpnChannelAmt)}`:"—"}
                                 </td>
-                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.green,background:"#eef9f1",fontWeight:600}}>{won(p.finalPrice)}</td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
                                   {(p.channelBurden||0)>0?`+${won(p.channelBurden)}`:"—"}
@@ -4333,7 +4348,8 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                   </div>
               </div>,
               document.body
-            )}
+              );
+            })()}
             </React.Fragment>);
           })}
         </tbody>
@@ -4351,6 +4367,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
   const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
   const [bundleViewIdx,setBundleViewIdx]=useState(null); // 묶음 상품 보기 펼친 행 인덱스
+  const [bundleSearch,setBundleSearch]=useState(""); // 묶음 펼침 표 내 상품 검색
   const bundleCaptureRef=useRef(null); // 묶음 펼침 영역 이미지 캡처 타깃
   // 인라인 계산기 — null | { platform: '29CM'|'자사몰', targetRowIdx: number|null, initialCoupon?: number, initialCouponName?: string }
   //   targetRowIdx 가 null 이면 결과는 새 상품군 행들로 append
@@ -4663,34 +4680,47 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           const r=productRows[bundleViewIdx];
           const cpnRow=Number(r.cpn||0)||0;
           const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
+          const q=(bundleSearch||"").trim().toLowerCase();
+          const visibleProducts=q
+            ?r.products.filter(p=>((p.name||"").toLowerCase().includes(q))||((p.code||"").toLowerCase().includes(q)))
+            :r.products;
           return createPortal(
-          <div onClick={()=>setBundleViewIdx(null)}
+          <div onClick={()=>{setBundleViewIdx(null);setBundleSearch("");}}
             style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
               display:"flex",alignItems:"center",justifyContent:"center",padding:20,
               fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
           <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
-            style={{width:"98vw",maxHeight:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+            style={{width:"98vw",height:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
               display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
             <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
-              display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-              <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}</span>
-              <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+              <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}{q?` · 검색 ${visibleProducts.length}개`:""}</span>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6,flex:"1 1 auto",justifyContent:"flex-end",flexWrap:"wrap"}}>
+                <input value={bundleSearch} onChange={e=>setBundleSearch(e.target.value)}
+                  placeholder="상품명 / 코드 검색"
+                  data-capture-hide
+                  style={{padding:"4px 8px",border:`1px solid ${D.border}`,borderRadius:5,fontSize:11,
+                    background:D.surface,color:D.text,fontFamily:"inherit",width:200}}/>
+                {q&&<button data-capture-hide onClick={()=>setBundleSearch("")}
+                  style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 4px"}}>✕ 검색 해제</button>}
+                <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
                 <CaptureBtn cardRef={bundleCaptureRef}
                   filename={`묶음_${(r.group||`행${bundleViewIdx+1}`).replace(/\s+/g,"")}_${r.products.length}개`}
                   DC={{border:D.border,sub:D.textMeta}}/>
-                <button onClick={()=>setBundleViewIdx(null)}
+                <button onClick={()=>{setBundleViewIdx(null);setBundleSearch("");}}
                   style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:14}}>✕</button>
+                </span>
               </span>
             </div>
             <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                     <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
-                  {r.products.map((p,j)=>{
+                  {visibleProducts.map((p,j)=>{
                     const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
                     const prefixSelf=Math.round((p.list||0)*((p.baseDisc||0)/100));
                     const cpnSelfAmt=Math.max(0,(p.selfBurden||0)-prefixSelf);
@@ -8109,7 +8139,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                     <div style={{border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
+                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
                               position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>
@@ -8220,8 +8250,8 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                     {(r.channelBurden||0)>0?`−₩${wonFmt(r.channelBurden)}`:"—"}
                                   </td>
-                                  <td title={`최종 노출가 = 프런트 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
-                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
+                                  <td title={`최종 판매가 = 프런트 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef9f1",color:D.green,fontWeight:600,whiteSpace:"nowrap"}}>
                                     ₩{wonFmt(r.finalPrice)}
                                     {finalMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:finalMu>3?D.green:D.red}}>×{finalMu.toFixed(2)}</span>}
                                   </td>
@@ -8324,7 +8354,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                                             <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                                           ))}
                                         </tr></thead>
@@ -8356,7 +8386,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                                 style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.red:D.textMeta}}>
                                                 {(p.channelBurden||0)>0?`−₩${wonFmt(p.channelBurden)}`:"—"}
                                               </td>
-                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>₩{wonFmt(p.finalPrice)}</td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.green,background:"#eef9f1",fontWeight:600}}>₩{wonFmt(p.finalPrice)}</td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−₩{wonFmt(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
                                                 {(p.channelBurden||0)>0?`+₩${wonFmt(p.channelBurden)}`:"—"}
