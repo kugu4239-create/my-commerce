@@ -4270,7 +4270,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                     <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                             <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr></thead>
@@ -4302,6 +4302,10 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                                 <td title={cpnSelfAmt>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${won(cpnSelfAmt)}`:"자사부담 쿠폰 없음"}
                                   style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnSelfAmt>0?D.red:D.textMeta}}>
                                   {cpnSelfAmt>0?`−${won(cpnSelfAmt)}`:"—"}
+                                </td>
+                                <td title={cpnChannelAmt>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${won(cpnChannelAmt)} (정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                                  style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnChannelAmt>0?D.red:D.textMeta}}>
+                                  {cpnChannelAmt>0?`−${won(cpnChannelAmt)}`:"—"}
                                 </td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
@@ -4681,7 +4685,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
             <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                     <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr></thead>
@@ -4712,6 +4716,10 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                         <td title={cpnSelfAmt>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${won(cpnSelfAmt)}`:"자사부담 쿠폰 없음"}
                           style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnSelfAmt>0?D.red:D.textMeta}}>
                           {cpnSelfAmt>0?`−${won(cpnSelfAmt)}`:"—"}
+                        </td>
+                        <td title={cpnChannelAmt>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${won(cpnChannelAmt)} (정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                          style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnChannelAmt>0?D.red:D.textMeta}}>
+                          {cpnChannelAmt>0?`−${won(cpnChannelAmt)}`:"—"}
                         </td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
@@ -7378,7 +7386,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
     <div onClick={onClose} className="salecalc-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="salecalc"
-        style={{background:D.surface,borderRadius:12,width:"95vw",maxWidth:1800,maxHeight:"92vh",overflowY:"auto",
+        style={{background:D.surface,borderRadius:12,width:"98vw",maxWidth:"100vw",maxHeight:"92vh",overflowY:"auto",
           border:`1px solid ${D.black}`,
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:11,color:D.text}}>
         <style>{`
@@ -8101,7 +8109,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                     <div style={{border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
+                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
                               position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>
@@ -8208,6 +8216,10 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:couponSelfAmt>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
                                     {couponSelfAmt>0?`−₩${wonFmt(couponSelfAmt)}`:"—"}
                                   </td>
+                                  <td title={(r.channelBurden||0)>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${wonFmt(r.channelBurden)} (29CM 부담 → 정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
+                                    {(r.channelBurden||0)>0?`−₩${wonFmt(r.channelBurden)}`:"—"}
+                                  </td>
                                   <td title={`최종 노출가 = 프런트 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
                                     ₩{wonFmt(r.finalPrice)}
@@ -8312,7 +8324,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                                             <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                                           ))}
                                         </tr></thead>
@@ -8339,6 +8351,10 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                               <td title={cpnSelfAmtG>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${wonFmt(cpnSelfAmtG)}`:"자사부담 쿠폰 없음"}
                                                 style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnSelfAmtG>0?D.red:D.textMeta}}>
                                                 {cpnSelfAmtG>0?`−₩${wonFmt(cpnSelfAmtG)}`:"—"}
+                                              </td>
+                                              <td title={(p.channelBurden||0)>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${wonFmt(p.channelBurden)} (정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                                                style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.red:D.textMeta}}>
+                                                {(p.channelBurden||0)>0?`−₩${wonFmt(p.channelBurden)}`:"—"}
                                               </td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>₩{wonFmt(p.finalPrice)}</td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−₩{wonFmt(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
