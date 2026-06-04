@@ -4248,11 +4248,15 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                 </td>;
               })}
             </tr>
-            {isOpen&&hasBundle&&(
-              <tr>
-                <td colSpan={2+m.cols.length} style={{padding:"0 6px 8px",background:D.surfaceAlt}}>
-                  <div ref={bundleCaptureRef} style={{margin:"4px 0",border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
-                    <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
+            {isOpen&&hasBundle&&createPortal(
+              <div onClick={()=>setBundleOpenIdx(null)}
+                style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+                  display:"flex",alignItems:"center",justifyContent:"center",padding:20,
+                  fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+                  <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
+                    style={{width:"80vw",maxHeight:"85vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+                      display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+                    <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
                       display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
                       <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}</span>
                       <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
@@ -4260,10 +4264,10 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                           filename={`묶음_${(r.group||`행${i+1}`).replace(/\s+/g,"")}_${products.length}개`}
                           DC={{border:D.border,sub:D.textMeta}}/>
                         <button onClick={()=>setBundleOpenIdx(null)}
-                          style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+                          style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:14}}>✕</button>
                       </span>
                     </div>
-                    <div data-capture-expand style={{maxHeight:280,overflow:"auto"}}>
+                    <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
                           {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
@@ -4309,8 +4313,8 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                       </table>
                     </div>
                   </div>
-                </td>
-              </tr>
+              </div>,
+              document.body
             )}
             </React.Fragment>);
           })}
@@ -4641,9 +4645,15 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           const r=productRows[bundleViewIdx];
           const cpnRow=Number(r.cpn||0)||0;
           const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
-          return (
-          <div ref={bundleCaptureRef} style={{marginTop:8,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
-            <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
+          return createPortal(
+          <div onClick={()=>setBundleViewIdx(null)}
+            style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+              display:"flex",alignItems:"center",justifyContent:"center",padding:20,
+              fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+          <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
+            style={{width:"80vw",maxHeight:"85vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+              display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
+            <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
               display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
               <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}</span>
               <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
@@ -4651,10 +4661,10 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                   filename={`묶음_${(r.group||`행${bundleViewIdx+1}`).replace(/\s+/g,"")}_${r.products.length}개`}
                   DC={{border:D.border,sub:D.textMeta}}/>
                 <button onClick={()=>setBundleViewIdx(null)}
-                  style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+                  style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:14}}>✕</button>
               </span>
             </div>
-            <div data-capture-expand style={{maxHeight:280,overflow:"auto"}}>
+            <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
                   {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
@@ -4699,6 +4709,8 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
               </table>
             </div>
           </div>
+          </div>,
+          document.body
           );
         })()}
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:6}}>
