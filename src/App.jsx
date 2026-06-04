@@ -3994,6 +3994,23 @@ function normalizePlan(p){
         rows:p.products.rows.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",cpn:r.cpn||0,products:Array.isArray(r.products)?r.products:[]})),
       },
       coupons,
+      extra_matrices:Array.isArray(p?.extra_matrices)?p.extra_matrices.map(em=>({
+        id:em.id||`em_${Math.random().toString(36).slice(2,9)}`,
+        name:em.name||"",
+        platform:em.platform||"",
+        products:{
+          period:{start:em.products?.period?.start||"",end:em.products?.period?.end||""},
+          rows:Array.isArray(em.products?.rows)?em.products.rows.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",cpn:r.cpn||0,products:Array.isArray(r.products)?r.products:[]})):[],
+        },
+        coupons:Array.isArray(em.coupons)?em.coupons.map(c=>({
+          name:c.name||"",rate:c.rate||"",start:c.start||"",end:c.end||"",
+          type:(c?.type&&COUPON_TYPE_BY_KEY[c.type])?c.type:"product",
+          unit:c?.unit==="won"?"won":"pct",
+          stack:!!c.stack,
+          excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[],
+          stacksWith:Array.isArray(c.stacksWith)?c.stacksWith:[],
+        })):[],
+      })):[],
     };
   }
   // 구 포맷: 행마다 start/end 있던 경우 → 첫 비어있지 않은 행의 기간을 공통 period 로
@@ -4005,9 +4022,10 @@ function normalizePlan(p){
         rows:p.products.map(r=>({group:r.group||"",rate:r.rate||"",markup:r.markup||"",cpn:r.cpn||0,products:Array.isArray(r.products)?r.products:[]})),
       },
       coupons,
+      extra_matrices:[],
     };
   }
-  return{products:{period:{start:"",end:""},rows:[]},coupons};
+  return{products:{period:{start:"",end:""},rows:[]},coupons,extra_matrices:[]};
 }
 
 // 할인율 매트릭스 — 곱연산(가격 기준): 최종 = 1-(1-d_p)*factor
@@ -4323,20 +4341,43 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
   const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
   const [bundleViewIdx,setBundleViewIdx]=useState(null); // 묶음 상품 보기 펼친 행 인덱스
+  const [extraCalcOpen,setExtraCalcOpen]=useState(null); // null | '29CM' | '자사몰'
+  const extraMatrices=Array.isArray(plan.extra_matrices)?plan.extra_matrices:[];
 
   // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
   const setProductPeriod=(field,v)=>onChange({
     products:{period:{...plan.products.period,[field]:v},rows:productRows},
     coupons,
+    extra_matrices:extraMatrices,
   });
   const setProductRows=(arr)=>onChange({
     products:{period:plan.products.period,rows:arr},
     coupons,
+    extra_matrices:extraMatrices,
   });
   const setCoupons=(arr)=>onChange({
     products:plan.products,
     coupons:arr,
+    extra_matrices:extraMatrices,
   });
+  const setExtraMatrices=(arr)=>onChange({
+    products:plan.products,
+    coupons,
+    extra_matrices:arr,
+  });
+  const addExtraMatrix=(payload)=>{
+    // payload: {platform, content, discount_plan:{products:{period,rows}, coupons}}
+    const newEm={
+      id:`em_${Math.random().toString(36).slice(2,9)}`,
+      name:`${payload.platform} 시나리오 ${extraMatrices.length+1}`,
+      platform:payload.platform,
+      products:payload.discount_plan?.products||{period:{start:"",end:""},rows:[]},
+      coupons:payload.discount_plan?.coupons||[],
+    };
+    setExtraMatrices([...extraMatrices,newEm]);
+    setExtraCalcOpen(null);
+  };
+  const removeExtraMatrix=(id)=>setExtraMatrices(extraMatrices.filter(em=>em.id!==id));
 
   // 29CM 계산기에서 선택한 조합을 상품군·쿠폰 입력에 반영
   // {tier, baseDisc, primaryCoupon, stackRates:[중복쿠폰율 ...]}
@@ -4694,11 +4735,51 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         </div>
       )}
 
+      {/* 별도 시나리오 매트릭스 — 계산기를 인라인으로 열어 매트릭스를 추가 */}
+      <div style={{marginTop:14,paddingTop:10,borderTop:`1px dashed ${D.border}`}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          <span style={{fontSize:12,fontWeight:700,color:D.black}}>별도 시나리오 매트릭스 <span style={{color:D.textMeta,fontWeight:400,fontSize:11}}>· 계산기로 묶음 상품·쿠폰 시나리오를 추가하면 매트릭스가 별개로 생성됨</span></span>
+          <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>setExtraCalcOpen("29CM")}
+              style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",fontWeight:700,color:D.text}}>
+              + 29CM 계산기로 추가
+            </button>
+            <button onClick={()=>setExtraCalcOpen("자사몰")}
+              style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",fontWeight:700,color:D.text}}>
+              + 자사몰 계산기로 추가
+            </button>
+          </div>
+        </div>
+        {extraMatrices.length>0&&extraMatrices.map((em,emIdx)=>(
+          <div key={em.id||emIdx} style={{marginTop:10,border:`1px solid ${D.borderMid}`,borderRadius:8,padding:"10px 12px",background:D.surface}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+              <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                <span style={{background:em.platform==="29CM"?"#7EB89E":"#7EADD4",color:"#fff",fontSize:10,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{em.platform||"매트릭스"}</span>
+                <input value={em.name||""}
+                  onChange={e=>setExtraMatrices(extraMatrices.map((x,j)=>j===emIdx?{...x,name:e.target.value}:x))}
+                  placeholder="시나리오 이름"
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,padding:"3px 6px",fontSize:11,color:D.text,fontFamily:"inherit",width:200}}/>
+                <span style={{fontSize:10,color:D.textMeta}}>상품군 {em.products?.rows?.length||0}개 · 쿠폰 {em.coupons?.length||0}개</span>
+              </div>
+              <button onClick={()=>removeExtraMatrix(em.id)}
+                style={{background:"transparent",border:"none",color:D.red,cursor:"pointer",fontSize:11,fontWeight:600}}>✕ 매트릭스 삭제</button>
+            </div>
+            {computeDiscountMatrix(em).hasGroup&&<DiscountMatrix plan={em} compact/>}
+          </div>
+        ))}
+      </div>
+
       {calcOpen&&(
         <Promo29CMCalcModal
           initialCoupon={firstCouponRate}
           onApply={applyCalc}
           onClose={()=>setCalcOpen(false)}/>
+      )}
+      {extraCalcOpen==="29CM"&&(
+        <SaleCalcModal onClose={()=>setExtraCalcOpen(null)} onAttachMatrix={addExtraMatrix}/>
+      )}
+      {extraCalcOpen==="자사몰"&&(
+        <OwnMallSaleCalcModal onClose={()=>setExtraCalcOpen(null)} onAttachMatrix={addExtraMatrix}/>
       )}
     </div>
   );
@@ -4752,6 +4833,17 @@ function DiscountPlanView({ plan, marks={}, onToggleGroup, onToggleCircle, compa
       )}
       {/* 상품군 × 시나리오 최종 할인율 매트릭스 (쿠폰은 매트릭스 열로 표시) */}
       {cleanedCoupons.length>0&&<DiscountMatrix plan={plan} compact={compact} circledKeys={marks.circles} onToggleCircle={onToggleCircle}/>}
+      {Array.isArray(plan.extra_matrices)&&plan.extra_matrices.map((em,emIdx)=>(
+        computeDiscountMatrix(em).hasGroup&&(
+          <div key={em.id||emIdx} style={{marginTop:10,paddingTop:8,borderTop:`1px dashed ${D.border}`}}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:6,marginBottom:4}}>
+              <span style={{background:em.platform==="29CM"?"#7EB89E":"#7EADD4",color:"#fff",fontSize:9,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{em.platform||"매트릭스"}</span>
+              <span style={{fontSize:11,fontWeight:600,color:D.black}}>{em.name||`시나리오 ${emIdx+1}`}</span>
+            </div>
+            <DiscountMatrix plan={em} compact={compact}/>
+          </div>
+        )
+      ))}
     </div>
   );
 }
@@ -6398,7 +6490,7 @@ const calcReverse=(list,p75,coupon)=>{
   const finalDisc=list>0?Math.round((1-finalPrice/list)*1000)/10:0;
   return {baseDisc, basePrice, finalPrice, finalDisc};
 };
-function SaleCalcModal({ onClose, onCreatePromo }){
+function SaleCalcModal({ onClose, onCreatePromo, onAttachMatrix }){
   // 디폴트 — 자주 쓰는 시나리오 첫번째(29CM 지원 쿠폰 15% · 장바구니 · 채널부담)
   const [coupon,setCoupon]=useState(15);
   const [primaryType,setPrimaryType]=useState("cart"); // 기본 쿠폰 타입
@@ -7905,7 +7997,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             })}
                           </tbody>
                         </table>
-                        {onCreatePromo&&(
+                        {(onCreatePromo||onAttachMatrix)&&(
                           <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
                             <button onClick={()=>{
                               // 기본 세일율 그룹 → products.rows (묶음 상품 + 계산기 모든 필드 보존)
@@ -7952,18 +8044,20 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                               }).join("\n");
                               const scenarioLine=selectedScenario.caseNum?`Case ${selectedScenario.caseNum} · ${selectedScenario.label} · 케이스 총합 할인율 ${cpn}%`:`기본 쿠폰 ${cpn}%`;
                               const content=`[적용 시나리오]\n${scenarioLine}\n\n[입력된 쿠폰]\n${couponLines}\n\n[기본 세일율별 결론]\n${groupLines}`;
-                              onCreatePromo({
+                              const payload={
                                 platform:"29CM",
                                 content,
                                 discount_plan:{
                                   products:{period:{start:"",end:""},rows:productRows},
                                   coupons:couponRows,
                                 },
-                              });
+                              };
+                              if(onAttachMatrix) onAttachMatrix(payload);
+                              else onCreatePromo(payload);
                             }}
                               style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
                                 padding:"9px 22px",fontSize:11,cursor:"pointer",fontWeight:700}}>
-                              + 29CM 프로모션 추가하기
+                              {onAttachMatrix?"+ 별도 매트릭스로 추가":"+ 29CM 프로모션 추가하기"}
                             </button>
                           </div>
                         )}
@@ -8048,7 +8142,7 @@ function parseMallProductFile(file,onResult,onError){
   }
 }
 
-function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
+function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachMatrix }){
   const [products,setProducts]=useState([]);
   const [fileName,setFileName]=useState("");
   const [status,setStatus]=useState("");
@@ -8175,9 +8269,9 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
     XLSX.writeFile(wb,`자사몰_세일율${couponName?"_"+couponName:""}_${dayjs().format("YYYYMMDD")}.xlsx`);
     // 다운로드 후에도 임시 제거 / 체크 상태 유지 — 모달 재오픈 / 파일 재업로드 시점까지 보존
   };
-  // + 자사몰 프로모션 추가 — 할인율(rate) 5% 버킷으로 묶고 묶음 상품 리스트 전달
+  // + 자사몰 프로모션 추가 / 별도 매트릭스 추가 — 할인율(rate) 5% 버킷으로 묶고 묶음 상품 리스트 전달
   const handleCreatePromo=()=>{
-    if(!onCreatePromo||!rows.length) return;
+    if(!(onCreatePromo||onAttachMatrix)||!rows.length) return;
     const groups={};
     rows.forEach(r=>{
       const k=Math.round((r.rate||0)/5)*5;
@@ -8213,14 +8307,16 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
       return `• 상품 할인 ${g.baseDisc}% · ${g.count}개 · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마크업 ×${avgM.toFixed(2)} (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
     }).join("\n");
     const content=`[자사몰 세일율 계산기]\n쿠폰: ${couponRate>0?`${couponName||"멤버십"} ${couponRate}%`:"없음"}\n\n[기본 세일율별 결론]\n${groupLines}`;
-    onCreatePromo({
+    const payload={
       platform:"자사몰",
       content,
       discount_plan:{
         products:{period:{start:"",end:""},rows:productRows},
         coupons:couponRows,
       },
-    });
+    };
+    if(onAttachMatrix) onAttachMatrix(payload);
+    else onCreatePromo(payload);
   };
   const numCell={padding:"4px 6px",textAlign:"right"};
   // 표 내 검색 — 상품명 또는 할인율(%) 부분일치. 검색 중에는 전체 매칭 표시(limit 미적용).
@@ -8331,10 +8427,10 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
                       style={{background:"transparent",border:"none",cursor:"pointer",color:D.blue,fontSize:11,fontWeight:600,padding:"0 4px"}}>↻ 전체 복원</button>
                   </span>
                 )}
-                {onCreatePromo&&(
+                {(onCreatePromo||onAttachMatrix)&&(
                   <button onClick={handleCreatePromo}
                     style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                    + 자사몰 프로모션 추가하기
+                    {onAttachMatrix?"+ 별도 매트릭스로 추가":"+ 자사몰 프로모션 추가하기"}
                   </button>
                 )}
                 <button onClick={exportXlsx}
@@ -8536,12 +8632,12 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
                       })}
                     </tbody>
                   </table>
-                  {onCreatePromo&&(
+                  {(onCreatePromo||onAttachMatrix)&&(
                     <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
                       <button onClick={handleCreatePromo}
                         style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
                           padding:"9px 22px",fontSize:11,cursor:"pointer",fontWeight:700}}>
-                        + 자사몰 프로모션 추가하기
+                        {onAttachMatrix?"+ 별도 매트릭스로 추가":"+ 자사몰 프로모션 추가하기"}
                       </button>
                     </div>
                   )}
