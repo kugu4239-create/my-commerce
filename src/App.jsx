@@ -4288,7 +4288,6 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                           {["상품명","정가","프런트 할인율(자사부담)","프런트 판매가","쿠폰 할인율(자사+채널)\n프런트 판매가에 적용","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                             <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,
                               background:k>=1&&k<=3?"#e8f0f8":k>=4&&k<=8?"#fff4d8":k>=9&&k<=11?"#e8f3e8":D.surfaceAlt,
-                              borderLeft:(k===1||k===4||k===9||k===12)?`2px solid ${D.borderMid}`:"none",
                               whiteSpace:h.includes("\n")?"normal":"nowrap"}}>
                               {h.includes("\n")?(
                                 <div style={{lineHeight:1.2}}>
@@ -8412,8 +8411,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                           {["상품명","정가","프런트 할인율(자사부담)","프런트 판매가","쿠폰 할인율(자사+채널)\n프런트 판매가에 적용","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                                             <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,
                                               background:k>=1&&k<=3?"#e8f0f8":k>=4&&k<=8?"#fff4d8":k>=9&&k<=11?"#e8f3e8":D.surfaceAlt,
-                                              borderLeft:(k===1||k===4||k===9||k===12)?`2px solid ${D.borderMid}`:"none",
-                                              whiteSpace:h.includes("\n")?"normal":"nowrap"}}>
+                                                              whiteSpace:h.includes("\n")?"normal":"nowrap"}}>
                                               {h.includes("\n")?(
                                                 <div style={{lineHeight:1.2}}>
                                                   <div>{h.split("\n")[0]}</div>
