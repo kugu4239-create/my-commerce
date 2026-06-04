@@ -4328,7 +4328,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   //   숫자면 그 행의 묶음만 채움 (단일 행)
   const [inlineCalc,setInlineCalc]=useState(null);
   // 묶음 추가 직전 — 기존 쿠폰 사용/새 쿠폰 선택 프롬프트
-  //   null | { platform, targetRowIdx, step: 'choose'|'pick' }
+  //   null | { platform, targetRowIdx, step: 'choose'|'pick', selectedIdxs: Set<number> }
   const [couponPrompt,setCouponPrompt]=useState(null);
 
   // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
@@ -4349,7 +4349,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const requestInlineCalc=(platformPick,targetRowIdx)=>{
     const usableCoupons=coupons.filter(c=>(+c.rate||0)>0);
     if(usableCoupons.length>0){
-      setCouponPrompt({platform:platformPick,targetRowIdx,step:"choose"});
+      setCouponPrompt({platform:platformPick,targetRowIdx,step:"choose",selectedIdxs:new Set()});
     }else{
       setInlineCalc({platform:platformPick,targetRowIdx});
     }
@@ -4577,14 +4577,27 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 </td>
                 <td style={{padding:"3px 4px",textAlign:"right",whiteSpace:"nowrap"}}>
                   {Array.isArray(row.products)&&row.products.length>0?(
-                    <button onClick={()=>setBundleViewIdx(bundleViewIdx===i?null:i)}
-                      title={`묶음 상품 ${row.products.length}개 보기`}
-                      style={{background:bundleViewIdx===i?D.black:"transparent",
-                        color:bundleViewIdx===i?"#fff":D.text,
-                        border:`1px solid ${D.borderMid}`,borderRadius:4,
-                        padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:600,marginRight:4}}>
-                      묶음 {row.products.length}
-                    </button>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:3,marginRight:4}}>
+                      <button onClick={()=>setBundleViewIdx(bundleViewIdx===i?null:i)}
+                        title={`묶음 상품 ${row.products.length}개 보기`}
+                        style={{background:bundleViewIdx===i?D.black:"transparent",
+                          color:bundleViewIdx===i?"#fff":D.text,
+                          border:`1px solid ${D.borderMid}`,borderRadius:4,
+                          padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:600}}>
+                        묶음 {row.products.length}
+                      </button>
+                      <button onClick={()=>{
+                        if(!window.confirm(`'${row.group||`행 ${i+1}`}' 의 묶음 상품 ${row.products.length}개를 삭제할까요?`)) return;
+                        if(bundleViewIdx===i) setBundleViewIdx(null);
+                        const n=[...productRows];n[i]={...row,products:[],markup:""};setProductRows(n);
+                      }}
+                        title="묶음 삭제 — 묶음 비우고 다시 추가 가능"
+                        style={{background:"transparent",color:D.red,
+                          border:`1px solid ${D.border}`,borderRadius:4,
+                          padding:"2px 5px",fontSize:10,cursor:"pointer",fontWeight:700}}>
+                        ✕
+                      </button>
+                    </span>
                   ):(
                     ((row.group||"").trim()||(+row.rate||0)>0)&&(platform==="29CM"||platform==="자사몰")&&(
                       <span style={{display:"inline-flex",alignItems:"center",gap:3,marginRight:4}}>
@@ -4854,7 +4867,8 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           onAttachInlineCalc={(payload)=>attachInlineCalc(payload,inlineCalc.targetRowIdx)}
           attachMode={inlineCalc.targetRowIdx==null?"new":"fill"}
           initialCoupon={inlineCalc.initialCoupon}
-          initialPrimaryType={inlineCalc.initialPrimaryType}/>
+          initialPrimaryType={inlineCalc.initialPrimaryType}
+          initialCoupons={inlineCalc.initialCoupons}/>
       )}
       {inlineCalc?.platform==="자사몰"&&(
         <OwnMallSaleCalcModal
@@ -4905,50 +4919,98 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 </div>
               </>
             )}
-            {couponPrompt.step==="pick"&&(
-              <>
-                <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:4}}>
-                  기존 쿠폰 선택
-                </div>
-                <div style={{fontSize:11,color:D.textMeta,marginBottom:14}}>
-                  계산기에 선택한 쿠폰의 할인율이 미리 입력됩니다.
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflow:"auto"}}>
-                  {coupons.filter(c=>(+c.rate||0)>0).map((c,i)=>{
-                    const r=+c.rate||0;
-                    const nm=(c.name||"").trim()||`쿠폰 ${i+1}`;
-                    const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(c)];
-                    return (
-                      <button key={i} onClick={()=>{
-                        setInlineCalc({
-                          platform:couponPrompt.platform,
-                          targetRowIdx:couponPrompt.targetRowIdx,
-                          initialCoupon:r,
-                          initialCouponName:nm,
-                          initialPrimaryType:couponTypeOf(c),
-                        });
-                        setCouponPrompt(null);
-                      }}
-                        style={{textAlign:"left",background:D.surface,color:D.text,
-                          border:`1px solid ${D.border}`,borderRadius:6,padding:"8px 10px",
-                          fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
-                        <span style={{color:D.black,fontWeight:700}}>{nm}</span>
-                        <span style={{color:D.blue,marginLeft:6,fontWeight:700}}>{r}%</span>
-                        <span style={{color:D.textMeta,marginLeft:6,fontWeight:400}}>· {tInfo.short}</span>
+            {couponPrompt.step==="pick"&&(()=>{
+              const validIdxs=coupons.map((c,i)=>(+c.rate||0)>0?i:-1).filter(i=>i>=0);
+              const selectedIdxs=couponPrompt.selectedIdxs||new Set();
+              const selCount=selectedIdxs.size;
+              const toggleIdx=(idx)=>{
+                const next=new Set(selectedIdxs);
+                next.has(idx)?next.delete(idx):next.add(idx);
+                setCouponPrompt({...couponPrompt,selectedIdxs:next});
+              };
+              const confirmPick=()=>{
+                if(selCount===0) return;
+                const ordered=validIdxs.filter(i=>selectedIdxs.has(i));
+                const picked=ordered.map(i=>{
+                  const c=coupons[i];
+                  return {
+                    rate:+c.rate||0,
+                    type:couponTypeOf(c),
+                    name:(c.name||"").trim()||`쿠폰 ${i+1}`,
+                  };
+                });
+                const first=picked[0];
+                setInlineCalc({
+                  platform:couponPrompt.platform,
+                  targetRowIdx:couponPrompt.targetRowIdx,
+                  initialCoupons:picked,
+                  // 호환 — 기존 prop 도 1번째 쿠폰으로 채워둠 (자사몰 등)
+                  initialCoupon:first.rate,
+                  initialCouponName:first.name,
+                  initialPrimaryType:first.type,
+                });
+                setCouponPrompt(null);
+              };
+              return (
+                <>
+                  <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:4}}>
+                    기존 쿠폰 선택 <span style={{color:D.textMeta,fontWeight:400,fontSize:11}}>(여러 개 선택 가능)</span>
+                  </div>
+                  <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.55}}>
+                    선택한 쿠폰의 시나리오가 계산기에 그대로 복제됩니다.<br/>
+                    {couponPrompt.platform==="29CM"
+                      ?"· 첫번째 선택 = 기본 쿠폰, 나머지 = 누적(추가) 쿠폰"
+                      :"· 자사몰 계산기는 단일 쿠폰만 사용 — 첫번째 선택만 적용"}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflow:"auto"}}>
+                    {validIdxs.map((i,order)=>{
+                      const c=coupons[i];
+                      const r=+c.rate||0;
+                      const nm=(c.name||"").trim()||`쿠폰 ${i+1}`;
+                      const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(c)];
+                      const checked=selectedIdxs.has(i);
+                      const selOrder=checked?[...validIdxs].filter(x=>selectedIdxs.has(x)).indexOf(i):-1;
+                      return (
+                        <label key={i}
+                          style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",
+                            background:checked?"#eef3ff":D.surface,color:D.text,
+                            border:`1px solid ${checked?D.blue:D.border}`,borderRadius:6,padding:"8px 10px",
+                            fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                          <input type="checkbox" checked={checked} onChange={()=>toggleIdx(i)}
+                            style={{cursor:"pointer"}}/>
+                          {checked&&(
+                            <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+                              width:18,height:18,borderRadius:"50%",background:D.blue,color:"#fff",
+                              fontSize:10,fontWeight:700}}>{selOrder+1}</span>
+                          )}
+                          <span style={{color:D.black,fontWeight:700}}>{nm}</span>
+                          <span style={{color:D.blue,fontWeight:700}}>{r}%</span>
+                          <span style={{color:D.textMeta,fontWeight:400}}>· {tInfo.short}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div style={{marginTop:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+                    <button onClick={()=>setCouponPrompt({...couponPrompt,step:"choose"})}
+                      style={{background:"transparent",border:"none",color:D.textMeta,
+                        fontSize:11,cursor:"pointer"}}>← 뒤로</button>
+                    <div style={{display:"inline-flex",gap:6,alignItems:"center"}}>
+                      <button onClick={()=>setCouponPrompt(null)}
+                        style={{background:"transparent",border:"none",color:D.textMeta,
+                          fontSize:11,cursor:"pointer"}}>취소</button>
+                      <button onClick={confirmPick} disabled={selCount===0}
+                        style={{background:selCount>0?D.black:D.surfaceAlt,
+                          color:selCount>0?"#fff":D.textMeta,
+                          border:`1px solid ${selCount>0?D.black:D.border}`,borderRadius:6,
+                          padding:"7px 14px",fontSize:11,fontWeight:700,
+                          cursor:selCount>0?"pointer":"default"}}>
+                        선택 완료 ({selCount})
                       </button>
-                    );
-                  })}
-                </div>
-                <div style={{marginTop:10,display:"flex",justifyContent:"space-between"}}>
-                  <button onClick={()=>setCouponPrompt({...couponPrompt,step:"choose"})}
-                    style={{background:"transparent",border:"none",color:D.textMeta,
-                      fontSize:11,cursor:"pointer"}}>← 뒤로</button>
-                  <button onClick={()=>setCouponPrompt(null)}
-                    style={{background:"transparent",border:"none",color:D.textMeta,
-                      fontSize:11,cursor:"pointer"}}>취소</button>
-                </div>
-              </>
-            )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -6650,13 +6712,27 @@ const calcReverse=(list,p75,coupon)=>{
   const finalDisc=list>0?Math.round((1-finalPrice/list)*1000)/10:0;
   return {baseDisc, basePrice, finalPrice, finalDisc};
 };
-function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode, initialCoupon, initialPrimaryType }){
+function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode, initialCoupon, initialPrimaryType, initialCoupons }){
+  // initialCoupons: [{rate, type, name}] — 여러 쿠폰을 받아서 첫번째 → 기본, 나머지 → 누적 쿠폰
+  const initCoupons=Array.isArray(initialCoupons)&&initialCoupons.length>0?initialCoupons:null;
+  const initPrimary=initCoupons?initCoupons[0]:null;
+  const initStacks=initCoupons?initCoupons.slice(1):[];
   // 디폴트 — 자주 쓰는 시나리오 첫번째(29CM 지원 쿠폰 15% · 장바구니 · 채널부담)
-  const [coupon,setCoupon]=useState(initialCoupon!=null?initialCoupon:15);
-  const [primaryType,setPrimaryType]=useState(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart"); // 기본 쿠폰 타입
+  const [coupon,setCoupon]=useState(initPrimary?initPrimary.rate:(initialCoupon!=null?initialCoupon:15));
+  const [primaryType,setPrimaryType]=useState(
+    initPrimary&&COUPON_TYPE_BY_KEY[initPrimary.type]?initPrimary.type
+    :(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart")
+  ); // 기본 쿠폰 타입
   const [primaryBurden,setPrimaryBurden]=useState("channel"); // self=자사부담, channel=채널부담
   const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
-  const [stackCoupons,setStackCoupons]=useState([]); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
+  const [stackCoupons,setStackCoupons]=useState(
+    initStacks.map(c=>({
+      rate:+c.rate||0,
+      type:COUPON_TYPE_BY_KEY[c.type]?c.type:"product",
+      burden:"channel",
+      shareRate:50,
+    }))
+  ); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
   const [scenarioIdx,setScenarioIdx]=useState(0); // 선택한 시나리오 인덱스
   const [listPrice,setListPrice]=useState(129000);
   const [processed,setProcessed]=useState(null);
