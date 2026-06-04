@@ -9390,6 +9390,8 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   const [search,setSearch]=useState("");
   const [removedIdx,setRemovedIdx]=useState(()=>new Set());
   const [checkedIdx,setCheckedIdx]=useState(()=>new Set());
+  const [sample,setSample]=useState(null);
+  const [sampleMsg,setSampleMsg]=useState("");
   const fileRef=useRef(null);
   const modalCardRef=useRef(null);
   const dragSelectModeRef=useRef(null);
@@ -9403,10 +9405,45 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     setProducts(rows);setFileName(name);setRates({});setRemovedIdx(new Set());setCheckedIdx(new Set());
     setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`);
   };
+  // 마지막 업로드를 Supabase(mall_calc_last_file id=2) 에 보관 — 모달 열 때 자동 로드
+  const sampleToProducts=raw=>{ try{ const p=JSON.parse(raw||""); return Array.isArray(p)?p:null; }catch{ return null; } };
+  useEffect(()=>{ let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const {data,error}=await db.from("mall_calc_last_file").select("filename,content_b64").eq("id",2).maybeSingle();
+        if(error||!data||!alive) return;
+        const prods=sampleToProducts(data.content_b64);
+        if(!prods||!prods.length) return;
+        setSample({filename:data.filename});
+        loadProducts(prods,data.filename||"샘플");
+        setSampleMsg(`📎 최근 업로드 자동 로드 — ${data.filename||""} (${prods.length.toLocaleString()}개)`);
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  const saveSample=async(name,rows)=>{
+    try{
+      const db=await getSupabase();
+      const {error}=await db.from("mall_calc_last_file").upsert({id:2,filename:name,content_b64:JSON.stringify(rows),uploaded_at:new Date().toISOString()});
+      if(error) throw error;
+      setSample({filename:name});
+      setSampleMsg(`📎 자동 저장됨 (${rows.length.toLocaleString()}개) — 다음에 이 모달을 열면 바로 로드됩니다`);
+    }catch(err){ setSampleMsg("⚠ 저장 실패: "+(err?.message||err)); }
+  };
+  const clearSample=async()=>{
+    if(!window.confirm("저장된 최근 업로드를 삭제할까요? 모달을 다시 열면 빈 상태로 시작됩니다.")) return;
+    try{
+      const db=await getSupabase();
+      await db.from("mall_calc_last_file").delete().eq("id",2);
+      setSample(null); setSampleMsg("📎 저장된 업로드 삭제됨");
+      setProducts([]); setFileName(""); setStatus(""); setRates({}); setRemovedIdx(new Set()); setCheckedIdx(new Set());
+    }catch(err){ setSampleMsg("⚠ 삭제 실패: "+(err?.message||err)); }
+  };
   const handleFile=f=>{
     if(!f) return;
     setFileName(f.name);setStatus("파싱 중…");setProducts([]);setRates({});
-    parseMallProductFile(f,rows=>{ loadProducts(rows,f.name); }, err=>{ setStatus("오류: "+err); });
+    parseMallProductFile(f,rows=>{ loadProducts(rows,f.name); saveSample(f.name,rows); }, err=>{ setStatus("오류: "+err); });
   };
   const {priceOf,ready:priceReady}=useInventoryPricing();
   const rows=useMemo(()=>products
@@ -9543,6 +9580,21 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
           </span>
         </div>
         <div style={{padding:"14px 18px"}}>
+          {sampleMsg&&(
+            <div style={{padding:"8px 12px",marginBottom:10,fontSize:11,color:D.textSub,
+              background:D.surfaceAlt,border:`1px dashed ${D.borderMid}`,borderRadius:6,
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+              <span>{sampleMsg}</span>
+              {sample&&(
+                <span style={{display:"inline-flex",gap:6}}>
+                  <button onClick={()=>fileRef.current?.click()}
+                    style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:4,padding:"3px 10px",fontSize:11,cursor:"pointer",color:D.text,fontWeight:600}}>↑ 새 파일로 교체</button>
+                  <button onClick={clearSample}
+                    style={{background:"transparent",border:`1px solid ${D.red}55`,color:D.red,borderRadius:4,padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:600}}>저장 삭제</button>
+                </span>
+              )}
+            </div>
+          )}
           {products.length===0&&(
             <div onDragOver={e=>{e.preventDefault();setDragOver(true);}}
               onDragLeave={()=>setDragOver(false)}
@@ -9556,6 +9608,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
               {status&&<div style={{marginTop:4,fontSize:11,color:status.startsWith("오류")?D.red:D.textMeta}}>{status}</div>}
             </div>
           )}
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
           {products.length>0&&(<>
             <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,borderRadius:10,marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
