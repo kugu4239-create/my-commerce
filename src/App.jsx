@@ -5665,6 +5665,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [gapOpen,setGapOpen]=useState(false);
   const [calcOpen,setCalcOpen]=useState(false);
   const [mallCalcOpen,setMallCalcOpen]=useState(false); // 자사몰 세일율 계산기(베타) 모달
+  const [offlineCalcOpen,setOfflineCalcOpen]=useState(false); // 오프라인 세일율 계산기 모달
   const promoGaps=useMemo(()=>{
     // UTC 기준 날짜 연산 — 로컬(KST) 파싱 후 toISOString 변환 시 하루 밀리는 버그 방지
     const addDays=(d,n)=>{const dt=new Date(d+"T00:00:00Z");dt.setUTCDate(dt.getUTCDate()+n);return dt.toISOString().slice(0,10);};
@@ -5889,6 +5890,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
             boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
           자사몰 세일율 계산기
+        </button>
+      )}
+      {/* 좌측 책갈피 5 — 오프라인 세일율 계산기 (자사몰 아래) */}
+      {!strategyOpen&&!gapOpen&&!calcOpen&&!mallCalcOpen&&!offlineCalcOpen&&(
+        <button onClick={()=>setOfflineCalcOpen(true)}
+          style={{position:"fixed",top:840,left:0,zIndex:1500,writingMode:"vertical-rl",
+            background:D.surface,color:D.text,border:`1px solid ${D.borderMid}`,borderRadius:"0 8px 8px 0",
+            padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
+            boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
+          오프라인 세일율 계산기
         </button>
       )}
       <style>{`
@@ -6770,6 +6781,15 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             pinned_products:[],submit_date:""});
           setShowForm(true);
           setMallCalcOpen(false);
+        }}/>}
+      {offlineCalcOpen&&<OfflineSaleCalcModal onClose={()=>setOfflineCalcOpen(false)}
+        onCreatePromo={(prefill)=>{
+          setForm({name:"",platform:prefill.platform||"오프라인 스토어",start_date:"",end_date:"",
+            memo:prefill.content||"",content:prefill.content||"",files:[],
+            discount_plan:prefill.discount_plan||{products:{period:{start:"",end:""},rows:[]},coupons:[]},
+            pinned_products:[],submit_date:""});
+          setShowForm(true);
+          setOfflineCalcOpen(false);
         }}/>}
       {pinnedModal&&<PinnedListModal promo={pinnedModal.promo} onToggleHighlight={idx=>togglePinHighlight(pinnedModal.promo,idx)} onClose={()=>setPinnedModal(null)}/>}
     </div>
@@ -9345,6 +9365,325 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                 </div>
               );
             })()}
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 오프라인 세일율 계산기 — 이지어드민 인벤토리 파일 기반
+//   · 시나리오: 회원가입 1만원 쿠폰 (on/off)
+//   · 매장 수수료 28% (최종판매액 기준)
+//   · 정산 / 마진 / 마크업 산식은 자사몰과 동일 패턴
+// ─────────────────────────────────────────────
+function OfflineSaleCalcModal({ onClose, onCreatePromo }){
+  const [products,setProducts]=useState([]);
+  const [fileName,setFileName]=useState("");
+  const [status,setStatus]=useState("");
+  const [dragOver,setDragOver]=useState(false);
+  const [rates,setRates]=useState({});
+  const [signupCouponOn,setSignupCouponOn]=useState(true);
+  const SIGNUP_COUPON=10000;
+  const FEE_RATE=0.28;
+  const [search,setSearch]=useState("");
+  const [removedIdx,setRemovedIdx]=useState(()=>new Set());
+  const [checkedIdx,setCheckedIdx]=useState(()=>new Set());
+  const fileRef=useRef(null);
+  const modalCardRef=useRef(null);
+  const dragSelectModeRef=useRef(null);
+  useEffect(()=>{
+    const onUp=()=>{dragSelectModeRef.current=null;};
+    window.addEventListener("mouseup",onUp);
+    return ()=>window.removeEventListener("mouseup",onUp);
+  },[]);
+  const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
+  const loadProducts=(rows,name)=>{
+    setProducts(rows);setFileName(name);setRates({});setRemovedIdx(new Set());setCheckedIdx(new Set());
+    setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`);
+  };
+  const handleFile=f=>{
+    if(!f) return;
+    setFileName(f.name);setStatus("파싱 중…");setProducts([]);setRates({});
+    parseMallProductFile(f,rows=>{ loadProducts(rows,f.name); }, err=>{ setStatus("오류: "+err); });
+  };
+  const {priceOf,ready:priceReady}=useInventoryPricing();
+  const rows=useMemo(()=>products
+    .map((p,i)=>({p,i}))
+    .filter(({i})=>!removedIdx.has(i))
+    .sort((a,b)=>{
+      const ao=(a.p&&a.p._origRow!=null)?a.p._origRow:a.i;
+      const bo=(b.p&&b.p._origRow!=null)?b.p._origRow:b.i;
+      return ao-bo;
+    })
+    .map(({p,i})=>{
+      const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
+      const priced=priceOf?priceOf(p.name,p.code):{selling:0,supply:0};
+      const supply=priced.supply||p.supply||0;
+      const selling=p.selling||priced.selling||0;
+      const discAmt=Math.round(selling*rate/100);
+      const basePrice=selling-discAmt;
+      const couponAmt=signupCouponOn?Math.min(SIGNUP_COUPON,basePrice):0;
+      const finalPrice=basePrice-couponAmt;
+      const supplyVat=Math.round(supply*1.1);
+      const fee=Math.round(finalPrice*FEE_RATE);
+      const net=finalPrice-fee;
+      const margin=net-supplyVat;
+      const markup=supplyVat>0?net/supplyVat:0;
+      const effDisc=selling>0?(1-finalPrice/selling)*100:0;
+      return {...p,idx:i,rate,selling,supply,discAmt,basePrice,couponAmt,finalPrice,supplyVat,fee,net,margin,markup,effDisc};
+    }),[products,rates,signupCouponOn,priceOf,removedIdx]);
+  const setRate=(i,v)=>setRates(prev=>({...prev,[i]:v}));
+  const setAllRates=v=>setRates(()=>{const m={};products.forEach((_,i)=>{m[i]=v;});return m;});
+  const setCheckedRates=v=>{
+    if(checkedIdx.size===0) return;
+    setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
+  };
+  const removeRow=(idx)=>setRemovedIdx(prev=>{const next=new Set(prev);next.add(idx);return next;});
+  const restoreAll=()=>{setRemovedIdx(new Set());setCheckedIdx(new Set());};
+  const removeChecked=()=>{
+    if(checkedIdx.size===0) return;
+    setRemovedIdx(prev=>{const next=new Set(prev);checkedIdx.forEach(i=>next.add(i));return next;});
+    setCheckedIdx(new Set());
+  };
+  const removeUnchecked=()=>{
+    if(checkedIdx.size===0) return;
+    setRemovedIdx(prev=>{const next=new Set(prev);rows.forEach(r=>{if(!checkedIdx.has(r.idx))next.add(r.idx);});return next;});
+    setCheckedIdx(new Set());
+  };
+  const startDragSelect=(idx,isChecked)=>{
+    dragSelectModeRef.current=isChecked?"remove":"add";
+    setCheckedIdx(prev=>{const wantAdd=dragSelectModeRef.current==="add";const has=prev.has(idx);if(wantAdd&&has) return prev;if(!wantAdd&&!has) return prev;const next=new Set(prev);wantAdd?next.add(idx):next.delete(idx);return next;});
+  };
+  const enterDragSelect=(idx)=>{
+    if(!dragSelectModeRef.current) return;
+    setCheckedIdx(prev=>{const wantAdd=dragSelectModeRef.current==="add";const has=prev.has(idx);if(wantAdd&&has) return prev;if(!wantAdd&&!has) return prev;const next=new Set(prev);wantAdd?next.add(idx):next.delete(idx);return next;});
+  };
+  const handleCreatePromo=()=>{
+    if(!onCreatePromo||!rows.length) return;
+    const groups={};
+    rows.forEach(r=>{
+      const k=Math.round((r.rate||0)/5)*5;
+      if(!groups[k]) groups[k]={baseDisc:k,products:[],count:0,matched:0,mSum:0,effSum:0};
+      groups[k].count++;
+      groups[k].effSum+=(r.effDisc||0);
+      groups[k].products.push(r);
+      if((r.supplyVat||0)>0){groups[k].matched++;groups[k].mSum+=(r.markup||0);}
+    });
+    const groupArr=Object.values(groups).sort((a,b)=>a.baseDisc-b.baseDisc);
+    const productRows=groupArr.map(g=>{
+      const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+      return {
+        group:`매장 할인 ${g.baseDisc}%`,
+        rate:String(g.baseDisc),
+        markup:avgM!=null?String(avgM):"",
+        cpn:0,
+        products:g.products.map(p=>({
+          code:p.code||"",name:p.name||"",
+          list:p.selling||0,baseDisc:p.rate||0,
+          basePrice:p.basePrice||0,finalPrice:p.finalPrice||0,
+          finalDisc:Math.round((p.effDisc||0)*10)/10,markup:p.markup||0,
+          supply:p.supply||0,supplyIncVat:p.supplyVat||0,
+          selfBurden:Math.round(p.discAmt||0)+(p.couponAmt||0),
+          channelBurden:0,
+          fee:p.fee||0,feeRate:Math.round(FEE_RATE*100),
+          net:p.net||0,margin:p.margin||0,
+        })),
+      };
+    });
+    const couponRows=signupCouponOn
+      ?[{...emptyCouponRow("product"),name:"회원가입 ₩10,000 쿠폰",rate:"",unit:"won"}]
+      :[];
+    const groupLines=groupArr.map(g=>{
+      const avgFr=g.count>0?Math.round(g.effSum/g.count*10)/10:0;
+      const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+      return `• 매장 할인 ${g.baseDisc}% · ${g.count}개 · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마크업 ×${avgM.toFixed(2)} (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
+    }).join("\n");
+    const content=`[오프라인 세일율 계산기]\n시나리오: 회원가입 ₩10,000 쿠폰 ${signupCouponOn?"적용":"미적용"} · 매장 수수료 28% (최종판매액)\n\n[기본 세일율별 결론]\n${groupLines}`;
+    onCreatePromo({
+      platform:"오프라인 스토어",
+      content,
+      discount_plan:{
+        products:{period:{start:"",end:""},rows:productRows},
+        coupons:couponRows,
+      },
+    });
+  };
+  const won=n=>"₩"+Math.round(n||0).toLocaleString();
+  const numCell={padding:"4px 6px",textAlign:"right"};
+  const q=search.trim().toLowerCase();
+  const filtered=q?rows.filter(r=>(r.name||"").toLowerCase().includes(q)||String(r.rate).includes(q)):rows;
+  const shown=filtered;
+  const agg=useMemo(()=>{
+    if(!rows.length) return null;
+    const matched=rows.filter(r=>r.supplyVat>0);
+    const sumQty=rows.length;
+    const noCost=rows.filter(r=>!(r.supplyVat>0)).length;
+    const neg=rows.filter(r=>r.margin<0&&r.supplyVat>0).length;
+    const avgMk=matched.length>0?matched.reduce((s,r)=>s+r.markup,0)/matched.length:null;
+    return {n:sumQty,matchedN:matched.length,noCost,neg,avgMk};
+  },[rows]);
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2200,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
+        style={{background:D.surface,borderRadius:12,width:"98vw",maxWidth:"100vw",maxHeight:"92vh",overflowY:"auto",
+          border:`1px solid ${D.black}`,boxShadow:"0 8px 40px rgba(0,0,0,0.22)",
+          fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
+        <div style={{padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",
+          gap:8,borderBottom:`1px solid ${D.borderMid}`,background:D.surface,position:"sticky",top:0,zIndex:5}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+            <b style={{fontSize:13,color:D.black,fontWeight:700}}>오프라인 세일율 계산기</b>
+            <span style={{fontSize:11,color:D.textMeta}}>이지어드민 인벤토리 파일 · 매장 수수료 28%</span>
+          </span>
+          <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+            <CaptureBtn cardRef={modalCardRef} filename={`오프라인세일율_${dayjs().format("YYYYMMDD")}`} DC={{border:D.border,sub:D.textMeta}}/>
+            <button onClick={onClose} style={{background:"transparent",border:"none",cursor:"pointer",color:D.textMeta,fontSize:18}}>✕</button>
+          </span>
+        </div>
+        <div style={{padding:"14px 18px"}}>
+          {products.length===0&&(
+            <div onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+              onDragLeave={()=>setDragOver(false)}
+              onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files?.[0];if(f) handleFile(f);}}
+              onClick={()=>fileRef.current?.click()}
+              style={{border:`2px dashed ${dragOver?D.blue:D.borderMid}`,borderRadius:10,padding:"30px 20px",textAlign:"center",cursor:"pointer",background:dragOver?"#eef3ff":D.surface}}>
+              <div style={{fontSize:14,color:D.text,fontWeight:600,marginBottom:6}}>이지어드민 인벤토리 파일 업로드</div>
+              <div style={{fontSize:11,color:D.textMeta}}>인식 컬럼: 상품코드 · 상품명 · 판매가 · 공급가</div>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
+              {fileName&&<div style={{marginTop:8,fontSize:11,color:D.text}}>{fileName}</div>}
+              {status&&<div style={{marginTop:4,fontSize:11,color:status.startsWith("오류")?D.red:D.textMeta}}>{status}</div>}
+            </div>
+          )}
+          {products.length>0&&(<>
+            <div style={{padding:"12px 14px",background:D.surface,border:`1px solid ${D.black}`,borderRadius:10,marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                <span style={{fontSize:12,fontWeight:700,color:D.black}}>할인율</span>
+                <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%)</span>
+                <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:D.textMeta}}>일괄:</span>
+                  {[0,10,15,20,30].map(v=>(
+                    <button key={`a${v}`} onClick={()=>setAllRates(v)}
+                      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
+                  ))}
+                  {checkedIdx.size>0&&(<>
+                    <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>· 체크 {checkedIdx.size}개:</span>
+                    {[0,10,15,20,30].map(v=>(
+                      <button key={`c${v}`} onClick={()=>setCheckedRates(v)}
+                        style={{background:"transparent",border:`1px solid ${D.blue}55`,color:D.blue,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>{v}%</button>
+                    ))}
+                  </>)}
+                </span>
+              </div>
+              <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>시나리오 — 회원가입 ₩10,000 쿠폰</span>
+                <label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,cursor:"pointer"}}>
+                  <input type="checkbox" checked={signupCouponOn} onChange={e=>setSignupCouponOn(e.target.checked)}/>
+                  <span style={{color:D.text}}>적용</span>
+                </label>
+                <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>매장 수수료 28% 는 최종판매액 기준 자동 적용</span>
+              </div>
+            </div>
+            {agg&&(
+              <div style={{padding:"10px 14px",background:D.surfaceAlt,borderRadius:6,marginBottom:14,
+                display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",fontSize:11,color:D.text}}>
+                <span style={{display:"inline-flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontWeight:700,color:D.black}}>평균 마크업</span>
+                  {agg.avgMk==null
+                    ?<span style={{color:D.textMeta}}>공급가 매칭 행 없음</span>
+                    :<span style={{fontSize:15,fontWeight:800,color:agg.avgMk>3?D.green:D.red}}>×{agg.avgMk.toFixed(2)}</span>}
+                </span>
+                {agg.avgMk!=null&&<span style={{color:D.textMeta}}>· 매칭 {agg.matchedN}/{agg.n}건</span>}
+                {agg.noCost>0&&<span style={{fontSize:11,color:D.amber}}>공급가 미입력 {agg.noCost}개 (마진 과대평가)</span>}
+                {agg.neg>0&&<span style={{fontSize:11,color:D.red}}>역마진 {agg.neg}개</span>}
+                {checkedIdx.size>0&&(
+                  <button onClick={removeChecked}
+                    style={{background:D.red,color:"#fff",border:"none",borderRadius:5,padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                    🗑 체크 {checkedIdx.size}개 일괄 삭제
+                  </button>
+                )}
+                {checkedIdx.size>0&&(
+                  <button onClick={removeUnchecked}
+                    style={{background:"transparent",color:D.red,border:`1px solid ${D.red}`,borderRadius:5,padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                    ↶ 체크 외 {Math.max(0,rows.length-checkedIdx.size)}개 삭제
+                  </button>
+                )}
+                {removedIdx.size>0&&(
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:D.textSub,
+                    border:`1px dashed ${D.borderMid}`,borderRadius:5,padding:"3px 8px"}}>
+                    🗑 {removedIdx.size}개 제거
+                    <button onClick={restoreAll}
+                      style={{background:"transparent",border:"none",cursor:"pointer",color:D.blue,fontSize:11,fontWeight:600,padding:"0 4px"}}>↻ 복원</button>
+                  </span>
+                )}
+                {onCreatePromo&&(
+                  <button onClick={handleCreatePromo}
+                    style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    + 오프라인 프로모션 추가하기
+                  </button>
+                )}
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="상품명 또는 할인율로 검색"
+                style={{...inNum,width:280,maxWidth:"60vw"}}/>
+              {q&&<span style={{fontSize:11,color:D.textMeta}}>{filtered.length.toLocaleString()}개 검색됨 · 전체 {rows.length.toLocaleString()}</span>}
+              {q&&<button onClick={()=>setSearch("")} style={{background:"none",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 9px",fontSize:11,cursor:"pointer",color:D.textSub}}>✕ 초기화</button>}
+              <span style={{marginLeft:"auto",fontSize:11,color:D.textMeta}}>{priceReady?"가격 DB ✓":"가격 DB 로딩 중…"}</span>
+            </div>
+            <div style={{overflow:"auto",height:"55vh"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{background:D.surfaceAlt,color:D.textMeta,position:"sticky",top:0,zIndex:1}}>
+                  <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
+                  <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품명</th>
+                  <th style={{...numCell,fontWeight:500}}>판매가</th>
+                  <th style={{...numCell,fontWeight:500}}>할인율</th>
+                  <th style={{...numCell,fontWeight:500}}>할인가</th>
+                  <th style={{...numCell,fontWeight:500}}>쿠폰</th>
+                  <th style={{...numCell,fontWeight:500}}>최종판매액</th>
+                  <th style={{...numCell,fontWeight:500}}>수수료 28%</th>
+                  <th style={{...numCell,fontWeight:500}}>정산</th>
+                  <th style={{...numCell,fontWeight:500}}>원가(VAT)</th>
+                  <th style={{...numCell,fontWeight:500}}>마진</th>
+                  <th style={{...numCell,fontWeight:500}}>마크업</th>
+                </tr></thead>
+                <tbody>
+                  {shown.map(r=>(
+                    <tr key={r.code+r.idx}
+                      onMouseEnter={()=>enterDragSelect(r.idx)}
+                      style={{borderBottom:`1px solid ${D.border}`,background:checkedIdx.has(r.idx)?`${D.red}0a`:"transparent"}}>
+                      <td onMouseDown={e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
+                        style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace",cursor:"pointer",userSelect:"none"}}>
+                        <input type="checkbox" checked={checkedIdx.has(r.idx)} onChange={()=>{}}
+                          onMouseDown={e=>{e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
+                          style={{marginRight:4,cursor:"pointer",verticalAlign:"middle"}}/>
+                        <button onClick={()=>removeRow(r.idx)}
+                          style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2}}>✕</button>
+                        {r.code}
+                      </td>
+                      <td onMouseDown={e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
+                        style={{padding:"4px 6px",color:D.text,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer",userSelect:"none"}} title={r.name}>{r.name}</td>
+                      <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}</td>
+                      <td style={numCell}>
+                        <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1"
+                          value={rates[r.idx]??10} onChange={e=>setRate(r.idx,e.target.value)}
+                          style={{width:46,textAlign:"right",background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,padding:"2px 4px",fontSize:11,color:D.text,fontFamily:"inherit"}}/>
+                        <span style={{marginLeft:2,fontSize:10,color:D.textMeta}}>%</span>
+                      </td>
+                      <td style={{...numCell,color:D.blue,background:"#eef3ff",fontWeight:600}}>{won(r.basePrice)}</td>
+                      <td style={{...numCell,color:r.couponAmt>0?D.red:D.textMeta}}>{r.couponAmt>0?`−${won(r.couponAmt)}`:"—"}</td>
+                      <td style={{...numCell,color:D.green,background:"#eef9f1",fontWeight:600}}>{won(r.finalPrice)}</td>
+                      <td style={{...numCell,color:D.red}}>−{won(r.fee)}</td>
+                      <td style={{...numCell,fontWeight:600}}>{won(r.net)}</td>
+                      <td style={{...numCell,color:r.supplyVat>0?D.text:D.textMeta}}>{r.supplyVat>0?won(r.supplyVat):"—"}</td>
+                      <td style={{...numCell,fontWeight:600,color:r.supplyVat>0?(r.margin>=0?D.text:D.red):D.textMeta}}>{r.supplyVat>0?won(r.margin):"—"}</td>
+                      <td style={{...numCell,fontWeight:700,color:r.supplyVat>0?(r.markup>3?D.green:D.red):D.textMeta}}>{r.supplyVat>0?`×${r.markup.toFixed(2)}`:"—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>)}
         </div>
       </div>
