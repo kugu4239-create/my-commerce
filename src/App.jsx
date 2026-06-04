@@ -3985,6 +3985,10 @@ function normalizePlan(p){
     stack:!!c.stack,
     excludeGroups:Array.isArray(c.excludeGroups)?c.excludeGroups:[],
     stacksWith:Array.isArray(c.stacksWith)?c.stacksWith:[],
+    // 부담 주체 (product: self/channel, cart: 항상 channel, share: shareRate 로 분배)
+    burden:c?.burden==="channel"?"channel":(c?.burden==="self"?"self":undefined),
+    // 분담 쿠폰의 채널 분담률 (%, 0~100) — 자사 = 100 - shareRate
+    shareRate:c?.shareRate!=null?Math.max(0,Math.min(100,+c.shareRate||0)):undefined,
   }));
   // 신 포맷
   if(p?.products&&!Array.isArray(p.products)&&Array.isArray(p.products.rows)){
