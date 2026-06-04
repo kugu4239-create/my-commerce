@@ -4098,6 +4098,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   const [localCircled,setLocalCircled]=useState(()=>new Set());
   // 묶음 상품 보기 — 저장된 매트릭스에서도 클릭 시 인라인 펼침
   const [bundleOpenIdx,setBundleOpenIdx]=useState(null);
+  const bundleCaptureRef=useRef(null); // 현재 펼쳐진 묶음 영역 이미지 캡처 타깃
   if(!m.hasGroup) return null;
   // 값 클릭 시 파란 원 강조 토글. onToggleCircle 있으면 제어형(저장·공유), 없으면 로컬
   const controlled=!!onToggleCircle;
@@ -4250,12 +4251,17 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
             {isOpen&&hasBundle&&(
               <tr>
                 <td colSpan={2+m.cols.length} style={{padding:"0 6px 8px",background:D.surfaceAlt}}>
-                  <div style={{margin:"4px 0",border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
+                  <div ref={bundleCaptureRef} style={{margin:"4px 0",border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
                     <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
-                      display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
                       <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}</span>
-                      <button onClick={()=>setBundleOpenIdx(null)}
-                        style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+                      <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+                        <CaptureBtn cardRef={bundleCaptureRef}
+                          filename={`묶음_${(r.group||`행${i+1}`).replace(/\s+/g,"")}_${products.length}개`}
+                          DC={{border:D.border,sub:D.textMeta}}/>
+                        <button onClick={()=>setBundleOpenIdx(null)}
+                          style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+                      </span>
                     </div>
                     <div style={{maxHeight:280,overflow:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
@@ -4323,6 +4329,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
   const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
   const [bundleViewIdx,setBundleViewIdx]=useState(null); // 묶음 상품 보기 펼친 행 인덱스
+  const bundleCaptureRef=useRef(null); // 묶음 펼침 영역 이미지 캡처 타깃
   // 인라인 계산기 — null | { platform: '29CM'|'자사몰', targetRowIdx: number|null, initialCoupon?: number, initialCouponName?: string }
   //   targetRowIdx 가 null 이면 결과는 새 상품군 행들로 append
   //   숫자면 그 행의 묶음만 채움 (단일 행)
@@ -4635,12 +4642,17 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           const cpnRow=Number(r.cpn||0)||0;
           const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
           return (
-          <div style={{marginTop:8,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
+          <div ref={bundleCaptureRef} style={{marginTop:8,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden",background:D.surface}}>
             <div style={{padding:"6px 10px",background:D.surfaceAlt,fontSize:10,fontWeight:700,color:D.black,
-              display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
               <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}</span>
-              <button onClick={()=>setBundleViewIdx(null)}
-                style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+                <CaptureBtn cardRef={bundleCaptureRef}
+                  filename={`묶음_${(r.group||`행${bundleViewIdx+1}`).replace(/\s+/g,"")}_${r.products.length}개`}
+                  DC={{border:D.border,sub:D.textMeta}}/>
+                <button onClick={()=>setBundleViewIdx(null)}
+                  style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
+              </span>
             </div>
             <div style={{maxHeight:280,overflow:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
