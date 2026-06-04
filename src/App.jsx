@@ -7946,11 +7946,13 @@ function parseMallProductFile(file,onResult,onError){
       return;
     }
     const out=[];
-    rows.forEach(r=>{
+    // 원본 파일 행 순서 보존 — _origRow 인덱스로 명시 (이후 정렬/필터 시 기준)
+    rows.forEach((r,rowIdx)=>{
       const name=String(r[kName]||"").trim();
       const selling=toNum(r[kSell]);
       if(!name||selling<=0) return;
       out.push({
+        _origRow:rowIdx,
         code:kCode!==undefined?String(r[kCode]||"").trim():"",
         name,
         selling,
@@ -8054,6 +8056,12 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
   const rows=useMemo(()=>products
     .map((p,i)=>({p,i}))
     .filter(({i})=>!removedIdx.has(i))
+    // 원본 파일 행 순서 보존: _origRow 가 있으면 그 순으로, 없으면 products 인덱스 순
+    .sort((a,b)=>{
+      const ao=(a.p&&a.p._origRow!=null)?a.p._origRow:a.i;
+      const bo=(b.p&&b.p._origRow!=null)?b.p._origRow:b.i;
+      return ao-bo;
+    })
     .map(({p,i})=>{
       const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
       const priced=priceOf?priceOf(p.name,p.code):{selling:0,supply:0};
