@@ -4098,6 +4098,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
   const [localCircled,setLocalCircled]=useState(()=>new Set());
   // 묶음 상품 보기 — 저장된 매트릭스에서도 클릭 시 인라인 펼침
   const [bundleOpenIdx,setBundleOpenIdx]=useState(null);
+  const [bundleSearch,setBundleSearch]=useState(""); // 묶음 펼침 표 내 상품 검색
   const bundleCaptureRef=useRef(null); // 현재 펼쳐진 묶음 영역 이미지 캡처 타깃
   if(!m.hasGroup) return null;
   // 값 클릭 시 파란 원 강조 토글. onToggleCircle 있으면 제어형(저장·공유), 없으면 로컬
@@ -4248,37 +4249,51 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                 </td>;
               })}
             </tr>
-            {isOpen&&hasBundle&&createPortal(
-              <div onClick={()=>setBundleOpenIdx(null)}
+            {isOpen&&hasBundle&&(()=>{
+              const qm=(bundleSearch||"").trim().toLowerCase();
+              const visibleProducts=qm
+                ?products.filter(p=>((p.name||"").toLowerCase().includes(qm))||((p.code||"").toLowerCase().includes(qm)))
+                :products;
+              return createPortal(
+              <div onClick={()=>{setBundleOpenIdx(null);setBundleSearch("");}}
                 style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
                   display:"flex",alignItems:"center",justifyContent:"center",padding:20,
                   fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
                   <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
-                    style={{width:"80vw",maxHeight:"85vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+                    style={{width:"98vw",height:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
                       display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
                     <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
-                      display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-                      <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}</span>
-                      <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+                      display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+                      <span>{r.group} · 묶음 상품 {products.length}개{(r.cpn||0)>0?` · 쿠폰율 ${r.cpn}%`:""}{qm?` · 검색 ${visibleProducts.length}개`:""}</span>
+                      <span style={{display:"inline-flex",alignItems:"center",gap:6,flex:"1 1 auto",justifyContent:"flex-end",flexWrap:"wrap"}}>
+                        <input value={bundleSearch} onChange={e=>setBundleSearch(e.target.value)}
+                          placeholder="상품명 / 코드 검색"
+                          data-capture-hide
+                          style={{padding:"4px 8px",border:`1px solid ${D.border}`,borderRadius:5,fontSize:11,
+                            background:D.surface,color:D.text,fontFamily:"inherit",width:200}}/>
+                        {qm&&<button data-capture-hide onClick={()=>setBundleSearch("")}
+                          style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 4px"}}>✕ 검색 해제</button>}
+                        <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
                         <CaptureBtn cardRef={bundleCaptureRef}
                           filename={`묶음_${(r.group||`행${i+1}`).replace(/\s+/g,"")}_${products.length}개`}
                           DC={{border:D.border,sub:D.textMeta}}/>
-                        <button onClick={()=>setBundleOpenIdx(null)}
+                        <button onClick={()=>{setBundleOpenIdx(null);setBundleSearch("");}}
                           style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:14}}>✕</button>
+                        </span>
                       </span>
                     </div>
                     <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                             <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
-                          {products.map((p,j)=>{
+                          {visibleProducts.map((p,j)=>{
                             const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
                             const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
-                            const prefixSelf=(p.list||0)*((p.baseDisc||0)/100);
+                            const prefixSelf=Math.round((p.list||0)*((p.baseDisc||0)/100));
                             const cpnSelfAmt=Math.max(0,(p.selfBurden||0)-prefixSelf);
                             const cpnChannelAmt=(p.channelBurden||0);
                             const bp=p.basePrice||0;
@@ -4288,10 +4303,10 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                               <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
                                 <td title={p.name} style={{padding:"3px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{won(p.list)}</td>
-                                <td title={`기본 할인율 ${p.baseDisc||0}% (자사부담)${(p.selfBurden||0)>0?` · 자사부담 합계 ₩${(p.selfBurden||0).toLocaleString()}`:""}`}
+                                <td title={`기본 할인율 ${p.baseDisc||0}% (자사부담)${prefixSelf>0?` · 프런트 할인분 ₩${prefixSelf.toLocaleString()} (정상가 × ${p.baseDisc}%)`:""}`}
                                   style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>
                                   {p.baseDisc||0}%
-                                  {(p.selfBurden||0)>0&&<span style={{marginLeft:4,fontSize:9,color:D.red,fontWeight:500}}>(−{won(p.selfBurden)})</span>}
+                                  {prefixSelf>0&&<span style={{marginLeft:4,fontSize:9,color:D.red,fontWeight:500}}>(−{won(prefixSelf)})</span>}
                                 </td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:600}}>{won(p.basePrice)}</td>
                                 <td title={`자사 ${cpnSelfPct}% + 채널 ${cpnChannelPct}%`}
@@ -4299,7 +4314,15 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                                   {cpnSelfPct+cpnChannelPct}<span style={{color:D.textMeta,fontWeight:400}}>({cpnSelfPct}+{cpnChannelPct})</span>
                                 </td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:700}}>{p.finalDisc||0}%</td>
-                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
+                                <td title={cpnSelfAmt>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${won(cpnSelfAmt)}`:"자사부담 쿠폰 없음"}
+                                  style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnSelfAmt>0?D.red:D.textMeta}}>
+                                  {cpnSelfAmt>0?`−${won(cpnSelfAmt)}`:"—"}
+                                </td>
+                                <td title={cpnChannelAmt>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${won(cpnChannelAmt)} (정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                                  style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnChannelAmt>0?D.red:D.textMeta}}>
+                                  {cpnChannelAmt>0?`−${won(cpnChannelAmt)}`:"—"}
+                                </td>
+                                <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.green,background:"#eef9f1",fontWeight:600}}>{won(p.finalPrice)}</td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
                                 <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
                                   {(p.channelBurden||0)>0?`+${won(p.channelBurden)}`:"—"}
@@ -4325,7 +4348,8 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                   </div>
               </div>,
               document.body
-            )}
+              );
+            })()}
             </React.Fragment>);
           })}
         </tbody>
@@ -4343,6 +4367,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
   const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
   const [bundleViewIdx,setBundleViewIdx]=useState(null); // 묶음 상품 보기 펼친 행 인덱스
+  const [bundleSearch,setBundleSearch]=useState(""); // 묶음 펼침 표 내 상품 검색
   const bundleCaptureRef=useRef(null); // 묶음 펼침 영역 이미지 캡처 타깃
   // 인라인 계산기 — null | { platform: '29CM'|'자사몰', targetRowIdx: number|null, initialCoupon?: number, initialCouponName?: string }
   //   targetRowIdx 가 null 이면 결과는 새 상품군 행들로 append
@@ -4655,36 +4680,49 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           const r=productRows[bundleViewIdx];
           const cpnRow=Number(r.cpn||0)||0;
           const won=n=>"₩"+(Math.round(n||0)).toLocaleString();
+          const q=(bundleSearch||"").trim().toLowerCase();
+          const visibleProducts=q
+            ?r.products.filter(p=>((p.name||"").toLowerCase().includes(q))||((p.code||"").toLowerCase().includes(q)))
+            :r.products;
           return createPortal(
-          <div onClick={()=>setBundleViewIdx(null)}
+          <div onClick={()=>{setBundleViewIdx(null);setBundleSearch("");}}
             style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
               display:"flex",alignItems:"center",justifyContent:"center",padding:20,
               fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
           <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
-            style={{width:"80vw",maxHeight:"85vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+            style={{width:"98vw",height:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
               display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
             <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
-              display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-              <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}</span>
-              <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+              <span>{r.group||`행 ${bundleViewIdx+1}`} · 묶음 상품 {r.products.length}개{cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}{q?` · 검색 ${visibleProducts.length}개`:""}</span>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6,flex:"1 1 auto",justifyContent:"flex-end",flexWrap:"wrap"}}>
+                <input value={bundleSearch} onChange={e=>setBundleSearch(e.target.value)}
+                  placeholder="상품명 / 코드 검색"
+                  data-capture-hide
+                  style={{padding:"4px 8px",border:`1px solid ${D.border}`,borderRadius:5,fontSize:11,
+                    background:D.surface,color:D.text,fontFamily:"inherit",width:200}}/>
+                {q&&<button data-capture-hide onClick={()=>setBundleSearch("")}
+                  style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 4px"}}>✕ 검색 해제</button>}
+                <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
                 <CaptureBtn cardRef={bundleCaptureRef}
                   filename={`묶음_${(r.group||`행${bundleViewIdx+1}`).replace(/\s+/g,"")}_${r.products.length}개`}
                   DC={{border:D.border,sub:D.textMeta}}/>
-                <button onClick={()=>setBundleViewIdx(null)}
+                <button onClick={()=>{setBundleViewIdx(null);setBundleSearch("");}}
                   style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:14}}>✕</button>
+                </span>
               </span>
             </div>
             <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                     <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
-                  {r.products.map((p,j)=>{
+                  {visibleProducts.map((p,j)=>{
                     const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
-                    const prefixSelf=(p.list||0)*((p.baseDisc||0)/100);
+                    const prefixSelf=Math.round((p.list||0)*((p.baseDisc||0)/100));
                     const cpnSelfAmt=Math.max(0,(p.selfBurden||0)-prefixSelf);
                     const cpnChannelAmt=(p.channelBurden||0);
                     const bp=p.basePrice||0;
@@ -4694,10 +4732,10 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                       <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
                         <td title={p.name} style={{padding:"3px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{won(p.list)}</td>
-                        <td title={`기본 할인율 ${p.baseDisc||0}% (자사부담)${(p.selfBurden||0)>0?` · 자사부담 합계 ₩${(p.selfBurden||0).toLocaleString()}`:""}`}
+                        <td title={`기본 할인율 ${p.baseDisc||0}% (자사부담)${prefixSelf>0?` · 프런트 할인분 ₩${prefixSelf.toLocaleString()} (정상가 × ${p.baseDisc}%)`:""}`}
                           style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>
                           {p.baseDisc||0}%
-                          {(p.selfBurden||0)>0&&<span style={{marginLeft:4,fontSize:9,color:D.red,fontWeight:500}}>(−{won(p.selfBurden)})</span>}
+                          {prefixSelf>0&&<span style={{marginLeft:4,fontSize:9,color:D.red,fontWeight:500}}>(−{won(prefixSelf)})</span>}
                         </td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:600}}>{won(p.basePrice)}</td>
                         <td title={`자사 ${cpnSelfPct}% + 채널 ${cpnChannelPct}%`}
@@ -4705,6 +4743,14 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                           {cpnSelfPct+cpnChannelPct}<span style={{color:D.textMeta,fontWeight:400}}>({cpnSelfPct}+{cpnChannelPct})</span>
                         </td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:700}}>{p.finalDisc||0}%</td>
+                        <td title={cpnSelfAmt>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${won(cpnSelfAmt)}`:"자사부담 쿠폰 없음"}
+                          style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnSelfAmt>0?D.red:D.textMeta}}>
+                          {cpnSelfAmt>0?`−${won(cpnSelfAmt)}`:"—"}
+                        </td>
+                        <td title={cpnChannelAmt>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${won(cpnChannelAmt)} (정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                          style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnChannelAmt>0?D.red:D.textMeta}}>
+                          {cpnChannelAmt>0?`−${won(cpnChannelAmt)}`:"—"}
+                        </td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.finalPrice)}</td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−{won(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
                         <td style={{padding:"3px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
@@ -7370,7 +7416,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
     <div onClick={onClose} className="salecalc-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="salecalc"
-        style={{background:D.surface,borderRadius:12,width:"min(1440px,80vw)",maxHeight:"92vh",overflowY:"auto",
+        style={{background:D.surface,borderRadius:12,width:"98vw",maxWidth:"100vw",maxHeight:"92vh",overflowY:"auto",
           border:`1px solid ${D.black}`,
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:11,color:D.text}}>
         <style>{`
@@ -8093,7 +8139,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                     <div style={{border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
+                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
                               position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>
@@ -8149,32 +8195,40 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                   </td>
                                 );
                               })()}
-                              <td title={`기본 할인율 ${r.baseDisc||0}% (자사부담)${(r.selfBurden||0)>0?` · 자사부담 합계 ₩${wonFmt(r.selfBurden)} (프런트 할인분 + 자사부담 쿠폰)`:""}`}
-                                style={{padding:"4px 6px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
-                                <select value={Math.round((r.baseDisc||0)/5)*5}
-                                  onChange={e=>updateBaseDisc(r.row,e.target.value)}
-                                  title={r.manualBase!=null?"수동 변경됨 — ↻ 로 0%로 복귀":"5% 단위 다이얼"}
-                                  style={{padding:"3px 6px",fontSize:11,textAlign:"right",
-                                    border:`1px solid ${r.manualBase!=null?D.blue:D.border}`,
-                                    borderRadius:4,background:r.manualBase!=null?"#eef3ff":D.surface,
-                                    color:r.manualBase!=null?D.blue:D.text,
-                                    fontWeight:r.manualBase!=null?700:400,fontFamily:"inherit"}}>
-                                  {Array.from({length:21},(_,j)=>j*5).map(v=>(
-                                    <option key={v} value={v}>{v}%</option>
-                                  ))}
-                                </select>
-                                {r.manualBase!=null&&(
-                                  <button onClick={()=>resetBaseDisc(r.row)} title="0%로 복귀"
-                                    style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 3px"}}>↻</button>
-                                )}
-                                {(r.selfBurden||0)>0&&(
-                                  <div style={{fontSize:10,color:D.red,marginTop:2}}>(−₩{wonFmt(r.selfBurden)})</div>
-                                )}
-                              </td>
+                              {(()=>{
+                                const prefixSelfAmt=Math.round((r.list||0)*((r.baseDisc||0)/100));
+                                const couponSelfAmt=Math.max(0,(r.selfBurden||0)-prefixSelfAmt);
+                                return (
+                                  <td title={`기본 할인율 ${r.baseDisc||0}% (자사부담)${prefixSelfAmt>0?` · 프런트 할인분 ₩${wonFmt(prefixSelfAmt)} (정상가 × ${r.baseDisc}%)`:""}`}
+                                    style={{padding:"4px 6px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>
+                                    <select value={Math.round((r.baseDisc||0)/5)*5}
+                                      onChange={e=>updateBaseDisc(r.row,e.target.value)}
+                                      title={r.manualBase!=null?"수동 변경됨 — ↻ 로 0%로 복귀":"5% 단위 다이얼"}
+                                      style={{padding:"3px 6px",fontSize:11,textAlign:"right",
+                                        border:`1px solid ${r.manualBase!=null?D.blue:D.border}`,
+                                        borderRadius:4,background:r.manualBase!=null?"#eef3ff":D.surface,
+                                        color:r.manualBase!=null?D.blue:D.text,
+                                        fontWeight:r.manualBase!=null?700:400,fontFamily:"inherit"}}>
+                                      {Array.from({length:21},(_,j)=>j*5).map(v=>(
+                                        <option key={v} value={v}>{v}%</option>
+                                      ))}
+                                    </select>
+                                    {r.manualBase!=null&&(
+                                      <button onClick={()=>resetBaseDisc(r.row)} title="0%로 복귀"
+                                        style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 3px"}}>↻</button>
+                                    )}
+                                    {prefixSelfAmt>0&&(
+                                      <div style={{fontSize:10,color:D.red,marginTop:2}}>(−₩{wonFmt(prefixSelfAmt)})</div>
+                                    )}
+                                  </td>
+                                );
+                              })()}
                               {(()=>{
                                 const sv=r.supplyIncVat||Math.round((r.supply||0)*1.1);
                                 const baseMu=sv>0?Math.round(r.basePrice/sv*100)/100:null;
                                 const finalMu=sv>0?Math.round(r.finalPrice/sv*100)/100:null;
+                                const prefixSelfAmt=Math.round((r.list||0)*((r.baseDisc||0)/100));
+                                const couponSelfAmt=Math.max(0,(r.selfBurden||0)-prefixSelfAmt);
                                 return (<>
                                   <td title={`프런트 판매가 = 정상가 ₩${wonFmt(r.list)} × (1 − ${r.baseDisc}%) = ₩${wonFmt(r.basePrice)} (10원 단위 반올림) | I열에 입력되는 노출 판매가${baseMu!=null?` · 마크업 ×${baseMu.toFixed(2)} (기본가 ÷ 원가)`:""}`}
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef3ff",color:D.blue,fontWeight:600,whiteSpace:"nowrap"}}>
@@ -8188,8 +8242,16 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                   <td title={`최종 할인율 = 1 − (실 판매액 ₩${wonFmt(r.finalPrice)} ÷ 정상가 ₩${wonFmt(r.list)}) = ${r.finalDisc}% (정상가 대비 총 할인)`}
                                     style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",
                                       background:"#eef3ff",color:D.blue,fontWeight:700,whiteSpace:"nowrap"}}>{r.finalDisc}%</td>
-                                  <td title={`최종 노출가 = 프런트 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
-                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.textSub,whiteSpace:"nowrap"}}>
+                                  <td title={couponSelfAmt>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${wonFmt(couponSelfAmt)} (자사 부담 → 마진 차감)`:"자사부담 쿠폰 없음"}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:couponSelfAmt>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
+                                    {couponSelfAmt>0?`−₩${wonFmt(couponSelfAmt)}`:"—"}
+                                  </td>
+                                  <td title={(r.channelBurden||0)>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${wonFmt(r.channelBurden)} (29CM 부담 → 정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:(r.channelBurden||0)>0?D.red:D.textMeta,whiteSpace:"nowrap"}}>
+                                    {(r.channelBurden||0)>0?`−₩${wonFmt(r.channelBurden)}`:"—"}
+                                  </td>
+                                  <td title={`최종 판매가 = 프런트 판매가 ₩${wonFmt(r.basePrice)} × (1 − ${cpn}%) = ₩${wonFmt(r.finalPrice)} | 쿠폰 적용 후 고객 결제 금액${finalMu!=null?` · 마크업 ×${finalMu.toFixed(2)} (실판매가 ÷ 원가)`:""}`}
+                                    style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"right",background:"#eef9f1",color:D.green,fontWeight:600,whiteSpace:"nowrap"}}>
                                     ₩{wonFmt(r.finalPrice)}
                                     {finalMu!=null&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,color:finalMu>3?D.green:D.red}}>×{finalMu.toFixed(2)}</span>}
                                   </td>
@@ -8292,21 +8354,23 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","최종 노출가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
                                             <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
                                           ))}
                                         </tr></thead>
                                         <tbody>
                                           {g.products.map((p,j)=>{
                                             const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
+                                            const prefixSelfG=Math.round((p.list||0)*((p.baseDisc||0)/100));
+                                            const cpnSelfAmtG=Math.max(0,(p.selfBurden||0)-prefixSelfG);
                                             return (
                                             <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
                                               <td title={p.name} style={{padding:"4px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap"}}>₩{wonFmt(p.list)}</td>
-                                              <td title={`기본 할인율 ${p.baseDisc}% (자사부담)${(p.selfBurden||0)>0?` · 자사부담 합계 ₩${wonFmt(p.selfBurden)}`:""}`}
+                                              <td title={`기본 할인율 ${p.baseDisc}% (자사부담)${prefixSelfG>0?` · 프런트 할인분 ₩${wonFmt(prefixSelfG)} (정상가 × ${p.baseDisc}%)`:""}`}
                                                 style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>
                                                 {p.baseDisc}%
-                                                {(p.selfBurden||0)>0&&<span style={{marginLeft:4,fontSize:9,color:D.red,fontWeight:500}}>(−₩{wonFmt(p.selfBurden)})</span>}
+                                                {prefixSelfG>0&&<span style={{marginLeft:4,fontSize:9,color:D.red,fontWeight:500}}>(−₩{wonFmt(prefixSelfG)})</span>}
                                               </td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:600}}>₩{wonFmt(p.basePrice)}</td>
                                               <td title={`자사 ${cpnSelfPct}% + 채널 ${cpnChannelPct}% (가법 분담)`}
@@ -8314,7 +8378,15 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                                 {cpnSelfPct+cpnChannelPct}<span style={{color:D.textMeta,fontWeight:400}}>({cpnSelfPct}+{cpnChannelPct})</span>
                                               </td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.blue,background:"#eef3ff",fontWeight:700}}>{p.finalDisc}%</td>
-                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>₩{wonFmt(p.finalPrice)}</td>
+                                              <td title={cpnSelfAmtG>0?`쿠폰 자사부담 = 자사부담 쿠폰의 차감액 합산 ₩${wonFmt(cpnSelfAmtG)}`:"자사부담 쿠폰 없음"}
+                                                style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:cpnSelfAmtG>0?D.red:D.textMeta}}>
+                                                {cpnSelfAmtG>0?`−₩${wonFmt(cpnSelfAmtG)}`:"—"}
+                                              </td>
+                                              <td title={(p.channelBurden||0)>0?`29CM(채널) 부담 = 채널부담 쿠폰의 차감액 합산 ₩${wonFmt(p.channelBurden)} (정산 시 자사에 보전)`:"29CM(채널) 부담 쿠폰 없음"}
+                                                style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.red:D.textMeta}}>
+                                                {(p.channelBurden||0)>0?`−₩${wonFmt(p.channelBurden)}`:"—"}
+                                              </td>
+                                              <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.green,background:"#eef9f1",fontWeight:600}}>₩{wonFmt(p.finalPrice)}</td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red}}>−₩{wonFmt(p.fee||0)} <span style={{fontSize:9,color:D.textMeta}}>({p.feeRate||0}%)</span></td>
                                               <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:(p.channelBurden||0)>0?D.blue:D.textMeta}}>
                                                 {(p.channelBurden||0)>0?`+₩${wonFmt(p.channelBurden)}`:"—"}
@@ -9914,7 +9986,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
         style={{background:D.surface,borderRadius:14,padding:"24px 28px",
-          width:"80vw",minWidth:"min(900px,95vw)",maxWidth:1800,
+          width:"98vw",minWidth:"min(900px,95vw)",maxWidth:"100vw",
           maxHeight:"90vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
@@ -11628,18 +11700,25 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
   const [conflictCount,setConflictCount]=useState(0);
 
   // 파일 파싱 완료 후 기존 데이터 수 조회 (업로드 파일에 포함된 날짜만 대상)
+  //   동일 트랜잭션 키(sale_date|store_name|order_id|product_name|option_name) 기준으로
+  //   업로드 파일과 중복되는 기존 행만 카운트해 사용자에게 안내. 그 외 날짜 안의 다른
+  //   기존 행은 유지되므로 '날짜 단위 일괄 삭제' 로 인한 데이터 유실 문제 없음.
   useEffect(()=>{
     if(!preview||!uploadDates.length){setConflictCount(0);return;}
     (async()=>{
       const db=await getSupabase();
-      let total=0;
+      let existing=[];
       for(let i=0;i<uploadDates.length;i+=100){
         const batch=uploadDates.slice(i,i+100);
-        const{count}=await db.from("store_sales").select("*",{count:"exact",head:true})
+        const{data}=await db.from("store_sales")
+          .select("sale_date,store_name,order_id,product_name,option_name")
           .in("sale_date",batch);
-        total+=count||0;
+        if(data) existing=existing.concat(data);
       }
-      setConflictCount(total);
+      const keyOf=r=>`${r.sale_date||""}|${r.store_name||""}|${r.order_id||""}|${r.product_name||""}|${r.option_name||""}`;
+      const existingKeys=new Set(existing.map(keyOf));
+      const conflicts=preview.filter(r=>existingKeys.has(keyOf(r))).length;
+      setConflictCount(conflicts);
     })();
   },[preview,uploadDates]);
 
@@ -11699,19 +11778,39 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
     if(!preview?.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    // 업로드 파일에 포함된 날짜만 삭제 (날짜 범위 전체가 아님 — 사이의 미포함 날짜 데이터 보존)
+    // 머지 정책 — 트랜잭션 키 (sale_date, store_name, order_id, product_name, option_name) 기준.
+    //   1) 업로드 내부 중복 제거 (같은 키 마지막 행만 사용)
+    //   2) 업로드 날짜 범위의 기존 행 조회 → 키 Set 으로 변환
+    //   3) 기존 Set 에 없는 행만 INSERT (이미 있는 트랜잭션은 스킵)
+    //   - 같은 날짜의 다른 행은 절대 삭제하지 않으므로 부분 업로드 시 데이터 유실 없음
+    //   - 같은 키 재업로드는 멱등 (값 수정이 필요하면 별도로 행 삭제 후 재업로드 필요)
+    const keyOf=r=>`${r.sale_date||""}|${r.store_name||""}|${r.order_id||""}|${r.product_name||""}|${r.option_name||""}`;
+    const incomingMap=new Map();
+    preview.forEach(r=>{incomingMap.set(keyOf(r),r);});
+    const incoming=Array.from(incomingMap.values());
+    const incomingDupCount=preview.length-incoming.length;
+    let existing=[];
     for(let i=0;i<uploadDates.length;i+=100){
       const batch=uploadDates.slice(i,i+100);
-      const{error:de}=await db.from("store_sales").delete().in("sale_date",batch);
-      if(de){setResult({type:"error",msg:"기존 데이터 삭제 실패: "+de.message});setLoading(false);return;}
+      const{data,error:se}=await db.from("store_sales")
+        .select("sale_date,store_name,order_id,product_name,option_name")
+        .in("sale_date",batch);
+      if(se){setResult({type:"error",msg:"기존 데이터 조회 실패: "+se.message});setLoading(false);return;}
+      if(data) existing=existing.concat(data);
     }
-    for(let i=0;i<preview.length;i+=500){
-      const{error}=await db.from("store_sales").insert(preview.slice(i,i+500));
+    const existingKeys=new Set(existing.map(keyOf));
+    const toInsert=incoming.filter(r=>!existingKeys.has(keyOf(r)));
+    const skipExisting=incoming.length-toInsert.length;
+    for(let i=0;i<toInsert.length;i+=500){
+      const{error}=await db.from("store_sales").insert(toInsert.slice(i,i+500));
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    const replaceNote=conflictCount>0?` (기존 ${conflictCount}건 대체됨)`:"";
-    setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료${replaceNote}`,ts:ts2});
+    const notes=[];
+    if(skipExisting>0) notes.push(`기존 중복 ${skipExisting}건 스킵`);
+    if(incomingDupCount>0) notes.push(`파일 내 중복 ${incomingDupCount}건 정리`);
+    const noteStr=notes.length?` (${notes.join(" · ")})`:"";
+    setStep(2);setResult({type:"success",msg:`${toInsert.length}건 신규 등록${noteStr}`,ts:ts2});
     onUpdate(ts2);setLoading(false);
   };
 
