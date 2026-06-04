@@ -11700,18 +11700,25 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
   const [conflictCount,setConflictCount]=useState(0);
 
   // 파일 파싱 완료 후 기존 데이터 수 조회 (업로드 파일에 포함된 날짜만 대상)
+  //   동일 트랜잭션 키(sale_date|store_name|order_id|product_name|option_name) 기준으로
+  //   업로드 파일과 중복되는 기존 행만 카운트해 사용자에게 안내. 그 외 날짜 안의 다른
+  //   기존 행은 유지되므로 '날짜 단위 일괄 삭제' 로 인한 데이터 유실 문제 없음.
   useEffect(()=>{
     if(!preview||!uploadDates.length){setConflictCount(0);return;}
     (async()=>{
       const db=await getSupabase();
-      let total=0;
+      let existing=[];
       for(let i=0;i<uploadDates.length;i+=100){
         const batch=uploadDates.slice(i,i+100);
-        const{count}=await db.from("store_sales").select("*",{count:"exact",head:true})
+        const{data}=await db.from("store_sales")
+          .select("sale_date,store_name,order_id,product_name,option_name")
           .in("sale_date",batch);
-        total+=count||0;
+        if(data) existing=existing.concat(data);
       }
-      setConflictCount(total);
+      const keyOf=r=>`${r.sale_date||""}|${r.store_name||""}|${r.order_id||""}|${r.product_name||""}|${r.option_name||""}`;
+      const existingKeys=new Set(existing.map(keyOf));
+      const conflicts=preview.filter(r=>existingKeys.has(keyOf(r))).length;
+      setConflictCount(conflicts);
     })();
   },[preview,uploadDates]);
 
@@ -11771,19 +11778,39 @@ function StoreUploader({ onUpdate, histRefreshKey=0 }) {
     if(!preview?.length) return;
     setLoading(true); setResult(null);
     const db=await getSupabase();
-    // 업로드 파일에 포함된 날짜만 삭제 (날짜 범위 전체가 아님 — 사이의 미포함 날짜 데이터 보존)
+    // 머지 정책 — 트랜잭션 키 (sale_date, store_name, order_id, product_name, option_name) 기준.
+    //   1) 업로드 내부 중복 제거 (같은 키 마지막 행만 사용)
+    //   2) 업로드 날짜 범위의 기존 행 조회 → 키 Set 으로 변환
+    //   3) 기존 Set 에 없는 행만 INSERT (이미 있는 트랜잭션은 스킵)
+    //   - 같은 날짜의 다른 행은 절대 삭제하지 않으므로 부분 업로드 시 데이터 유실 없음
+    //   - 같은 키 재업로드는 멱등 (값 수정이 필요하면 별도로 행 삭제 후 재업로드 필요)
+    const keyOf=r=>`${r.sale_date||""}|${r.store_name||""}|${r.order_id||""}|${r.product_name||""}|${r.option_name||""}`;
+    const incomingMap=new Map();
+    preview.forEach(r=>{incomingMap.set(keyOf(r),r);});
+    const incoming=Array.from(incomingMap.values());
+    const incomingDupCount=preview.length-incoming.length;
+    let existing=[];
     for(let i=0;i<uploadDates.length;i+=100){
       const batch=uploadDates.slice(i,i+100);
-      const{error:de}=await db.from("store_sales").delete().in("sale_date",batch);
-      if(de){setResult({type:"error",msg:"기존 데이터 삭제 실패: "+de.message});setLoading(false);return;}
+      const{data,error:se}=await db.from("store_sales")
+        .select("sale_date,store_name,order_id,product_name,option_name")
+        .in("sale_date",batch);
+      if(se){setResult({type:"error",msg:"기존 데이터 조회 실패: "+se.message});setLoading(false);return;}
+      if(data) existing=existing.concat(data);
     }
-    for(let i=0;i<preview.length;i+=500){
-      const{error}=await db.from("store_sales").insert(preview.slice(i,i+500));
+    const existingKeys=new Set(existing.map(keyOf));
+    const toInsert=incoming.filter(r=>!existingKeys.has(keyOf(r)));
+    const skipExisting=incoming.length-toInsert.length;
+    for(let i=0;i<toInsert.length;i+=500){
+      const{error}=await db.from("store_sales").insert(toInsert.slice(i,i+500));
       if(error){setResult({type:"error",msg:error.message});setLoading(false);return;}
     }
     const ts2=nowStr();
-    const replaceNote=conflictCount>0?` (기존 ${conflictCount}건 대체됨)`:"";
-    setStep(2);setResult({type:"success",msg:`${preview.length}건 등록 완료${replaceNote}`,ts:ts2});
+    const notes=[];
+    if(skipExisting>0) notes.push(`기존 중복 ${skipExisting}건 스킵`);
+    if(incomingDupCount>0) notes.push(`파일 내 중복 ${incomingDupCount}건 정리`);
+    const noteStr=notes.length?` (${notes.join(" · ")})`:"";
+    setStep(2);setResult({type:"success",msg:`${toInsert.length}건 신규 등록${noteStr}`,ts:ts2});
     onUpdate(ts2);setLoading(false);
   };
 
