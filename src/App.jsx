@@ -6909,9 +6909,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const wb=wbRef.current;
     wb.Workbook={...(wb.Workbook||{}),CalcPr:{...(wb.Workbook?.CalcPr||{}),fullCalcOnLoad:true}};
     XLSX.writeFile(wb,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
-    // 다운로드 직후 제거/체크 상태 초기화
-    if(removedRows.size>0) setRemovedRows(new Set());
-    if(checkedRows.size>0) setCheckedRows(new Set());
+    // 다운로드 후에도 임시 제거 / 체크 상태 유지 — 모달 재오픈 / 파일 재업로드 시점까지 보존
   };
   // 행 임시 제거 / 복원 / 체크 토글 / 체크 일괄 삭제
   const removeBulkRow=(rowId)=>setRemovedRows(prev=>{const next=new Set(prev);next.add(rowId);return next;});
@@ -8167,14 +8165,12 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
   const exportXlsx=async()=>{
     if(!rows.length) return;
     const XLSX=await getXLSX();
-    const aoa=[["상품코드","상품명","할인 이후 가격","할인율(%)"],
-      ...rows.map(r=>[r.code,r.name,r.couponPrice,Math.round(r.effDisc*10)/10])];
+    const aoa=[["상품코드","상품명","기본 할인가","기본 할인율(%)"],
+      ...rows.map(r=>[r.code,r.name,r.discPrice,r.rate])];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),"세일율");
     XLSX.writeFile(wb,`자사몰_세일율${couponName?"_"+couponName:""}_${dayjs().format("YYYYMMDD")}.xlsx`);
-    // 다운로드 직후 제거 / 체크 상태 초기화 — 제거된 상품 복원
-    if(removedIdx.size>0) setRemovedIdx(new Set());
-    if(checkedIdx.size>0) setCheckedIdx(new Set());
+    // 다운로드 후에도 임시 제거 / 체크 상태 유지 — 모달 재오픈 / 파일 재업로드 시점까지 보존
   };
   // + 자사몰 프로모션 추가 — 할인율(rate) 5% 버킷으로 묶고 묶음 상품 리스트 전달
   const handleCreatePromo=()=>{
@@ -8340,7 +8336,7 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
                 )}
                 <button onClick={exportXlsx}
                   style={{marginLeft:onCreatePromo?0:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                  엑셀 추출 (코드·상품명·할인가·할인율)
+                  엑셀 추출 (코드·상품명·기본 할인가·기본 할인율)
                 </button>
               </div>
             )}
