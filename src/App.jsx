@@ -6411,6 +6411,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   const [summary,setSummary]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [dragOver,setDragOver]=useState(false);
+  // 일괄 표의 임시 제거 / 체크 — 다운로드/재업로드/리로드 시 복원
+  const [removedRows,setRemovedRows]=useState(()=>new Set());
+  const [checkedRows,setCheckedRows]=useState(()=>new Set());
   const fileRef=useRef(null);
   const wbRef=useRef(null), fnameRef=useRef(""), sheetRef=useRef(""), rawRef=useRef(null);
   const cpnPrimary=(()=>{const v=Number(coupon); return isNaN(v)||v<0?0:Math.min(v,60);})();
@@ -6868,6 +6871,8 @@ function SaleCalcModal({ onClose, onCreatePromo }){
         rows.push({row:r,code:code?.v||"",name:name?.v||"",list:Math.round(listVal)});
       }
       rawRef.current=rows; setShowResults(true);
+      // 새 업로드 시 제거/체크 상태 초기화
+      setRemovedRows(new Set()); setCheckedRows(new Set());
       if(!rows.length){ setSummary("데이터 행을 찾지 못했습니다. E열에 정상가가 있는지 확인하세요."); setProcessed([]); return; }
       setProcessed(rows.map(r=>{
         // 디폴트 기본 할인율 0% (구간/P75 제거)
@@ -6889,7 +6894,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const XLSX=await getXLSX();
     const ws=wbRef.current.Sheets[sheetRef.current];
     // 원본 셀 보존 — 기존 서식(z)·스타일(s)은 유지하고 I열 값만 교체. 캐시 표시값(w)·수식(f)만 제거
+    // 임시 제거된 행은 I열 갱신 미적용 (원본 그대로 둠)
     processed.forEach(r=>{
+      if(removedRows.has(r.row)) return;
       const addr=XLSX.utils.encode_cell({r:r.row,c:8});
       const prev=ws[addr]||{};
       const next={...prev,t:"n",v:r.basePrice};
@@ -6902,6 +6909,18 @@ function SaleCalcModal({ onClose, onCreatePromo }){
     const wb=wbRef.current;
     wb.Workbook={...(wb.Workbook||{}),CalcPr:{...(wb.Workbook?.CalcPr||{}),fullCalcOnLoad:true}};
     XLSX.writeFile(wb,`${fnameRef.current}_쿠폰${cpn}%_역산.xlsx`,{cellStyles:true});
+    // 다운로드 직후 제거/체크 상태 초기화
+    if(removedRows.size>0) setRemovedRows(new Set());
+    if(checkedRows.size>0) setCheckedRows(new Set());
+  };
+  // 행 임시 제거 / 복원 / 체크 토글 / 체크 일괄 삭제
+  const removeBulkRow=(rowId)=>setRemovedRows(prev=>{const next=new Set(prev);next.add(rowId);return next;});
+  const restoreAllBulk=()=>{setRemovedRows(new Set());setCheckedRows(new Set());};
+  const toggleCheckBulk=(rowId)=>setCheckedRows(prev=>{const next=new Set(prev);next.has(rowId)?next.delete(rowId):next.add(rowId);return next;});
+  const removeCheckedBulk=()=>{
+    if(checkedRows.size===0) return;
+    setRemovedRows(prev=>{const next=new Set(prev);checkedRows.forEach(i=>next.add(i));return next;});
+    setCheckedRows(new Set());
   };
   const sec={marginBottom:12,border:`1px solid ${D.black}`,borderRadius:10,background:D.surface};
   const summarySty={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",fontSize:11,fontWeight:700,cursor:"pointer",listStyle:"none",color:D.black};
@@ -6909,7 +6928,9 @@ function SaleCalcModal({ onClose, onCreatePromo }){
   const th={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"left",fontSize:11};
   const td={padding:"8px 10px",border:`1px solid ${D.border}`,textAlign:"left"};
   const DISP_CAP=500;
-  const shown=processed?processed.slice(0,DISP_CAP):[];
+  // 표시 행 — 제거된 행은 숨김
+  const visibleProcessed=processed?processed.filter(r=>!removedRows.has(r.row)):[];
+  const shown=visibleProcessed.slice(0,DISP_CAP);
   return (
     <div onClick={onClose} className="salecalc-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -7580,12 +7601,12 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                       {' · '}케이스 총합 할인율 {cpn}%
                     </div>
                   )}
-                  {processed&&processed.length>0&&(()=>{
-                    const matched=processed.filter(r=>(r.supply||0)>0);
+                  {visibleProcessed.length>0&&(()=>{
+                    const matched=visibleProcessed.filter(r=>(r.supply||0)>0);
                     const avg=matched.length>0?matched.reduce((s,r)=>s+(r.markup||0),0)/matched.length:null;
-                    const avgBase=processed.length>0?processed.reduce((s,r)=>s+(r.baseDisc||0),0)/processed.length:0;
-                    const avgFinal=processed.length>0?processed.reduce((s,r)=>s+(r.finalDisc||0),0)/processed.length:0;
-                    const anyManual=processed.some(r=>r.manualBase!=null);
+                    const avgBase=visibleProcessed.length>0?visibleProcessed.reduce((s,r)=>s+(r.baseDisc||0),0)/visibleProcessed.length:0;
+                    const avgFinal=visibleProcessed.length>0?visibleProcessed.reduce((s,r)=>s+(r.finalDisc||0),0)/visibleProcessed.length:0;
+                    const anyManual=visibleProcessed.some(r=>r.manualBase!=null);
                     return (
                       <div style={{margin:"0",padding:"10px 14px",background:D.surfaceAlt,borderRadius:6,
                         display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",fontSize:11,color:D.text,
@@ -7596,8 +7617,22 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                             ?<span style={{color:D.textMeta}}>공급가 매칭 행 없음</span>
                             :<span style={{fontSize:15,fontWeight:800,color:avg>3?D.green:D.red}}>×{avg.toFixed(2)}</span>}
                         </span>
-                        {avg!=null&&<span style={{color:D.textMeta}}>· 매칭 {matched.length.toLocaleString()}/{processed.length.toLocaleString()}건</span>}
+                        {avg!=null&&<span style={{color:D.textMeta}}>· 매칭 {matched.length.toLocaleString()}/{visibleProcessed.length.toLocaleString()}건</span>}
                         <span style={{color:D.textMeta}}>· 평균 기본 <b style={{color:D.text}}>{(Math.round(avgBase*10)/10)}%</b> · 평균 최종 <b style={{color:D.text}}>{(Math.round(avgFinal*10)/10)}%</b></span>
+                        {checkedRows.size>0&&(
+                          <button onClick={removeCheckedBulk}
+                            style={{background:D.red,color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                            🗑 체크 {checkedRows.size}개 일괄 삭제
+                          </button>
+                        )}
+                        {removedRows.size>0&&(
+                          <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:D.textSub,
+                            border:`1px dashed ${D.borderMid}`,borderRadius:5,padding:"2px 8px"}}>
+                            🗑 {removedRows.size}개 제거 <span style={{color:D.textMeta}}>(다운로드/재업로드 시 복원)</span>
+                            <button onClick={restoreAllBulk}
+                              style={{background:"transparent",border:"none",cursor:"pointer",color:D.blue,fontSize:11,fontWeight:600,padding:"0 4px"}}>↻ 복원</button>
+                          </span>
+                        )}
                         <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5}}>
                           <span style={{fontSize:11,color:D.textMeta,fontWeight:600}}>기본 세일율 일괄:</span>
                           {[10,15,20,25,30,40].map(v=>(
@@ -7638,14 +7673,39 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                           {["상품명","정가 (E열)","쿠폰율","기본 할인율","프런트 판매가 (I열)","최종 노출가","최종 할인율(쿠폰 포함)","자사부담","수수료","채널보전","자사 정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
                               textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
-                              position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>{h}</th>
+                              position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>
+                              {i===0?(
+                                <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                                  <input type="checkbox" title="현재 표시된 행 전체 선택/해제"
+                                    checked={shown.length>0&&shown.every(s=>checkedRows.has(s.row))}
+                                    onChange={()=>{
+                                      const allChecked=shown.length>0&&shown.every(s=>checkedRows.has(s.row));
+                                      setCheckedRows(prev=>{
+                                        const next=new Set(prev);
+                                        if(allChecked) shown.forEach(s=>next.delete(s.row));
+                                        else shown.forEach(s=>next.add(s.row));
+                                        return next;
+                                      });
+                                    }}
+                                    style={{cursor:"pointer"}}/>
+                                  {h}
+                                </span>
+                              ):h}
+                            </th>
                           ))}
                         </tr></thead>
                         <tbody>
                           {shown.map((r,i)=>(
-                            <tr key={i}>
+                            <tr key={i} style={{background:checkedRows.has(r.row)?`${D.red}0a`:"transparent"}}>
                               <td title={r.name} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"left",
-                                minWidth:160,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
+                                minWidth:160,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                <input type="checkbox" checked={checkedRows.has(r.row)} onChange={()=>toggleCheckBulk(r.row)}
+                                  title="체크 후 일괄 삭제"
+                                  style={{marginRight:4,cursor:"pointer",verticalAlign:"middle"}}/>
+                                <button onClick={()=>removeBulkRow(r.row)} title="이 행을 표에서 임시로 제거 (다운로드/재업로드 시 복원)"
+                                  style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2,verticalAlign:"middle"}}>✕</button>
+                                {r.name}
+                              </td>
                               {(()=>{
                                 const sv=r.supplyIncVat||Math.round((r.supply||0)*1.1);
                                 const listMu=sv>0?Math.round(r.list/sv*100)/100:null;
@@ -7737,7 +7797,7 @@ function SaleCalcModal({ onClose, onCreatePromo }){
                   {processed&&processed.length>0&&(()=>{
                     // 기본 할인율 % (5% 단위 버킷) 별 그룹 — 묶인 상품 리스트 보존
                     const groups={};
-                    processed.forEach(r=>{
+                    visibleProcessed.forEach(r=>{
                       const k=Math.round((r.baseDisc||0)/5)*5;
                       if(!groups[k]) groups[k]={baseDisc:k,products:[],count:0,matched:0,mSum:0,frSum:0};
                       groups[k].count++;
