@@ -7171,23 +7171,60 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
   //  2) 원본명 정확 일치
   //  3) 정규화된 이름 정확 일치 (옵션 접미사·괄호·구분자 제거)
   //  4) 정규화된 이름끼리 부분 포함 (≥ 4글자)
+  // 더 공격적인 2차 정규화 — supplyOf fallback 용 (override 저장과 무관)
+  //   - normProdName 결과에서 / - . , ; : 등 추가 구분자도 제거
+  //   - en/em 대시류 제거
+  const normProdNameAggr=useCallback(s=>normProdName(s)
+    .replace(/[/\-.,;:]+/g,"")
+    .replace(/[–—―]/g,""),[normProdName]);
+  // 토큰화 — 영문/숫자/한글만 추출, 2자 이상
+  const tokenize=useCallback(s=>String(s||"").toLowerCase().split(/[^a-z0-9가-힣]+/i).filter(t=>t.length>=2),[]);
   const supplyOf=useCallback((name,code)=>{
     const raw=(name||"").trim();
     const nz=normProdName(raw);
     if(nz&&overrideMap[nz]) return overrideMap[nz];
-    if(code){const v=invMap["c:"+String(code).trim()]; if(v) return v;}
+    if(code){
+      const c=String(code).trim();
+      if(invMap["c:"+c]) return invMap["c:"+c];
+      // 대문자 정규화 코드 (소문자/대문자 차이 흡수)
+      if(invMap["c:"+c.toUpperCase()]) return invMap["c:"+c.toUpperCase()];
+      if(invMap["c:"+c.toLowerCase()]) return invMap["c:"+c.toLowerCase()];
+    }
     if(!raw) return 0;
     if(invMap["n:"+raw]) return invMap["n:"+raw];
     if(!nz) return 0;
     if(invMap["z:"+nz]) return invMap["z:"+nz];
-    // fallback — 정규화 키끼리 부분 포함 (양방향, 4자 이상)
+    // 1차 fallback — 정규화 키끼리 부분 포함 (양방향, 3자 이상)
     const zkeys=Object.keys(invMap).filter(k=>k.startsWith("z:"));
     for(const k of zkeys){
       const kn=k.slice(2);
-      if(kn.length>=4&&(kn.includes(nz)||nz.includes(kn))) return invMap[k];
+      if(kn.length>=3&&(kn.includes(nz)||nz.includes(kn))) return invMap[k];
+    }
+    // 2차 fallback — 공격적 정규화 (대시·점·슬래시 제거) 부분 포함
+    const nza=normProdNameAggr(raw);
+    if(nza&&nza!==nz){
+      for(const k of zkeys){
+        const kna=normProdNameAggr(k.slice(2));
+        if(kna.length>=3&&(kna.includes(nza)||nza.includes(kna))) return invMap[k];
+      }
+    }
+    // 3차 fallback — 토큰 교집합 비율 (≥ 0.7) — 단어 순서 다른 케이스
+    const aTok=tokenize(raw);
+    if(aTok.length>=2){
+      const aSet=new Set(aTok);
+      let best=0,bestK=null;
+      for(const k of zkeys){
+        const kn=k.slice(2);
+        const bTok=tokenize(kn);
+        if(bTok.length<2) continue;
+        let common=0; bTok.forEach(t=>{if(aSet.has(t)) common++;});
+        const score=common/Math.min(aSet.size,bTok.length);
+        if(score>best){best=score;bestK=k;}
+      }
+      if(best>=0.7&&bestK) return invMap[bestK];
     }
     return 0;
-  },[invMap,overrideMap,normProdName]);
+  },[invMap,overrideMap,normProdName,normProdNameAggr,tokenize]);
   // 행별 baseDisc 수동 오버라이드 (사용자가 직접 수정한 값) — cpn 변경에도 유지
   useEffect(()=>{
     if(!rawRef.current) return;
