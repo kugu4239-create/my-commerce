@@ -4263,7 +4263,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                           style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
                       </span>
                     </div>
-                    <div style={{maxHeight:280,overflow:"auto"}}>
+                    <div data-capture-expand style={{maxHeight:280,overflow:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
                           {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
@@ -4654,7 +4654,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                   style={{background:"none",border:"none",cursor:"pointer",color:D.textMeta,fontSize:11}}>✕</button>
               </span>
             </div>
-            <div style={{maxHeight:280,overflow:"auto"}}>
+            <div data-capture-expand style={{maxHeight:280,overflow:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
                   {["상품명","정가","쿠폰율","기본 할인율","프런트 판매가","최종 노출가","최종 할인율","자사부담","수수료","채널보전","자사 정산","공급가","마진","마크업"].map((h,k)=>(
@@ -15548,10 +15548,24 @@ function CaptureBtn({cardRef,filename,DC}){
     const prevStyle={maxHeight:el.style.maxHeight,height:el.style.height,overflow:el.style.overflow};
     const prevScroll=el.scrollTop;
     el.style.maxHeight="none";el.style.height="auto";el.style.overflow="visible";
+    // 내부 스크롤 컨테이너 중 data-capture-expand 마크된 것만 펼쳐 캡처 (예: 묶음 표 maxHeight:280)
+    const innerScrolls=Array.from(el.querySelectorAll("[data-capture-expand]"));
+    innerScrolls.forEach(n=>{
+      n._prevCap={maxHeight:n.style.maxHeight,height:n.style.height,overflow:n.style.overflow,overflowX:n.style.overflowX,overflowY:n.style.overflowY,scrollTop:n.scrollTop,scrollLeft:n.scrollLeft};
+      n.style.maxHeight="none";n.style.height="auto";
+      n.style.overflow="visible";n.style.overflowX="visible";n.style.overflowY="visible";
+    });
     const fullH=el.scrollHeight;
     const restore=()=>{
       el.style.maxHeight=prevStyle.maxHeight;el.style.height=prevStyle.height;el.style.overflow=prevStyle.overflow;
       el.scrollTop=prevScroll;
+      innerScrolls.forEach(n=>{
+        if(!n._prevCap) return;
+        n.style.maxHeight=n._prevCap.maxHeight;n.style.height=n._prevCap.height;
+        n.style.overflow=n._prevCap.overflow;n.style.overflowX=n._prevCap.overflowX;n.style.overflowY=n._prevCap.overflowY;
+        n.scrollTop=n._prevCap.scrollTop;n.scrollLeft=n._prevCap.scrollLeft;
+        delete n._prevCap;
+      });
       btns.forEach(b=>{b.style.visibility=b._prevVis||"";});
     };
     try{
