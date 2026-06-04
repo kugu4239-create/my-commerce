@@ -4274,6 +4274,11 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                         {qm&&<button data-capture-hide onClick={()=>setBundleSearch("")}
                           style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 4px"}}>✕ 검색 해제</button>}
                         <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+                        <button onClick={()=>downloadBundleXlsx(visibleProducts,r,`묶음_${(r.group||`행${i+1}`).replace(/\s+/g,"")}_${visibleProducts.length}개`)}
+                          title="현재 표시된 묶음을 엑셀로 다운로드"
+                          style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontWeight:700}}>
+                          📊 엑셀
+                        </button>
                         <CaptureBtn cardRef={bundleCaptureRef}
                           filename={`묶음_${(r.group||`행${i+1}`).replace(/\s+/g,"")}_${products.length}개`}
                           DC={{border:D.border,sub:D.textMeta}}/>
@@ -4713,6 +4718,11 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                 {q&&<button data-capture-hide onClick={()=>setBundleSearch("")}
                   style={{background:"transparent",border:"none",cursor:"pointer",fontSize:11,color:D.textMeta,padding:"0 4px"}}>✕ 검색 해제</button>}
                 <span style={{display:"inline-flex",alignItems:"center",gap:6}} data-capture-hide>
+                <button onClick={()=>downloadBundleXlsx(visibleProducts,r,`묶음_${(r.group||`행${bundleViewIdx+1}`).replace(/\s+/g,"")}_${visibleProducts.length}개`)}
+                  title="현재 표시된 묶음을 엑셀로 다운로드"
+                  style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontWeight:700}}>
+                  📊 엑셀
+                </button>
                 <CaptureBtn cardRef={bundleCaptureRef}
                   filename={`묶음_${(r.group||`행${bundleViewIdx+1}`).replace(/\s+/g,"")}_${r.products.length}개`}
                   DC={{border:D.border,sub:D.textMeta}}/>
@@ -6806,6 +6816,48 @@ const CALC_SLOTS=[
 const CALC_CONDS={S1:"정가 < ₩100,000",S2:"₩100,000 ≤ 정가 < ₩150,000",S3:"₩150,000 ≤ 정가 < ₩200,000",S4:"₩200,000 ≤ 정가 < ₩250,000",S5:"정가 ≥ ₩250,000"};
 const calcClassify=list=>{for(const s of CALC_SLOTS) if(list>=s.min&&list<s.max) return s; return CALC_SLOTS[CALC_SLOTS.length-1];};
 const wonFmt=n=>new Intl.NumberFormat("ko-KR").format(Math.round(n));
+
+// 묶음 상품 표(14컬럼) 엑셀 다운로드 — DiscountMatrix/DiscountPlanEditor 공용
+async function downloadBundleXlsx(products,row,baseFilename){
+  if(!Array.isArray(products)||products.length===0) return;
+  const XLSX=await getXLSX();
+  const cpnRow=Number(row?.cpn||0)||0;
+  const headers=[
+    "상품명","정가","프런트 할인율(자사부담)%","프런트 자사부담액(원)",
+    "프런트 판매가","쿠폰 자사부담률%","쿠폰 채널부담률%",
+    "최종 할인율%","쿠폰 자사부담액(원)","29CM 채널부담액(원)",
+    "최종 판매가","수수료(원)","수수료율%","채널보전(원)","정산(원)",
+    "공급가(VAT포함)","마진(원)","마크업",
+  ];
+  const data=products.map(p=>{
+    const list=p.list||0;
+    const baseDisc=p.baseDisc||0;
+    const prefixSelf=Math.round(list*baseDisc/100);
+    const cpnSelfAmt=Math.max(0,(p.selfBurden||0)-prefixSelf);
+    const cpnChannelAmt=(p.channelBurden||0);
+    const bp=p.basePrice||0;
+    const cpnSelfPct=bp>0?Math.round(cpnSelfAmt/bp*100):0;
+    const cpnChannelPct=bp>0?Math.round(cpnChannelAmt/bp*100):0;
+    const sv=p.supplyIncVat||Math.round((p.supply||0)*1.1);
+    return [
+      p.name||"",list,baseDisc,prefixSelf,
+      bp,cpnSelfPct,cpnChannelPct,
+      p.finalDisc||0,cpnSelfAmt,cpnChannelAmt,
+      p.finalPrice||0,p.fee||0,p.feeRate||0,p.channelBurden||0,p.net||0,
+      (p.supply||0)>0?sv:0,(p.supply||0)>0?(p.margin||0):0,(p.supply||0)>0?(p.markup||0):0,
+    ];
+  });
+  // 첫 행: 묶음 메타 (group · 쿠폰율)
+  const meta=[`${row?.group||""}${cpnRow>0?` · 쿠폰율 ${cpnRow}%`:""}${products.length>0?` · 묶음 상품 ${products.length}개`:""}`];
+  const aoa=[meta,[],headers,...data];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  // 컬럼 폭 — 상품명 넓게, 나머지는 적당히
+  ws["!cols"]=[{wch:30},...Array(headers.length-1).fill({wch:14})];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"묶음 상품");
+  const fname=`${baseFilename||"묶음"}_${dayjs().format("YYYYMMDD")}.xlsx`;
+  XLSX.writeFile(wb,fname);
+}
 // 기본 할인율 일의 자리가 6~9면 다음 10단위로 올림 (예: 7→10, 16~19→20, 26~29→30)
 const roundUpBaseDisc=d=>d%10>=6?Math.ceil(d/10)*10:d;
 const calcReverse=(list,p75,coupon)=>{
