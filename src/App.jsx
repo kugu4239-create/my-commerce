@@ -4314,9 +4314,11 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                             const prefixSelf=Math.round((p.list||0)*((p.baseDisc||0)/100));
                             const cpnSelfAmt=Math.max(0,(p.selfBurden||0)-prefixSelf);
                             const cpnChannelAmt=(p.channelBurden||0);
-                            const _bd=couponBreakdown(m.coupons,r.group);
-                            const cpnSelfPct=_bd.selfPct;
-                            const cpnChannelPct=_bd.channelPct;
+                            const bp=p.basePrice||0;
+                            // 분담 비율은 product 의 burden 금액에서 직접 역산 — share rate 누락된
+                            // 과거 데이터에서도 정확. 합산 ≈ 효과 쿠폰율 (곱연산 결과).
+                            const cpnSelfPct=bp>0?Math.round(cpnSelfAmt/bp*100):0;
+                            const cpnChannelPct=bp>0?Math.round(cpnChannelAmt/bp*100):0;
                             const cpnEff=r.cpn||0;
                             return (
                               <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
@@ -4759,9 +4761,9 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                     const prefixSelf=Math.round((p.list||0)*((p.baseDisc||0)/100));
                     const cpnSelfAmt=Math.max(0,(p.selfBurden||0)-prefixSelf);
                     const cpnChannelAmt=(p.channelBurden||0);
-                    const _bd=couponBreakdown(coupons,r.group);
-                    const cpnSelfPct=_bd.selfPct;
-                    const cpnChannelPct=_bd.channelPct;
+                    const bp=p.basePrice||0;
+                    const cpnSelfPct=bp>0?Math.round(cpnSelfAmt/bp*100):0;
+                    const cpnChannelPct=bp>0?Math.round(cpnChannelAmt/bp*100):0;
                     const cpnEff=Number(r.cpn||0)||0;
                     return (
                       <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
