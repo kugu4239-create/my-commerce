@@ -8061,6 +8061,7 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
   const [sampleMsg,setSampleMsg]=useState("");    // 샘플 저장/로드 상태 메시지
   const [removedIdx,setRemovedIdx]=useState(()=>new Set()); // 수기로 제거한 상품 (임시 — 다운로드/재업로드/리로드 시 복원)
   const [checkedIdx,setCheckedIdx]=useState(()=>new Set()); // 일괄 삭제용 체크박스 선택 인덱스
+  const [mallExpandedGroup,setMallExpandedGroup]=useState(null); // 결론 표 — 펼친 묶음 그룹 (할인율 %)
   const modalCardRef=useRef(null);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
   const loadProducts=(rows,name)=>{ setProducts(rows); setFileName(name); setRates({}); setRemovedIdx(new Set()); setCheckedIdx(new Set()); setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`); };
@@ -8437,6 +8438,116 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo }){
                 </tbody>
               </table>
             </div>
+
+            {/* 하단 결론 — 할인율 5% 버킷별 그룹 (29CM 계산기와 동일 UI 패턴) */}
+            {rows.length>0&&(()=>{
+              const groups={};
+              rows.forEach(r=>{
+                const k=Math.round((r.rate||0)/5)*5;
+                if(!groups[k]) groups[k]={baseDisc:k,products:[],count:0,matched:0,mSum:0,frSum:0};
+                groups[k].count++;
+                groups[k].frSum+=(r.effDisc||0);
+                groups[k].products.push(r);
+                if((r.supplyVat||0)>0){groups[k].matched++;groups[k].mSum+=(r.markup||0);}
+              });
+              const groupArr=Object.values(groups).sort((a,b)=>a.baseDisc-b.baseDisc);
+              return (
+                <div style={{marginTop:18,border:`1px solid ${D.borderMid}`,borderRadius:6,overflow:"hidden"}}>
+                  <div style={{padding:"9px 12px",fontSize:11,fontWeight:700,color:D.black,
+                    background:D.surfaceAlt,borderBottom:`1px solid ${D.borderMid}`}}>
+                    할인율 %대별 결론 — 상품 수 / 평균 최종 할인율 / 평균 마크업 / 묶음 상품 <span style={{color:D.textMeta,fontWeight:400}}>· 할인율 수정 시 실시간 반영</span>
+                  </div>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead><tr>
+                      {["할인율","상품 수","평균 최종 할인율","평균 마크업","묶음 상품"].map((h,i)=>(
+                        <th key={i} style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
+                          textAlign:i===0?"left":(i===4?"center":"right"),fontWeight:600,color:D.textSub,background:D.surface,whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {groupArr.map((g,i)=>{
+                        const avgFr=g.count>0?Math.round(g.frSum/g.count*10)/10:0;
+                        const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+                        const isOpen=mallExpandedGroup===g.baseDisc;
+                        return (
+                          <React.Fragment key={i}>
+                            <tr>
+                              <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,
+                                textAlign:"left",fontWeight:700,color:D.black,whiteSpace:"nowrap"}}>
+                                {g.baseDisc}% <span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>할인율</span>
+                              </td>
+                              <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",whiteSpace:"nowrap"}}>{g.count}개</td>
+                              <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",color:D.text,fontWeight:600,whiteSpace:"nowrap"}}>{avgFr}%</td>
+                              <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"right",fontWeight:700,whiteSpace:"nowrap",
+                                color:avgM==null?D.textMeta:(avgM>3?D.green:D.red)}}>
+                                {avgM==null?<span style={{fontWeight:400,color:D.textMeta}}>공급가 미매칭</span>:`×${avgM.toFixed(2)}`}
+                                {avgM!=null&&g.matched<g.count&&(
+                                  <span style={{fontSize:9,color:D.textMeta,fontWeight:400,marginLeft:4}}>({g.matched}/{g.count})</span>
+                                )}
+                              </td>
+                              <td style={{padding:"7px 10px",borderBottom:`1px solid ${D.border}`,textAlign:"center"}}>
+                                <button onClick={()=>setMallExpandedGroup(isOpen?null:g.baseDisc)}
+                                  style={{background:isOpen?D.black:"transparent",
+                                    color:isOpen?"#fff":D.text,
+                                    border:`1px solid ${D.borderMid}`,borderRadius:5,
+                                    padding:"3px 9px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+                                  {isOpen?"▾ 닫기":`▸ 묶음 상품 ${g.count}개`}
+                                </button>
+                              </td>
+                            </tr>
+                            {isOpen&&(
+                              <tr><td colSpan={5} style={{padding:"0 10px 10px",borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
+                                <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
+                                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                                    <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
+                                      {["상품명","판매가","할인율","할인가","쿠폰적용가","최종할인","원가(VAT)","마진","마크업"].map((h,k)=>(
+                                        <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                                      ))}
+                                    </tr></thead>
+                                    <tbody>
+                                      {g.products.map((p,j)=>(
+                                        <tr key={j} style={{borderTop:`1px solid ${D.border}`}}>
+                                          <td title={p.name} style={{padding:"4px 8px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap"}}>{won(p.selling)}</td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600}}>{p.rate}%</td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.textSub}}>{won(p.discPrice)}</td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:700}}>{won(p.couponPrice)}</td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:D.red,fontWeight:600}}>{pct(p.effDisc)}</td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",color:p.supplyVat>0?D.text:D.textMeta}}>
+                                            {p.supplyVat>0?won(p.supplyVat):"—"}
+                                          </td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:600,
+                                            color:p.supplyVat>0?((p.margin||0)>=0?D.text:D.red):D.textMeta}}>
+                                            {p.supplyVat>0?won(p.margin||0):"—"}
+                                          </td>
+                                          <td style={{padding:"4px 8px",textAlign:"right",whiteSpace:"nowrap",fontWeight:700,
+                                            color:p.supplyVat>0?((p.markup||0)>3?D.green:D.red):D.textMeta}}>
+                                            {p.supplyVat>0?`×${(p.markup||0).toFixed(2)}`:"—"}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td></tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {onCreatePromo&&(
+                    <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
+                      <button onClick={handleCreatePromo}
+                        style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+                          padding:"9px 22px",fontSize:11,cursor:"pointer",fontWeight:700}}>
+                        + 자사몰 프로모션 추가하기
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>)}
         </div>
       </div>
