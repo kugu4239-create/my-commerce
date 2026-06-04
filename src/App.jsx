@@ -6725,11 +6725,11 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
     :(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart");
   const [primaryType,setPrimaryType]=useState(initialType); // 기본 쿠폰 타입
   const [primaryBurden,setPrimaryBurden]=useState(burdenForType(initialType)); // 타입에 종속
-  const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
+  const [primaryShareRate,setPrimaryShareRate]=useState(40); // 분담 type일 때 채널부담률 % (기본 40%)
   const [stackCoupons,setStackCoupons]=useState(
     initStacks.map(c=>{
       const t=COUPON_TYPE_BY_KEY[c.type]?c.type:"product";
-      return {rate:+c.rate||0,type:t,burden:burdenForType(t),shareRate:50};
+      return {rate:+c.rate||0,type:t,burden:burdenForType(t),shareRate:40};
     })
   ); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
   // 타입에 burden 동기화 — product=self, cart=channel, share=self(분담은 shareRate 가 처리)
@@ -6780,7 +6780,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
         rate,
         type,
         burden:burdenFor(type,s.burden),
-        shareRate:isNaN(sr)?50:Math.max(0,Math.min(100,sr)),
+        shareRate:isNaN(sr)?40:Math.max(0,Math.min(100,sr)),
         label:`Case ${i+1}`,
       });
     });
@@ -7431,7 +7431,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                   <span style={{fontSize:11,color:D.textMeta}}>%</span>
                 </>
               )}
-              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product",burden:"self",shareRate:50}])}
+              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product",burden:"self",shareRate:40}])}
                 style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
                   padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:"auto"}}>
                 + 쿠폰 추가
@@ -7464,7 +7464,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                 {t==="share"&&(
                   <>
                     <span style={{fontSize:11,color:D.textMeta}}>채널 분담</span>
-                    <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={sc.shareRate==null?50:sc.shareRate}
+                    <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={sc.shareRate==null?40:sc.shareRate}
                       onChange={e=>{const n=[...stackCoupons];n[i]={...sc,shareRate:Number(e.target.value)||0};setStackCoupons(n);}}
                       style={{...inNum,width:60}}/>
                     <span style={{fontSize:11,color:D.textMeta}}>%</span>
