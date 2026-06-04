@@ -9862,7 +9862,8 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
         style={{background:D.surface,borderRadius:14,padding:"24px 28px",
-          width:"min(900px,95vw)",maxHeight:"90vh",overflowY:"auto",
+          width:"80vw",minWidth:"min(900px,95vw)",maxWidth:1800,
+          maxHeight:"90vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
           <div>
@@ -10069,6 +10070,44 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                     );
                   })}
                 </tbody>
+                {hasBundleData&&(()=>{
+                  // 합계 — 묶음 매칭된 행만 집계 (수량 가중 마크업 평균 + 마진액 총합)
+                  let matchedCount=0,qtySum=0,marginTotal=0,wMkSum=0,wQtySum=0;
+                  top20.forEach(p=>{
+                    const bp=matchBundleProduct(p.name);
+                    if(!bp) return;
+                    matchedCount++;
+                    qtySum+=(p.qty||0);
+                    const mk=+bp.markup||0;
+                    const mg=+bp.margin||0;
+                    marginTotal+=mg*(p.qty||0);
+                    if(mk>0&&(p.qty||0)>0){wMkSum+=mk*(p.qty||0);wQtySum+=(p.qty||0);}
+                  });
+                  const avgMk=wQtySum>0?wMkSum/wQtySum:null;
+                  return (
+                    <tfoot>
+                      <tr style={{borderTop:`2px solid ${D.borderMid}`,background:D.surfaceAlt}}>
+                        <td style={{padding:"7px 7px",color:D.textMeta,fontWeight:700}}></td>
+                        <td style={{padding:"7px 7px",color:D.black,fontWeight:700}}>
+                          합계 <span style={{fontSize:10,fontWeight:500,color:D.textMeta,marginLeft:4}}>(묶음 매칭 {matchedCount}개)</span>
+                        </td>
+                        <td style={{padding:"7px 7px",textAlign:"right",color:D.text,fontWeight:700}}>
+                          {qtySum.toLocaleString()}
+                        </td>
+                        <td style={{padding:"7px 7px",textAlign:"right",fontWeight:800,
+                          color:avgMk==null?D.textMeta:(avgMk>3?D.green:D.red)}}
+                          title="수량 가중 평균 마크업 (Σ markup×qty / Σ qty)">
+                          {avgMk==null?"—":`×${avgMk.toFixed(2)}`}
+                        </td>
+                        <td style={{padding:"7px 7px",textAlign:"right",fontWeight:800,
+                          color:marginTotal>=0?D.black:D.red}}
+                          title="Σ 단가 마진 × 판매 수량">
+                          {matchedCount===0?"—":`₩${wonFmt(marginTotal)}`}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
               </table>
             </div>
           )}
