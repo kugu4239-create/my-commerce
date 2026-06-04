@@ -7967,8 +7967,14 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                             <tr key={i}
                               onMouseEnter={()=>enterDragSelectBulk(r.row)}
                               style={{background:checkedRows.has(r.row)?`${D.red}0a`:"transparent"}}>
-                              <td title={r.name} style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"left",
-                                minWidth:160,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              <td title={r.name}
+                                onMouseDown={e=>{
+                                  if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;
+                                  e.preventDefault();
+                                  startDragSelectBulk(r.row,checkedRows.has(r.row));
+                                }}
+                                style={{padding:"7px 8px",borderBottom:`1px solid ${D.border}`,textAlign:"left",
+                                  minWidth:160,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
                                 <input type="checkbox" checked={checkedRows.has(r.row)} onChange={()=>{}}
                                   onMouseDown={e=>{e.preventDefault();startDragSelectBulk(r.row,checkedRows.has(r.row));}}
                                   title="클릭 또는 드래그로 다중 선택"
@@ -8700,7 +8706,13 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                     <tr key={r.code+r.idx}
                       onMouseEnter={()=>enterDragSelect(r.idx)}
                       style={{borderBottom:`1px solid ${D.border}`,background:checkedIdx.has(r.idx)?`${D.red}0a`:"transparent"}}>
-                      <td style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace"}}>
+                      <td
+                        onMouseDown={e=>{
+                          if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;
+                          e.preventDefault();
+                          startDragSelect(r.idx,checkedIdx.has(r.idx));
+                        }}
+                        style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace",cursor:"pointer",userSelect:"none"}}>
                         <input type="checkbox" checked={checkedIdx.has(r.idx)} onChange={()=>{}}
                           onMouseDown={e=>{e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
                           title="클릭 또는 드래그로 다중 선택"
@@ -8709,7 +8721,13 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                           style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2}}>✕</button>
                         {r.code}
                       </td>
-                      <td style={{padding:"4px 6px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name}</td>
+                      <td
+                        onMouseDown={e=>{
+                          if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;
+                          e.preventDefault();
+                          startDragSelect(r.idx,checkedIdx.has(r.idx));
+                        }}
+                        style={{padding:"4px 6px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer",userSelect:"none"}} title={r.name}>{r.name}</td>
                       <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}{muBadge(sellMu)}</td>
                       <td style={numCell}>
                         <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1"
