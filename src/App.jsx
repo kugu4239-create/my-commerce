@@ -6717,22 +6717,29 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
   const initCoupons=Array.isArray(initialCoupons)&&initialCoupons.length>0?initialCoupons:null;
   const initPrimary=initCoupons?initCoupons[0]:null;
   const initStacks=initCoupons?initCoupons.slice(1):[];
+  // 29CM 부담 주체 규칙 — 상품 쿠폰: 자사, 장바구니: 채널, 분담: 자사 (shareRate 가 분담 처리)
+  const burdenForType=(t)=>t==="product"?"self":(t==="cart"?"channel":"self");
   // 디폴트 — 자주 쓰는 시나리오 첫번째(29CM 지원 쿠폰 15% · 장바구니 · 채널부담)
   const [coupon,setCoupon]=useState(initPrimary?initPrimary.rate:(initialCoupon!=null?initialCoupon:15));
-  const [primaryType,setPrimaryType]=useState(
-    initPrimary&&COUPON_TYPE_BY_KEY[initPrimary.type]?initPrimary.type
-    :(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart")
-  ); // 기본 쿠폰 타입
-  const [primaryBurden,setPrimaryBurden]=useState("channel"); // self=자사부담, channel=채널부담
+  const initialType=initPrimary&&COUPON_TYPE_BY_KEY[initPrimary.type]?initPrimary.type
+    :(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart");
+  const [primaryType,setPrimaryType]=useState(initialType); // 기본 쿠폰 타입
+  const [primaryBurden,setPrimaryBurden]=useState(burdenForType(initialType)); // 타입에 종속
   const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
   const [stackCoupons,setStackCoupons]=useState(
-    initStacks.map(c=>({
-      rate:+c.rate||0,
-      type:COUPON_TYPE_BY_KEY[c.type]?c.type:"product",
-      burden:"channel",
-      shareRate:50,
-    }))
+    initStacks.map(c=>{
+      const t=COUPON_TYPE_BY_KEY[c.type]?c.type:"product";
+      return {rate:+c.rate||0,type:t,burden:burdenForType(t),shareRate:50};
+    })
   ); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
+  // 타입에 burden 동기화 — product=self, cart=channel, share=self(분담은 shareRate 가 처리)
+  useEffect(()=>{setPrimaryBurden(burdenForType(primaryType));},[primaryType]);
+  useEffect(()=>{
+    setStackCoupons(prev=>prev.map(sc=>{
+      const target=burdenForType(sc.type||"product");
+      return sc.burden===target?sc:{...sc,burden:target};
+    }));
+  },[]);
   const [scenarioIdx,setScenarioIdx]=useState(0); // 선택한 시나리오 인덱스
   const [listPrice,setListPrice]=useState(129000);
   const [processed,setProcessed]=useState(null);
@@ -7382,19 +7389,10 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
-              {/* 부담 주체 세그먼트 — share/cart 타입은 자사 부담 옵션 없음 (share=shareRate, cart=29CM 채널 발행) */}
-              {primaryType==="product"&&(
-                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                    const active=primaryBurden===b.k;
-                    return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
-                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                        border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
-                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                  })}
-                </div>
-              )}
+              {/* 부담 주체 — 타입 자동 결정: 상품=자사, 장바구니=채널, 분담=shareRate */}
+              <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}} title="29CM 규정 — 상품 쿠폰: 자사부담, 장바구니 쿠폰: 채널부담, 분담 쿠폰: 분담률에 따름">
+                {primaryType==="product"?"자사부담":primaryType==="cart"?"채널부담":"분담"}
+              </span>
               <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
               <span style={{fontSize:11,color:D.blue}}>%</span>
@@ -7422,26 +7420,16 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                   {COUPON_TYPES.map(typ=>{
                     const active=t===typ.key;
                     return <button key={typ.key} type="button"
-                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:typ.key};setStackCoupons(n);}}
+                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:typ.key,burden:burdenForType(typ.key)};setStackCoupons(n);}}
                       style={{background:active?typ.color:"transparent",color:active?"#fff":D.textMeta,
                         border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
                         fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
                   })}
                 </div>
-                {/* 부담 주체 세그먼트 — share/cart 타입은 자사 부담 옵션 없음 */}
-                {t==="product"&&(
-                  <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                    {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                      const active=burden===b.k;
-                      return <button key={b.k} type="button"
-                        onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
-                        title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                        style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                          border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
-                          fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                    })}
-                  </div>
-                )}
+                {/* 부담 주체 — 타입 자동 결정 (상품=자사, 장바구니=채널, 분담=shareRate) */}
+                <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}} title="29CM 규정 — 상품 쿠폰: 자사부담, 장바구니 쿠폰: 채널부담, 분담 쿠폰: 분담률에 따름">
+                  {t==="product"?"자사부담":t==="cart"?"채널부담":"분담"}
+                </span>
                 <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:70}}/>
@@ -7503,7 +7491,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
             )}
           </div>
 
-          <details className="sec" style={sec} open>
+          <details className="sec" style={sec}>
             <summary style={summarySty}>1. 가격대별 분류 정의 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -7550,7 +7538,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
             </div>
           </details>
 
-          <details className="sec" style={sec} open>
+          <details className="sec" style={sec}>
             <summary style={summarySty}>3. 단일 정가 시뮬레이션 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
               <div style={{margin:"0 0 10px",fontSize:11,color:D.textSub,lineHeight:1.6}}>
