@@ -9758,6 +9758,41 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
       .sort((a,b)=>b.qty-a.qty||b.orders-a.orders).slice(0,20);
   },[ch,promoStart,promoEnd,orders]);
 
+  // 프로모션 할인 매트릭스의 묶음 상품(들)을 키 맵으로 펼침 — top20 상품명을
+  // 유연하게(원본명 / 정규화명 / 부분 포함 ≥ 4자) 매칭해 예상 마크업·마진을 산출
+  const bundleProductIndex=useMemo(()=>{
+    const m={};
+    const planRows=Array.isArray(promo?.discount_plan?.products?.rows)?promo.discount_plan.products.rows:[];
+    planRows.forEach(row=>{
+      (Array.isArray(row?.products)?row.products:[]).forEach(p=>{
+        const nm=(p?.name||"").trim();
+        if(nm&&!m["n:"+nm]) m["n:"+nm]=p;
+        const nz=normProdName(nm);
+        if(nz&&!m["z:"+nz]) m["z:"+nz]=p;
+        const code=String(p?.code||"").trim();
+        if(code&&!m["c:"+code]) m["c:"+code]=p;
+      });
+    });
+    return m;
+  },[promo]);
+  const matchBundleProduct=useMemo(()=>{
+    const zkeys=Object.keys(bundleProductIndex).filter(k=>k.startsWith("z:"));
+    return (name)=>{
+      const raw=(name||"").trim();
+      if(!raw) return null;
+      if(bundleProductIndex["n:"+raw]) return bundleProductIndex["n:"+raw];
+      const nz=normProdName(raw);
+      if(nz&&bundleProductIndex["z:"+nz]) return bundleProductIndex["z:"+nz];
+      if(!nz) return null;
+      for(const k of zkeys){
+        const kn=k.slice(2);
+        if(kn.length>=4&&(kn.includes(nz)||nz.includes(kn))) return bundleProductIndex[k];
+      }
+      return null;
+    };
+  },[bundleProductIndex]);
+  const hasBundleData=Object.keys(bundleProductIndex).length>0;
+
   // 핀셋 상품 — 프로모션 전/후 주문 수량 비교 (해당 채널 한정, order_date 기준, 모든 상태 = 주문 수량)
   const pinned=promo.pinned_products||[];
   const pinnedNames=useMemo(()=>new Set(pinned.map(p=>p.name)),[pinned]);
@@ -9982,9 +10017,16 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
+                  {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="할인 매트릭스의 묶음 상품과 매칭된 예상 마크업 (실수령 ÷ 원가)">예상 마크업</th>}
+                  {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="예상 마진(단가) × 판매 수량">예상 마진액</th>}
                 </tr></thead>
                 <tbody>
-                  {top20.map((p,i)=>(
+                  {top20.map((p,i)=>{
+                    const bp=hasBundleData?matchBundleProduct(p.name):null;
+                    const mk=bp?(+bp.markup||0):0;
+                    const mg=bp?(+bp.margin||0):0;
+                    const totalMargin=mg*(p.qty||0);
+                    return (
                     <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
                       <td style={{padding:"5px 7px",color:D.textMeta}}>{i+1}</td>
                       <td style={{padding:"5px 7px",color:D.text,maxWidth:380}} title={p.name}>
@@ -9992,11 +10034,28 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                           <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{p.name}</span>
                           {pinnedNames.has(p.name)&&<span style={{flexShrink:0,fontSize:9,fontWeight:700,color:D.blue,
                             background:`${D.blue}14`,border:`1px solid ${D.blue}55`,borderRadius:4,padding:"1px 5px",whiteSpace:"nowrap"}}>핀셋 상품</span>}
+                          {bp&&<span style={{flexShrink:0,fontSize:9,fontWeight:700,color:D.green,
+                            background:`${D.green}14`,border:`1px solid ${D.green}55`,borderRadius:4,padding:"1px 5px",whiteSpace:"nowrap"}} title="할인 매트릭스 묶음 상품 매칭">묶음 매칭</span>}
                         </div>
                       </td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{p.qty.toLocaleString()}</td>
+                      {hasBundleData&&(
+                        <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,
+                          color:bp&&mk>0?(mk>3?D.green:D.red):D.textMeta}}
+                          title={bp?`매칭 상품: ${bp.name}`:"묶음 매칭 없음"}>
+                          {bp&&mk>0?`×${mk.toFixed(2)}`:"—"}
+                        </td>
+                      )}
+                      {hasBundleData&&(
+                        <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,
+                          color:bp&&mg!==0?(totalMargin>=0?D.text:D.red):D.textMeta}}
+                          title={bp?`단가 마진 ₩${wonFmt(mg)} × ${p.qty.toLocaleString()}장 = ₩${wonFmt(totalMargin)}`:"묶음 매칭 없음"}>
+                          {bp&&mg!==0?`₩${wonFmt(totalMargin)}`:"—"}
+                        </td>
+                      )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
