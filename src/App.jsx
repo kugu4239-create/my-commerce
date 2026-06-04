@@ -10340,8 +10340,50 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
 
         {/* Top 20 */}
         <div>
-          <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
-            프로모션 기간 판매 전체 ({ch}, 주문일 기준 · {top20.length.toLocaleString()}개 상품)
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
+            <div style={{fontSize:12,fontWeight:600,color:D.textSub,letterSpacing:"0.04em",textTransform:"uppercase"}}>
+              프로모션 기간 판매 전체 ({ch}, 주문일 기준 · {top20.length.toLocaleString()}개 상품)
+            </div>
+            {top20.length>0&&(
+              <button onClick={async()=>{
+                const XLSX=await getXLSX();
+                const headers=["#","상품명","핀셋","묶음 매칭","판매 수량(장)",...(hasBundleData?["예상 마크업","단가 마진(원)","예상 마진액(원)","매칭 상품명"]:[])];
+                const rowsXlsx=top20.map((p,i)=>{
+                  const bp=hasBundleData?matchBundleProduct(p.name):null;
+                  const mk=bp?(+bp.markup||0):0;
+                  const mg=bp?(+bp.margin||0):0;
+                  const totalMargin=mg*(p.qty||0);
+                  const base=[i+1,p.name,pinnedNames.has(p.name)?"Y":"",bp?"Y":"",p.qty||0];
+                  if(hasBundleData) base.push(mk||0,mg||0,totalMargin||0,bp?(bp.name||""):"");
+                  return base;
+                });
+                let totalMargin=0,qSum=0,wMk=0,wQ=0,matched=0;
+                top20.forEach(p=>{
+                  const bp=hasBundleData?matchBundleProduct(p.name):null; if(!bp) return;
+                  const mk=+bp.markup||0,mg=+bp.margin||0;
+                  matched++; qSum+=(p.qty||0); totalMargin+=mg*(p.qty||0);
+                  if(mk>0&&(p.qty||0)>0){wMk+=mk*(p.qty||0);wQ+=(p.qty||0);}
+                });
+                const avgMk=wQ>0?Math.round(wMk/wQ*100)/100:null;
+                if(hasBundleData){
+                  rowsXlsx.push([]);
+                  rowsXlsx.push(["합계","",`묶음 매칭 ${matched}개`,"",qSum,avgMk!=null?avgMk:"",`Σ 단가 마진 × qty`,totalMargin,""]);
+                }
+                const meta=[`임팩트 분석 — ${promo.name} · ${ch} · ${promoStart}~${promoEnd}${isOngoing?" (진행중)":""}`];
+                const aoa=[meta,[],headers,...rowsXlsx];
+                const ws=XLSX.utils.aoa_to_sheet(aoa);
+                ws["!cols"]=[{wch:5},{wch:36},{wch:6},{wch:8},{wch:12},...(hasBundleData?[{wch:12},{wch:14},{wch:16},{wch:30}]:[])];
+                const wb=XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb,ws,"프로모션 판매");
+                const cleanName=(promo.name||"프로모션").replace(/\s+/g,"_");
+                XLSX.writeFile(wb,`임팩트_${cleanName}_${promoStart}_${promoEnd}.xlsx`);
+              }}
+                title="현재 표시된 전체 상품을 엑셀로 다운로드"
+                data-capture-hide
+                style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
+                📊 엑셀
+              </button>
+            )}
           </div>
           {top20.length===0?(
             <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
