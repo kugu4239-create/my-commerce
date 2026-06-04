@@ -9384,8 +9384,9 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   const [status,setStatus]=useState("");
   const [dragOver,setDragOver]=useState(false);
   const [rates,setRates]=useState({});
-  const [signupCouponOn,setSignupCouponOn]=useState(true);
-  const SIGNUP_COUPON=10000;
+  // 쿠폰 — name/unit('pct'|'won')/value. 기본 회원가입 ₩10,000 (선택 활성).
+  const [coupons,setCoupons]=useState([{name:"회원가입 쿠폰",unit:"won",value:10000}]);
+  const [selCoupon,setSelCoupon]=useState(0); // -1 = 쿠폰 없음, 0..N-1 = coupons[i]
   const FEE_RATE=0.28;
   const [search,setSearch]=useState("");
   const [removedIdx,setRemovedIdx]=useState(()=>new Set());
@@ -9461,7 +9462,13 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
       const selling=p.selling||priced.selling||0;
       const discAmt=Math.round(selling*rate/100);
       const basePrice=selling-discAmt;
-      const couponAmt=signupCouponOn?Math.min(SIGNUP_COUPON,basePrice):0;
+      // 선택된 쿠폰 적용 — % 또는 ₩ (음수/초과 방지). 쿠폰 없음(-1) 이면 0.
+      const sel=selCoupon>=0?coupons[selCoupon]:null;
+      let couponAmt=0;
+      if(sel){
+        const v=Math.max(0,+sel.value||0);
+        couponAmt=sel.unit==="won"?Math.min(v,basePrice):Math.round(basePrice*v/100);
+      }
       const finalPrice=basePrice-couponAmt;
       const supplyVat=Math.round(supply*1.1);
       const fee=Math.round(finalPrice*FEE_RATE);
@@ -9470,7 +9477,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
       const markup=supplyVat>0?net/supplyVat:0;
       const effDisc=selling>0?(1-finalPrice/selling)*100:0;
       return {...p,idx:i,rate,selling,supply,discAmt,basePrice,couponAmt,finalPrice,supplyVat,fee,net,margin,markup,effDisc};
-    }),[products,rates,signupCouponOn,priceOf,removedIdx]);
+    }),[products,rates,coupons,selCoupon,priceOf,removedIdx]);
   const setRate=(i,v)=>setRates(prev=>({...prev,[i]:v}));
   const setAllRates=v=>setRates(()=>{const m={};products.forEach((_,i)=>{m[i]=v;});return m;});
   const setCheckedRates=v=>{
@@ -9529,15 +9536,20 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
         })),
       };
     });
-    const couponRows=signupCouponOn
-      ?[{...emptyCouponRow("product"),name:"회원가입 ₩10,000 쿠폰",rate:"",unit:"won"}]
+    const sel=selCoupon>=0?coupons[selCoupon]:null;
+    const couponRows=sel
+      ?[{...emptyCouponRow("product"),name:sel.name||"오프라인 쿠폰",
+          rate:sel.unit==="pct"?String(sel.value||0):"",
+          unit:sel.unit||"won",
+          ...(sel.unit==="won"?{amount:+sel.value||0}:{})}]
       :[];
     const groupLines=groupArr.map(g=>{
       const avgFr=g.count>0?Math.round(g.effSum/g.count*10)/10:0;
       const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
       return `• 매장 할인 ${g.baseDisc}% · ${g.count}개 · 최종할인 ${avgFr}%${avgM!=null?` · 평균 마크업 ×${avgM.toFixed(2)} (${g.matched}/${g.count} 매칭)`:" · 공급가 미매칭"}`;
     }).join("\n");
-    const content=`[오프라인 세일율 계산기]\n시나리오: 회원가입 ₩10,000 쿠폰 ${signupCouponOn?"적용":"미적용"} · 매장 수수료 28% (최종판매액)\n\n[기본 세일율별 결론]\n${groupLines}`;
+    const couponLine=sel?`${sel.name||"쿠폰"} ${sel.unit==="won"?`₩${(+sel.value||0).toLocaleString()}`:`${sel.value||0}%`}`:"없음";
+    const content=`[오프라인 세일율 계산기]\n시나리오: ${couponLine} · 매장 수수료 28% (최종판매액)\n\n[기본 세일율별 결론]\n${groupLines}`;
     onCreatePromo({
       platform:"오프라인 스토어",
       content,
@@ -9629,13 +9641,40 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                   </>)}
                 </span>
               </div>
-              <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>시나리오 — 회원가입 ₩10,000 쿠폰</span>
-                <label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,cursor:"pointer"}}>
-                  <input type="checkbox" checked={signupCouponOn} onChange={e=>setSignupCouponOn(e.target.checked)}/>
-                  <span style={{color:D.text}}>적용</span>
-                </label>
-                <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>매장 수수료 28% 는 최종판매액 기준 자동 적용</span>
+              <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>쿠폰 (선택 1개 적용 · 선할인 후 차감)</span>
+                  <button onClick={()=>setCoupons(c=>[...c,{name:"",unit:"won",value:0}])}
+                    style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:"auto"}}>+ 쿠폰 추가</button>
+                  <span style={{fontSize:11,color:D.textMeta}}>매장 수수료 28% 는 최종판매액 기준 자동 적용</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,cursor:"pointer"}}>
+                    <input type="radio" name="offcoupon" checked={selCoupon===-1} onChange={()=>setSelCoupon(-1)}/>
+                    <span style={{color:D.text}}>쿠폰 없음</span>
+                  </label>
+                  {coupons.map((c,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,flexWrap:"wrap"}}>
+                      <input type="radio" name="offcoupon" checked={selCoupon===i} onChange={()=>setSelCoupon(i)}/>
+                      <input placeholder={`쿠폰 ${i+1} 이름`} value={c.name}
+                        onChange={e=>setCoupons(arr=>arr.map((x,j)=>j===i?{...x,name:e.target.value}:x))} style={{...inNum,width:160}}/>
+                      <span style={{display:"inline-flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
+                        {[{k:"won",l:"₩"},{k:"pct",l:"%"}].map(u=>{
+                          const active=(c.unit||"won")===u.k;
+                          return <button key={u.k} type="button"
+                            onClick={()=>setCoupons(arr=>arr.map((x,j)=>j===i?{...x,unit:u.k}:x))}
+                            style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                              border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{u.l}</button>;
+                        })}
+                      </span>
+                      <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" step={c.unit==="pct"?"1":"100"}
+                        value={c.value} onChange={e=>setCoupons(arr=>arr.map((x,j)=>j===i?{...x,value:e.target.value}:x))} style={{...inNum,width:90,textAlign:"right"}}/>
+                      <span style={{fontSize:11,color:D.blue}}>{c.unit==="pct"?"%":"원"}</span>
+                      <button onClick={()=>{setCoupons(arr=>arr.filter((_,j)=>j!==i));setSelCoupon(s=>s===i?-1:s>i?s-1:s);}}
+                        style={{background:"none",border:"none",color:D.red,cursor:"pointer",fontSize:13}}>✕</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             {agg&&(
