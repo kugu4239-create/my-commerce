@@ -4323,10 +4323,13 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
   const [dragIdx,setDragIdx]=useState(null); // 쿠폰 드래그 중 인덱스
   const [prodDragIdx,setProdDragIdx]=useState(null); // 상품군 드래그 중 인덱스
   const [bundleViewIdx,setBundleViewIdx]=useState(null); // 묶음 상품 보기 펼친 행 인덱스
-  // 인라인 계산기 — null | { platform: '29CM'|'자사몰', targetRowIdx: number|null }
+  // 인라인 계산기 — null | { platform: '29CM'|'자사몰', targetRowIdx: number|null, initialCoupon?: number, initialCouponName?: string }
   //   targetRowIdx 가 null 이면 결과는 새 상품군 행들로 append
   //   숫자면 그 행의 묶음만 채움 (단일 행)
   const [inlineCalc,setInlineCalc]=useState(null);
+  // 묶음 추가 직전 — 기존 쿠폰 사용/새 쿠폰 선택 프롬프트
+  //   null | { platform, targetRowIdx, step: 'choose'|'pick' }
+  const [couponPrompt,setCouponPrompt]=useState(null);
 
   // 빈 행 필터링은 저장 시점이 아닌 곳에선 하지 않음 — UI 행 상태 유지
   const setProductPeriod=(field,v)=>onChange({
@@ -4341,6 +4344,16 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
     products:plan.products,
     coupons:arr,
   });
+  // 묶음 추가 흐름 진입 — 기존 쿠폰이 있으면 '기존 쿠폰 사용 / 새 쿠폰' 프롬프트 노출.
+  //   없으면 곧바로 계산기 모달 오픈.
+  const requestInlineCalc=(platformPick,targetRowIdx)=>{
+    const usableCoupons=coupons.filter(c=>(+c.rate||0)>0);
+    if(usableCoupons.length>0){
+      setCouponPrompt({platform:platformPick,targetRowIdx,step:"choose"});
+    }else{
+      setInlineCalc({platform:platformPick,targetRowIdx});
+    }
+  };
   // 인라인 계산기 결과 머지
   //   payload: { platform, discount_plan:{ products:{period,rows}, coupons } }
   //   - targetRowIdx 가 null  → 새 상품군 행을 append, 새 쿠폰은 기존 상품군과 연관 없음
@@ -4573,22 +4586,26 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
                       묶음 {row.products.length}
                     </button>
                   ):(
-                    ((row.group||"").trim()||(+row.rate||0)>0)&&(
+                    ((row.group||"").trim()||(+row.rate||0)>0)&&(platform==="29CM"||platform==="자사몰")&&(
                       <span style={{display:"inline-flex",alignItems:"center",gap:3,marginRight:4}}>
-                        <button onClick={()=>setInlineCalc({platform:"29CM",targetRowIdx:i})}
-                          title="29CM 계산기로 이 행의 묶음 채우기"
-                          style={{background:"transparent",color:D.text,
-                            border:`1px dashed ${D.borderMid}`,borderRadius:4,
-                            padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:600}}>
-                          + 29CM 묶음
-                        </button>
-                        <button onClick={()=>setInlineCalc({platform:"자사몰",targetRowIdx:i})}
-                          title="자사몰 계산기로 이 행의 묶음 채우기"
-                          style={{background:"transparent",color:D.text,
-                            border:`1px dashed ${D.borderMid}`,borderRadius:4,
-                            padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:600}}>
-                          + 자사몰 묶음
-                        </button>
+                        {platform==="29CM"&&(
+                          <button onClick={()=>requestInlineCalc("29CM",i)}
+                            title="29CM 계산기로 이 행의 묶음 채우기"
+                            style={{background:"transparent",color:D.text,
+                              border:`1px dashed ${D.borderMid}`,borderRadius:4,
+                              padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:600}}>
+                            + 29CM 묶음
+                          </button>
+                        )}
+                        {platform==="자사몰"&&(
+                          <button onClick={()=>requestInlineCalc("자사몰",i)}
+                            title="자사몰 계산기로 이 행의 묶음 채우기"
+                            style={{background:"transparent",color:D.text,
+                              border:`1px dashed ${D.borderMid}`,borderRadius:4,
+                              padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:600}}>
+                            + 자사몰 묶음
+                          </button>
+                        )}
                       </span>
                     )
                   )}
@@ -4663,18 +4680,22 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
           <button onClick={()=>setProductRows([...productRows,emptyProductRow()])}
             style={{background:"transparent",border:`1px dashed ${D.border}`,borderRadius:5,
               padding:"4px 12px",fontSize:11,color:D.textMeta,cursor:"pointer"}}>+ 행 추가</button>
-          <button onClick={()=>setInlineCalc({platform:"29CM",targetRowIdx:null})}
-            title="29CM 계산기로 새 상품군·쿠폰 묶음 추가 (별도 Case)"
-            style={{background:"transparent",border:`1px dashed ${D.borderMid}`,borderRadius:5,
-              padding:"4px 12px",fontSize:11,color:D.text,fontWeight:600,cursor:"pointer"}}>
-            + 29CM 묶음 추가
-          </button>
-          <button onClick={()=>setInlineCalc({platform:"자사몰",targetRowIdx:null})}
-            title="자사몰 계산기로 새 상품군·쿠폰 묶음 추가 (별도 Case)"
-            style={{background:"transparent",border:`1px dashed ${D.borderMid}`,borderRadius:5,
-              padding:"4px 12px",fontSize:11,color:D.text,fontWeight:600,cursor:"pointer"}}>
-            + 자사몰 묶음 추가
-          </button>
+          {platform==="29CM"&&(
+            <button onClick={()=>requestInlineCalc("29CM",null)}
+              title="29CM 계산기로 새 상품군·쿠폰 묶음 추가"
+              style={{background:"transparent",border:`1px dashed ${D.borderMid}`,borderRadius:5,
+                padding:"4px 12px",fontSize:11,color:D.text,fontWeight:600,cursor:"pointer"}}>
+              + 29CM 묶음 추가
+            </button>
+          )}
+          {platform==="자사몰"&&(
+            <button onClick={()=>requestInlineCalc("자사몰",null)}
+              title="자사몰 계산기로 새 상품군·쿠폰 묶음 추가"
+              style={{background:"transparent",border:`1px dashed ${D.borderMid}`,borderRadius:5,
+                padding:"4px 12px",fontSize:11,color:D.text,fontWeight:600,cursor:"pointer"}}>
+              + 자사몰 묶음 추가
+            </button>
+          )}
         </div>
       </div>
 
@@ -4831,13 +4852,105 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
         <SaleCalcModal
           onClose={()=>setInlineCalc(null)}
           onAttachInlineCalc={(payload)=>attachInlineCalc(payload,inlineCalc.targetRowIdx)}
-          attachMode={inlineCalc.targetRowIdx==null?"new":"fill"}/>
+          attachMode={inlineCalc.targetRowIdx==null?"new":"fill"}
+          initialCoupon={inlineCalc.initialCoupon}
+          initialPrimaryType={inlineCalc.initialPrimaryType}/>
       )}
       {inlineCalc?.platform==="자사몰"&&(
         <OwnMallSaleCalcModal
           onClose={()=>setInlineCalc(null)}
           onAttachInlineCalc={(payload)=>attachInlineCalc(payload,inlineCalc.targetRowIdx)}
-          attachMode={inlineCalc.targetRowIdx==null?"new":"fill"}/>
+          attachMode={inlineCalc.targetRowIdx==null?"new":"fill"}
+          initialCoupon={inlineCalc.initialCoupon}
+          initialCouponName={inlineCalc.initialCouponName}/>
+      )}
+      {couponPrompt&&(
+        <div onClick={()=>setCouponPrompt(null)}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:2200,
+            display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:D.surface,borderRadius:10,border:`1px solid ${D.black}`,
+              padding:"18px 20px",minWidth:340,maxWidth:480,fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
+            {couponPrompt.step==="choose"&&(
+              <>
+                <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:4}}>
+                  {couponPrompt.platform} 묶음 추가
+                </div>
+                <div style={{fontSize:11,color:D.textMeta,marginBottom:14,lineHeight:1.55}}>
+                  이 묶음에 사용할 쿠폰을 선택하세요.<br/>
+                  · <b>기존 쿠폰</b>: 매트릭스 컬럼 확장 없이 기존 쿠폰 시나리오에 묶음을 추가<br/>
+                  · <b>새 쿠폰</b>: 별도 Case 로 매트릭스 컬럼을 확장 (기존 상품군과는 '연관 없음')
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button onClick={()=>setCouponPrompt({...couponPrompt,step:"pick"})}
+                    style={{flex:"1 1 140px",background:D.surface,color:D.black,
+                      border:`1px solid ${D.black}`,borderRadius:6,padding:"9px 12px",
+                      fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    기존 쿠폰 사용
+                  </button>
+                  <button onClick={()=>{
+                    setInlineCalc({platform:couponPrompt.platform,targetRowIdx:couponPrompt.targetRowIdx});
+                    setCouponPrompt(null);
+                  }}
+                    style={{flex:"1 1 140px",background:D.black,color:"#fff",
+                      border:`1px solid ${D.black}`,borderRadius:6,padding:"9px 12px",
+                      fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    새 쿠폰 (별도 Case)
+                  </button>
+                </div>
+                <div style={{marginTop:10,textAlign:"right"}}>
+                  <button onClick={()=>setCouponPrompt(null)}
+                    style={{background:"transparent",border:"none",color:D.textMeta,
+                      fontSize:11,cursor:"pointer"}}>취소</button>
+                </div>
+              </>
+            )}
+            {couponPrompt.step==="pick"&&(
+              <>
+                <div style={{fontSize:13,fontWeight:700,color:D.black,marginBottom:4}}>
+                  기존 쿠폰 선택
+                </div>
+                <div style={{fontSize:11,color:D.textMeta,marginBottom:14}}>
+                  계산기에 선택한 쿠폰의 할인율이 미리 입력됩니다.
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflow:"auto"}}>
+                  {coupons.filter(c=>(+c.rate||0)>0).map((c,i)=>{
+                    const r=+c.rate||0;
+                    const nm=(c.name||"").trim()||`쿠폰 ${i+1}`;
+                    const tInfo=COUPON_TYPE_BY_KEY[couponTypeOf(c)];
+                    return (
+                      <button key={i} onClick={()=>{
+                        setInlineCalc({
+                          platform:couponPrompt.platform,
+                          targetRowIdx:couponPrompt.targetRowIdx,
+                          initialCoupon:r,
+                          initialCouponName:nm,
+                          initialPrimaryType:couponTypeOf(c),
+                        });
+                        setCouponPrompt(null);
+                      }}
+                        style={{textAlign:"left",background:D.surface,color:D.text,
+                          border:`1px solid ${D.border}`,borderRadius:6,padding:"8px 10px",
+                          fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                        <span style={{color:D.black,fontWeight:700}}>{nm}</span>
+                        <span style={{color:D.blue,marginLeft:6,fontWeight:700}}>{r}%</span>
+                        <span style={{color:D.textMeta,marginLeft:6,fontWeight:400}}>· {tInfo.short}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{marginTop:10,display:"flex",justifyContent:"space-between"}}>
+                  <button onClick={()=>setCouponPrompt({...couponPrompt,step:"choose"})}
+                    style={{background:"transparent",border:"none",color:D.textMeta,
+                      fontSize:11,cursor:"pointer"}}>← 뒤로</button>
+                  <button onClick={()=>setCouponPrompt(null)}
+                    style={{background:"transparent",border:"none",color:D.textMeta,
+                      fontSize:11,cursor:"pointer"}}>취소</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -6537,10 +6650,10 @@ const calcReverse=(list,p75,coupon)=>{
   const finalDisc=list>0?Math.round((1-finalPrice/list)*1000)/10:0;
   return {baseDisc, basePrice, finalPrice, finalDisc};
 };
-function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode }){
+function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode, initialCoupon, initialPrimaryType }){
   // 디폴트 — 자주 쓰는 시나리오 첫번째(29CM 지원 쿠폰 15% · 장바구니 · 채널부담)
-  const [coupon,setCoupon]=useState(15);
-  const [primaryType,setPrimaryType]=useState("cart"); // 기본 쿠폰 타입
+  const [coupon,setCoupon]=useState(initialCoupon!=null?initialCoupon:15);
+  const [primaryType,setPrimaryType]=useState(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart"); // 기본 쿠폰 타입
   const [primaryBurden,setPrimaryBurden]=useState("channel"); // self=자사부담, channel=채널부담
   const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
   const [stackCoupons,setStackCoupons]=useState([]); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
@@ -8208,13 +8321,17 @@ function parseMallProductFile(file,onResult,onError){
   }
 }
 
-function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode }){
+function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode, initialCoupon, initialCouponName }){
   const [products,setProducts]=useState([]);
   const [fileName,setFileName]=useState("");
   const [status,setStatus]=useState("");
   const [dragOver,setDragOver]=useState(false);
   const [rates,setRates]=useState({});           // 상품별 할인율 % (index→값, 기본 10)
-  const [coupons,setCoupons]=useState([{name:"멤버십 10%",rate:10}]); // 기본 쿠폰 10% 자동 추가 (삭제 가능)
+  const [coupons,setCoupons]=useState(
+    initialCoupon!=null
+      ?[{name:initialCouponName||"기존 쿠폰",rate:initialCoupon}]
+      :[{name:"멤버십 10%",rate:10}]
+  ); // 기본 쿠폰 10% 자동 추가 (삭제 가능)
   const [selCoupon,setSelCoupon]=useState(0);     // 기본 쿠폰 선택 (-1 = 쿠폰 없음)
   const [search,setSearch]=useState("");   // 표 내 검색 (상품명·할인율)
   const [sample,setSample]=useState(null);        // {filename} — Supabase 보관 메타
