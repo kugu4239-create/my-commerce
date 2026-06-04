@@ -6717,22 +6717,29 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
   const initCoupons=Array.isArray(initialCoupons)&&initialCoupons.length>0?initialCoupons:null;
   const initPrimary=initCoupons?initCoupons[0]:null;
   const initStacks=initCoupons?initCoupons.slice(1):[];
+  // 29CM 부담 주체 규칙 — 상품 쿠폰: 자사, 장바구니: 채널, 분담: 자사 (shareRate 가 분담 처리)
+  const burdenForType=(t)=>t==="product"?"self":(t==="cart"?"channel":"self");
   // 디폴트 — 자주 쓰는 시나리오 첫번째(29CM 지원 쿠폰 15% · 장바구니 · 채널부담)
   const [coupon,setCoupon]=useState(initPrimary?initPrimary.rate:(initialCoupon!=null?initialCoupon:15));
-  const [primaryType,setPrimaryType]=useState(
-    initPrimary&&COUPON_TYPE_BY_KEY[initPrimary.type]?initPrimary.type
-    :(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart")
-  ); // 기본 쿠폰 타입
-  const [primaryBurden,setPrimaryBurden]=useState("channel"); // self=자사부담, channel=채널부담
-  const [primaryShareRate,setPrimaryShareRate]=useState(50); // 분담 type일 때 채널부담률 %
+  const initialType=initPrimary&&COUPON_TYPE_BY_KEY[initPrimary.type]?initPrimary.type
+    :(initialPrimaryType&&COUPON_TYPE_BY_KEY[initialPrimaryType]?initialPrimaryType:"cart");
+  const [primaryType,setPrimaryType]=useState(initialType); // 기본 쿠폰 타입
+  const [primaryBurden,setPrimaryBurden]=useState(burdenForType(initialType)); // 타입에 종속
+  const [primaryShareRate,setPrimaryShareRate]=useState(40); // 분담 type일 때 채널부담률 % (기본 40%)
   const [stackCoupons,setStackCoupons]=useState(
-    initStacks.map(c=>({
-      rate:+c.rate||0,
-      type:COUPON_TYPE_BY_KEY[c.type]?c.type:"product",
-      burden:"channel",
-      shareRate:50,
-    }))
+    initStacks.map(c=>{
+      const t=COUPON_TYPE_BY_KEY[c.type]?c.type:"product";
+      return {rate:+c.rate||0,type:t,burden:burdenForType(t),shareRate:40};
+    })
   ); // [{rate, type, burden, shareRate}] — 추가 쿠폰 목록
+  // 타입에 burden 동기화 — product=self, cart=channel, share=self(분담은 shareRate 가 처리)
+  useEffect(()=>{setPrimaryBurden(burdenForType(primaryType));},[primaryType]);
+  useEffect(()=>{
+    setStackCoupons(prev=>prev.map(sc=>{
+      const target=burdenForType(sc.type||"product");
+      return sc.burden===target?sc:{...sc,burden:target};
+    }));
+  },[]);
   const [scenarioIdx,setScenarioIdx]=useState(0); // 선택한 시나리오 인덱스
   const [listPrice,setListPrice]=useState(129000);
   const [processed,setProcessed]=useState(null);
@@ -6773,7 +6780,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
         rate,
         type,
         burden:burdenFor(type,s.burden),
-        shareRate:isNaN(sr)?50:Math.max(0,Math.min(100,sr)),
+        shareRate:isNaN(sr)?40:Math.max(0,Math.min(100,sr)),
         label:`Case ${i+1}`,
       });
     });
@@ -7252,14 +7259,41 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
     setRemovedRows(prev=>{const next=new Set(prev);checkedRows.forEach(i=>next.add(i));return next;});
     setCheckedRows(new Set());
   };
-  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용
+  // 체크되지 않은 행만 일괄 삭제 — 드래그로 선택한 행만 남기는 흐름
+  const removeUncheckedBulk=()=>{
+    if(checkedRows.size===0||!processed) return;
+    setRemovedRows(prev=>{
+      const next=new Set(prev);
+      processed.forEach(r=>{ if(!checkedRows.has(r.row)) next.add(r.row); });
+      return next;
+    });
+    setCheckedRows(new Set());
+  };
+  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용.
+  //   상태 변경이 실제로 필요할 때만 setState 호출 (드래그 중 불필요한 리렌더 방지)
   const startDragSelectBulk=(rowId,isChecked)=>{
     dragSelectModeRef.current=isChecked?"remove":"add";
-    setCheckedRows(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(rowId);else next.delete(rowId);return next;});
+    setCheckedRows(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(rowId);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(rowId):next.delete(rowId);
+      return next;
+    });
   };
   const enterDragSelectBulk=(rowId)=>{
     if(!dragSelectModeRef.current) return;
-    setCheckedRows(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(rowId);else next.delete(rowId);return next;});
+    setCheckedRows(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(rowId);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(rowId):next.delete(rowId);
+      return next;
+    });
   };
   useEffect(()=>{
     const onUp=()=>{dragSelectModeRef.current=null;};
@@ -7382,19 +7416,10 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                       fontFamily:"inherit",lineHeight:1}}>{t.short}</button>;
                 })}
               </div>
-              {/* 부담 주체 세그먼트 — share/cart 타입은 자사 부담 옵션 없음 (share=shareRate, cart=29CM 채널 발행) */}
-              {primaryType==="product"&&(
-                <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                  {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                    const active=primaryBurden===b.k;
-                    return <button key={b.k} type="button" onClick={()=>setPrimaryBurden(b.k)}
-                      title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                      style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                        border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
-                        fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                  })}
-                </div>
-              )}
+              {/* 부담 주체 — 타입 자동 결정: 상품=자사, 장바구니=채널, 분담=shareRate */}
+              <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}} title="29CM 규정 — 상품 쿠폰: 자사부담, 장바구니 쿠폰: 채널부담, 분담 쿠폰: 분담률에 따름">
+                {primaryType==="product"?"자사부담":primaryType==="cart"?"채널부담":"분담"}
+              </span>
               <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={coupon}
                 onChange={e=>setCoupon(e.target.value)} style={{...inNum,width:70}}/>
               <span style={{fontSize:11,color:D.blue}}>%</span>
@@ -7406,7 +7431,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                   <span style={{fontSize:11,color:D.textMeta}}>%</span>
                 </>
               )}
-              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product",burden:"self",shareRate:50}])}
+              <button onClick={()=>setStackCoupons([...stackCoupons,{rate:"",type:"product",burden:"self",shareRate:40}])}
                 style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,
                   padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600,marginLeft:"auto"}}>
                 + 쿠폰 추가
@@ -7422,26 +7447,16 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                   {COUPON_TYPES.map(typ=>{
                     const active=t===typ.key;
                     return <button key={typ.key} type="button"
-                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:typ.key};setStackCoupons(n);}}
+                      onClick={()=>{const n=[...stackCoupons];n[i]={...sc,type:typ.key,burden:burdenForType(typ.key)};setStackCoupons(n);}}
                       style={{background:active?typ.color:"transparent",color:active?"#fff":D.textMeta,
                         border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
                         fontFamily:"inherit",lineHeight:1}}>{typ.short}</button>;
                   })}
                 </div>
-                {/* 부담 주체 세그먼트 — share/cart 타입은 자사 부담 옵션 없음 */}
-                {t==="product"&&(
-                  <div style={{display:"flex",border:`1px solid ${D.border}`,borderRadius:4,overflow:"hidden"}}>
-                    {[{k:"self",l:"자사"},{k:"channel",l:"채널"}].map(b=>{
-                      const active=burden===b.k;
-                      return <button key={b.k} type="button"
-                        onClick={()=>{const n=[...stackCoupons];n[i]={...sc,burden:b.k};setStackCoupons(n);}}
-                        title={b.k==="self"?"자사부담 → 마진 감소":"채널부담 → 마진 보전"}
-                        style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                          border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",
-                          fontFamily:"inherit",lineHeight:1}}>{b.l}</button>;
-                    })}
-                  </div>
-                )}
+                {/* 부담 주체 — 타입 자동 결정 (상품=자사, 장바구니=채널, 분담=shareRate) */}
+                <span style={{fontSize:11,color:D.textMeta,whiteSpace:"nowrap"}} title="29CM 규정 — 상품 쿠폰: 자사부담, 장바구니 쿠폰: 채널부담, 분담 쿠폰: 분담률에 따름">
+                  {t==="product"?"자사부담":t==="cart"?"채널부담":"분담"}
+                </span>
                 <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="60" step="1" value={sc.rate}
                   onChange={e=>{const n=[...stackCoupons];n[i]={...sc,rate:e.target.value};setStackCoupons(n);}}
                   style={{...inNum,width:70}}/>
@@ -7449,7 +7464,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                 {t==="share"&&(
                   <>
                     <span style={{fontSize:11,color:D.textMeta}}>채널 분담</span>
-                    <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={sc.shareRate==null?50:sc.shareRate}
+                    <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1" value={sc.shareRate==null?40:sc.shareRate}
                       onChange={e=>{const n=[...stackCoupons];n[i]={...sc,shareRate:Number(e.target.value)||0};setStackCoupons(n);}}
                       style={{...inNum,width:60}}/>
                     <span style={{fontSize:11,color:D.textMeta}}>%</span>
@@ -7503,7 +7518,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
             )}
           </div>
 
-          <details className="sec" style={sec} open>
+          <details className="sec" style={sec}>
             <summary style={summarySty}>1. 가격대별 분류 정의 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -7550,7 +7565,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
             </div>
           </details>
 
-          <details className="sec" style={sec} open>
+          <details className="sec" style={sec}>
             <summary style={summarySty}>3. 단일 정가 시뮬레이션 <span className="chev" style={{color:D.textMeta}}>▾</span></summary>
             <div style={{padding:"4px 14px 14px"}}>
               <div style={{margin:"0 0 10px",fontSize:11,color:D.textSub,lineHeight:1.6}}>
@@ -7969,6 +7984,13 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                             🗑 체크 {checkedRows.size}개 일괄 삭제
                           </button>
                         )}
+                        {checkedRows.size>0&&(
+                          <button onClick={removeUncheckedBulk}
+                            title="체크된 행만 남기고 나머지 표시된 행 일괄 삭제"
+                            style={{background:"transparent",color:D.red,border:`1px solid ${D.red}`,borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                            ↶ 체크 외 {Math.max(0,visibleProcessed.length-checkedRows.size)}개 삭제
+                          </button>
+                        )}
                         {removedRows.size>0&&(
                           <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:D.textSub,
                             border:`1px dashed ${D.borderMid}`,borderRadius:5,padding:"2px 8px"}}>
@@ -8262,22 +8284,35 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                           <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
                             <button onClick={()=>{
                               // 기본 세일율 그룹 → products.rows (묶음 상품 + 계산기 모든 필드 보존)
+                              // 부착 시점에 supplyOf 로 공급가 재조회 — 인벤토리 로딩이 늦었어도
+                              // 저장되는 묶음에는 항상 최신 공급가·마진·마크업이 기록됨
+                              const liveResolve=p=>{
+                                const liveSupply=Math.max(supplyOf(p.name,p.code)||0,p.supply||0);
+                                const liveSupplyIncVat=Math.round(liveSupply*1.1);
+                                const liveMargin=(p.net||0)-liveSupplyIncVat;
+                                const liveMarkup=liveSupplyIncVat>0?Math.round((p.net||0)/liveSupplyIncVat*100)/100:0;
+                                return {supply:liveSupply,supplyIncVat:liveSupplyIncVat,margin:liveMargin,markup:liveMarkup};
+                              };
                               const productRows=rows.map(g=>{
-                                const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+                                const live=g.products.map(p=>({p,l:liveResolve(p)}));
+                                const matched=live.filter(({l})=>l.supplyIncVat>0);
+                                const avgM=matched.length>0
+                                  ?Math.round(matched.reduce((s,{l})=>s+l.markup,0)/matched.length*100)/100
+                                  :null;
                                 return {
                                   group:`기본 세일율 ${g.baseDisc}%`,
                                   rate:String(g.baseDisc),
                                   markup:avgM!=null?String(avgM):"",
                                   cpn,
-                                  products:g.products.map(p=>({
+                                  products:live.map(({p,l})=>({
                                     code:p.code||"",name:p.name||"",
                                     list:p.list||0,baseDisc:p.baseDisc||0,
                                     basePrice:p.basePrice||0,finalPrice:p.finalPrice||0,
-                                    finalDisc:p.finalDisc||0,markup:p.markup||0,
-                                    supply:p.supply||0,supplyIncVat:p.supplyIncVat||Math.round((p.supply||0)*1.1),
+                                    finalDisc:p.finalDisc||0,markup:l.markup,
+                                    supply:l.supply,supplyIncVat:l.supplyIncVat,
                                     selfBurden:p.selfBurden||0,channelBurden:p.channelBurden||0,
                                     fee:p.fee||0,feeRate:p.feeRate||0,
-                                    net:p.net||0,margin:p.margin||0,
+                                    net:p.net||0,margin:l.margin,
                                   })),
                                 };
                               });
@@ -8508,15 +8543,42 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
     setRemovedIdx(prev=>{const next=new Set(prev);checkedIdx.forEach(i=>next.add(i));return next;});
     setCheckedIdx(new Set());
   };
-  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용
+  // 체크되지 않은 행만 일괄 삭제 — 드래그로 선택한 행만 남기는 흐름 (현재 표시된 행 기준)
+  const removeUnchecked=()=>{
+    if(checkedIdx.size===0) return;
+    setRemovedIdx(prev=>{
+      const next=new Set(prev);
+      rows.forEach(r=>{ if(!checkedIdx.has(r.idx)) next.add(r.idx); });
+      return next;
+    });
+    setCheckedIdx(new Set());
+  };
+  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용.
+  //   변경이 실제로 필요할 때만 setState 호출 (드래그 중 불필요한 리렌더 방지)
   const dragSelectModeRef=useRef(null);
   const startDragSelect=(idx,isChecked)=>{
     dragSelectModeRef.current=isChecked?"remove":"add";
-    setCheckedIdx(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(idx);else next.delete(idx);return next;});
+    setCheckedIdx(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(idx);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(idx):next.delete(idx);
+      return next;
+    });
   };
   const enterDragSelect=(idx)=>{
     if(!dragSelectModeRef.current) return;
-    setCheckedIdx(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(idx);else next.delete(idx);return next;});
+    setCheckedIdx(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(idx);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(idx):next.delete(idx);
+      return next;
+    });
   };
   useEffect(()=>{
     const onUp=()=>{dragSelectModeRef.current=null;};
@@ -8697,6 +8759,14 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                     style={{display:"inline-flex",alignItems:"center",gap:4,background:D.red,color:"#fff",border:"none",borderRadius:5,
                       padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
                     🗑 체크 {checkedIdx.size}개 일괄 삭제
+                  </button>
+                )}
+                {checkedIdx.size>0&&(
+                  <button onClick={removeUnchecked}
+                    title="체크된 행만 남기고 나머지 표시된 행 일괄 삭제"
+                    style={{display:"inline-flex",alignItems:"center",gap:4,background:"transparent",color:D.red,border:`1px solid ${D.red}`,borderRadius:5,
+                      padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                    ↶ 체크 외 {Math.max(0,rows.length-checkedIdx.size)}개 삭제
                   </button>
                 )}
                 {removedIdx.size>0&&(
@@ -9688,6 +9758,41 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
       .sort((a,b)=>b.qty-a.qty||b.orders-a.orders).slice(0,20);
   },[ch,promoStart,promoEnd,orders]);
 
+  // 프로모션 할인 매트릭스의 묶음 상품(들)을 키 맵으로 펼침 — top20 상품명을
+  // 유연하게(원본명 / 정규화명 / 부분 포함 ≥ 4자) 매칭해 예상 마크업·마진을 산출
+  const bundleProductIndex=useMemo(()=>{
+    const m={};
+    const planRows=Array.isArray(promo?.discount_plan?.products?.rows)?promo.discount_plan.products.rows:[];
+    planRows.forEach(row=>{
+      (Array.isArray(row?.products)?row.products:[]).forEach(p=>{
+        const nm=(p?.name||"").trim();
+        if(nm&&!m["n:"+nm]) m["n:"+nm]=p;
+        const nz=normProdName(nm);
+        if(nz&&!m["z:"+nz]) m["z:"+nz]=p;
+        const code=String(p?.code||"").trim();
+        if(code&&!m["c:"+code]) m["c:"+code]=p;
+      });
+    });
+    return m;
+  },[promo]);
+  const matchBundleProduct=useMemo(()=>{
+    const zkeys=Object.keys(bundleProductIndex).filter(k=>k.startsWith("z:"));
+    return (name)=>{
+      const raw=(name||"").trim();
+      if(!raw) return null;
+      if(bundleProductIndex["n:"+raw]) return bundleProductIndex["n:"+raw];
+      const nz=normProdName(raw);
+      if(nz&&bundleProductIndex["z:"+nz]) return bundleProductIndex["z:"+nz];
+      if(!nz) return null;
+      for(const k of zkeys){
+        const kn=k.slice(2);
+        if(kn.length>=4&&(kn.includes(nz)||nz.includes(kn))) return bundleProductIndex[k];
+      }
+      return null;
+    };
+  },[bundleProductIndex]);
+  const hasBundleData=Object.keys(bundleProductIndex).length>0;
+
   // 핀셋 상품 — 프로모션 전/후 주문 수량 비교 (해당 채널 한정, order_date 기준, 모든 상태 = 주문 수량)
   const pinned=promo.pinned_products||[];
   const pinnedNames=useMemo(()=>new Set(pinned.map(p=>p.name)),[pinned]);
@@ -9912,9 +10017,16 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
+                  {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="할인 매트릭스의 묶음 상품과 매칭된 예상 마크업 (실수령 ÷ 원가)">예상 마크업</th>}
+                  {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="예상 마진(단가) × 판매 수량">예상 마진액</th>}
                 </tr></thead>
                 <tbody>
-                  {top20.map((p,i)=>(
+                  {top20.map((p,i)=>{
+                    const bp=hasBundleData?matchBundleProduct(p.name):null;
+                    const mk=bp?(+bp.markup||0):0;
+                    const mg=bp?(+bp.margin||0):0;
+                    const totalMargin=mg*(p.qty||0);
+                    return (
                     <tr key={p.name+i} style={{borderBottom:`1px solid ${D.border}`}}>
                       <td style={{padding:"5px 7px",color:D.textMeta}}>{i+1}</td>
                       <td style={{padding:"5px 7px",color:D.text,maxWidth:380}} title={p.name}>
@@ -9922,11 +10034,28 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                           <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{p.name}</span>
                           {pinnedNames.has(p.name)&&<span style={{flexShrink:0,fontSize:9,fontWeight:700,color:D.blue,
                             background:`${D.blue}14`,border:`1px solid ${D.blue}55`,borderRadius:4,padding:"1px 5px",whiteSpace:"nowrap"}}>핀셋 상품</span>}
+                          {bp&&<span style={{flexShrink:0,fontSize:9,fontWeight:700,color:D.green,
+                            background:`${D.green}14`,border:`1px solid ${D.green}55`,borderRadius:4,padding:"1px 5px",whiteSpace:"nowrap"}} title="할인 매트릭스 묶음 상품 매칭">묶음 매칭</span>}
                         </div>
                       </td>
                       <td style={{padding:"5px 7px",textAlign:"right",color:D.text,fontWeight:600}}>{p.qty.toLocaleString()}</td>
+                      {hasBundleData&&(
+                        <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,
+                          color:bp&&mk>0?(mk>3?D.green:D.red):D.textMeta}}
+                          title={bp?`매칭 상품: ${bp.name}`:"묶음 매칭 없음"}>
+                          {bp&&mk>0?`×${mk.toFixed(2)}`:"—"}
+                        </td>
+                      )}
+                      {hasBundleData&&(
+                        <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,
+                          color:bp&&mg!==0?(totalMargin>=0?D.text:D.red):D.textMeta}}
+                          title={bp?`단가 마진 ₩${wonFmt(mg)} × ${p.qty.toLocaleString()}장 = ₩${wonFmt(totalMargin)}`:"묶음 매칭 없음"}>
+                          {bp&&mg!==0?`₩${wonFmt(totalMargin)}`:"—"}
+                        </td>
+                      )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
