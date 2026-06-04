@@ -7259,14 +7259,41 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
     setRemovedRows(prev=>{const next=new Set(prev);checkedRows.forEach(i=>next.add(i));return next;});
     setCheckedRows(new Set());
   };
-  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용
+  // 체크되지 않은 행만 일괄 삭제 — 드래그로 선택한 행만 남기는 흐름
+  const removeUncheckedBulk=()=>{
+    if(checkedRows.size===0||!processed) return;
+    setRemovedRows(prev=>{
+      const next=new Set(prev);
+      processed.forEach(r=>{ if(!checkedRows.has(r.row)) next.add(r.row); });
+      return next;
+    });
+    setCheckedRows(new Set());
+  };
+  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용.
+  //   상태 변경이 실제로 필요할 때만 setState 호출 (드래그 중 불필요한 리렌더 방지)
   const startDragSelectBulk=(rowId,isChecked)=>{
     dragSelectModeRef.current=isChecked?"remove":"add";
-    setCheckedRows(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(rowId);else next.delete(rowId);return next;});
+    setCheckedRows(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(rowId);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(rowId):next.delete(rowId);
+      return next;
+    });
   };
   const enterDragSelectBulk=(rowId)=>{
     if(!dragSelectModeRef.current) return;
-    setCheckedRows(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(rowId);else next.delete(rowId);return next;});
+    setCheckedRows(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(rowId);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(rowId):next.delete(rowId);
+      return next;
+    });
   };
   useEffect(()=>{
     const onUp=()=>{dragSelectModeRef.current=null;};
@@ -7957,6 +7984,13 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                             🗑 체크 {checkedRows.size}개 일괄 삭제
                           </button>
                         )}
+                        {checkedRows.size>0&&(
+                          <button onClick={removeUncheckedBulk}
+                            title="체크된 행만 남기고 나머지 표시된 행 일괄 삭제"
+                            style={{background:"transparent",color:D.red,border:`1px solid ${D.red}`,borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                            ↶ 체크 외 {Math.max(0,visibleProcessed.length-checkedRows.size)}개 삭제
+                          </button>
+                        )}
                         {removedRows.size>0&&(
                           <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:D.textSub,
                             border:`1px dashed ${D.borderMid}`,borderRadius:5,padding:"2px 8px"}}>
@@ -8250,22 +8284,35 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                           <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
                             <button onClick={()=>{
                               // 기본 세일율 그룹 → products.rows (묶음 상품 + 계산기 모든 필드 보존)
+                              // 부착 시점에 supplyOf 로 공급가 재조회 — 인벤토리 로딩이 늦었어도
+                              // 저장되는 묶음에는 항상 최신 공급가·마진·마크업이 기록됨
+                              const liveResolve=p=>{
+                                const liveSupply=Math.max(supplyOf(p.name,p.code)||0,p.supply||0);
+                                const liveSupplyIncVat=Math.round(liveSupply*1.1);
+                                const liveMargin=(p.net||0)-liveSupplyIncVat;
+                                const liveMarkup=liveSupplyIncVat>0?Math.round((p.net||0)/liveSupplyIncVat*100)/100:0;
+                                return {supply:liveSupply,supplyIncVat:liveSupplyIncVat,margin:liveMargin,markup:liveMarkup};
+                              };
                               const productRows=rows.map(g=>{
-                                const avgM=g.matched>0?Math.round(g.mSum/g.matched*100)/100:null;
+                                const live=g.products.map(p=>({p,l:liveResolve(p)}));
+                                const matched=live.filter(({l})=>l.supplyIncVat>0);
+                                const avgM=matched.length>0
+                                  ?Math.round(matched.reduce((s,{l})=>s+l.markup,0)/matched.length*100)/100
+                                  :null;
                                 return {
                                   group:`기본 세일율 ${g.baseDisc}%`,
                                   rate:String(g.baseDisc),
                                   markup:avgM!=null?String(avgM):"",
                                   cpn,
-                                  products:g.products.map(p=>({
+                                  products:live.map(({p,l})=>({
                                     code:p.code||"",name:p.name||"",
                                     list:p.list||0,baseDisc:p.baseDisc||0,
                                     basePrice:p.basePrice||0,finalPrice:p.finalPrice||0,
-                                    finalDisc:p.finalDisc||0,markup:p.markup||0,
-                                    supply:p.supply||0,supplyIncVat:p.supplyIncVat||Math.round((p.supply||0)*1.1),
+                                    finalDisc:p.finalDisc||0,markup:l.markup,
+                                    supply:l.supply,supplyIncVat:l.supplyIncVat,
                                     selfBurden:p.selfBurden||0,channelBurden:p.channelBurden||0,
                                     fee:p.fee||0,feeRate:p.feeRate||0,
-                                    net:p.net||0,margin:p.margin||0,
+                                    net:p.net||0,margin:l.margin,
                                   })),
                                 };
                               });
@@ -8496,15 +8543,42 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
     setRemovedIdx(prev=>{const next=new Set(prev);checkedIdx.forEach(i=>next.add(i));return next;});
     setCheckedIdx(new Set());
   };
-  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용
+  // 체크되지 않은 행만 일괄 삭제 — 드래그로 선택한 행만 남기는 흐름 (현재 표시된 행 기준)
+  const removeUnchecked=()=>{
+    if(checkedIdx.size===0) return;
+    setRemovedIdx(prev=>{
+      const next=new Set(prev);
+      rows.forEach(r=>{ if(!checkedIdx.has(r.idx)) next.add(r.idx); });
+      return next;
+    });
+    setCheckedIdx(new Set());
+  };
+  // 드래그 다중 선택 — 체크박스에서 mouseDown → mode 결정, 다른 행에 mouseEnter 시 적용.
+  //   변경이 실제로 필요할 때만 setState 호출 (드래그 중 불필요한 리렌더 방지)
   const dragSelectModeRef=useRef(null);
   const startDragSelect=(idx,isChecked)=>{
     dragSelectModeRef.current=isChecked?"remove":"add";
-    setCheckedIdx(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(idx);else next.delete(idx);return next;});
+    setCheckedIdx(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(idx);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(idx):next.delete(idx);
+      return next;
+    });
   };
   const enterDragSelect=(idx)=>{
     if(!dragSelectModeRef.current) return;
-    setCheckedIdx(prev=>{const next=new Set(prev);if(dragSelectModeRef.current==="add")next.add(idx);else next.delete(idx);return next;});
+    setCheckedIdx(prev=>{
+      const wantAdd=dragSelectModeRef.current==="add";
+      const has=prev.has(idx);
+      if(wantAdd&&has) return prev;
+      if(!wantAdd&&!has) return prev;
+      const next=new Set(prev);
+      wantAdd?next.add(idx):next.delete(idx);
+      return next;
+    });
   };
   useEffect(()=>{
     const onUp=()=>{dragSelectModeRef.current=null;};
@@ -8685,6 +8759,14 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                     style={{display:"inline-flex",alignItems:"center",gap:4,background:D.red,color:"#fff",border:"none",borderRadius:5,
                       padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
                     🗑 체크 {checkedIdx.size}개 일괄 삭제
+                  </button>
+                )}
+                {checkedIdx.size>0&&(
+                  <button onClick={removeUnchecked}
+                    title="체크된 행만 남기고 나머지 표시된 행 일괄 삭제"
+                    style={{display:"inline-flex",alignItems:"center",gap:4,background:"transparent",color:D.red,border:`1px solid ${D.red}`,borderRadius:5,
+                      padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                    ↶ 체크 외 {Math.max(0,rows.length-checkedIdx.size)}개 삭제
                   </button>
                 )}
                 {removedIdx.size>0&&(
