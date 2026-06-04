@@ -10192,7 +10192,10 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500,width:30}}>#</th>
                   <th style={{padding:"5px 7px",textAlign:"left",fontWeight:500}}>상품명</th>
                   <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>판매 수량(장)</th>
-                  {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="할인 매트릭스의 묶음 상품과 매칭된 예상 마크업 (실수령 ÷ 원가)">예상 마크업</th>}
+                  {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="할인 매트릭스의 묶음 상품과 매칭된 예상 마크업 (실수령 ÷ 원가) · 모든 주문 시나리오를 추적하지는 못하므로 참고용">
+                    예상 마크업
+                    <span style={{display:"block",fontSize:9,color:D.textMeta,fontWeight:400,marginTop:1}}>*모든 주문 시나리오를 추적하지는 못하므로 참고용</span>
+                  </th>}
                   {hasBundleData&&<th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="예상 마진(단가) × 판매 수량">예상 마진액</th>}
                 </tr></thead>
                 <tbody>
