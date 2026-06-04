@@ -4285,8 +4285,18 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                     <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
-                            <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                          {["상품명","정가","프런트 할인율(자사부담)","프런트 판매가","쿠폰 할인율(자사+채널)\n프런트 판매가에 적용","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                            <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,
+                              background:k>=1&&k<=3?"#e8f0f8":k>=4&&k<=8?"#fff4d8":k>=9&&k<=11?"#e8f3e8":D.surfaceAlt,
+                              borderLeft:(k===1||k===4||k===9||k===12)?`2px solid ${D.borderMid}`:"none",
+                              whiteSpace:h.includes("\n")?"normal":"nowrap"}}>
+                              {h.includes("\n")?(
+                                <div style={{lineHeight:1.2}}>
+                                  <div>{h.split("\n")[0]}</div>
+                                  <div style={{fontWeight:400,fontSize:9,color:D.textMeta,marginTop:1}}>{h.split("\n")[1]}</div>
+                                </div>
+                              ):h}
+                            </th>
                           ))}
                         </tr></thead>
                         <tbody>
@@ -4715,8 +4725,18 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
             <div data-capture-expand style={{flex:1,overflow:"auto",minHeight:0}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                  {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
-                    <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                  {["상품명","정가","프런트 할인율(자사부담)","프런트 판매가","쿠폰 할인율(자사+채널)\n프런트 판매가에 적용","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                    <th key={k} style={{padding:"4px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,
+                      background:k>=1&&k<=3?"#e8f0f8":k>=4&&k<=8?"#fff4d8":k>=9&&k<=11?"#e8f3e8":D.surfaceAlt,
+                      borderLeft:(k===1||k===4||k===9||k===12)?`2px solid ${D.borderMid}`:"none",
+                      whiteSpace:h.includes("\n")?"normal":"nowrap"}}>
+                      {h.includes("\n")?(
+                        <div style={{lineHeight:1.2}}>
+                          <div>{h.split("\n")[0]}</div>
+                          <div style={{fontWeight:400,fontSize:9,color:D.textMeta,marginTop:1}}>{h.split("\n")[1]}</div>
+                        </div>
+                      ):h}
+                    </th>
                   ))}
                 </tr></thead>
                 <tbody>
@@ -8139,9 +8159,12 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                     <div style={{border:`1px solid ${D.border}`,borderRadius:6,marginTop:8}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr>
-                          {["상품명","정가 (E열)","기본 할인율(자사부담)","프런트 판매가 (I열)","쿠폰율(자사+채널)","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
+                          {["상품명","정가 (E열)","프런트 할인율(자사부담)","프런트 판매가 (I열)","쿠폰 할인율(자사+채널)\n프런트 판매가에 적용","최종 할인율(쿠폰 포함)","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가 (세포)","마진","마크업"].map((h,i)=>(
                             <th key={i} style={{padding:"7px 8px",borderBottom:`1px solid ${D.borderMid}`,
-                              textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,background:D.surfaceAlt,whiteSpace:"nowrap",
+                              textAlign:i===0?"left":"right",fontWeight:600,color:D.textSub,
+                              background:i>=1&&i<=3?"#e8f0f8":i>=4&&i<=8?"#fff4d8":i>=9?"#e8f3e8":D.surfaceAlt,
+                              whiteSpace:h.includes("\n")?"normal":"nowrap",
+                              borderLeft:(i===1||i===4||i===9||i===12)?`2px solid ${D.borderMid}`:"none",
                               position:"sticky",top:108,zIndex:3,boxShadow:`0 1px 0 ${D.borderMid}`}}>
                               {i===0?(
                                 <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
@@ -8159,6 +8182,11 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     style={{cursor:"pointer"}}/>
                                   {h}
                                 </span>
+                              ):h.includes("\n")?(
+                                <div style={{lineHeight:1.2}}>
+                                  <div>{h.split("\n")[0]}</div>
+                                  <div style={{fontWeight:400,fontSize:9,color:D.textMeta,marginTop:1}}>{h.split("\n")[1]}</div>
+                                </div>
                               ):h}
                             </th>
                           ))}
@@ -8354,8 +8382,18 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                                     <div style={{maxHeight:280,overflow:"auto",border:`1px solid ${D.border}`,borderRadius:4,background:D.surface}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                                         <thead><tr style={{background:D.surfaceAlt,color:D.textMeta}}>
-                                          {["상품명","정가","기본 할인율(자사부담)","프런트 판매가","쿠폰율(자사+채널)","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
-                                            <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,background:D.surfaceAlt,whiteSpace:"nowrap"}}>{h}</th>
+                                          {["상품명","정가","프런트 할인율(자사부담)","프런트 판매가","쿠폰 할인율(자사+채널)\n프런트 판매가에 적용","최종 할인율","자사부담(쿠폰)","29CM부담(쿠폰)","최종 판매가","수수료(프런트판매가×수수료율)","채널보전(채널쿠폰액)","정산","공급가","마진","마크업"].map((h,k)=>(
+                                            <th key={k} style={{padding:"5px 8px",textAlign:k===0?"left":"right",fontWeight:600,position:"sticky",top:0,
+                                              background:k>=1&&k<=3?"#e8f0f8":k>=4&&k<=8?"#fff4d8":k>=9&&k<=11?"#e8f3e8":D.surfaceAlt,
+                                              borderLeft:(k===1||k===4||k===9||k===12)?`2px solid ${D.borderMid}`:"none",
+                                              whiteSpace:h.includes("\n")?"normal":"nowrap"}}>
+                                              {h.includes("\n")?(
+                                                <div style={{lineHeight:1.2}}>
+                                                  <div>{h.split("\n")[0]}</div>
+                                                  <div style={{fontWeight:400,fontSize:9,color:D.textMeta,marginTop:1}}>{h.split("\n")[1]}</div>
+                                                </div>
+                                              ):h}
+                                            </th>
                                           ))}
                                         </tr></thead>
                                         <tbody>
@@ -9891,7 +9929,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
       if(oid) m[k].orders.add(oid);
     });
     return Object.values(m).map(p=>({...p,orders:p.orders.size}))
-      .sort((a,b)=>b.qty-a.qty||b.orders-a.orders).slice(0,20);
+      .sort((a,b)=>b.qty-a.qty||b.orders-a.orders);
   },[ch,promoStart,promoEnd,orders]);
 
   // 프로모션 할인 매트릭스의 묶음 상품(들)을 키 맵으로 펼침 — top20 상품명을
@@ -10141,7 +10179,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         {/* Top 20 */}
         <div>
           <div style={{fontSize:12,fontWeight:600,color:D.textSub,marginBottom:6,letterSpacing:"0.04em",textTransform:"uppercase"}}>
-            프로모션 기간 판매 Top 20 ({ch}, 주문일 기준)
+            프로모션 기간 판매 전체 ({ch}, 주문일 기준 · {top20.length.toLocaleString()}개 상품)
           </div>
           {top20.length===0?(
             <div style={{color:D.textMeta,fontSize:12,padding:"30px 0",textAlign:"center",background:D.surfaceAlt,borderRadius:6}}>
