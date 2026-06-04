@@ -8229,13 +8229,13 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                         <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                           <span style={{fontSize:11,color:D.textMeta,fontWeight:600}}>기본 세일율 일괄:</span>
                           {checkedRows.size>0&&(
-                            <span style={{display:"inline-flex",border:`1px solid ${D.borderMid}`,borderRadius:4,overflow:"hidden"}}>
+                            <span style={{display:"inline-flex",border:`1px solid #4FBFA5`,borderRadius:5,overflow:"hidden",boxShadow:"0 0 0 2px rgba(79,191,165,0.18)"}}>
                               {[{k:"all",l:"전체"},{k:"checked",l:`체크 ${checkedRows.size}`}].map(m=>{
                                 const active=bulkMode===m.k;
                                 return <button key={m.k} type="button" onClick={()=>setBulkMode(m.k)}
                                   title={m.k==="all"?"표시된 모든 행에 적용":"체크된 행에만 적용"}
-                                  style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
-                                    border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{m.l}</button>;
+                                  style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
+                                    border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
                               })}
                             </span>
                           )}
