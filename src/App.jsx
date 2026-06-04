@@ -4254,7 +4254,7 @@ function DiscountMatrix({ plan, compact=false, circledKeys, onToggleCircle }){
                   display:"flex",alignItems:"center",justifyContent:"center",padding:20,
                   fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
                   <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
-                    style={{width:"80vw",maxHeight:"85vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+                    style={{width:"98vw",maxHeight:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
                       display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
                     <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
                       display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
@@ -4669,7 +4669,7 @@ function DiscountPlanEditor({ value, onChange, calOpenFor, setCalOpenFor, idPref
               display:"flex",alignItems:"center",justifyContent:"center",padding:20,
               fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
           <div ref={bundleCaptureRef} onClick={e=>e.stopPropagation()}
-            style={{width:"80vw",maxHeight:"85vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
+            style={{width:"98vw",maxHeight:"92vh",border:`1px solid ${D.borderMid}`,borderRadius:8,overflow:"hidden",background:D.surface,
               display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
             <div style={{padding:"10px 14px",background:D.surfaceAlt,fontSize:12,fontWeight:700,color:D.black,
               display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
@@ -9956,7 +9956,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
         display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
         style={{background:D.surface,borderRadius:14,padding:"24px 28px",
-          width:"80vw",minWidth:"min(900px,95vw)",maxWidth:1800,
+          width:"98vw",minWidth:"min(900px,95vw)",maxWidth:"100vw",
           maxHeight:"90vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8,gap:10}}>
