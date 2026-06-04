@@ -8944,6 +8944,9 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
     if(checkedIdx.size===0) return;
     setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
   };
+  // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked'
+  const [bulkMode,setBulkMode]=useState("all");
+  const applyBulk=v=>{ if(bulkMode==="checked") setCheckedRates(v); else setAllRates(v); };
   const exportXlsx=async()=>{
     if(!rows.length) return;
     const XLSX=await getXLSX();
@@ -9054,21 +9057,21 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                 <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마크업 실시간 반영</span>
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:D.textMeta}}>일괄:</span>
-                  {[0,10,15,20,30].map(v=>(
-                    <button key={`a${v}`} onClick={()=>setAllRates(v)}
-                      title="표시된 모든 행에 적용"
+                  {checkedIdx.size>0&&(
+                    <span style={{display:"inline-flex",border:`1px solid #4FBFA5`,borderRadius:5,overflow:"hidden",boxShadow:"0 0 0 2px rgba(79,191,165,0.18)"}}>
+                      {[{k:"all",l:"전체"},{k:"checked",l:`체크 ${checkedIdx.size}`}].map(m=>{
+                        const active=bulkMode===m.k;
+                        return <button key={m.k} type="button" onClick={()=>setBulkMode(m.k)}
+                          title={m.k==="all"?"표시된 모든 행에 적용":"체크된 행에만 적용"}
+                          style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
+                            border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
+                      })}
+                    </span>
+                  )}
+                  {[0,5,10,15,20,25,30].map(v=>(
+                    <button key={v} onClick={()=>applyBulk(v)}
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                   ))}
-                  {checkedIdx.size>0&&(
-                    <>
-                      <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>· 체크 {checkedIdx.size}개:</span>
-                      {[0,10,15,20,30].map(v=>(
-                        <button key={`c${v}`} onClick={()=>setCheckedRates(v)}
-                          title="체크된 행에만 적용"
-                          style={{background:"transparent",border:`1px solid ${D.blue}55`,color:D.blue,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>{v}%</button>
-                      ))}
-                    </>
-                  )}
                 </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
@@ -9484,6 +9487,9 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     if(checkedIdx.size===0) return;
     setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
   };
+  // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked'
+  const [bulkMode,setBulkMode]=useState("all");
+  const applyBulk=v=>{ if(bulkMode==="checked") setCheckedRates(v); else setAllRates(v); };
   const removeRow=(idx)=>setRemovedIdx(prev=>{const next=new Set(prev);next.add(idx);return next;});
   const restoreAll=()=>{setRemovedIdx(new Set());setCheckedIdx(new Set());};
   const removeChecked=()=>{
@@ -9628,17 +9634,21 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%)</span>
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:D.textMeta}}>일괄:</span>
-                  {[0,10,15,20,30].map(v=>(
-                    <button key={`a${v}`} onClick={()=>setAllRates(v)}
+                  {checkedIdx.size>0&&(
+                    <span style={{display:"inline-flex",border:`1px solid #4FBFA5`,borderRadius:5,overflow:"hidden",boxShadow:"0 0 0 2px rgba(79,191,165,0.18)"}}>
+                      {[{k:"all",l:"전체"},{k:"checked",l:`체크 ${checkedIdx.size}`}].map(m=>{
+                        const active=bulkMode===m.k;
+                        return <button key={m.k} type="button" onClick={()=>setBulkMode(m.k)}
+                          title={m.k==="all"?"표시된 모든 행에 적용":"체크된 행에만 적용"}
+                          style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
+                            border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
+                      })}
+                    </span>
+                  )}
+                  {[0,5,10,15,20,25,30].map(v=>(
+                    <button key={v} onClick={()=>applyBulk(v)}
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                   ))}
-                  {checkedIdx.size>0&&(<>
-                    <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>· 체크 {checkedIdx.size}개:</span>
-                    {[0,10,15,20,30].map(v=>(
-                      <button key={`c${v}`} onClick={()=>setCheckedRates(v)}
-                        style={{background:"transparent",border:`1px solid ${D.blue}55`,color:D.blue,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>{v}%</button>
-                    ))}
-                  </>)}
                 </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
