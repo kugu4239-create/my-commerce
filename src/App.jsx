@@ -7251,6 +7251,20 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
       return {...r,baseDisc:v,basePrice,manualBase:v,supplyIncVat,finalDisc,...m};
     }));
   };
+  // 체크된 행만 일괄 적용 — 드래그 선택한 행 묶음에 동일 할인율 빠르게 적용
+  const applyCheckedBaseDisc=(newBase)=>{
+    if(checkedRows.size===0) return;
+    const v=Math.max(0,Math.min(100,Number(newBase)||0));
+    setProcessed(prev=>prev.map(r=>{
+      if(!checkedRows.has(r.row)) return r;
+      const basePrice=Math.round(r.list*(1-v/100)/10)*10;
+      const supply=r.supply||0;
+      const supplyIncVat=Math.round(supply*1.1);
+      const m=computeMargin(r.list,v,selectedScenario.items||[],supply);
+      const finalDisc=r.list>0?Math.round((1-m.finalPrice/r.list)*1000)/10:0;
+      return {...r,baseDisc:v,basePrice,manualBase:v,supplyIncVat,finalDisc,...m};
+    }));
+  };
   const resetAllBaseDisc=()=>{
     setProcessed(prev=>prev.map(r=>{
       const bd=0; // 디폴트 0%
@@ -7263,8 +7277,10 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
       return {...r,baseDisc:bd,basePrice,finalPrice,finalDisc,manualBase:undefined,supplyIncVat,...m};
     }));
   };
-  // 일괄 적용 입력값
+  // 일괄 적용 입력값 / 모드 ('all' | 'checked')
   const [bulkBaseDisc,setBulkBaseDisc]=useState("");
+  const [bulkMode,setBulkMode]=useState("all");
+  const applyBulk=(v)=>{ if(bulkMode==="checked") applyCheckedBaseDisc(v); else applyAllBaseDisc(v); };
   // 결론 도출 — 펼친 묶음 상품 그룹 (기본 세일율 %)
   const [expandedGroup,setExpandedGroup]=useState(null);
   // 예시 파일 저장/로드 — 최근 업로드 1개를 Supabase 에 보관해 다른 세션에서도 즉시 미리보기
@@ -8122,10 +8138,21 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                               style={{background:"transparent",border:"none",cursor:"pointer",color:D.blue,fontSize:11,fontWeight:600,padding:"0 4px"}}>↻ 복원</button>
                           </span>
                         )}
-                        <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5}}>
+                        <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                           <span style={{fontSize:11,color:D.textMeta,fontWeight:600}}>기본 세일율 일괄:</span>
+                          {checkedRows.size>0&&(
+                            <span style={{display:"inline-flex",border:`1px solid ${D.borderMid}`,borderRadius:4,overflow:"hidden"}}>
+                              {[{k:"all",l:"전체"},{k:"checked",l:`체크 ${checkedRows.size}`}].map(m=>{
+                                const active=bulkMode===m.k;
+                                return <button key={m.k} type="button" onClick={()=>setBulkMode(m.k)}
+                                  title={m.k==="all"?"표시된 모든 행에 적용":"체크된 행에만 적용"}
+                                  style={{background:active?D.black:"transparent",color:active?"#fff":D.textMeta,
+                                    border:"none",padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{m.l}</button>;
+                              })}
+                            </span>
+                          )}
                           {[10,15,20,25,30,40].map(v=>(
-                            <button key={v} onClick={()=>applyAllBaseDisc(v)}
+                            <button key={v} onClick={()=>applyBulk(v)}
                               style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:4,
                                 padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub,fontWeight:600}}>
                               {v}%
@@ -8133,11 +8160,11 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                           ))}
                           <input type="number" min="0" max="100" step="0.1"
                             value={bulkBaseDisc} onChange={e=>setBulkBaseDisc(e.target.value)}
-                            onKeyDown={e=>{if(e.key==="Enter"&&bulkBaseDisc!==""){applyAllBaseDisc(bulkBaseDisc);setBulkBaseDisc("");}}}
+                            onKeyDown={e=>{if(e.key==="Enter"&&bulkBaseDisc!==""){applyBulk(bulkBaseDisc);setBulkBaseDisc("");}}}
                             placeholder="직접" onWheel={e=>e.currentTarget.blur()}
                             style={{width:44,padding:"3px 5px",fontSize:11,textAlign:"right",
                               border:`1px solid ${D.borderMid}`,borderRadius:4,background:D.surface,color:D.text,fontFamily:"inherit"}}/>
-                          <button onClick={()=>{if(bulkBaseDisc!==""){applyAllBaseDisc(bulkBaseDisc);setBulkBaseDisc("");}}}
+                          <button onClick={()=>{if(bulkBaseDisc!==""){applyBulk(bulkBaseDisc);setBulkBaseDisc("");}}}
                             disabled={bulkBaseDisc===""}
                             style={{background:bulkBaseDisc!==""?D.black:D.surface,color:bulkBaseDisc!==""?"#fff":D.textMeta,
                               border:`1px solid ${bulkBaseDisc!==""?D.black:D.border}`,borderRadius:4,
@@ -8775,6 +8802,11 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
   const pct=v=>`${(Math.round(v*10)/10).toFixed(1)}%`;
   const setRate=(i,v)=>setRates(prev=>({...prev,[i]:v}));
   const setAllRates=v=>setRates(()=>{const m={};products.forEach((_,i)=>{m[i]=v;});return m;});
+  // 체크된 행에만 할인율 일괄 적용
+  const setCheckedRates=v=>{
+    if(checkedIdx.size===0) return;
+    setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
+  };
   const exportXlsx=async()=>{
     if(!rows.length) return;
     const XLSX=await getXLSX();
@@ -8883,11 +8915,24 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 <span style={{fontSize:12,fontWeight:700,color:D.black}}>할인율</span>
                 <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마크업 실시간 반영</span>
-                <span style={{fontSize:11,color:D.textMeta,marginLeft:"auto"}}>전체 일괄:</span>
-                {[0,10,15,20,30].map(v=>(
-                  <button key={v} onClick={()=>setAllRates(v)}
-                    style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
-                ))}
+                <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:D.textMeta}}>일괄:</span>
+                  {[0,10,15,20,30].map(v=>(
+                    <button key={`a${v}`} onClick={()=>setAllRates(v)}
+                      title="표시된 모든 행에 적용"
+                      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
+                  ))}
+                  {checkedIdx.size>0&&(
+                    <>
+                      <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>· 체크 {checkedIdx.size}개:</span>
+                      {[0,10,15,20,30].map(v=>(
+                        <button key={`c${v}`} onClick={()=>setCheckedRates(v)}
+                          title="체크된 행에만 적용"
+                          style={{background:"transparent",border:`1px solid ${D.blue}55`,color:D.blue,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>{v}%</button>
+                      ))}
+                    </>
+                  )}
+                </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
