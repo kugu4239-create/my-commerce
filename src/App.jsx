@@ -5887,7 +5887,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         <button onClick={()=>setMallCalcOpen(true)}
           style={{position:"fixed",top:655,left:0,zIndex:1500,writingMode:"vertical-rl",
             background:D.surface,color:D.text,border:`1px solid ${D.borderMid}`,borderRadius:"0 8px 8px 0",
-            padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
+            padding:"18px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
+            minHeight:160,whiteSpace:"normal",lineHeight:1.5,
             boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
           자사몰 세일율 계산기
         </button>
@@ -5897,7 +5898,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
         <button onClick={()=>setOfflineCalcOpen(true)}
           style={{position:"fixed",top:840,left:0,zIndex:1500,writingMode:"vertical-rl",
             background:D.surface,color:D.text,border:`1px solid ${D.borderMid}`,borderRadius:"0 8px 8px 0",
-            padding:"14px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
+            padding:"18px 7px",fontSize:12,fontWeight:700,cursor:"pointer",letterSpacing:"0.12em",
+            minHeight:160,whiteSpace:"normal",lineHeight:1.5,
             boxShadow:"2px 2px 8px rgba(0,0,0,0.18)"}}>
           오프라인 세일율 계산기
         </button>
@@ -8729,12 +8731,14 @@ function parseMallProductFile(file,onResult,onError){
     const kName=pickKey(rows[0],["상품명","product_name"]);
     const kSell=pickKey(rows[0],["판매가","selling_price"]);
     const kSup =pickKey(rows[0],["공급가","supply_price","원가"]);
+    // 매장별 재고 — 오프라인 계산기에서 사용 (자사몰은 무시)
+    const kStockPangyo=pickKey(rows[0],["판교점","판교점 재고","판교","판교 재고","pangyo","pangyo_stock"]);
+    const kStockIlsan =pickKey(rows[0],["일산점","일산점 재고","일산","일산 재고","ilsan","ilsan_stock"]);
     if(kName===undefined||kSell===undefined){
       onError(`'상품명' / '판매가' 컬럼을 찾지 못했습니다 — 헤더: ${Object.keys(rows[0]).map(k=>String(k).replace(/^﻿/,"").trim()).slice(0,30).join(" / ")}`);
       return;
     }
     const out=[];
-    // 원본 파일 행 순서 보존 — _origRow 인덱스로 명시 (이후 정렬/필터 시 기준)
     rows.forEach((r,rowIdx)=>{
       const name=String(r[kName]||"").trim();
       const selling=toNum(r[kSell]);
@@ -8745,6 +8749,8 @@ function parseMallProductFile(file,onResult,onError){
         name,
         selling,
         supply:kSup!==undefined?toNum(r[kSup]):0,
+        stockPangyo:kStockPangyo!==undefined?Math.max(0,Math.round(toNum(r[kStockPangyo])||0)):0,
+        stockIlsan :kStockIlsan !==undefined?Math.max(0,Math.round(toNum(r[kStockIlsan])||0)):0,
       });
     });
     if(!out.length){ onError("유효한 상품 행이 없습니다 (상품명·판매가 확인)"); return; }
@@ -8766,7 +8772,23 @@ function parseMallProductFile(file,onResult,onError){
     reader.onload=async e=>{
       try{
         const XLSX=await getXLSX();
-        const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+        // 이지어드민 등 일부 ".xls" 가 사실은 HTML <table> — 바이너리 파싱 실패 시 텍스트로 재시도
+        const u8=new Uint8Array(e.target.result);
+        let wb;
+        // HTML 시그니처(시작 부분) 빠른 감지: '<' / '<!' / '<html' / '<meta'
+        const head=String.fromCharCode(...u8.slice(0,200)).trim().slice(0,5).toLowerCase();
+        const looksHtml=head.startsWith("<");
+        if(looksHtml){
+          const text=new TextDecoder("utf-8").decode(u8);
+          wb=XLSX.read(text,{type:"string"});
+        }else{
+          try{
+            wb=XLSX.read(u8,{type:"array"});
+          }catch{
+            const text=new TextDecoder("utf-8").decode(u8);
+            wb=XLSX.read(text,{type:"string"});
+          }
+        }
         const ws=wb.Sheets[wb.SheetNames[0]];
         finish(XLSX.utils.sheet_to_json(ws,{defval:""}));
       }catch(err){ onError(String(err?.message||err)); }
@@ -8944,6 +8966,9 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
     if(checkedIdx.size===0) return;
     setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
   };
+  // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked'
+  const [bulkMode,setBulkMode]=useState("all");
+  const applyBulk=v=>{ if(bulkMode==="checked") setCheckedRates(v); else setAllRates(v); };
   const exportXlsx=async()=>{
     if(!rows.length) return;
     const XLSX=await getXLSX();
@@ -9054,21 +9079,21 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                 <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%) · 변경 시 마진·마크업 실시간 반영</span>
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:D.textMeta}}>일괄:</span>
-                  {[0,10,15,20,30].map(v=>(
-                    <button key={`a${v}`} onClick={()=>setAllRates(v)}
-                      title="표시된 모든 행에 적용"
+                  {checkedIdx.size>0&&(
+                    <span style={{display:"inline-flex",border:`1px solid #4FBFA5`,borderRadius:5,overflow:"hidden",boxShadow:"0 0 0 2px rgba(79,191,165,0.18)"}}>
+                      {[{k:"all",l:"전체"},{k:"checked",l:`체크 ${checkedIdx.size}`}].map(m=>{
+                        const active=bulkMode===m.k;
+                        return <button key={m.k} type="button" onClick={()=>setBulkMode(m.k)}
+                          title={m.k==="all"?"표시된 모든 행에 적용":"체크된 행에만 적용"}
+                          style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
+                            border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
+                      })}
+                    </span>
+                  )}
+                  {[0,5,10,15,20,25,30].map(v=>(
+                    <button key={v} onClick={()=>applyBulk(v)}
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                   ))}
-                  {checkedIdx.size>0&&(
-                    <>
-                      <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>· 체크 {checkedIdx.size}개:</span>
-                      {[0,10,15,20,30].map(v=>(
-                        <button key={`c${v}`} onClick={()=>setCheckedRates(v)}
-                          title="체크된 행에만 적용"
-                          style={{background:"transparent",border:`1px solid ${D.blue}55`,color:D.blue,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>{v}%</button>
-                      ))}
-                    </>
-                  )}
                 </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
@@ -9387,6 +9412,8 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   // 쿠폰 — name/unit('pct'|'won')/value. 기본 회원가입 ₩10,000 (선택 활성).
   const [coupons,setCoupons]=useState([{name:"회원가입 쿠폰",unit:"won",value:10000}]);
   const [selCoupon,setSelCoupon]=useState(0); // -1 = 쿠폰 없음, 0..N-1 = coupons[i]
+  // 매장 필터 — 'common'(양쪽 재고 둘 다 >0) | 'pangyo' | 'ilsan'
+  const [storeMode,setStoreMode]=useState("common");
   const FEE_RATE=0.28;
   const [search,setSearch]=useState("");
   const [removedIdx,setRemovedIdx]=useState(()=>new Set());
@@ -9455,6 +9482,13 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
       const bo=(b.p&&b.p._origRow!=null)?b.p._origRow:b.i;
       return ao-bo;
     })
+    .filter(({p})=>{
+      const sp=+p.stockPangyo||0, si=+p.stockIlsan||0;
+      if(storeMode==="common") return sp>0&&si>0;
+      if(storeMode==="pangyo") return sp>0;
+      if(storeMode==="ilsan") return si>0;
+      return true;
+    })
     .map(({p,i})=>{
       const rate=Math.max(0,Math.min(100,parseFloat(rates[i]??10)||0));
       const priced=priceOf?priceOf(p.name,p.code):{selling:0,supply:0};
@@ -9462,7 +9496,6 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
       const selling=p.selling||priced.selling||0;
       const discAmt=Math.round(selling*rate/100);
       const basePrice=selling-discAmt;
-      // 선택된 쿠폰 적용 — % 또는 ₩ (음수/초과 방지). 쿠폰 없음(-1) 이면 0.
       const sel=selCoupon>=0?coupons[selCoupon]:null;
       let couponAmt=0;
       if(sel){
@@ -9477,13 +9510,16 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
       const markup=supplyVat>0?net/supplyVat:0;
       const effDisc=selling>0?(1-finalPrice/selling)*100:0;
       return {...p,idx:i,rate,selling,supply,discAmt,basePrice,couponAmt,finalPrice,supplyVat,fee,net,margin,markup,effDisc};
-    }),[products,rates,coupons,selCoupon,priceOf,removedIdx]);
+    }),[products,rates,coupons,selCoupon,priceOf,removedIdx,storeMode]);
   const setRate=(i,v)=>setRates(prev=>({...prev,[i]:v}));
   const setAllRates=v=>setRates(()=>{const m={};products.forEach((_,i)=>{m[i]=v;});return m;});
   const setCheckedRates=v=>{
     if(checkedIdx.size===0) return;
     setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
   };
+  // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked'
+  const [bulkMode,setBulkMode]=useState("all");
+  const applyBulk=v=>{ if(bulkMode==="checked") setCheckedRates(v); else setAllRates(v); };
   const removeRow=(idx)=>setRemovedIdx(prev=>{const next=new Set(prev);next.add(idx);return next;});
   const restoreAll=()=>{setRemovedIdx(new Set());setCheckedIdx(new Set());};
   const removeChecked=()=>{
@@ -9581,12 +9617,50 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
           border:`1px solid ${D.black}`,boxShadow:"0 8px 40px rgba(0,0,0,0.22)",
           fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
         <div style={{padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",
-          gap:8,borderBottom:`1px solid ${D.borderMid}`,background:D.surface,position:"sticky",top:0,zIndex:5}}>
-          <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+          gap:8,borderBottom:`1px solid ${D.borderMid}`,background:D.surface,position:"sticky",top:0,zIndex:5,flexWrap:"wrap"}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <b style={{fontSize:13,color:D.black,fontWeight:700}}>오프라인 세일율 계산기</b>
             <span style={{fontSize:11,color:D.textMeta}}>이지어드민 인벤토리 파일 · 매장 수수료 28%</span>
+            {products.length>0&&(
+              <span style={{display:"inline-flex",border:`1px solid #4FBFA5`,borderRadius:5,overflow:"hidden",boxShadow:"0 0 0 2px rgba(79,191,165,0.18)",marginLeft:6}}>
+                {[{k:"common",l:"공통"},{k:"pangyo",l:"판교점"},{k:"ilsan",l:"일산점"}].map(m=>{
+                  const active=storeMode===m.k;
+                  return <button key={m.k} type="button" onClick={()=>setStoreMode(m.k)}
+                    title={m.k==="common"?"판교·일산 양쪽 모두 재고 있는 상품":m.k==="pangyo"?"판교점 재고 있는 상품":"일산점 재고 있는 상품"}
+                    style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
+                      border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
+                })}
+              </span>
+            )}
           </span>
           <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+            {products.length>0&&rows.length>0&&(
+              <button onClick={async()=>{
+                const XLSX=await getXLSX();
+                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
+                const data=rows.map(r=>[
+                  r.code||"",r.name||"",r.stockPangyo||0,r.stockIlsan||0,
+                  r.selling||0,r.rate||0,r.basePrice||0,r.couponAmt||0,
+                  r.finalPrice||0,r.fee||0,r.net||0,
+                  r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
+                ]);
+                const storeLabel=storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점";
+                const sel=selCoupon>=0?coupons[selCoupon]:null;
+                const couponLine=sel?`${sel.name||"쿠폰"} ${sel.unit==="won"?`₩${(+sel.value||0).toLocaleString()}`:`${sel.value||0}%`}`:"없음";
+                const meta=[`오프라인 세일율 — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
+                const aoa=[meta,[],headers,...data];
+                const ws=XLSX.utils.aoa_to_sheet(aoa);
+                ws["!cols"]=[{wch:10},{wch:32},{wch:9},{wch:9},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
+                const wb=XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb,ws,storeLabel);
+                XLSX.writeFile(wb,`오프라인세일율_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
+              }}
+                title={`현재(${storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점"}) 표시 행 ${rows.length}개를 엑셀로 저장`}
+                data-capture-hide
+                style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
+                📊 엑셀
+              </button>
+            )}
             <CaptureBtn cardRef={modalCardRef} filename={`오프라인세일율_${dayjs().format("YYYYMMDD")}`} DC={{border:D.border,sub:D.textMeta}}/>
             <button onClick={onClose} style={{background:"transparent",border:"none",cursor:"pointer",color:D.textMeta,fontSize:18}}>✕</button>
           </span>
@@ -9628,17 +9702,21 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 <span style={{fontSize:11,color:D.textMeta}}>상품별로 입력(기본 10%)</span>
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:D.textMeta}}>일괄:</span>
-                  {[0,10,15,20,30].map(v=>(
-                    <button key={`a${v}`} onClick={()=>setAllRates(v)}
+                  {checkedIdx.size>0&&(
+                    <span style={{display:"inline-flex",border:`1px solid #4FBFA5`,borderRadius:5,overflow:"hidden",boxShadow:"0 0 0 2px rgba(79,191,165,0.18)"}}>
+                      {[{k:"all",l:"전체"},{k:"checked",l:`체크 ${checkedIdx.size}`}].map(m=>{
+                        const active=bulkMode===m.k;
+                        return <button key={m.k} type="button" onClick={()=>setBulkMode(m.k)}
+                          title={m.k==="all"?"표시된 모든 행에 적용":"체크된 행에만 적용"}
+                          style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
+                            border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
+                      })}
+                    </span>
+                  )}
+                  {[0,5,10,15,20,25,30].map(v=>(
+                    <button key={v} onClick={()=>applyBulk(v)}
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                   ))}
-                  {checkedIdx.size>0&&(<>
-                    <span style={{fontSize:11,color:D.textMeta,marginLeft:6}}>· 체크 {checkedIdx.size}개:</span>
-                    {[0,10,15,20,30].map(v=>(
-                      <button key={`c${v}`} onClick={()=>setCheckedRates(v)}
-                        style={{background:"transparent",border:`1px solid ${D.blue}55`,color:D.blue,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>{v}%</button>
-                    ))}
-                  </>)}
                 </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
@@ -9729,6 +9807,8 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta,position:"sticky",top:0,zIndex:1}}>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품명</th>
+                  <th style={{...numCell,fontWeight:500}}>판교</th>
+                  <th style={{...numCell,fontWeight:500}}>일산</th>
                   <th style={{...numCell,fontWeight:500}}>판매가</th>
                   <th style={{...numCell,fontWeight:500}}>할인율</th>
                   <th style={{...numCell,fontWeight:500}}>할인가</th>
@@ -9756,6 +9836,8 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                       </td>
                       <td onMouseDown={e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
                         style={{padding:"4px 6px",color:D.text,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer",userSelect:"none"}} title={r.name}>{r.name}</td>
+                      <td style={{...numCell,color:(r.stockPangyo||0)>0?D.text:D.textMeta,fontWeight:(r.stockPangyo||0)>0?600:400}}>{r.stockPangyo||0}</td>
+                      <td style={{...numCell,color:(r.stockIlsan||0)>0?D.text:D.textMeta,fontWeight:(r.stockIlsan||0)>0?600:400}}>{r.stockIlsan||0}</td>
                       <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}</td>
                       <td style={numCell}>
                         <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1"
