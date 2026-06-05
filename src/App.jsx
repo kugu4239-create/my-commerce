@@ -8729,6 +8729,7 @@ function parseMallProductFile(file,onResult,onError){
     if(!rows||!rows.length){ onError("데이터 행이 없습니다"); return; }
     const kCode=pickKey(rows[0],["상품코드","product_code","상품 코드"]);
     const kName=pickKey(rows[0],["상품명","product_name"]);
+    const kOpt =pickKey(rows[0],["옵션","option","option_name","옵션명"]);
     const kSell=pickKey(rows[0],["판매가","selling_price"]);
     const kSup =pickKey(rows[0],["공급가","supply_price","원가"]);
     // 매장별 재고 — 오프라인 계산기에서 사용 (자사몰은 무시)
@@ -8747,6 +8748,7 @@ function parseMallProductFile(file,onResult,onError){
         _origRow:rowIdx,
         code:kCode!==undefined?String(r[kCode]||"").trim():"",
         name,
+        option:kOpt!==undefined?String(r[kOpt]||"").trim():"",
         selling,
         supply:kSup!==undefined?toNum(r[kSup]):0,
         stockPangyo:kStockPangyo!==undefined?Math.max(0,Math.round(toNum(r[kStockPangyo])||0)):0,
@@ -9561,7 +9563,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
         markup:avgM!=null?String(avgM):"",
         cpn:0,
         products:g.products.map(p=>({
-          code:p.code||"",name:p.name||"",
+          code:p.code||"",name:p.name||"",option:p.option||"",
           list:p.selling||0,baseDisc:p.rate||0,
           basePrice:p.basePrice||0,finalPrice:p.finalPrice||0,
           finalDisc:Math.round((p.effDisc||0)*10)/10,markup:p.markup||0,
@@ -9638,9 +9640,9 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
             {products.length>0&&rows.length>0&&(
               <button onClick={async()=>{
                 const XLSX=await getXLSX();
-                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
+                const headers=["상품코드","상품명","옵션","판교 재고","일산 재고","판매가","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
                 const data=rows.map(r=>[
-                  r.code||"",r.name||"",r.stockPangyo||0,r.stockIlsan||0,
+                  r.code||"",r.name||"",r.option||"",r.stockPangyo||0,r.stockIlsan||0,
                   r.selling||0,r.rate||0,r.basePrice||0,r.couponAmt||0,
                   r.finalPrice||0,r.fee||0,r.net||0,
                   r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
@@ -9651,7 +9653,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 const meta=[`오프라인 세일율 — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
                 const aoa=[meta,[],headers,...data];
                 const ws=XLSX.utils.aoa_to_sheet(aoa);
-                ws["!cols"]=[{wch:10},{wch:32},{wch:9},{wch:9},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
+                ws["!cols"]=[{wch:10},{wch:30},{wch:18},{wch:9},{wch:9},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
                 const wb=XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb,ws,storeLabel);
                 XLSX.writeFile(wb,`오프라인세일율_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
@@ -9808,6 +9810,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 <thead><tr style={{background:D.surfaceAlt,color:D.textMeta,position:"sticky",top:0,zIndex:1}}>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품코드</th>
                   <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>상품명</th>
+                  <th style={{padding:"4px 6px",textAlign:"left",fontWeight:500}}>옵션</th>
                   <th style={{...numCell,fontWeight:500}}>판교</th>
                   <th style={{...numCell,fontWeight:500}}>일산</th>
                   <th style={{...numCell,fontWeight:500}}>판매가</th>
@@ -9837,6 +9840,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                       </td>
                       <td onMouseDown={e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
                         style={{padding:"4px 6px",color:D.text,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer",userSelect:"none"}} title={r.name}>{r.name}</td>
+                      <td style={{padding:"4px 6px",color:D.textSub,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.option||""}>{r.option||""}</td>
                       <td style={{...numCell,color:(r.stockPangyo||0)>0?D.text:D.textMeta,fontWeight:(r.stockPangyo||0)>0?600:400}}>{r.stockPangyo||0}</td>
                       <td style={{...numCell,color:(r.stockIlsan||0)>0?D.text:D.textMeta,fontWeight:(r.stockIlsan||0)>0?600:400}}>{r.stockIlsan||0}</td>
                       <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}</td>
