@@ -9484,9 +9484,10 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     })
     .filter(({p})=>{
       const sp=+p.stockPangyo||0, si=+p.stockIlsan||0;
+      // 공통 = 양쪽 모두 재고, 판교 = 판교만 재고(일산 0), 일산 = 일산만 재고(판교 0)
       if(storeMode==="common") return sp>0&&si>0;
-      if(storeMode==="pangyo") return sp>0;
-      if(storeMode==="ilsan") return si>0;
+      if(storeMode==="pangyo") return sp>0&&si===0;
+      if(storeMode==="ilsan")  return si>0&&sp===0;
       return true;
     })
     .map(({p,i})=>{
@@ -9626,7 +9627,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 {[{k:"common",l:"공통"},{k:"pangyo",l:"판교점"},{k:"ilsan",l:"일산점"}].map(m=>{
                   const active=storeMode===m.k;
                   return <button key={m.k} type="button" onClick={()=>setStoreMode(m.k)}
-                    title={m.k==="common"?"판교·일산 양쪽 모두 재고 있는 상품":m.k==="pangyo"?"판교점 재고 있는 상품":"일산점 재고 있는 상품"}
+                    title={m.k==="common"?"판교·일산 양쪽 모두 재고 있는 상품":m.k==="pangyo"?"판교점에만 재고 (일산 0)":"일산점에만 재고 (판교 0)"}
                     style={{background:active?"#4FBFA5":"#eaf7f2",color:active?"#fff":"#2a8a76",
                       border:"none",padding:"4px 12px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{m.l}</button>;
                 })}
