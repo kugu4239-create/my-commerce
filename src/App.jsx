@@ -8966,8 +8966,9 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
     if(checkedIdx.size===0) return;
     setRates(prev=>{const m={...prev};checkedIdx.forEach(i=>{m[i]=v;});return m;});
   };
-  // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked'
+  // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked' · 직접 입력 세일율 지원
   const [bulkMode,setBulkMode]=useState("all");
+  const [bulkBaseDisc,setBulkBaseDisc]=useState("");
   const applyBulk=v=>{ if(bulkMode==="checked") setCheckedRates(v); else setAllRates(v); };
   const exportXlsx=async()=>{
     if(!rows.length) return;
@@ -9094,6 +9095,20 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
                     <button key={v} onClick={()=>applyBulk(v)}
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                   ))}
+                  <input type="number" min="0" max="100" step="0.1"
+                    value={bulkBaseDisc} onChange={e=>setBulkBaseDisc(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter"&&bulkBaseDisc!==""){applyBulk(bulkBaseDisc);setBulkBaseDisc("");}}}
+                    placeholder="직접" onWheel={e=>e.currentTarget.blur()}
+                    title={bulkMode==="checked"?`체크된 ${checkedIdx.size}개 행에 직접 입력한 세일율 적용`:"표시된 모든 행에 직접 입력한 세일율 적용"}
+                    style={{width:48,padding:"3px 5px",fontSize:11,textAlign:"right",
+                      border:`1px solid ${D.border}`,borderRadius:5,background:D.surface,color:D.text,fontFamily:"inherit"}}/>
+                  <button onClick={()=>{if(bulkBaseDisc!==""){applyBulk(bulkBaseDisc);setBulkBaseDisc("");}}}
+                    disabled={bulkBaseDisc===""}
+                    style={{background:bulkBaseDisc!==""?D.black:"transparent",color:bulkBaseDisc!==""?"#fff":D.textMeta,
+                      border:`1px solid ${bulkBaseDisc!==""?D.black:D.border}`,borderRadius:5,
+                      padding:"3px 9px",fontSize:11,cursor:bulkBaseDisc!==""?"pointer":"default",fontWeight:700}}>
+                    적용
+                  </button>
                 </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
