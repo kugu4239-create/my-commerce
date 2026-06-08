@@ -6804,7 +6804,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
 //   - Top 20: 프로모션 기간(주문일 기준) + 해당 채널 · status="배송" 상품 판매 랭킹
 // ─────────────────────────────────────────────
 // 프로모션 매출 증감률 — 직전 동일기간 대비 (임팩트 분석 요약과 동일 기준)
-function promoRevenueChg(promo, revenues=[], storeSales=[]){
+function promoRevenueChg(promo, revenues=[], storeSales=[], includeToday=false){
   const ch=promo.platform;
   const dayMs=86400000;
   const todayStr=localDate(0);
@@ -6813,7 +6813,8 @@ function promoRevenueChg(promo, revenues=[], storeSales=[]){
   const promoEndRaw=String(promo.end_date||"").slice(0,10);
   if(!promoStart||!promoEndRaw) return {prevTotal:0,promoTotal:0,chg:null};
   const isOngoing=promoEndRaw>=todayStr; // 종료일이 미래거나 당일(오늘)이면 오늘 데이터 미완성 → 전일까지만 집계
-  const promoEnd=isOngoing?(yesterdayStr>=promoStart?yesterdayStr:promoStart):promoEndRaw;
+  const cutoffStr=isOngoing&&includeToday?todayStr:yesterdayStr;
+  const promoEnd=isOngoing?(cutoffStr>=promoStart?cutoffStr:promoStart):promoEndRaw;
   const lenDays=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs)+1;
   const prevStart=new Date(new Date(promoStart).getTime()-lenDays*dayMs).toISOString().slice(0,10);
   let prevTotal=0,promoTotal=0;
@@ -10294,13 +10295,15 @@ function useInventoryPricing(){
 }
 
 // 순수 계산 — 프로모션 기간 자사몰 주문의 건별/합계 마진·마진율 (결제금액 분모)
-function computePromoProfit(orders, promo, priceOf){
+//   · includeToday=true 일 때 분석 종료일을 오늘로 확장(진행중 한정)
+function computePromoProfit(orders, promo, priceOf, includeToday=false){
   const dayMs=86400000;
   const todayStr=localDate(0), yesterdayStr=localDate(-1);
   const promoStart=String(promo.start_date||"").slice(0,10);
   const promoEndRaw=String(promo.end_date||"").slice(0,10);
   const isOngoing=promoEndRaw>=todayStr;
-  const promoEnd=isOngoing?(yesterdayStr>=promoStart?yesterdayStr:promoStart):promoEndRaw;
+  const cutoffStr=isOngoing&&includeToday?todayStr:yesterdayStr;
+  const promoEnd=isOngoing?(cutoffStr>=promoStart?cutoffStr:promoStart):promoEndRaw;
   const startsToday=promoStart>=todayStr;
   const lenDays=(promoStart&&promoEnd)?Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs)+1:0;
   const period={promoStart,promoEnd,isOngoing,startsToday,lenDays};
@@ -10362,7 +10365,20 @@ function computePromoProfit(orders, promo, priceOf){
 
 function ProfitCalcModal({ promo, orders=[], onClose }){
   const {priceOf,ready}=useInventoryPricing();
-  const {rows,excluded,period,totals,abnormal,cancelled}=useMemo(()=>computePromoProfit(orders,promo,priceOf),[orders,promo,priceOf]);
+  // 오늘까지 포함 토글 — 진행중 프로모션 한정. 오늘자 자사몰 주문 데이터가 없으면 안내만 띄우고 토글 막음.
+  const [includeToday,setIncludeToday]=useState(false);
+  const [todayMissingMsg,setTodayMissingMsg]=useState("");
+  const todayStr=localDate(0);
+  const promoStartStr=String(promo.start_date||"").slice(0,10);
+  const promoEndRawStr=String(promo.end_date||"").slice(0,10);
+  const isOngoingPromo=promoEndRawStr>=todayStr;
+  const hasTodayData=useMemo(()=>orders.some(r=>r&&(r.channel||"")===promo.platform&&r.order_date===todayStr),[orders,promo.platform,todayStr]);
+  const onClickIncludeToday=()=>{
+    if(includeToday){ setIncludeToday(false); setTodayMissingMsg(""); return; }
+    if(!hasTodayData){ setTodayMissingMsg(`오늘 ${promo.platform}의 매출이 아직 입력되지 않았습니다.`); return; }
+    setTodayMissingMsg(""); setIncludeToday(true);
+  };
+  const {rows,excluded,period,totals,abnormal,cancelled}=useMemo(()=>computePromoProfit(orders,promo,priceOf,includeToday),[orders,promo,priceOf,includeToday]);
   const [expanded,setExpanded]=useState(()=>new Set());
   const [limit,setLimit]=useState(100);
   const modalCardRef=useRef(null);
@@ -10390,10 +10406,29 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
               <div>
                 <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
                 <b style={{color:D.text,fontWeight:600}}>{ch}</b> · 주문일 기준 · 취소/교환/반품 제외
+                {isOngoingPromo&&<span style={{marginLeft:6,color:D.textSub}}>· 프로모션 종료일 {promoEndRawStr} (현재 진행 중)</span>}
+                {isOngoingPromo&&todayStr>promoStartStr&&(
+                  <button onClick={onClickIncludeToday}
+                    title={includeToday?"어제까지로 돌립니다":"오늘 데이터까지 포함해 분석 (오늘자 자사몰 주문 데이터가 있어야 적용)"}
+                    style={{marginLeft:8,fontSize:10,fontWeight:700,
+                      color:includeToday?"#fff":MUTE_BLUE,
+                      background:includeToday?MUTE_BLUE:`${MUTE_BLUE}14`,
+                      border:`1px solid ${MUTE_BLUE}${includeToday?"":"55"}`,
+                      borderRadius:999,padding:"2px 9px",cursor:"pointer",verticalAlign:"middle"}}>
+                    {includeToday?"✓ 오늘까지 포함":"오늘까지 포함하기"}
+                  </button>
+                )}
+                {todayMissingMsg&&(
+                  <span style={{marginLeft:8,fontSize:11,fontWeight:600,color:D.amber,
+                    background:`${D.amber}14`,border:`1px solid ${D.amber}55`,
+                    borderRadius:999,padding:"2px 9px",verticalAlign:"middle"}}>
+                    ⚠ {todayMissingMsg}
+                  </span>
+                )}
               </div>
               <div>
                 <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>분석 기간</span>
-                {period.promoStart} ~ {period.promoEnd} <span style={{color:D.textSub}}>({period.lenDays}일{period.isOngoing?", 시작일 ~ 어제":""})</span>
+                {period.promoStart} ~ {period.promoEnd} <span style={{color:D.textSub}}>({period.lenDays}일{period.isOngoing?(includeToday?", 시작일 ~ 오늘":", 시작일 ~ 어제"):""})</span>
               </div>
             </div>
           </div>
@@ -10561,11 +10596,32 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   // 종료일이 미래거나 당일(오늘) → 오늘 데이터는 미완성이므로 분석 종료일을 전일(어제)로 클램프
   //   (직전 동기간도 lenDays 기준이라 같은 만큼 하루 당겨짐) · 종료 다음날부터는 전체 기간 집계
   //   - 어제가 시작일보다 이르면(시작 당일) 시작일로 클램프
+  //   - includeToday: 오늘까지 포함 토글 (진행중일 때만 의미 있음) — 오늘을 분석 종료일로 사용하고
+  //     직전 동일기간도 lenDays 기준으로 자연히 하루 늘어남. 오늘자 매출 데이터가 없으면 안내만 띄우고 토글 막음.
+  const [includeToday,setIncludeToday]=useState(false);
+  const [todayMissingMsg,setTodayMissingMsg]=useState("");
   const isOngoing=promoEndRaw>=todayStr;
   // 오늘 시작(혹은 미래 시작) — 비교/그래프가 의미 없으므로 "아직 집계 전" 안내로 대체
   const startsToday=promoStart>=todayStr;
+  // 오늘자 채널 매출 데이터 존재 여부 — 채널 매출 소스(revenues / storeSales)에서 오늘 + 채널 매칭 행 확인
+  const hasTodayData=useMemo(()=>{
+    if(ch==="오프라인 스토어"){
+      const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
+      return storeSales.some(r=>r&&r.sale_date===todayStr&&OFFLINE.has(r.channel||""));
+    }
+    return revenues.some(r=>r&&r.channel===ch&&r.date===todayStr);
+  },[ch,todayStr,revenues,storeSales]);
+  const onClickIncludeToday=()=>{
+    if(includeToday){ setIncludeToday(false); setTodayMissingMsg(""); return; }
+    if(!hasTodayData){
+      setTodayMissingMsg(`오늘 ${ch}의 매출이 아직 입력되지 않았습니다.`);
+      return;
+    }
+    setTodayMissingMsg(""); setIncludeToday(true);
+  };
+  const cutoffStr=isOngoing&&includeToday?todayStr:yesterdayStr;
   const promoEnd=isOngoing
-    ?(yesterdayStr>=promoStart?yesterdayStr:promoStart)
+    ?(cutoffStr>=promoStart?cutoffStr:promoStart)
     :promoEndRaw;
   const dur=Math.max(0,(new Date(promoEnd)-new Date(promoStart))/dayMs); // 일 수 (포함 길이 = dur+1)
   const lenDays=dur+1;
@@ -10689,7 +10745,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
     });
   },[pinned,ch,orders,promoStart,promoEnd,prevStart,prevEnd]);
 
-  const {prevTotal,promoTotal,chg}=promoRevenueChg(promo,revenues,storeSales);
+  const {prevTotal,promoTotal,chg}=useMemo(()=>promoRevenueChg(promo,revenues,storeSales,includeToday),[promo,revenues,storeSales,includeToday]);
 
   // 주문 장수 — 주문·배송 데이터 소스(orders)에서 채널·기간 일치 SUM(qty) 모든 상태 포함
   //   (이전 버전은 order_id 유니크 집계 → 다상품 주문은 1로 카운트되어 실제 장수의 1/N 로 과소표시됨)
@@ -10737,10 +10793,28 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                 <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:chColor(ch),verticalAlign:"middle",marginRight:5}}/>
                 <b style={{color:D.text,fontWeight:600}}>{ch}</b>
                 {isOngoing&&<span style={{marginLeft:6,color:D.textSub}}>· 프로모션 종료일 {promoEndRaw} (현재 진행 중)</span>}
+                {isOngoing&&!startsToday&&todayStr>promoStart&&(
+                  <button onClick={onClickIncludeToday}
+                    title={includeToday?"어제까지로 돌립니다":"오늘 데이터까지 포함해 분석 — 직전 동일기간도 하루 늘어남 (오늘자 매출 데이터가 있어야 적용)"}
+                    style={{marginLeft:8,fontSize:10,fontWeight:700,
+                      color:includeToday?"#fff":D.blue,
+                      background:includeToday?D.blue:`${D.blue}14`,
+                      border:`1px solid ${D.blue}${includeToday?"":"55"}`,
+                      borderRadius:999,padding:"2px 9px",cursor:"pointer",verticalAlign:"middle"}}>
+                    {includeToday?"✓ 오늘까지 포함":"오늘까지 포함하기"}
+                  </button>
+                )}
+                {todayMissingMsg&&(
+                  <span style={{marginLeft:8,fontSize:11,fontWeight:600,color:D.amber,
+                    background:`${D.amber}14`,border:`1px solid ${D.amber}55`,
+                    borderRadius:999,padding:"2px 9px",verticalAlign:"middle"}}>
+                    ⚠ {todayMissingMsg}
+                  </span>
+                )}
               </div>
               <div>
                 <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>분석 기간</span>
-                {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일{isOngoing?", 시작일 ~ 어제":""})</span>
+                {promoStart} ~ {promoEnd} <span style={{color:D.textSub,fontWeight:500}}>({lenDays}일{isOngoing?(includeToday?", 시작일 ~ 오늘":", 시작일 ~ 어제"):""})</span>
               </div>
               <div>
                 <span style={{display:"inline-block",minWidth:80,color:D.textSub,fontWeight:600}}>직전 동일기간</span>
