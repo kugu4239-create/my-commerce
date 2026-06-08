@@ -10373,10 +10373,11 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
   const promoEndRawStr=String(promo.end_date||"").slice(0,10);
   const isOngoingPromo=promoEndRawStr>=todayStr;
   const hasTodayData=useMemo(()=>orders.some(r=>r&&(r.channel||"")===promo.platform&&r.order_date===todayStr),[orders,promo.platform,todayStr]);
+  // 토글은 항상 적용 — 데이터가 없으면 안내 배지만 함께 표시
   const onClickIncludeToday=()=>{
     if(includeToday){ setIncludeToday(false); setTodayMissingMsg(""); return; }
-    if(!hasTodayData){ setTodayMissingMsg(`오늘 ${promo.platform}의 매출이 아직 입력되지 않았습니다.`); return; }
-    setTodayMissingMsg(""); setIncludeToday(true);
+    setIncludeToday(true);
+    setTodayMissingMsg(hasTodayData?"":`오늘 ${promo.platform}의 매출이 아직 입력되지 않았습니다.`);
   };
   const {rows,excluded,period,totals,abnormal,cancelled}=useMemo(()=>computePromoProfit(orders,promo,priceOf,includeToday),[orders,promo,priceOf,includeToday]);
   const [expanded,setExpanded]=useState(()=>new Set());
@@ -10604,6 +10605,7 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   // 오늘 시작(혹은 미래 시작) — 비교/그래프가 의미 없으므로 "아직 집계 전" 안내로 대체
   const startsToday=promoStart>=todayStr;
   // 오늘자 채널 매출 데이터 존재 여부 — 채널 매출 소스(revenues / storeSales)에서 오늘 + 채널 매칭 행 확인
+  //   토글은 항상 적용되며, 데이터가 없으면 안내 배지만 함께 표시 (분석에는 그대로 오늘 포함)
   const hasTodayData=useMemo(()=>{
     if(ch==="오프라인 스토어"){
       const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
@@ -10613,11 +10615,8 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
   },[ch,todayStr,revenues,storeSales]);
   const onClickIncludeToday=()=>{
     if(includeToday){ setIncludeToday(false); setTodayMissingMsg(""); return; }
-    if(!hasTodayData){
-      setTodayMissingMsg(`오늘 ${ch}의 매출이 아직 입력되지 않았습니다.`);
-      return;
-    }
-    setTodayMissingMsg(""); setIncludeToday(true);
+    setIncludeToday(true);
+    setTodayMissingMsg(hasTodayData?"":`오늘 ${ch}의 매출이 아직 입력되지 않았습니다.`);
   };
   const cutoffStr=isOngoing&&includeToday?todayStr:yesterdayStr;
   const promoEnd=isOngoing
