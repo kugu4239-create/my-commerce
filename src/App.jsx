@@ -10432,6 +10432,11 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                 <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>마진</div>
                 <div style={{fontSize:15,fontWeight:800,color:totals.profit>=0?D.green:D.red}}>{won(totals.profit)}</div>
               </div>
+              <div style={{padding:"8px 14px",background:`${MUTE_BLUE}12`,borderRadius:8}}
+                title="마진 + 원가 — 원가 회수액과 순이익을 합친 총 수익 (결제금액 합과 동일)">
+                <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>원가 포함 이익금</div>
+                <div style={{fontSize:15,fontWeight:800,color:MUTE_BLUE}}>{won(totals.profit+totals.cost)}</div>
+              </div>
               <div style={{padding:"8px 14px",background:(totals.profitRate||0)>=0?`${D.green}12`:`${D.red}12`,borderRadius:8}}>
                 <div style={{fontSize:10,color:D.textMeta,marginBottom:2}}>마진율 (결제금액 분모)</div>
                 <div style={{fontSize:15,fontWeight:800,color:(totals.profitRate||0)>=0?D.green:D.red}}>{pct(totals.profitRate)}</div>
@@ -10461,6 +10466,7 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>원가합</th>
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>할인율</th>
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>마진</th>
+                    <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}} title="마진 + 원가">원가 포함 이익금</th>
                     <th style={{padding:"5px 7px",textAlign:"right",fontWeight:500}}>마진율</th>
                   </tr></thead>
                   <tbody>
@@ -10473,11 +10479,12 @@ function ProfitCalcModal({ promo, orders=[], onClose }){
                           <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{won(r.cost)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",color:D.textMeta}}>{pct(r.discRate)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:r.profit>=0?D.green:D.red}}>{won(r.profit)}</td>
+                          <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:MUTE_BLUE}}>{won(r.profit+r.cost)}</td>
                           <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700,color:(r.profitRate||0)>=0?D.green:D.red}}>{pct(r.profitRate)}</td>
                         </tr>
                         {expanded.has(r.order_no)&&(
                           <tr style={{borderBottom:`1px solid ${D.border}`,background:D.surfaceAlt}}>
-                            <td colSpan={7} style={{padding:"8px 14px"}}>
+                            <td colSpan={8} style={{padding:"8px 14px"}}>
                               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:8}}>
                                 <thead><tr style={{color:D.textMeta}}>
                                   <th style={{textAlign:"left",fontWeight:500,padding:"2px 6px"}}>상품</th>
@@ -10684,26 +10691,21 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
 
   const {prevTotal,promoTotal,chg}=promoRevenueChg(promo,revenues,storeSales);
 
-  // 주문 장수 — 주문·배송 데이터 소스(orders)에서 채널·기간 일치 + order_id 유니크 집계
+  // 주문 장수 — 주문·배송 데이터 소스(orders)에서 채널·기간 일치 SUM(qty) 모든 상태 포함
+  //   (이전 버전은 order_id 유니크 집계 → 다상품 주문은 1로 카운트되어 실제 장수의 1/N 로 과소표시됨)
   const {prevOrders,promoOrders,orderChg}=useMemo(()=>{
     if(!orders||!orders.length||!promoStart||!promoEnd) return {prevOrders:0,promoOrders:0,orderChg:null};
     const OFFLINE=new Set(["판교점","일산점","오프라인스토어","오프라인","오프라인 스토어"]);
     const matchesCh=r=> ch==="오프라인 스토어" ? OFFLINE.has(r.channel||"") : (r.channel||"")===ch;
-    const prevSeen=new Set(); let prevExtra=0;
-    const promoSeen=new Set(); let promoExtra=0;
+    let prevCount=0,promoCount=0;
     orders.forEach(r=>{
       if(!matchesCh(r)) return;
       const d= ch==="오프라인 스토어" ? (r.sale_date||r.order_date) : r.order_date;
       if(!d) return;
-      const oid=r.order_no||r.order_id;
-      if(d>=promoStart&&d<=promoEnd){
-        if(oid) promoSeen.add(oid); else promoExtra++;
-      } else if(d>=prevStart&&d<=prevEnd){
-        if(oid) prevSeen.add(oid); else prevExtra++;
-      }
+      const q=r.qty||1;
+      if(d>=promoStart&&d<=promoEnd) promoCount+=q;
+      else if(d>=prevStart&&d<=prevEnd) prevCount+=q;
     });
-    const prevCount=prevSeen.size+prevExtra;
-    const promoCount=promoSeen.size+promoExtra;
     const oc=prevCount>0?((promoCount-prevCount)/prevCount*100):null;
     return {prevOrders:prevCount,promoOrders:promoCount,orderChg:oc};
   },[ch,orders,promoStart,promoEnd,prevStart,prevEnd]);
@@ -10783,11 +10785,11 @@ function PromoImpactModal({ promo, onClose, revenues=[], storeSales=[], orders=[
                 )}
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
-                  <span style={{color:D.textMeta}}>직전 주문 장수</span> <b style={{marginLeft:6}}>{prevOrders.toLocaleString()}건</b>
+                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · SUM(qty) 모든 상태 포함">
+                  <span style={{color:D.textMeta}}>직전 주문 장수</span> <b style={{marginLeft:6}}>{prevOrders.toLocaleString()}장</b>
                 </div>
-                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · order_id 유니크 집계">
-                  <span style={{color:D.textMeta}}>프로모션 주문 장수</span> <b style={{marginLeft:6}}>{promoOrders.toLocaleString()}건</b>
+                <div style={{padding:"7px 12px",background:D.surfaceAlt,borderRadius:6}} title="주문·배송 데이터 기준 · 동일 채널 · SUM(qty) 모든 상태 포함">
+                  <span style={{color:D.textMeta}}>프로모션 주문 장수</span> <b style={{marginLeft:6}}>{promoOrders.toLocaleString()}장</b>
                 </div>
                 {orderChg!==null&&(
                   <div style={{padding:"7px 12px",background:orderChg>=0?`${D.green}12`:`${D.red}12`,borderRadius:6,color:orderChg>=0?D.green:D.red}}>
