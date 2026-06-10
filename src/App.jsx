@@ -9511,14 +9511,15 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   },[]);
   // 같은 키워드에 대한 동시 요청은 한 번만 실제 fetch — allorigins 동시 중복 거절 방지
   // 실패 시 1회 재시도 (1s backoff) — 일시적 502/timeout 흡수
+  // 캐시 정책: 성공 결과만 영구 캐시. miss/error 는 캐시 안 함 → 셀 클릭으로 즉시 재시도 가능
   const fetchOneOnline=useCallback(async(idx,name)=>{
     const key=String(name||"").trim();
     if(!key) return;
     const cacheKey=_normName(key);
     setOnlineRates(prev=>({...prev,[idx]:{status:"loading"}}));
-    if(Object.prototype.hasOwnProperty.call(onlineCacheRef.current,cacheKey)){
-      const cached=onlineCacheRef.current[cacheKey];
-      setOnlineRates(prev=>({...prev,[idx]:cached?{status:"success",...cached}:{status:"miss"}}));
+    const cached=onlineCacheRef.current[cacheKey];
+    if(cached){
+      setOnlineRates(prev=>({...prev,[idx]:{status:"success",...cached}}));
       return;
     }
     let p=inFlightRef.current[cacheKey];
@@ -9534,7 +9535,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     }
     try{
       const r=await p;
-      onlineCacheRef.current[cacheKey]=r;
+      if(r) onlineCacheRef.current[cacheKey]=r; // 성공만 캐시 (miss 는 매번 재fetch)
       setOnlineRates(prev=>({...prev,[idx]:r?{status:"success",...r}:{status:"miss"}}));
     }catch(err){
       setOnlineRates(prev=>({...prev,[idx]:{status:"error",error:err?.message||String(err)}}));
