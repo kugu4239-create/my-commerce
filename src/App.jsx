@@ -9738,8 +9738,15 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   // 연동할인율 = 자사몰할인율 + 회원 10% 추가 할인 → 5% 단위 올림
   //   예: 자사몰 10% → 1 - 0.9*0.9 = 0.19 → 19% → 5% 올림 → 20%
   // 연동할인가 = 판매가 × (1 - 연동할인율) — 100원 단위 정리 (10원 자리 반올림)
+  // 연동가마크업 = 연동할인가 기준 정산(수수료 28% 차감) ÷ 공급가(VAT 포함)
   const linkedRateOf=(onlineRate)=>Math.max(0,Math.min(100,Math.ceil((100-(100-(+onlineRate||0))*0.9)/5)*5));
   const linkedPriceOf=(selling,onlineRate)=>Math.round((+selling||0)*(1-linkedRateOf(onlineRate)/100)/100)*100;
+  const linkedMarkupOf=(selling,supply,onlineRate)=>{
+    const lp=linkedPriceOf(selling,onlineRate);
+    const net=lp-Math.round(lp*FEE_RATE);
+    const supplyVat=Math.round((+supply||0)*1.1);
+    return supplyVat>0?net/supplyVat:0;
+  };
   const numCell={padding:"4px 6px",textAlign:"right"};
   const q=search.trim().toLowerCase();
   const filtered=q?rows.filter(r=>(r.name||"").toLowerCase().includes(q)||String(r.rate).includes(q)):rows;
@@ -9784,19 +9791,21 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
               const exportXlsx=async(mode)=>{
                 const XLSX=await getXLSX();
                 const useRepCode=mode==="sale";
-                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","상품설명2","상품설명","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
+                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","상품설명2","상품설명","연동가마크업","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
                 const data=rows.map(r=>{
                   const o=onlineRates[r.idx];
                   const isOnline=o&&o.status==="success";
                   const onlinePct=isOnline?o.rate:"";
                   const lr=isOnline?linkedRateOf(o.rate):"";
                   const lp=isOnline?linkedPriceOf(r.selling,o.rate):0;
+                  const lmk=isOnline&&r.supplyVat>0?Math.round(linkedMarkupOf(r.selling,r.supply,o.rate)*100)/100:"";
                   const codeOut=useRepCode?((r.repCode||"").trim()||r.code||""):(r.code||"");
                   return [
                     codeOut,r.name||"",r.stockPangyo||0,r.stockIlsan||0,
                     r.selling||0,onlinePct,
                     isOnline?`${lr}%`:"",                  // 상품설명2 = % 포함 연동할인율
                     isOnline?lp.toLocaleString():"",       // 상품설명 = 천단위 콤마 연동할인가
+                    lmk,                                   // 연동가마크업
                     r.rate||0,r.basePrice||0,r.couponAmt||0,
                     r.finalPrice||0,r.fee||0,r.net||0,
                     r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
@@ -9809,7 +9818,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 const meta=[`오프라인 세일율 ${modeLabel} — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
                 const aoa=[meta,[],headers,...data];
                 const ws=XLSX.utils.aoa_to_sheet(aoa);
-                ws["!cols"]=[{wch:14},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
+                ws["!cols"]=[{wch:14},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:11},{wch:10},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
                 const wb=XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb,ws,storeLabel);
                 const suffix=useRepCode?"세일용":"바코드용";
@@ -10009,6 +10018,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                   <th style={{...numCell,fontWeight:500,color:D.blue}} title="자사몰(merryon.co.kr) 현재 할인율">자사몰 할인율</th>
                   <th style={{...numCell,fontWeight:500,color:D.blue}} title="자사몰 할인율 × 회원 10% 추가 할인 → 5% 단위 올림 (예: 자사몰 10% → 19% → 20%)">연동할인율</th>
                   <th style={{...numCell,fontWeight:500,color:D.blue}} title="판매가 × (1 − 연동할인율) — 100원 단위 정리">연동할인가</th>
+                  <th style={{...numCell,fontWeight:500,color:D.blue}} title="연동할인가 기준 정산(수수료 28% 차감) ÷ 공급가(VAT)">연동가마크업</th>
                   <th style={{...numCell,fontWeight:500}}>할인율</th>
                   <th style={{...numCell,fontWeight:500}}>할인가</th>
                   <th style={{...numCell,fontWeight:500}}>쿠폰</th>
@@ -10083,6 +10093,15 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                           if(!o||o.status!=="success") return <span style={{color:D.textMeta,fontSize:10}}>—</span>;
                           const lp=linkedPriceOf(r.selling,o.rate);
                           return <span style={{color:D.blue,fontWeight:600}} title="100원 단위 정리">{won(lp)}</span>;
+                        })()}
+                      </td>
+                      <td style={numCell}>
+                        {(()=>{
+                          const o=onlineRates[r.idx];
+                          if(!o||o.status!=="success") return <span style={{color:D.textMeta,fontSize:10}}>—</span>;
+                          if(!(r.supplyVat>0)) return <span style={{color:D.textMeta,fontSize:10}}>—</span>;
+                          const mk=linkedMarkupOf(r.selling,r.supply,o.rate);
+                          return <span style={{fontWeight:700,color:mk>3?D.green:D.red}}>×{mk.toFixed(2)}</span>;
                         })()}
                       </td>
                       <td style={numCell}>
