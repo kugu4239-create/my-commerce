@@ -9419,23 +9419,22 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
 //   · 자체 Vercel Serverless 프록시(/api/merryon-search) 경유 — 공용 CORS 프록시 불안정 해결
 //   · 정규화 규칙: 별표(*) 이후 텍스트 절단 + 공백 제거
 //   · 매칭: 정규화 앞 4글자 일치만 인정 (동점이면 풀 공통접두 길이로 tiebreak)
-//   · 검색 키워드: 공백 보존 앞 4글자 (자사몰 검색이 공백 토큰 AND 매칭이라 정규화하면 0건)
+//   · 검색 키워드: 별표 절단 후 앞 4글자 — 0건이면 3 → 2 글자로 단축 재시도
+//     (자사몰 검색이 공백 토큰 AND 매칭이라 "로렌케이블" 처럼 띄어쓰기 없는 4글자는 0건)
 //   · 할인 안 하는 상품(prd_price_sale 없음)도 0% 로 반환
 const _normName=s=>String(s||"").split("*")[0].replace(/\s+/g,"").toLowerCase();
 const _matchKey=s=>_normName(s).slice(0,4);
-const _searchKw=s=>String(s||"").split("*")[0].trim().slice(0,4).trim();
-async function fetchMerryonOnlineSaleRate(productName){
-  const kw=_searchKw(productName);
-  if(!kw) return null;
-  const proxied=`/api/merryon-search?keyword=${encodeURIComponent(kw)}`;
-  const res=await fetch(proxied);
-  if(!res.ok) throw new Error("HTTP "+res.status);
-  const html=await res.text();
-  const doc=new DOMParser().parseFromString(html,"text/html");
-  const items=doc.querySelectorAll("ul.prdList li.prd_list");
-  if(!items.length) return null;
-  const targetKey=_matchKey(productName);
-  const targetFull=_normName(productName);
+function _searchKwCandidates(s){
+  const cut=String(s||"").split("*")[0].trim();
+  if(!cut) return [];
+  const seen=new Set(),out=[];
+  for(const n of [4,3,2]){
+    const k=cut.slice(0,n).trim();
+    if(k&&!seen.has(k)){ seen.add(k); out.push(k); }
+  }
+  return out;
+}
+function _pickBestFromItems(items,targetKey,targetFull){
   let best=null,bestLcp=-1;
   items.forEach(li=>{
     const a=li.querySelector("strong.name a");
@@ -9445,7 +9444,6 @@ async function fetchMerryonOnlineSaleRate(productName){
     const rawName=(nameClone.textContent||"").replace(/\s+/g," ").trim();
     if(!rawName) return;
     if(_matchKey(rawName)!==targetKey) return; // 앞 4글자 일치만 후보
-    // 할인 정보 — prd_price_sale 있으면 할인가/할인율, 없으면 product_price 정가 (rate=0)
     let rate=0,salePrice=0;
     const saleLi=li.querySelector("li.prd_price_sale");
     if(saleLi){
@@ -9463,13 +9461,30 @@ async function fetchMerryonOnlineSaleRate(productName){
         salePrice=parseInt((priceClone.textContent||"").replace(/[^0-9]/g,""),10)||0;
       }
     }
-    // 동점 tiebreaker: 풀 정규화 공통 접두 길이
     const nm=_normName(rawName);
     let lcp=0;
     while(lcp<nm.length&&lcp<targetFull.length&&nm[lcp]===targetFull[lcp]) lcp++;
     if(lcp>bestLcp){bestLcp=lcp;best={rate,salePrice,matchedName:rawName};}
   });
   return best;
+}
+async function fetchMerryonOnlineSaleRate(productName){
+  const kws=_searchKwCandidates(productName);
+  if(!kws.length) return null;
+  const targetKey=_matchKey(productName);
+  const targetFull=_normName(productName);
+  for(const kw of kws){
+    const res=await fetch(`/api/merryon-search?keyword=${encodeURIComponent(kw)}`);
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const doc=new DOMParser().parseFromString(await res.text(),"text/html");
+    const items=doc.querySelectorAll("ul.prdList li.prd_list");
+    if(!items.length) continue; // 0건이면 키워드 줄여서 재시도
+    const best=_pickBestFromItems(items,targetKey,targetFull);
+    if(best) return best;
+    // 결과는 있는데 매칭 키(앞 4글자) 일치 없으면 키워드 더 줄여도 결과 동일 — 중단
+    return null;
+  }
+  return null;
 }
 
 // ─────────────────────────────────────────────
