@@ -8729,7 +8729,7 @@ function parseMallProductFile(file,onResult,onError){
   const finish=rows=>{
     if(!rows||!rows.length){ onError("데이터 행이 없습니다"); return; }
     const kCode=pickKey(rows[0],["상품코드","product_code","상품 코드"]);
-    const kRepCode=pickKey(rows[0],["대표상품코드","representative_product_code","대표 상품코드","대표상품 코드"]);
+    const kRepCode=pickKey(rows[0],["대표상품코드","대표 상품코드","대표상품 코드","대표 상품 코드","대표코드","대표 코드","representative_product_code","representative_code","rep_code","master_code","master_product_code"]);
     const kName=pickKey(rows[0],["상품명","product_name"]);
     const kSell=pickKey(rows[0],["판매가","selling_price"]);
     const kSup =pickKey(rows[0],["공급가","supply_price","원가"]);
