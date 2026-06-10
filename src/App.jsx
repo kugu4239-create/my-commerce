@@ -8736,6 +8736,7 @@ function parseMallProductFile(file,onResult,onError){
     // 매장별 재고 — 오프라인 계산기에서 사용 (자사몰은 무시)
     const kStockPangyo=pickKey(rows[0],["판교점","판교점 재고","판교","판교 재고","pangyo","pangyo_stock"]);
     const kStockIlsan =pickKey(rows[0],["일산점","일산점 재고","일산","일산 재고","ilsan","ilsan_stock"]);
+    const kStockCurrent=pickKey(rows[0],["현재고","현 재고","current_stock","현재 재고","재고수량","재고"]);
     if(kName===undefined||kSell===undefined){
       onError(`'상품명' / '판매가' 컬럼을 찾지 못했습니다 — 헤더: ${Object.keys(rows[0]).map(k=>String(k).replace(/^﻿/,"").trim()).slice(0,30).join(" / ")}`);
       return;
@@ -8754,6 +8755,7 @@ function parseMallProductFile(file,onResult,onError){
         supply:kSup!==undefined?toNum(r[kSup]):0,
         stockPangyo:kStockPangyo!==undefined?Math.max(0,Math.round(toNum(r[kStockPangyo])||0)):0,
         stockIlsan :kStockIlsan !==undefined?Math.max(0,Math.round(toNum(r[kStockIlsan])||0)):0,
+        stockCurrent:kStockCurrent!==undefined?Math.max(0,Math.round(toNum(r[kStockCurrent])||0)):0,
       });
     });
     if(!out.length){ onError("유효한 상품 행이 없습니다 (상품명·판매가 확인)"); return; }
@@ -9493,6 +9495,34 @@ async function fetchMerryonOnlineSaleRate(productName){
 //   · 매장 수수료 28% (최종판매액 기준)
 //   · 정산 / 마진 / 마크업 산식은 자사몰과 동일 패턴
 // ─────────────────────────────────────────────
+
+// 세일 계산 파일(saleRows)의 재고 있는 상품 대표코드를 기준으로
+// 전역 마스터 파일(globRows)에서 같은 대표코드로 묶인 모든 상품코드를 추가 반환
+function expandWithGlobal(saleRows,globRows){
+  if(!globRows.length||!saleRows.length) return saleRows;
+  const repCodesWithStock=new Set();
+  saleRows.forEach(p=>{
+    if((p.stockPangyo||0)>0||(p.stockIlsan||0)>0||(p.stockCurrent||0)>0){
+      const rc=(p.repCode||"").trim();
+      if(rc) repCodesWithStock.add(rc);
+      else if(p.code) repCodesWithStock.add(p.code.trim());
+    }
+  });
+  if(!repCodesWithStock.size) return saleRows;
+  const saleCodes=new Set(saleRows.map(p=>(p.code||"").trim()).filter(Boolean));
+  const extra=[];
+  globRows.forEach(gp=>{
+    const code=(gp.code||"").trim();
+    if(!code||saleCodes.has(code)) return;
+    const rc=(gp.repCode||"").trim();
+    const matchKey=rc||code;
+    if(repCodesWithStock.has(matchKey)){
+      extra.push({...gp,_origRow:saleRows.length+extra.length,_fromGlobal:true});
+    }
+  });
+  return [...saleRows,...extra];
+}
+
 function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   const [products,setProducts]=useState([]);
   const [fileName,setFileName]=useState("");
@@ -9518,6 +9548,13 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   const fileRef=useRef(null);
   const modalCardRef=useRef(null);
   const dragSelectModeRef=useRef(null);
+  const [globalProducts,setGlobalProducts]=useState([]);
+  const [globalFileName,setGlobalFileName]=useState("");
+  const [globalStatus,setGlobalStatus]=useState("");
+  const [globalSample,setGlobalSample]=useState(null);
+  const [globalSampleMsg,setGlobalSampleMsg]=useState("");
+  const globalFileRef=useRef(null);
+  const rawSaleRowsRef=useRef([]);
   useEffect(()=>{
     const onUp=()=>{dragSelectModeRef.current=null;};
     window.addEventListener("mouseup",onUp);
@@ -9559,9 +9596,15 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   },[]);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
   const loadProducts=(rows,name)=>{
-    setProducts(rows);setFileName(name);setRates({});setRemovedIdx(new Set());setCheckedIdx(new Set());
+    rawSaleRowsRef.current=rows;
+    const expanded=expandWithGlobal(rows,globalProducts);
+    setProducts(expanded);setFileName(name);setRates({});setRemovedIdx(new Set());setCheckedIdx(new Set());
     setOnlineRates({}); onlineCacheRef.current={}; inFlightRef.current={};
-    setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`);
+    const extraCnt=expanded.length-rows.length;
+    setStatus(extraCnt>0
+      ?`${expanded.length.toLocaleString()}개 상품 (원본 ${rows.length}개 + 연동 ${extraCnt}개 추가)`
+      :`${rows.length.toLocaleString()}개 상품 로드됨`
+    );
   };
   // 마지막 업로드를 Supabase(mall_calc_last_file id=2) 에 보관 — 모달 열 때 자동 로드
   const sampleToProducts=raw=>{ try{ const p=JSON.parse(raw||""); return Array.isArray(p)?p:null; }catch{ return null; } };
@@ -9580,6 +9623,31 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     })();
     return()=>{alive=false;};
   },[]);
+  // 전역 상품 마스터 파일 자동 로드 (offline_global_file)
+  useEffect(()=>{ let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const{data,error}=await db.from("offline_global_file").select("filename,content_b64").eq("id",1).maybeSingle();
+        if(error||!data||!alive) return;
+        const rows=sampleToProducts(data.content_b64);
+        if(!rows||!rows.length) return;
+        setGlobalProducts(rows);
+        setGlobalFileName(data.filename||"");
+        setGlobalSample({filename:data.filename});
+        setGlobalSampleMsg(`📎 전역 파일 로드됨 — ${data.filename||""} (${rows.length.toLocaleString()}개)`);
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  // 전역 파일이 (나중에) 로드될 경우 이미 올린 세일 계산 파일을 재확장
+  useEffect(()=>{
+    if(!rawSaleRowsRef.current.length||!globalProducts.length) return;
+    const expanded=expandWithGlobal(rawSaleRowsRef.current,globalProducts);
+    setProducts(expanded);
+    const extraCnt=expanded.length-rawSaleRowsRef.current.length;
+    if(extraCnt>0) setStatus(`${expanded.length.toLocaleString()}개 상품 (원본 ${rawSaleRowsRef.current.length}개 + 연동 ${extraCnt}개 추가)`);
+  },[globalProducts]);
   const saveSample=async(name,rows)=>{
     try{
       const db=await getSupabase();
@@ -9597,6 +9665,29 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
       setSample(null); setSampleMsg("📎 저장된 업로드 삭제됨");
       setProducts([]); setFileName(""); setStatus(""); setRates({}); setRemovedIdx(new Set()); setCheckedIdx(new Set());
     }catch(err){ setSampleMsg("⚠ 삭제 실패: "+(err?.message||err)); }
+  };
+  const handleGlobalFile=f=>{
+    if(!f) return;
+    setGlobalFileName(f.name);setGlobalStatus("파싱 중…");
+    parseMallProductFile(f,async rows=>{
+      setGlobalProducts(rows);
+      setGlobalStatus(`${rows.length.toLocaleString()}개 로드됨`);
+      try{
+        const db=await getSupabase();
+        await db.from("offline_global_file").upsert({id:1,filename:f.name,content_b64:JSON.stringify(rows),uploaded_at:new Date().toISOString()});
+        setGlobalSample({filename:f.name});
+        setGlobalSampleMsg(`📎 전역 파일 저장됨 (${rows.length.toLocaleString()}개) — 모달을 열면 자동 로드됩니다`);
+      }catch(err){setGlobalSampleMsg("⚠ 저장 실패: "+(err?.message||err));}
+    },err=>setGlobalStatus("오류: "+err));
+  };
+  const clearGlobal=async()=>{
+    if(!window.confirm("전역 파일을 삭제할까요? 옵션 확장 기능이 비활성화됩니다.")) return;
+    try{
+      const db=await getSupabase();
+      await db.from("offline_global_file").delete().eq("id",1);
+      setGlobalProducts([]);setGlobalFileName("");setGlobalStatus("");setGlobalSample(null);
+      setGlobalSampleMsg("전역 파일 삭제됨");
+    }catch(err){setGlobalSampleMsg("⚠ 삭제 실패: "+(err?.message||err));}
   };
   const handleFile=f=>{
     if(!f) return;
@@ -9830,16 +9921,20 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                   suffix=`바코드_${storeNm}`;
                   sheetLabel=storeNm;
                 }else if(isEasychain){
-                  // 이지체인용 — 상품코드 / 정상가 / 할인가 3 컬럼만, 가격은 숫자 서식
+                  // 이지체인용 — 대표코드로 연동된 모든 상품 포함 (storeMode 필터 무시)
+                  const allForChain=products
+                    .map((p,i)=>({...p,idx:i}))
+                    .filter((_,i)=>!removedIdx.has(i))
+                    .map(r=>{const priced=priceOf?priceOf(r.name,r.code):{selling:0,supply:0};return {...r,selling:r.selling||priced.selling||0};});
                   headers=["상품코드","정상가","할인가"];
-                  data=rows.map(r=>{
+                  data=allForChain.map(r=>{
                     const o=onlineRates[r.idx];
                     const isOnline=o&&o.status==="success";
                     const lp=isOnline?linkedPriceOf(r.selling,o.rate):"";
                     return [r.code||"",r.selling||0,lp];
                   });
                   cols=[{wch:14},{wch:11},{wch:11}];
-                  modeLabel="이지체인용(상품코드·정상가·할인가)";
+                  modeLabel=`이지체인용(상품코드·정상가·할인가 · 전체 ${allForChain.length}개)`;
                   suffix="이지체인용";
                 }else{
                   headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","상품설명2","상품설명","연동가마크업","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
@@ -9916,6 +10011,29 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
           </span>
         </div>
         <div style={{padding:"14px 18px"}}>
+          {/* 전역 상품 마스터 파일 업로드 영역 */}
+          <div style={{padding:"10px 14px",background:"#f7f9fc",border:`1px solid ${D.borderMid}`,borderRadius:8,marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,color:D.black}}>📦 전역 상품 파일</span>
+              {globalFileName
+                ?<span style={{fontSize:11,color:D.textSub,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={globalFileName}>{globalFileName}</span>
+                :<span style={{fontSize:11,color:D.textMeta}}>미업로드 — 대표상품코드 기반 옵션 확장에 사용</span>
+              }
+              <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:6}}>
+                {globalStatus&&<span style={{fontSize:11,color:globalStatus.startsWith("오류")?D.red:D.textMeta}}>{globalStatus}</span>}
+                <button onClick={()=>globalFileRef.current?.click()}
+                  style={{background:"#4a7cc7",color:"#fff",border:"none",borderRadius:5,padding:"4px 12px",fontSize:11,cursor:"pointer",fontWeight:600}}>
+                  {globalFileName?"↑ 교체":"업로드"}
+                </button>
+                {globalSample&&(
+                  <button onClick={clearGlobal}
+                    style={{background:"transparent",border:`1px solid ${D.red}55`,color:D.red,borderRadius:4,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>삭제</button>
+                )}
+                <input ref={globalFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={e=>handleGlobalFile(e.target.files?.[0])} style={{display:"none"}}/>
+              </span>
+            </div>
+            {globalSampleMsg&&<div style={{marginTop:4,fontSize:11,color:D.textSub}}>{globalSampleMsg}</div>}
+          </div>
           {sampleMsg&&(
             <div style={{padding:"8px 12px",marginBottom:10,fontSize:11,color:D.textSub,
               background:D.surfaceAlt,border:`1px dashed ${D.borderMid}`,borderRadius:6,
@@ -10102,7 +10220,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                   {shown.map(r=>(
                     <tr key={r.code+r.idx}
                       onMouseEnter={()=>enterDragSelect(r.idx)}
-                      style={{borderBottom:`1px solid ${D.border}`,background:checkedIdx.has(r.idx)?`${D.red}0a`:"transparent"}}>
+                      style={{borderBottom:`1px solid ${D.border}`,background:checkedIdx.has(r.idx)?`${D.red}0a`:r._fromGlobal?"#f0f4ff":"transparent"}}>
                       <td onMouseDown={e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
                         style={{padding:"4px 6px",color:D.textMeta,fontFamily:"monospace",cursor:"pointer",userSelect:"none"}}>
                         <input type="checkbox" checked={checkedIdx.has(r.idx)} onChange={()=>{}}
@@ -10110,6 +10228,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                           style={{marginRight:4,cursor:"pointer",verticalAlign:"middle"}}/>
                         <button onClick={()=>removeRow(r.idx)}
                           style={{background:"transparent",border:"none",color:D.textMeta,cursor:"pointer",fontSize:11,padding:"0 4px",marginRight:2}}>✕</button>
+                        {r._fromGlobal&&<span style={{fontSize:9,background:"#e8effe",color:"#4a7cc7",borderRadius:3,padding:"0 3px",marginRight:3,fontWeight:600}}>전역</span>}
                         {r.code}
                       </td>
                       <td onMouseDown={e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button")) return;e.preventDefault();startDragSelect(r.idx,checkedIdx.has(r.idx));}}
