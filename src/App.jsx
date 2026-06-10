@@ -9415,12 +9415,17 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
 
 // 자사몰(merryon.co.kr) 검색 페이지에서 현재 온라인 할인율 파싱
 //   · CORS 미허용이라 allorigins.win 프록시 경유
-//   · 검색 결과 중 상품명이 가장 가까운 1건의 할인율 % 반환 — 없으면 null
-const _normName=s=>String(s||"").replace(/\s+/g,"").replace(/[*★☆※♥♡♣♠()[\]]/g,"").toLowerCase();
+//   · 정규화 규칙: 별표(*) 이후 텍스트 절단 + 공백 제거
+//   · 매칭: 정규화 앞 4글자 일치만 인정 (동점이면 풀 공통접두 길이로 tiebreak)
+//   · 검색 키워드: 공백 보존 앞 4글자 (자사몰 검색이 공백 토큰 AND 매칭이라 정규화하면 0건)
+//   · 할인 안 하는 상품(prd_price_sale 없음)도 0% 로 반환
+const _normName=s=>String(s||"").split("*")[0].replace(/\s+/g,"").toLowerCase();
+const _matchKey=s=>_normName(s).slice(0,4);
+const _searchKw=s=>String(s||"").split("*")[0].trim().slice(0,4).trim();
 async function fetchMerryonOnlineSaleRate(productName){
-  const keyword=String(productName||"").trim();
-  if(!keyword) return null;
-  const url=`https://merryon.co.kr/product/search.html?banner_action=&keyword=${encodeURIComponent(keyword)}`;
+  const kw=_searchKw(productName);
+  if(!kw) return null;
+  const url=`https://merryon.co.kr/product/search.html?banner_action=&keyword=${encodeURIComponent(kw)}`;
   const proxied=`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
   const res=await fetch(proxied);
   if(!res.ok) throw new Error("HTTP "+res.status);
@@ -9428,8 +9433,9 @@ async function fetchMerryonOnlineSaleRate(productName){
   const doc=new DOMParser().parseFromString(html,"text/html");
   const items=doc.querySelectorAll("ul.prdList li.prd_list");
   if(!items.length) return null;
-  const target=_normName(productName);
-  let best=null,bestScore=-1;
+  const targetKey=_matchKey(productName);
+  const targetFull=_normName(productName);
+  let best=null,bestLcp=-1;
   items.forEach(li=>{
     const a=li.querySelector("strong.name a");
     if(!a) return;
@@ -9437,29 +9443,31 @@ async function fetchMerryonOnlineSaleRate(productName){
     nameClone.querySelectorAll(".displaynone").forEach(el=>el.remove());
     const rawName=(nameClone.textContent||"").replace(/\s+/g," ").trim();
     if(!rawName) return;
+    if(_matchKey(rawName)!==targetKey) return; // 앞 4글자 일치만 후보
+    // 할인 정보 — prd_price_sale 있으면 할인가/할인율, 없으면 product_price 정가 (rate=0)
+    let rate=0,salePrice=0;
     const saleLi=li.querySelector("li.prd_price_sale");
-    if(!saleLi) return;
-    const saleClone=saleLi.cloneNode(true);
-    saleClone.querySelectorAll(".displaynone").forEach(el=>el.remove());
-    const saleTxt=(saleClone.textContent||"").trim();
-    const pctMatch=saleTxt.match(/(\d+(?:\.\d+)?)\s*%/);
-    if(!pctMatch) return;
-    const rate=parseFloat(pctMatch[1]);
-    const salePrice=parseInt(saleTxt.replace(/\d+(?:\.\d+)?\s*%/,"").replace(/[^0-9]/g,""),10)||0;
-    const nm=_normName(rawName);
-    let score;
-    if(nm===target) score=100;
-    else if(nm.includes(target)) score=85;
-    else if(target.includes(nm)) score=70;
-    else{
-      let lcp=0;
-      while(lcp<nm.length&&lcp<target.length&&nm[lcp]===target[lcp]) lcp++;
-      score=lcp;
+    if(saleLi){
+      const saleClone=saleLi.cloneNode(true);
+      saleClone.querySelectorAll(".displaynone").forEach(el=>el.remove());
+      const saleTxt=(saleClone.textContent||"").trim();
+      const pctMatch=saleTxt.match(/(\d+(?:\.\d+)?)\s*%/);
+      if(pctMatch) rate=parseFloat(pctMatch[1]);
+      salePrice=parseInt(saleTxt.replace(/\d+(?:\.\d+)?\s*%/,"").replace(/[^0-9]/g,""),10)||0;
+    }else{
+      const priceLi=li.querySelector("li.product_price");
+      if(priceLi){
+        const priceClone=priceLi.cloneNode(true);
+        priceClone.querySelectorAll(".displaynone").forEach(el=>el.remove());
+        salePrice=parseInt((priceClone.textContent||"").replace(/[^0-9]/g,""),10)||0;
+      }
     }
-    if(score>bestScore){bestScore=score;best={rate,salePrice,matchedName:rawName};}
+    // 동점 tiebreaker: 풀 정규화 공통 접두 길이
+    const nm=_normName(rawName);
+    let lcp=0;
+    while(lcp<nm.length&&lcp<targetFull.length&&nm[lcp]===targetFull[lcp]) lcp++;
+    if(lcp>bestLcp){bestLcp=lcp;best={rate,salePrice,matchedName:rawName};}
   });
-  // 점수가 너무 낮으면(=실제로 검색어와 무관한 결과) 매칭 실패 처리
-  if(bestScore<3) return null;
   return best;
 }
 
