@@ -9812,40 +9812,53 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 const XLSX=await getXLSX();
                 const useRepCode=mode==="sale";
                 const isEasychain=mode==="easychain";
-                // 이지체인용: 판매가 → 정상가, 상품설명(연동할인가) 콤마 없는 숫자 서식
-                const sellHdr=isEasychain?"정상가":"판매가";
-                const headers=["상품코드","상품명","판교 재고","일산 재고",sellHdr,"자사몰 할인율%","상품설명2","상품설명","연동가마크업","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
-                const data=rows.map(r=>{
-                  const o=onlineRates[r.idx];
-                  const isOnline=o&&o.status==="success";
-                  const onlinePct=isOnline?o.rate:"";
-                  const lr=isOnline?linkedRateOf(o.rate):"";
-                  const lp=isOnline?linkedPriceOf(r.selling,o.rate):0;
-                  const lmk=isOnline&&r.supplyVat>0?Math.round(linkedMarkupOf(r.selling,r.supply,o.rate)*100)/100:"";
-                  const codeOut=useRepCode?((r.repCode||"").trim()||r.code||""):(r.code||"");
-                  const desc=isOnline?(isEasychain?lp:lp.toLocaleString()):""; // 이지체인=숫자, 그 외=콤마 문자열
-                  return [
-                    codeOut,r.name||"",r.stockPangyo||0,r.stockIlsan||0,
-                    r.selling||0,onlinePct,
-                    isOnline?`${lr}%`:"",                  // 상품설명2 = % 포함 연동할인율
-                    desc,                                  // 상품설명 = 연동할인가 (모드별 서식)
-                    lmk,                                   // 연동가마크업
-                    r.rate||0,r.basePrice||0,r.couponAmt||0,
-                    r.finalPrice||0,r.fee||0,r.net||0,
-                    r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
-                  ];
-                });
                 const storeLabel=storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점";
                 const sel=selCoupon>=0?coupons[selCoupon]:null;
                 const couponLine=sel?`${sel.name||"쿠폰"} ${sel.unit==="won"?`₩${(+sel.value||0).toLocaleString()}`:`${sel.value||0}%`}`:"없음";
-                const modeLabel=useRepCode?"세일용(대표상품코드)":isEasychain?"이지체인용(원본상품코드·숫자 가격)":"바코드용(원본상품코드)";
+                let headers,data,cols,modeLabel,suffix;
+                if(isEasychain){
+                  // 이지체인용 — 상품코드 / 정상가 / 할인가 3 컬럼만, 가격은 숫자 서식
+                  headers=["상품코드","정상가","할인가"];
+                  data=rows.map(r=>{
+                    const o=onlineRates[r.idx];
+                    const isOnline=o&&o.status==="success";
+                    const lp=isOnline?linkedPriceOf(r.selling,o.rate):"";
+                    return [r.code||"",r.selling||0,lp];
+                  });
+                  cols=[{wch:14},{wch:11},{wch:11}];
+                  modeLabel="이지체인용(상품코드·정상가·할인가)";
+                  suffix="이지체인용";
+                }else{
+                  headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","상품설명2","상품설명","연동가마크업","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
+                  data=rows.map(r=>{
+                    const o=onlineRates[r.idx];
+                    const isOnline=o&&o.status==="success";
+                    const onlinePct=isOnline?o.rate:"";
+                    const lr=isOnline?linkedRateOf(o.rate):"";
+                    const lp=isOnline?linkedPriceOf(r.selling,o.rate):0;
+                    const lmk=isOnline&&r.supplyVat>0?Math.round(linkedMarkupOf(r.selling,r.supply,o.rate)*100)/100:"";
+                    const codeOut=useRepCode?((r.repCode||"").trim()||r.code||""):(r.code||"");
+                    return [
+                      codeOut,r.name||"",r.stockPangyo||0,r.stockIlsan||0,
+                      r.selling||0,onlinePct,
+                      isOnline?`${lr}%`:"",                  // 상품설명2 = % 포함 연동할인율
+                      isOnline?lp.toLocaleString():"",       // 상품설명 = 천단위 콤마 연동할인가
+                      lmk,                                   // 연동가마크업
+                      r.rate||0,r.basePrice||0,r.couponAmt||0,
+                      r.finalPrice||0,r.fee||0,r.net||0,
+                      r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
+                    ];
+                  });
+                  cols=[{wch:14},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:11},{wch:10},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
+                  modeLabel=useRepCode?"세일용(대표상품코드)":"바코드용(원본상품코드)";
+                  suffix=useRepCode?"세일용":"바코드용";
+                }
                 const meta=[`오프라인 세일율 ${modeLabel} — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
                 const aoa=[meta,[],headers,...data];
                 const ws=XLSX.utils.aoa_to_sheet(aoa);
-                ws["!cols"]=[{wch:14},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:11},{wch:10},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
+                ws["!cols"]=cols;
                 const wb=XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb,ws,storeLabel);
-                const suffix=useRepCode?"세일용":isEasychain?"이지체인용":"바코드용";
                 XLSX.writeFile(wb,`오프라인세일율_${suffix}_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
               };
               const repAvail=rows.some(r=>(r.repCode||"").trim());
@@ -9864,7 +9877,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                     🏷 바코드용
                   </button>
                   <button onClick={()=>exportXlsx("easychain")}
-                    title="이지체인용 — 원본 상품코드 / 판매가→정상가 / 상품설명(연동할인가) 콤마 없는 숫자 서식"
+                    title="이지체인용 — 상품코드 / 정상가 / 할인가 3 컬럼만 (모두 숫자 서식)"
                     data-capture-hide
                     style={{background:D.blue,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
                     🔗 이지체인용
