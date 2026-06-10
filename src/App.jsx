@@ -8729,6 +8729,7 @@ function parseMallProductFile(file,onResult,onError){
   const finish=rows=>{
     if(!rows||!rows.length){ onError("데이터 행이 없습니다"); return; }
     const kCode=pickKey(rows[0],["상품코드","product_code","상품 코드"]);
+    const kRepCode=pickKey(rows[0],["대표상품코드","representative_product_code","대표 상품코드","대표상품 코드"]);
     const kName=pickKey(rows[0],["상품명","product_name"]);
     const kSell=pickKey(rows[0],["판매가","selling_price"]);
     const kSup =pickKey(rows[0],["공급가","supply_price","원가"]);
@@ -8747,6 +8748,7 @@ function parseMallProductFile(file,onResult,onError){
       out.push({
         _origRow:rowIdx,
         code:kCode!==undefined?String(r[kCode]||"").trim():"",
+        repCode:kRepCode!==undefined?String(r[kRepCode]||"").trim():"",
         name,
         selling,
         supply:kSup!==undefined?toNum(r[kSup]):0,
@@ -9776,43 +9778,61 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
             )}
           </span>
           <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
-            {products.length>0&&rows.length>0&&(
-              <button onClick={async()=>{
+            {products.length>0&&rows.length>0&&(()=>{
+              // 세일용 = 카페24 일괄 수정 양식: 상품코드 컬럼에 대표상품코드, 연동할인율/연동할인가 → 상품설명2/상품설명
+              // 바코드용 = 매장 발주/바코드용: 상품코드 컬럼에 원본 상품코드
+              const exportXlsx=async(mode)=>{
                 const XLSX=await getXLSX();
-                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","연동할인율%","연동할인가","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업","상품설명","상품설명2"];
+                const useRepCode=mode==="sale";
+                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","상품설명2","상품설명","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
                 const data=rows.map(r=>{
                   const o=onlineRates[r.idx];
                   const isOnline=o&&o.status==="success";
                   const onlinePct=isOnline?o.rate:"";
                   const lr=isOnline?linkedRateOf(o.rate):"";
-                  const lp=isOnline?linkedPriceOf(r.selling,o.rate):"";
+                  const lp=isOnline?linkedPriceOf(r.selling,o.rate):0;
+                  const codeOut=useRepCode?((r.repCode||"").trim()||r.code||""):(r.code||"");
                   return [
-                    r.code||"",r.name||"",r.stockPangyo||0,r.stockIlsan||0,
-                    r.selling||0,onlinePct,lr,lp,
+                    codeOut,r.name||"",r.stockPangyo||0,r.stockIlsan||0,
+                    r.selling||0,onlinePct,
+                    isOnline?`${lr}%`:"",                  // 상품설명2 = % 포함 연동할인율
+                    isOnline?lp.toLocaleString():"",       // 상품설명 = 천단위 콤마 연동할인가
                     r.rate||0,r.basePrice||0,r.couponAmt||0,
                     r.finalPrice||0,r.fee||0,r.net||0,
                     r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
-                    isOnline?lp.toLocaleString():"",       // 상품설명 = 천단위 콤마 할인가
-                    isOnline?`${lr}%`:"",                  // 상품설명2 = % 포함 할인율
                   ];
                 });
                 const storeLabel=storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점";
                 const sel=selCoupon>=0?coupons[selCoupon]:null;
                 const couponLine=sel?`${sel.name||"쿠폰"} ${sel.unit==="won"?`₩${(+sel.value||0).toLocaleString()}`:`${sel.value||0}%`}`:"없음";
-                const meta=[`오프라인 세일율 — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
+                const modeLabel=useRepCode?"세일용(대표상품코드)":"바코드용(원본상품코드)";
+                const meta=[`오프라인 세일율 ${modeLabel} — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
                 const aoa=[meta,[],headers,...data];
                 const ws=XLSX.utils.aoa_to_sheet(aoa);
-                ws["!cols"]=[{wch:10},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:10},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9},{wch:11},{wch:9}];
+                ws["!cols"]=[{wch:14},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
                 const wb=XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb,ws,storeLabel);
-                XLSX.writeFile(wb,`오프라인세일율_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
-              }}
-                title={`현재(${storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점"}) 표시 행 ${rows.length}개를 엑셀로 저장`}
-                data-capture-hide
-                style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
-                📊 엑셀
-              </button>
-            )}
+                const suffix=useRepCode?"세일용":"바코드용";
+                XLSX.writeFile(wb,`오프라인세일율_${suffix}_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
+              };
+              const repAvail=rows.some(r=>(r.repCode||"").trim());
+              return (
+                <>
+                  <button onClick={()=>exportXlsx("sale")}
+                    title={`세일용 — 상품코드 컬럼에 대표상품코드 사용 (연동할인율/할인가 → 상품설명2/상품설명)\n${repAvail?"":"※ 업로드 파일에 대표상품코드 컬럼이 없어 원본 상품코드로 대체됩니다"}`}
+                    data-capture-hide
+                    style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
+                    📊 세일용
+                  </button>
+                  <button onClick={()=>exportXlsx("barcode")}
+                    title="바코드용 — 상품코드 컬럼에 원본 상품코드 사용 (매장 바코드 발주)"
+                    data-capture-hide
+                    style={{background:D.text,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
+                    🏷 바코드용
+                  </button>
+                </>
+              );
+            })()}
             <CaptureBtn cardRef={modalCardRef} filename={`오프라인세일율_${dayjs().format("YYYYMMDD")}`} DC={{border:D.border,sub:D.textMeta}}/>
             <button onClick={onClose} style={{background:"transparent",border:"none",cursor:"pointer",color:D.textMeta,fontSize:18}}>✕</button>
           </span>
