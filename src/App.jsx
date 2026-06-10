@@ -346,6 +346,7 @@ function detectFields(columns) {
     orderId:      f("관리번호","order_id","주문번호","orderid"),
     memo:         f("메모","memo","비고","note"),
     revenue:      f("금액","revenue","sales","매출","price","가격","결제금액","주문금액"),
+    supply:       f("공급가","supply_price","원가","cost","단가","매입가","공급단가"),
   };
 }
 
@@ -3165,19 +3166,23 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           const byDate={};
           filteredStocks.forEach(r=>{
             const d=r.upload_date||"—";
-            if(!byDate[d]) byDate[d]={qty:0,skus:0};
+            if(!byDate[d]) byDate[d]={qty:0,skus:0,cost:0};
             byDate[d].qty+=(r.qty||0);
             byDate[d].skus++;
+            byDate[d].cost+=((r.supply_price||0)*(r.qty||0));
           });
           const dateRows=Object.entries(byDate).sort((a,b)=>b[0]>a[0]?1:-1);
+          const totalCost=dateRows.reduce((s,[,v])=>s+v.cost,0);
+          const hasCost=filteredStocks.some(r=>(r.supply_price||0)>0);
           // top stocked products
           const byProd={};
           filteredStocks.forEach(r=>{
             const k=(r.product_name||"미분류")+(r.option_name?" / "+r.option_name:"");
-            if(!byProd[k]) byProd[k]=0;
-            byProd[k]+=(r.qty||0);
+            if(!byProd[k]) byProd[k]={qty:0,cost:0};
+            byProd[k].qty+=(r.qty||0);
+            byProd[k].cost+=((r.supply_price||0)*(r.qty||0));
           });
-          const prodRows=Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          const prodRows=Object.entries(byProd).sort((a,b)=>b[1].qty-a[1].qty).slice(0,20);
           modalContent=(
             <div>
               <div style={{fontSize:11,color:D.textMeta,marginBottom:16,lineHeight:1.8,
@@ -3194,6 +3199,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                     <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>날짜</th>
                     <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>수량</th>
                     <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>SKU수</th>
+                    {hasCost&&<th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.blue}}>매입비</th>}
                   </tr></thead>
                   <tbody>
                     {dateRows.map(([d,v])=>(
@@ -3201,12 +3207,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                         <td style={{padding:"5px 7px",color:D.textMeta}}>{d}</td>
                         <td style={{textAlign:"right",padding:"5px 7px",fontWeight:600,color:D.blue}}>{v.qty.toLocaleString()}</td>
                         <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{v.skus.toLocaleString()}</td>
+                        {hasCost&&<td style={{textAlign:"right",padding:"5px 7px",fontWeight:600,color:D.blue}}>{v.cost>0?`₩${v.cost.toLocaleString()}`:""}</td>}
                       </tr>
                     ))}
                     <tr style={{borderTop:`2px solid ${D.border}`,fontWeight:700}}>
                       <td style={{padding:"5px 7px"}}>합계</td>
                       <td style={{textAlign:"right",padding:"5px 7px",color:D.blue}}>{stats.totalStock.toLocaleString()}</td>
                       <td style={{textAlign:"right",padding:"5px 7px",color:D.textSub}}>{filteredStocks.length.toLocaleString()}</td>
+                      {hasCost&&<td style={{textAlign:"right",padding:"5px 7px",color:D.blue}}>{totalCost>0?`₩${totalCost.toLocaleString()}`:""}</td>}
                     </tr>
                   </tbody>
                 </table>
@@ -3221,12 +3229,14 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <thead><tr style={{borderBottom:`1px solid ${D.border}`,color:D.textMeta}}>
                     <th style={{textAlign:"left",padding:"5px 7px",fontWeight:500}}>상품/옵션</th>
                     <th style={{textAlign:"right",padding:"5px 7px",fontWeight:500}}>수량</th>
+                    {hasCost&&<th style={{textAlign:"right",padding:"5px 7px",fontWeight:500,color:D.blue}}>매입비</th>}
                   </tr></thead>
                   <tbody>
-                    {prodRows.map(([k,qty])=>(
+                    {prodRows.map(([k,v])=>(
                       <tr key={k} style={{borderBottom:`1px solid ${D.border}`}}>
                         <td style={{padding:"5px 7px",color:D.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td>
-                        <td style={{textAlign:"right",padding:"5px 7px",color:D.blue,fontWeight:600}}>{qty.toLocaleString()}</td>
+                        <td style={{textAlign:"right",padding:"5px 7px",color:D.blue,fontWeight:600}}>{v.qty.toLocaleString()}</td>
+                        {hasCost&&<td style={{textAlign:"right",padding:"5px 7px",fontWeight:600,color:D.blue}}>{v.cost>0?`₩${v.cost.toLocaleString()}`:""}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -12264,6 +12274,7 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
             option_name:String(r[f.option]||"").trim(),
             qty:toNum(r[f.qty]),
             memo:String(r[f.memo]||"").trim(),
+            supply_price:f.supply?Math.round(toNum(r[f.supply])*1.1):0, // 공급가 × 1.1 (VAT 포함 매입단가)
           }));
           if(!rows.length) throw new Error("파싱된 행이 0건입니다. '상품명' 컬럼에 값이 있는 행이 1개 이상 있어야 합니다.");
           setPreview(rows); setStep(2);
@@ -12311,7 +12322,7 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
             <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>파일 업로드</div>
             <StatRow items={[{label:"삭제 예정",value:`${existing?.length||0}건`,color:D.red}]}/>
             <DropZone onFile={handleFile} fileName={fileName} label="입고 파일 업로드"
-              columns="상품명 · 옵션 · 수량 · 메모"/>
+              columns="상품명 · 옵션 · 수량 · 공급가 · 메모"/>
             <button onClick={()=>{setStep(0);setExisting(null);}}
               style={{width:"100%",background:"transparent",border:"none",color:D.textMeta,
                 fontSize:11,cursor:"pointer",marginTop:8,padding:"5px"}}>← 기간 다시 선택</button>
@@ -12350,6 +12361,7 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
                   {key:"product_name",label:"상품명",maxW:150},
                   {key:"option_name",label:"옵션",color:D.textMeta},
                   {key:"qty",label:"수량",bold:true},
+                  {key:"supply_price",label:"매입단가(VAT)",bold:true},
                   {key:"memo",label:"메모",color:D.textMeta},
                 ]}/>:
                 <div style={{color:D.green,textAlign:"center",padding:60,fontSize:12}}>해당 기간 기존 데이터 없음</div>)}
@@ -12357,6 +12369,7 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
                 {key:"product_name",label:"상품명",maxW:180},
                 {key:"option_name",label:"옵션",color:D.textMeta},
                 {key:"qty",label:"수량",bold:true},
+                {key:"supply_price",label:"매입단가(VAT)",bold:true},
                 {key:"memo",label:"메모",color:D.textMeta},
               ]}/>}
             </>
@@ -12402,7 +12415,7 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
                               <th style={{padding:"5px 7px",textAlign:"center",width:28}}>
                                 <input type="checkbox" checked={allSelected} onChange={()=>toggleAll(filtered)}/>
                               </th>
-                              {["업로드일","상품명","옵션","수량","메모"].map(h=>(
+                              {["업로드일","상품명","옵션","수량","매입단가","매입비","메모"].map(h=>(
                                 <th key={h} style={{padding:"5px 7px",textAlign:"left",color:D.textMeta,fontWeight:400}}>{h}</th>
                               ))}
                             </tr></thead>
@@ -12416,7 +12429,9 @@ function StockUploader({ onUpdate, histRefreshKey=0 }) {
                                   <td style={{padding:"5px 7px",color:D.textMeta}}>{r.upload_date}</td>
                                   <td style={{padding:"5px 7px",fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product_name}</td>
                                   <td style={{padding:"5px 7px",color:D.textSub}}>{r.option_name||"—"}</td>
-                                  <td style={{padding:"5px 7px",fontWeight:600}}>{(r.qty||0).toLocaleString()}</td>
+                                  <td style={{padding:"5px 7px",fontWeight:600,textAlign:"right"}}>{(r.qty||0).toLocaleString()}</td>
+                                  <td style={{padding:"5px 7px",textAlign:"right",color:D.textSub}}>{(r.supply_price||0)>0?`₩${(r.supply_price).toLocaleString()}`:""}</td>
+                                  <td style={{padding:"5px 7px",textAlign:"right",fontWeight:600,color:D.blue}}>{((r.supply_price||0)>0&&(r.qty||0)>0)?`₩${((r.supply_price||0)*(r.qty||0)).toLocaleString()}`:""}</td>
                                   <td style={{padding:"5px 7px",color:D.textMeta}}>{r.memo||""}</td>
                                 </tr>
                               ))}
