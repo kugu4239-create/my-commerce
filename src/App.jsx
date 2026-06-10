@@ -9872,7 +9872,12 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 ws["!cols"]=cols;
                 const wb=XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb,ws,sheetLabel);
-                XLSX.writeFile(wb,`오프라인세일율_${suffix}_${sheetLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
+                // 이지체인용은 .xls (Excel 97-2003 / BIFF8) 로 — 이지체인 import 호환
+                if(isEasychain){
+                  XLSX.writeFile(wb,`오프라인세일율_${suffix}_${sheetLabel}_${dayjs().format("YYYYMMDD")}.xls`,{bookType:"biff8"});
+                }else{
+                  XLSX.writeFile(wb,`오프라인세일율_${suffix}_${sheetLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
+                }
               };
               const repAvail=rows.some(r=>(r.repCode||"").trim());
               const pangyoCnt=rows.filter(r=>(r.stockPangyo||0)>0).length;
