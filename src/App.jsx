@@ -7590,7 +7590,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
   const visibleProcessed=processed?processed.filter(r=>!removedRows.has(r.row)):[];
   const shown=visibleProcessed.slice(0,DISP_CAP);
   return (
-    <div onClick={onClose} className="salecalc-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+    <div className="salecalc-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="salecalc"
         style={{background:D.surface,borderRadius:12,width:"98vw",maxWidth:"100vw",maxHeight:"92vh",overflowY:"auto",
@@ -9038,9 +9038,9 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
   const filtered=q?rows.filter(r=>(r.name||"").toLowerCase().includes(q)||String(r.rate).includes(q)):rows;
   const shown=filtered; // 전체 로드 (더보기 없음)
   return (
-    <div onClick={onClose}
+    <div
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div ref={modalCardRef} onClick={e=>e.stopPropagation()} className="mallcalc"
+      <div ref={modalCardRef} className="mallcalc"
         style={{background:D.surface,borderRadius:14,width:"90vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <style>{`.mallcalc input[type="number"]::-webkit-inner-spin-button,.mallcalc input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}.mallcalc input[type="number"]{-moz-appearance:textfield;appearance:textfield;}.mallcalc thead th{position:sticky;top:0;background:${D.surface};z-index:2;box-shadow:inset 0 -1px 0 ${D.border};}.mallcalc tbody tr:hover td{background:${D.surfaceAlt};}`}</style>
         <div style={{position:"sticky",top:0,background:D.surface,borderBottom:`1px dashed ${D.border}`,
@@ -9781,9 +9781,9 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     return {n:sumQty,matchedN:matched.length,noCost,neg,avgMk};
   },[rows]);
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2200,
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2200,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div ref={modalCardRef} onClick={e=>e.stopPropagation()}
+      <div ref={modalCardRef}
         style={{background:D.surface,borderRadius:12,width:"98vw",maxWidth:"100vw",maxHeight:"92vh",overflowY:"auto",
           border:`1px solid ${D.black}`,boxShadow:"0 8px 40px rgba(0,0,0,0.22)",
           fontFamily:"'Noto Sans KR','Pretendard',sans-serif",fontSize:12,color:D.text}}>
@@ -10192,9 +10192,9 @@ function Promo29CMCalcModal({ initialCoupon=10, onApply, onClose }){
   const inNum={border:`1px solid ${D.border}`,background:D.surface,color:D.text,borderRadius:6,padding:"6px 10px",fontSize:13,width:80,fontFamily:"inherit"};
 
   return(
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2100,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()}
+      <div
         style={{background:D.surface,borderRadius:12,width:"min(820px,96vw)",maxHeight:"92vh",overflowY:"auto",
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)",fontSize:12,color:D.text,
           fontFamily:"'Noto Sans KR','Pretendard',sans-serif"}}>
