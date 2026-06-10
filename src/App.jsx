@@ -9413,6 +9413,56 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
   );
 }
 
+// 자사몰(merryon.co.kr) 검색 페이지에서 현재 온라인 할인율 파싱
+//   · CORS 미허용이라 allorigins.win 프록시 경유
+//   · 검색 결과 중 상품명이 가장 가까운 1건의 할인율 % 반환 — 없으면 null
+const _normName=s=>String(s||"").replace(/\s+/g,"").replace(/[*★☆※♥♡♣♠()[\]]/g,"").toLowerCase();
+async function fetchMerryonOnlineSaleRate(productName){
+  const keyword=String(productName||"").trim();
+  if(!keyword) return null;
+  const url=`https://merryon.co.kr/product/search.html?banner_action=&keyword=${encodeURIComponent(keyword)}`;
+  const proxied=`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+  const res=await fetch(proxied);
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  const html=await res.text();
+  const doc=new DOMParser().parseFromString(html,"text/html");
+  const items=doc.querySelectorAll("ul.prdList li.prd_list");
+  if(!items.length) return null;
+  const target=_normName(productName);
+  let best=null,bestScore=-1;
+  items.forEach(li=>{
+    const a=li.querySelector("strong.name a");
+    if(!a) return;
+    const nameClone=a.cloneNode(true);
+    nameClone.querySelectorAll(".displaynone").forEach(el=>el.remove());
+    const rawName=(nameClone.textContent||"").replace(/\s+/g," ").trim();
+    if(!rawName) return;
+    const saleLi=li.querySelector("li.prd_price_sale");
+    if(!saleLi) return;
+    const saleClone=saleLi.cloneNode(true);
+    saleClone.querySelectorAll(".displaynone").forEach(el=>el.remove());
+    const saleTxt=(saleClone.textContent||"").trim();
+    const pctMatch=saleTxt.match(/(\d+(?:\.\d+)?)\s*%/);
+    if(!pctMatch) return;
+    const rate=parseFloat(pctMatch[1]);
+    const salePrice=parseInt(saleTxt.replace(/\d+(?:\.\d+)?\s*%/,"").replace(/[^0-9]/g,""),10)||0;
+    const nm=_normName(rawName);
+    let score;
+    if(nm===target) score=100;
+    else if(nm.includes(target)) score=85;
+    else if(target.includes(nm)) score=70;
+    else{
+      let lcp=0;
+      while(lcp<nm.length&&lcp<target.length&&nm[lcp]===target[lcp]) lcp++;
+      score=lcp;
+    }
+    if(score>bestScore){bestScore=score;best={rate,salePrice,matchedName:rawName};}
+  });
+  // 점수가 너무 낮으면(=실제로 검색어와 무관한 결과) 매칭 실패 처리
+  if(bestScore<3) return null;
+  return best;
+}
+
 // ─────────────────────────────────────────────
 // 오프라인 세일율 계산기 — 이지어드민 인벤토리 파일 기반
 //   · 시나리오: 회원가입 1만원 쿠폰 (on/off)
@@ -9436,6 +9486,10 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   const [checkedIdx,setCheckedIdx]=useState(()=>new Set());
   const [sample,setSample]=useState(null);
   const [sampleMsg,setSampleMsg]=useState("");
+  // 자사몰(merryon.co.kr) 현재 할인율 — {idx: {status,rate?,salePrice?,matchedName?,error?}}
+  const [onlineRates,setOnlineRates]=useState({});
+  const [onlineProgress,setOnlineProgress]=useState(null); // {done,total} 일괄 진행 중에만
+  const onlineCacheRef=useRef({}); // {normalizedName: result|null}
   const fileRef=useRef(null);
   const modalCardRef=useRef(null);
   const dragSelectModeRef=useRef(null);
@@ -9444,9 +9498,28 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     window.addEventListener("mouseup",onUp);
     return ()=>window.removeEventListener("mouseup",onUp);
   },[]);
+  const fetchOneOnline=useCallback(async(idx,name)=>{
+    const key=String(name||"").trim();
+    if(!key) return;
+    const cacheKey=_normName(key);
+    setOnlineRates(prev=>({...prev,[idx]:{status:"loading"}}));
+    if(Object.prototype.hasOwnProperty.call(onlineCacheRef.current,cacheKey)){
+      const cached=onlineCacheRef.current[cacheKey];
+      setOnlineRates(prev=>({...prev,[idx]:cached?{status:"success",...cached}:{status:"miss"}}));
+      return;
+    }
+    try{
+      const r=await fetchMerryonOnlineSaleRate(key);
+      onlineCacheRef.current[cacheKey]=r;
+      setOnlineRates(prev=>({...prev,[idx]:r?{status:"success",...r}:{status:"miss"}}));
+    }catch(err){
+      setOnlineRates(prev=>({...prev,[idx]:{status:"error",error:err?.message||String(err)}}));
+    }
+  },[]);
   const inNum={background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"5px 8px",fontSize:12,color:D.text,fontFamily:"inherit"};
   const loadProducts=(rows,name)=>{
     setProducts(rows);setFileName(name);setRates({});setRemovedIdx(new Set());setCheckedIdx(new Set());
+    setOnlineRates({}); onlineCacheRef.current={};
     setStatus(`${rows.length.toLocaleString()}개 상품 로드됨`);
   };
   // 마지막 업로드를 Supabase(mall_calc_last_file id=2) 에 보관 — 모달 열 때 자동 로드
@@ -9536,6 +9609,30 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   // 29CM 패턴의 일괄 적용 모드 — 'all' | 'checked'
   const [bulkMode,setBulkMode]=useState("all");
   const applyBulk=v=>{ if(bulkMode==="checked") setCheckedRates(v); else setAllRates(v); };
+  const fetchAllOnline=async()=>{
+    const pool=(bulkMode==="checked"&&checkedIdx.size>0)
+      ?rows.filter(r=>checkedIdx.has(r.idx))
+      :rows;
+    const targets=pool.filter(r=>r.name&&(!onlineRates[r.idx]||onlineRates[r.idx].status==="error"||onlineRates[r.idx].status==="idle"));
+    if(!targets.length){
+      window.alert("가져올 대상이 없습니다 (이미 가져왔거나 빈 행)");
+      return;
+    }
+    setOnlineProgress({done:0,total:targets.length});
+    const CONCURRENCY=2;
+    let cursor=0,done=0;
+    const next=async()=>{
+      while(cursor<targets.length){
+        const t=targets[cursor++];
+        await fetchOneOnline(t.idx,t.name);
+        done++;
+        setOnlineProgress({done,total:targets.length});
+        await new Promise(r=>setTimeout(r,120));
+      }
+    };
+    await Promise.all(Array(Math.min(CONCURRENCY,targets.length)).fill(0).map(next));
+    setOnlineProgress(null);
+  };
   const removeRow=(idx)=>setRemovedIdx(prev=>{const next=new Set(prev);next.add(idx);return next;});
   const restoreAll=()=>{setRemovedIdx(new Set());setCheckedIdx(new Set());};
   const removeChecked=()=>{
@@ -9653,20 +9750,24 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
             {products.length>0&&rows.length>0&&(
               <button onClick={async()=>{
                 const XLSX=await getXLSX();
-                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
-                const data=rows.map(r=>[
-                  r.code||"",r.name||"",r.stockPangyo||0,r.stockIlsan||0,
-                  r.selling||0,r.rate||0,r.basePrice||0,r.couponAmt||0,
-                  r.finalPrice||0,r.fee||0,r.net||0,
-                  r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
-                ]);
+                const headers=["상품코드","상품명","판교 재고","일산 재고","판매가","자사몰 할인율%","할인율%","할인가","쿠폰액","최종판매액","수수료(28%)","정산","원가(VAT)","마진","마크업"];
+                const data=rows.map(r=>{
+                  const o=onlineRates[r.idx];
+                  const onlinePct=o&&o.status==="success"?o.rate:"";
+                  return [
+                    r.code||"",r.name||"",r.stockPangyo||0,r.stockIlsan||0,
+                    r.selling||0,onlinePct,r.rate||0,r.basePrice||0,r.couponAmt||0,
+                    r.finalPrice||0,r.fee||0,r.net||0,
+                    r.supplyVat||0,r.margin||0,Math.round((r.markup||0)*100)/100,
+                  ];
+                });
                 const storeLabel=storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점";
                 const sel=selCoupon>=0?coupons[selCoupon]:null;
                 const couponLine=sel?`${sel.name||"쿠폰"} ${sel.unit==="won"?`₩${(+sel.value||0).toLocaleString()}`:`${sel.value||0}%`}`:"없음";
                 const meta=[`오프라인 세일율 — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
                 const aoa=[meta,[],headers,...data];
                 const ws=XLSX.utils.aoa_to_sheet(aoa);
-                ws["!cols"]=[{wch:10},{wch:32},{wch:9},{wch:9},{wch:11},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
+                ws["!cols"]=[{wch:10},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
                 const wb=XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb,ws,storeLabel);
                 XLSX.writeFile(wb,`오프라인세일율_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
@@ -9733,6 +9834,30 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                     <button key={v} onClick={()=>applyBulk(v)}
                       style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:D.textSub}}>{v}%</button>
                   ))}
+                </span>
+              </div>
+              <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10,marginBottom:10,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>자사몰 현재 할인율</span>
+                <span style={{fontSize:10,color:D.textMeta}}>merryon.co.kr 검색 → 상품명 매칭 결과의 할인율 %</span>
+                <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  {onlineProgress&&(
+                    <span style={{fontSize:11,color:D.blue,fontWeight:600}}>
+                      가져오는 중… {onlineProgress.done}/{onlineProgress.total}
+                    </span>
+                  )}
+                  <button onClick={fetchAllOnline} disabled={!!onlineProgress||rows.length===0}
+                    title={bulkMode==="checked"&&checkedIdx.size>0?`체크된 ${checkedIdx.size}개 행 가져오기`:`표시된 ${rows.length}개 행 가져오기 (이미 가져온 행 제외)`}
+                    style={{background:onlineProgress?D.borderMid:D.blue,color:"#fff",border:"none",borderRadius:5,
+                      padding:"5px 12px",fontSize:11,cursor:onlineProgress?"default":"pointer",fontWeight:700,opacity:onlineProgress?0.7:1}}>
+                    🌐 {bulkMode==="checked"&&checkedIdx.size>0?`체크 ${checkedIdx.size}개`:`${rows.length}개`} 일괄 가져오기
+                  </button>
+                  {Object.keys(onlineRates).length>0&&!onlineProgress&&(
+                    <button onClick={()=>{setOnlineRates({});onlineCacheRef.current={};}}
+                      title="가져온 결과 모두 지우기 (캐시도 비움)"
+                      style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",color:D.textSub}}>
+                      ✕ 초기화
+                    </button>
+                  )}
                 </span>
               </div>
               <div style={{borderTop:`1px dashed ${D.border}`,paddingTop:10}}>
@@ -9826,6 +9951,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                   <th style={{...numCell,fontWeight:500}}>판교</th>
                   <th style={{...numCell,fontWeight:500}}>일산</th>
                   <th style={{...numCell,fontWeight:500}}>판매가</th>
+                  <th style={{...numCell,fontWeight:500,color:D.blue}} title="자사몰(merryon.co.kr) 현재 할인율">자사몰 할인율</th>
                   <th style={{...numCell,fontWeight:500}}>할인율</th>
                   <th style={{...numCell,fontWeight:500}}>할인가</th>
                   <th style={{...numCell,fontWeight:500}}>쿠폰</th>
@@ -9855,6 +9981,37 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                       <td style={{...numCell,color:(r.stockPangyo||0)>0?D.text:D.textMeta,fontWeight:(r.stockPangyo||0)>0?600:400}}>{r.stockPangyo||0}</td>
                       <td style={{...numCell,color:(r.stockIlsan||0)>0?D.text:D.textMeta,fontWeight:(r.stockIlsan||0)>0?600:400}}>{r.stockIlsan||0}</td>
                       <td style={{...numCell,color:D.textMeta}}>{won(r.selling)}</td>
+                      <td style={numCell}>
+                        {(()=>{
+                          const o=onlineRates[r.idx];
+                          if(!o) return (
+                            <button onClick={()=>fetchOneOnline(r.idx,r.name)} disabled={!!onlineProgress}
+                              title="자사몰 검색해서 현재 할인율 가져오기"
+                              style={{background:"transparent",border:`1px dashed ${D.blue}55`,color:D.blue,
+                                borderRadius:4,padding:"1px 6px",fontSize:10,cursor:onlineProgress?"default":"pointer",fontFamily:"inherit"}}>
+                              가져오기
+                            </button>
+                          );
+                          if(o.status==="loading") return <span style={{color:D.textMeta,fontSize:10}}>…</span>;
+                          if(o.status==="miss") return (
+                            <span title="검색 결과 없음 — 클릭하여 재시도" onClick={()=>fetchOneOnline(r.idx,r.name)}
+                              style={{color:D.textMeta,fontSize:10,cursor:"pointer"}}>—</span>
+                          );
+                          if(o.status==="error") return (
+                            <span title={`오류: ${o.error} — 클릭하여 재시도`} onClick={()=>fetchOneOnline(r.idx,r.name)}
+                              style={{color:D.red,fontSize:10,cursor:"pointer"}}>오류 ↻</span>
+                          );
+                          const myRate=Math.max(0,Math.min(100,parseFloat(rates[r.idx]??10)||0));
+                          const same=Math.abs((o.rate||0)-myRate)<0.5;
+                          return (
+                            <span title={`매칭: ${o.matchedName||""}${o.salePrice?` · 자사몰가 ${won(o.salePrice)}`:""} · 클릭하여 재조회`}
+                              onClick={()=>{delete onlineCacheRef.current[_normName(r.name)];fetchOneOnline(r.idx,r.name);}}
+                              style={{color:same?D.textMeta:D.blue,fontWeight:600,cursor:"pointer"}}>
+                              {o.rate}%
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td style={numCell}>
                         <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" max="100" step="1"
                           value={rates[r.idx]??10} onChange={e=>setRate(r.idx,e.target.value)}
