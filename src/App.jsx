@@ -9737,9 +9737,14 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   const won=n=>"₩"+Math.round(n||0).toLocaleString();
   // 연동할인율 = 자사몰할인율 + 회원 10% 추가 할인 → 5% 단위 올림
   //   예: 자사몰 10% → 1 - 0.9*0.9 = 0.19 → 19% → 5% 올림 → 20%
+  //   단, 자사몰 60% 이상은 그대로 동률 (이미 큰 할인이라 추가 적용·올림 안 함)
   // 연동할인가 = 판매가 × (1 - 연동할인율) — 100원 단위 정리 (10원 자리 반올림)
   // 연동가마크업 = 연동할인가 기준 정산(수수료 28% 차감) ÷ 공급가(VAT 포함)
-  const linkedRateOf=(onlineRate)=>Math.max(0,Math.min(100,Math.ceil((100-(100-(+onlineRate||0))*0.9)/5)*5));
+  const linkedRateOf=(onlineRate)=>{
+    const r=Math.max(0,Math.min(100,+onlineRate||0));
+    if(r>=60) return r;
+    return Math.ceil((100-(100-r)*0.9)/5)*5;
+  };
   const linkedPriceOf=(selling,onlineRate)=>Math.round((+selling||0)*(1-linkedRateOf(onlineRate)/100)/100)*100;
   const linkedMarkupOf=(selling,supply,onlineRate)=>{
     const lp=linkedPriceOf(selling,onlineRate);
