@@ -9416,7 +9416,7 @@ function OwnMallSaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, atta
 }
 
 // 자사몰(merryon.co.kr) 검색 페이지에서 현재 온라인 할인율 파싱
-//   · CORS 미허용이라 allorigins.win 프록시 경유
+//   · 자체 Vercel Serverless 프록시(/api/merryon-search) 경유 — 공용 CORS 프록시 불안정 해결
 //   · 정규화 규칙: 별표(*) 이후 텍스트 절단 + 공백 제거
 //   · 매칭: 정규화 앞 4글자 일치만 인정 (동점이면 풀 공통접두 길이로 tiebreak)
 //   · 검색 키워드: 공백 보존 앞 4글자 (자사몰 검색이 공백 토큰 AND 매칭이라 정규화하면 0건)
@@ -9427,8 +9427,7 @@ const _searchKw=s=>String(s||"").split("*")[0].trim().slice(0,4).trim();
 async function fetchMerryonOnlineSaleRate(productName){
   const kw=_searchKw(productName);
   if(!kw) return null;
-  const url=`https://merryon.co.kr/product/search.html?banner_action=&keyword=${encodeURIComponent(kw)}`;
-  const proxied=`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+  const proxied=`/api/merryon-search?keyword=${encodeURIComponent(kw)}`;
   const res=await fetch(proxied);
   if(!res.ok) throw new Error("HTTP "+res.status);
   const html=await res.text();
