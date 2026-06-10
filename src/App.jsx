@@ -9812,11 +9812,24 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                 const XLSX=await getXLSX();
                 const useRepCode=mode==="sale";
                 const isEasychain=mode==="easychain";
+                const isBarcodePangyo=mode==="barcode_pangyo";
+                const isBarcodeKintex=mode==="barcode_kintex";
+                const isBarcode=isBarcodePangyo||isBarcodeKintex;
                 const storeLabel=storeMode==="common"?"공통":storeMode==="pangyo"?"판교점":"일산점";
                 const sel=selCoupon>=0?coupons[selCoupon]:null;
                 const couponLine=sel?`${sel.name||"쿠폰"} ${sel.unit==="won"?`₩${(+sel.value||0).toLocaleString()}`:`${sel.value||0}%`}`:"없음";
-                let headers,data,cols,modeLabel,suffix;
-                if(isEasychain){
+                let headers,data,cols,modeLabel,suffix,sheetLabel=storeLabel;
+                if(isBarcode){
+                  // 바코드용 — 해당 매장 재고 있는 상품 / 상품코드 + 수량(=1) 2 컬럼
+                  const storeNm=isBarcodePangyo?"판교점":"킨텍스점";
+                  const filtered=rows.filter(r=>(isBarcodePangyo?(r.stockPangyo||0):(r.stockIlsan||0))>0);
+                  headers=["상품코드","수량"];
+                  data=filtered.map(r=>[r.code||"",1]);
+                  cols=[{wch:16},{wch:8}];
+                  modeLabel=`바코드 ${storeNm} (재고 보유 ${filtered.length}개 · 수량 1)`;
+                  suffix=`바코드_${storeNm}`;
+                  sheetLabel=storeNm;
+                }else if(isEasychain){
                   // 이지체인용 — 상품코드 / 정상가 / 할인가 3 컬럼만, 가격은 숫자 서식
                   headers=["상품코드","정상가","할인가"];
                   data=rows.map(r=>{
@@ -9850,18 +9863,20 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                     ];
                   });
                   cols=[{wch:14},{wch:32},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:11},{wch:10},{wch:8},{wch:11},{wch:10},{wch:12},{wch:11},{wch:11},{wch:11},{wch:11},{wch:9}];
-                  modeLabel=useRepCode?"세일용(대표상품코드)":"바코드용(원본상품코드)";
-                  suffix=useRepCode?"세일용":"바코드용";
+                  modeLabel="세일용(대표상품코드)";
+                  suffix="세일용";
                 }
-                const meta=[`오프라인 세일율 ${modeLabel} — ${storeLabel} (${rows.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
+                const meta=[`오프라인 세일율 ${modeLabel} — ${sheetLabel} (${data.length}개 상품) · 쿠폰: ${couponLine} · 매장 수수료 28%`];
                 const aoa=[meta,[],headers,...data];
                 const ws=XLSX.utils.aoa_to_sheet(aoa);
                 ws["!cols"]=cols;
                 const wb=XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb,ws,storeLabel);
-                XLSX.writeFile(wb,`오프라인세일율_${suffix}_${storeLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
+                XLSX.utils.book_append_sheet(wb,ws,sheetLabel);
+                XLSX.writeFile(wb,`오프라인세일율_${suffix}_${sheetLabel}_${dayjs().format("YYYYMMDD")}.xlsx`);
               };
               const repAvail=rows.some(r=>(r.repCode||"").trim());
+              const pangyoCnt=rows.filter(r=>(r.stockPangyo||0)>0).length;
+              const kintexCnt=rows.filter(r=>(r.stockIlsan||0)>0).length;
               return (
                 <>
                   <button onClick={()=>exportXlsx("sale")}
@@ -9870,11 +9885,17 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                     style={{background:D.green,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
                     📊 세일용
                   </button>
-                  <button onClick={()=>exportXlsx("barcode")}
-                    title="바코드용 — 상품코드 컬럼에 원본 상품코드 사용 (매장 바코드 발주)"
+                  <button onClick={()=>exportXlsx("barcode_pangyo")}
+                    title={`판교점 바코드 — 판교 재고 있는 ${pangyoCnt}개 상품 / 상품코드·수량(=1) 2 컬럼`}
                     data-capture-hide
                     style={{background:D.text,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
-                    🏷 바코드용
+                    🏷 판교점 바코드
+                  </button>
+                  <button onClick={()=>exportXlsx("barcode_kintex")}
+                    title={`킨텍스점 바코드 — 일산(킨텍스) 재고 있는 ${kintexCnt}개 상품 / 상품코드·수량(=1) 2 컬럼`}
+                    data-capture-hide
+                    style={{background:D.text,color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
+                    🏷 킨텍스점 바코드
                   </button>
                   <button onClick={()=>exportXlsx("easychain")}
                     title="이지체인용 — 상품코드 / 정상가 / 할인가 3 컬럼만 (모두 숫자 서식)"
