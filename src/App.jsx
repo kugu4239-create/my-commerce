@@ -15601,7 +15601,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
   const [pg,setPg]=useState(0);
   const [selected,setSelected]=useState(()=>new Set());
   const [copied,setCopied]=useState(false);
-  const PG=20;
+  const PG=150;
 
   const load=useCallback(async()=>{
     setLoading(true);
