@@ -2003,13 +2003,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       if(r.status==="반품") byProd[key].returned++;
     });
     const csData=getCSData();
+    // 상품명 정규화(normProdName)로 매칭 — CS '어드민 상품명'과 주문 상품명의
+    // 색상/사이즈 대괄호([SKY BLUE]/[핑크,스카이블루/L])·공백 표기 차이를 흡수해
+    // 연결률을 높인다(정확 일치 대비 매칭 대폭 증가). 키는 양쪽 모두 정규화해 비교.
     const csMap={};
     csData.forEach(r=>{
-      if(!csMap[r.product_name])csMap[r.product_name]={};
-      csMap[r.product_name][r.return_reason]=(csMap[r.product_name][r.return_reason]||0)+1;
+      const key=normProdName(r.product_name);
+      if(!key)return;
+      if(!csMap[key])csMap[key]={};
+      csMap[key][r.return_reason]=(csMap[key][r.return_reason]||0)+1;
     });
     const topReason=name=>{
-      const m=csMap[name];
+      const m=csMap[normProdName(name)];
       if(!m)return"-";
       return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]?.[0]||"-";
     };
