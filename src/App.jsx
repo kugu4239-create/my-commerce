@@ -11555,6 +11555,8 @@ function CSDataInput() {
   const [csFilterStart,setCsFilterStart]=useState("");
   const [csFilterEnd,setCsFilterEnd]=useState("");
   const [csCalOpen,setCsCalOpen]=useState(null);
+  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+    padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
 
   useEffect(()=>{
     (async()=>{
