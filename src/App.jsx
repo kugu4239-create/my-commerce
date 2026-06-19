@@ -8805,7 +8805,10 @@ function parseMallProductFile(file,onResult,onError){
           }
         }
         const ws=wb.Sheets[wb.SheetNames[0]];
-        finish(XLSX.utils.sheet_to_json(ws,{defval:""}));
+        // raw:false → 셀 표시 문자열을 사용한다. 상품코드/대표상품코드가 0 패딩 숫자
+        // 서식(예: 123456 을 "0123456" 으로 표시)으로 저장된 경우 raw:true 면 원시 숫자만
+        // 읽혀 앞자리 0 이 사라진다. 가격/재고는 toNum 으로 다시 숫자화하므로 영향 없음.
+        finish(XLSX.utils.sheet_to_json(ws,{defval:"",raw:false}));
       }catch(err){ onError(String(err?.message||err)); }
     };
     reader.onerror=()=>onError("파일 읽기 도중 시스템 오류가 발생했습니다");
