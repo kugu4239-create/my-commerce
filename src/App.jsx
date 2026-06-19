@@ -9552,6 +9552,8 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
   // 쿠폰 — name/unit('pct'|'won')/value. 기본 회원가입 ₩10,000 (선택 활성).
   const [coupons,setCoupons]=useState([{name:"회원가입 쿠폰",unit:"won",value:10000}]);
   const [selCoupon,setSelCoupon]=useState(0); // -1 = 쿠폰 없음, 0..N-1 = coupons[i]
+  // 연동 추가 할인율(%) — 자사몰 할인 위에 추가로 적용 (기본 10%). 세일용·이지체인용 다운로드에 반영.
+  const [linkAddRate,setLinkAddRate]=useState(10);
   // 매장 필터 — 'common'(양쪽 재고 둘 다 >0) | 'pangyo' | 'ilsan'
   const [storeMode,setStoreMode]=useState("common");
   const FEE_RATE=0.28;
@@ -9861,15 +9863,16 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
     });
   };
   const won=n=>"₩"+Math.round(n||0).toLocaleString();
-  // 연동할인율 = 자사몰할인율 + 회원 10% 추가 할인 → 5% 단위 올림
-  //   예: 자사몰 10% → 1 - 0.9*0.9 = 0.19 → 19% → 5% 올림 → 20%
+  // 연동할인율 = 자사몰할인율 위에 '연동 추가 할인율'(linkAddRate, 기본 10%) 추가 적용 → 5% 단위 올림
+  //   예: 자사몰 10% + 추가 10% → 1 - 0.9*0.9 = 0.19 → 19% → 5% 올림 → 20%
   //   단, 자사몰 60% 이상은 그대로 동률 (이미 큰 할인이라 추가 적용·올림 안 함)
   // 연동할인가 = 판매가 × (1 - 연동할인율) — 100원 단위 정리 (10원 자리 반올림)
   // 연동가마크업 = 연동할인가 기준 정산(수수료 28% 차감) ÷ 공급가(VAT 포함)
   const linkedRateOf=(onlineRate)=>{
     const r=Math.max(0,Math.min(100,+onlineRate||0));
     if(r>=60) return r;
-    return Math.ceil((100-(100-r)*0.9)/5)*5;
+    const keep=1-Math.max(0,+linkAddRate||0)/100;   // 추가 할인 후 잔존 결제비율
+    return Math.ceil((100-(100-r)*keep)/5)*5;
   };
   const linkedPriceOf=(selling,onlineRate)=>Math.round((+selling||0)*(1-linkedRateOf(onlineRate)/100)/100)*100;
   const linkedMarkupOf=(selling,supply,onlineRate)=>{
@@ -10165,6 +10168,14 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                     </div>
                   ))}
                 </div>
+                {/* 연동 추가 할인율 — 자사몰 할인 위에 추가 적용 (세일용·이지체인용 반영) */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,paddingTop:10,borderTop:`1px dashed ${D.border}`,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:D.textMeta}}>연동 추가 할인율</span>
+                  <input type="number" onWheel={e=>e.currentTarget.blur()} min="0" step="1"
+                    value={linkAddRate} onChange={e=>setLinkAddRate(e.target.value)} style={{...inNum,width:80,textAlign:"right"}}/>
+                  <span style={{fontSize:11,color:D.blue}}>%</span>
+                  <span style={{fontSize:11,color:D.textMeta}}>자사몰 할인율 위에 추가 적용 → 5% 단위 올림 (연동할인율·세일용·이지체인용 다운로드 반영)</span>
+                </div>
               </div>
             </div>
             {agg&&(
@@ -10223,7 +10234,7 @@ function OfflineSaleCalcModal({ onClose, onCreatePromo }){
                   <th style={{...numCell,fontWeight:500}}>일산</th>
                   <th style={{...numCell,fontWeight:500}}>판매가</th>
                   <th style={{...numCell,fontWeight:500,color:D.blue}} title="자사몰(merryon.co.kr) 현재 할인율">자사몰 할인율</th>
-                  <th style={{...numCell,fontWeight:500,color:D.blue}} title="자사몰 할인율 × 회원 10% 추가 할인 → 5% 단위 올림 (예: 자사몰 10% → 19% → 20%)">연동할인율</th>
+                  <th style={{...numCell,fontWeight:500,color:D.blue}} title={`자사몰 할인율 위에 연동 추가 할인율 ${(+linkAddRate||0)}% 추가 적용 → 5% 단위 올림 (예: 자사몰 10% + ${(+linkAddRate||0)}% → 5% 올림)`}>연동할인율</th>
                   <th style={{...numCell,fontWeight:500,color:D.blue}} title="판매가 × (1 − 연동할인율) — 100원 단위 정리">연동할인가</th>
                   <th style={{...numCell,fontWeight:500,color:D.blue}} title="연동할인가 기준 정산(수수료 28% 차감) ÷ 공급가(VAT)">연동가마크업</th>
                   <th style={{...numCell,fontWeight:500}}>할인율</th>
