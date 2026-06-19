@@ -2002,7 +2002,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       if(r.status==="배송") byProd[key].shipped++;
       if(r.status==="반품") byProd[key].returned++;
     });
-    const csData=getCSData();
+    // CS 데이터도 반품 Top 순위와 동일한 기간(rankWorstPeriod)으로 필터 —
+    // 'CS date(접수일)' 기준. 선택 기간과 주요 사유의 시간 범위를 일치시킨다.
+    const csData=filterByDate(getCSData(),"date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd);
     // 상품명 정규화(normProdName)로 매칭 — CS '어드민 상품명'과 주문 상품명의
     // 색상/사이즈 대괄호([SKY BLUE]/[핑크,스카이블루/L])·공백 표기 차이를 흡수해
     // 연결률을 높인다(정확 일치 대비 매칭 대폭 증가). 키는 양쪽 모두 정규화해 비교.
@@ -2022,7 +2024,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         topReason:topReason(p.name)}));
-  },[worstFilteredOrders,rankWorstChannel]);
+  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd]);
 
   // 월별 배송량 차트 데이터 — 배송일(delivery_date) 기준 (배송일 없는 행 제외)
   const shippingChartData=useMemo(()=>{
