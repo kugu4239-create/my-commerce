@@ -1294,6 +1294,11 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 
 const getCSData=()=>{try{return JSON.parse(localStorage.getItem("cs_data")||"[]");}catch{return[];}};
 const saveCSData=d=>localStorage.setItem("cs_data",JSON.stringify(d));
+// CS 행 id 생성기 — 단조 증가 정수(safe integer). 기존 Date.now()+Math.random() 는
+// 1.7e12 규모에서 double 분해능 한계로 대량 업로드 시 충돌(5148건 중 ~776건)이 나
+// cs_data PK insert 가 깨졌다. 단조 정수는 한 세션 내 충돌이 없고 다른 세션과도 사실상 겹치지 않는다.
+let _csIdSeq=0;
+const csNextId=()=>{ _csIdSeq=Math.max(_csIdSeq+1,Date.now()); return _csIdSeq; };
 const getPromosCache=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]").map(p=>({...p,files:p.files||(p.file?[p.file]:[]),file:undefined}));}catch{return[];}};
 const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
 
@@ -11583,7 +11588,12 @@ function CSDataInput() {
       const{data,error}=await db.from("cs_data").select("*").order("id",{ascending:false});
       if(!error&&data){
         if(data.length>0){saveCSData(data);setCSData(data);}
-        else if(local.length>0){await db.from("cs_data").insert(local);}
+        else if(local.length>0){
+          // localStorage → DB 최초 이관: id 재생성(과거 충돌 id 정리) + 스키마 컬럼만 추출
+          const migrated=local.map(r=>({id:csNextId(),date:r.date||"",product_name:r.product_name||"",return_reason:r.return_reason||"",channel:r.channel||"자사몰"}));
+          const{error:insErr}=await db.from("cs_data").insert(migrated);
+          if(!insErr){saveCSData(migrated);setCSData(migrated);}
+        }
       }
     })();
   },[]);
@@ -11647,16 +11657,17 @@ function CSDataInput() {
             const channel=rawCh?normChannel(rawCh):"자사몰";
             for(const prod of splitProducts(rawProd)){
               if(!prod) continue;
-              newEntries.push({id:Date.now()+Math.random(),date:lastDate,product_name:prod,return_reason:reason,channel});
+              newEntries.push({id:csNextId(),date:lastDate,product_name:prod,return_reason:reason,channel});
             }
           }
 
           if(!newEntries.length)throw new Error("유효한 데이터 행이 없습니다");
           const next=[...newEntries,...csData];
           saveCSData(next);setCSData(next);
-          setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료`});
           const db=await getSupabase();
-          await db.from("cs_data").insert(newEntries);
+          const {error:insErr}=await db.from("cs_data").insert(newEntries);
+          if(insErr) setCsvResult({type:"error",msg:`${newEntries.length}건 로컬 저장됨 · DB 저장 실패: ${insErr.message} (Supabase 에 cs_data 테이블이 있는지 확인하세요)`});
+          else setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료`});
         }catch(e){setCsvResult({type:"error",msg:e.message});}
       },e=>setCsvResult({type:"error",msg:e.message}));
   },[csData,today]);
