@@ -11885,7 +11885,7 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
     setLoading(false);
   };
 
-  const startEdit=r=>{
+  const startEdit=useCallback(r=>{
     setEditId(r.id);
     setEditData({
       date:r.date,channel:r.channel,
@@ -11893,9 +11893,9 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
       refund_amount:r.refund_amount||0,refund_count:r.refund_count||0,
     });
     setDeleteConfirm(null);
-  };
+  },[]);
 
-  const saveEdit=async()=>{
+  const saveEdit=useCallback(async()=>{
     const db=await getSupabase();
     const {error}=await db.from("revenues").update({
       amount:Number(editData.amount)||0,
@@ -11904,14 +11904,14 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
       refund_count:Number(editData.refund_count)||0,
     }).eq("id",editId);
     if(!error){setEditId(null);loadHistory();}
-  };
+  },[editData,editId,loadHistory]);
 
-  const handleDelete=async id=>{
+  const handleDelete=useCallback(async id=>{
     if(deleteConfirm!==id){setDeleteConfirm(id);return;}
     const db=await getSupabase();
     await db.from("revenues").delete().eq("id",id);
     setDeleteConfirm(null); loadHistory();
-  };
+  },[deleteConfirm,loadHistory]);
 
   const handleChannelDelete=async()=>{
     if(!chDeleteConfirm){setChDeleteConfirm(true);return;}
@@ -11996,6 +11996,58 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
   const numInp=(v,fn)=>(
     <input type="text" value={v} onChange={e=>fn(e.target.value.replace(/[^0-9,]/g,""))} style={inp}/>
   );
+
+  // 입력 내역 테이블 메모이즈 — 매출/주문/환불 입력을 타이핑할 때마다 대용량 history
+  // 테이블(날짜×채널 수백~수천 행)이 통째로 재렌더되어 브라우저가 일시적으로 멈추던 문제 방지.
+  // 행 엘리먼트를 캐시해, 입력 state 변경(amt 등)으로는 테이블이 재렌더되지 않게 한다.
+  const filteredHist=useMemo(()=>histChFilter==="전체"?history:history.filter(r=>r.channel===histChFilter),[history,histChFilter]);
+  const histTotalAmt=useMemo(()=>filteredHist.reduce((s,r)=>s+(r.amount||0),0),[filteredHist]);
+  const histRowEls=useMemo(()=>filteredHist.map(r=>(
+    <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,
+      background:editId===r.id?D.surfaceAlt:"transparent"}}>
+      {editId===r.id?(
+        <>
+          <td style={{padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
+          <td style={{padding:"5px 7px"}}>{r.channel}</td>
+          {["amount","order_count","refund_amount","refund_count"].map(k=>(
+            <td key={k} style={{padding:"4px 5px"}}>
+              <input type="text" value={editData[k]}
+                onChange={e=>setEditData(prev=>({...prev,[k]:e.target.value}))}
+                style={{width:70,border:`1px solid ${D.border}`,borderRadius:4,
+                  padding:"3px 5px",fontSize:11}}/>
+            </td>
+          ))}
+          <td style={{padding:"4px 5px",whiteSpace:"nowrap"}}>
+            <button onClick={saveEdit} style={{background:D.green,color:"#fff",border:"none",
+              borderRadius:4,padding:"3px 7px",fontSize:10,cursor:"pointer",marginRight:3}}>저장</button>
+            <button onClick={()=>setEditId(null)} style={{background:"transparent",
+              border:`1px solid ${D.border}`,borderRadius:4,padding:"3px 7px",fontSize:10,cursor:"pointer"}}>취소</button>
+          </td>
+        </>
+      ):(
+        <>
+          <td style={{padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
+          <td style={{padding:"5px 7px"}}>{r.channel}</td>
+          <td style={{padding:"5px 7px",fontWeight:600}}>₩{(r.amount||0).toLocaleString()}</td>
+          <td style={{padding:"5px 7px",color:D.textSub}}>{r.order_count||0}</td>
+          <td style={{padding:"5px 7px",color:D.textSub}}>₩{(r.refund_amount||0).toLocaleString()}</td>
+          <td style={{padding:"5px 7px",color:D.textSub}}>{r.refund_count||0}</td>
+          <td style={{padding:"4px 5px",whiteSpace:"nowrap"}}>
+            <button onClick={()=>startEdit(r)} style={{background:"transparent",
+              border:`1px solid ${D.border}`,borderRadius:4,padding:"3px 7px",
+              fontSize:10,cursor:"pointer",marginRight:3,color:D.textSub}}>수정</button>
+            <button onClick={()=>handleDelete(r.id)}
+              style={{background:deleteConfirm===r.id?D.red:"transparent",
+                color:deleteConfirm===r.id?"#fff":D.red,
+                border:`1px solid ${deleteConfirm===r.id?D.red:D.red}`,
+                borderRadius:4,padding:"3px 7px",fontSize:10,cursor:"pointer"}}>
+              {deleteConfirm===r.id?"확인":"삭제"}
+            </button>
+          </td>
+        </>
+      )}
+    </tr>
+  )),[filteredHist,editId,editData,deleteConfirm,startEdit,saveEdit,handleDelete]);
 
   return (
     <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:14}}>
@@ -12162,13 +12214,10 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
             )}
           </div>
         )}
-        {history.length>0?(()=>{
-          const filtered=histChFilter==="전체"?history:history.filter(r=>r.channel===histChFilter);
-          const totalAmt=filtered.reduce((s,r)=>s+(r.amount||0),0);
-          return(
+        {history.length>0?(
           <div style={{overflowY:"auto",maxHeight:520}}>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:6}}>
-              {filtered.length}건 · 합계 ₩{totalAmt.toLocaleString()}
+              {filteredHist.length}건 · 합계 ₩{histTotalAmt.toLocaleString()}
             </div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
@@ -12176,58 +12225,10 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
                   <th key={h} style={{padding:"5px 7px",textAlign:h===""?"center":"left",color:D.textMeta,fontWeight:400}}>{h}</th>
                 ))}
               </tr></thead>
-              <tbody>
-                {filtered.map(r=>(
-                  <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,
-                    background:editId===r.id?D.surfaceAlt:"transparent"}}>
-                    {editId===r.id?(
-                      <>
-                        <td style={{padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
-                        <td style={{padding:"5px 7px"}}>{r.channel}</td>
-                        {["amount","order_count","refund_amount","refund_count"].map(k=>(
-                          <td key={k} style={{padding:"4px 5px"}}>
-                            <input type="text" value={editData[k]}
-                              onChange={e=>setEditData(prev=>({...prev,[k]:e.target.value}))}
-                              style={{width:70,border:`1px solid ${D.border}`,borderRadius:4,
-                                padding:"3px 5px",fontSize:11}}/>
-                          </td>
-                        ))}
-                        <td style={{padding:"4px 5px",whiteSpace:"nowrap"}}>
-                          <button onClick={saveEdit} style={{background:D.green,color:"#fff",border:"none",
-                            borderRadius:4,padding:"3px 7px",fontSize:10,cursor:"pointer",marginRight:3}}>저장</button>
-                          <button onClick={()=>setEditId(null)} style={{background:"transparent",
-                            border:`1px solid ${D.border}`,borderRadius:4,padding:"3px 7px",fontSize:10,cursor:"pointer"}}>취소</button>
-                        </td>
-                      </>
-                    ):(
-                      <>
-                        <td style={{padding:"5px 7px",color:D.textMeta}}>{r.date}</td>
-                        <td style={{padding:"5px 7px"}}>{r.channel}</td>
-                        <td style={{padding:"5px 7px",fontWeight:600}}>₩{(r.amount||0).toLocaleString()}</td>
-                        <td style={{padding:"5px 7px",color:D.textSub}}>{r.order_count||0}</td>
-                        <td style={{padding:"5px 7px",color:D.textSub}}>₩{(r.refund_amount||0).toLocaleString()}</td>
-                        <td style={{padding:"5px 7px",color:D.textSub}}>{r.refund_count||0}</td>
-                        <td style={{padding:"4px 5px",whiteSpace:"nowrap"}}>
-                          <button onClick={()=>startEdit(r)} style={{background:"transparent",
-                            border:`1px solid ${D.border}`,borderRadius:4,padding:"3px 7px",
-                            fontSize:10,cursor:"pointer",marginRight:3,color:D.textSub}}>수정</button>
-                          <button onClick={()=>handleDelete(r.id)}
-                            style={{background:deleteConfirm===r.id?D.red:"transparent",
-                              color:deleteConfirm===r.id?"#fff":D.red,
-                              border:`1px solid ${deleteConfirm===r.id?D.red:D.red}`,
-                              borderRadius:4,padding:"3px 7px",fontSize:10,cursor:"pointer"}}>
-                            {deleteConfirm===r.id?"확인":"삭제"}
-                          </button>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
+              <tbody>{histRowEls}</tbody>
             </table>
           </div>
-          );
-        })():<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>불러오기를 눌러주세요</div>}
+        ):<div style={{color:D.textMeta,textAlign:"center",padding:40,fontSize:12}}>불러오기를 눌러주세요</div>}
       </Card>
     </div>
   );
