@@ -12000,9 +12000,12 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
   // 입력 내역 테이블 메모이즈 — 매출/주문/환불 입력을 타이핑할 때마다 대용량 history
   // 테이블(날짜×채널 수백~수천 행)이 통째로 재렌더되어 브라우저가 일시적으로 멈추던 문제 방지.
   // 행 엘리먼트를 캐시해, 입력 state 변경(amt 등)으로는 테이블이 재렌더되지 않게 한다.
+  // 또 저장 직후 loadHistory 로 history 가 갱신되면 테이블이 한 번에 재렌더되는데, 행이 수천 개면
+  // 그 1회 렌더만으로도 멈춤이 생긴다 → 화면에는 최근 HIST_RENDER_CAP 건만 렌더(전체 건수·합계는 그대로 표기).
+  const HIST_RENDER_CAP=200;
   const filteredHist=useMemo(()=>histChFilter==="전체"?history:history.filter(r=>r.channel===histChFilter),[history,histChFilter]);
   const histTotalAmt=useMemo(()=>filteredHist.reduce((s,r)=>s+(r.amount||0),0),[filteredHist]);
-  const histRowEls=useMemo(()=>filteredHist.map(r=>(
+  const histRowEls=useMemo(()=>filteredHist.slice(0,HIST_RENDER_CAP).map(r=>(
     <tr key={r.id} style={{borderBottom:`1px solid ${D.border}`,
       background:editId===r.id?D.surfaceAlt:"transparent"}}>
       {editId===r.id?(
@@ -12218,6 +12221,7 @@ function RevenueForm({ onUpdate, histRefreshKey=0 }) {
           <div style={{overflowY:"auto",maxHeight:520}}>
             <div style={{fontSize:11,color:D.textMeta,marginBottom:6}}>
               {filteredHist.length}건 · 합계 ₩{histTotalAmt.toLocaleString()}
+              {filteredHist.length>HIST_RENDER_CAP&&<span> · 최근 {HIST_RENDER_CAP}건 표시 (채널 필터로 좁혀보세요)</span>}
             </div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <thead><tr style={{borderBottom:`1px solid ${D.border}`}}>
@@ -13459,27 +13463,31 @@ function ClaudeScriptPanel(){
   );
 }
 
+// 배열에서 가장 늦은 날짜 1개를 단일 패스로 구해 배지로 — sort() 대신 O(n) max
+// (orders 등 대형 배열을 매 렌더마다 정렬하면 저장 직후 App 재렌더 시 멈춤에 기여)
+function lastDateBadge(arr,field){
+  let mx=""; for(const r of arr){ const v=r[field]; if(v&&v>mx) mx=v; }
+  return mx?<span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>({mx})</span>:null;
+}
+
 function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], storeSales=[] }) {
   const [tab,setTab]=useState("revenue");
   // 업로드 내역 패널들에 강제 새로고침 신호 (삭제/업로드 발생 시 증가)
   const [histRefreshKey,setHistRefreshKey]=useState(0);
   const bumpHist=()=>setHistRefreshKey(k=>k+1);
 
-  const lastDate=(arr,field)=>{
-    const d=arr.map(r=>r[field]).filter(Boolean).sort().at(-1);
-    return d?<span style={{fontSize:10,color:D.textMeta,fontWeight:400,marginLeft:4}}>({d})</span>:null;
-  };
-
-  const tabs=[
-    {key:"revenue",name:"매출 입력",extra:lastDate(revenues,"date")},
-    {key:"stock",name:"입고",extra:lastDate(stocks,"upload_date")},
-    {key:"orders",name:"주문·배송",extra:lastDate(orders,"order_date")},
-    {key:"store",name:"매장 판매",extra:lastDate(storeSales,"sale_date")},
+  // tabs 메모이즈 — 저장 시 onUpdate→ts 변경으로 App/DataInput 이 재렌더돼도 데이터
+  // 배열이 그대로면 lastDateBadge(대형 배열 스캔)를 다시 돌리지 않게 한다.
+  const tabs=useMemo(()=>[
+    {key:"revenue",name:"매출 입력",extra:lastDateBadge(revenues,"date")},
+    {key:"stock",name:"입고",extra:lastDateBadge(stocks,"upload_date")},
+    {key:"orders",name:"주문·배송",extra:lastDateBadge(orders,"order_date")},
+    {key:"store",name:"매장 판매",extra:lastDateBadge(storeSales,"sale_date")},
     {key:"inventory",name:"인벤토리"},
     {key:"cs",name:"CS"},
     {key:"script",name:"자동화 스크립트"},
     {key:"delete",name:"데이터 삭제"},
-  ];
+  ],[revenues,stocks,orders,storeSales]);
 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
