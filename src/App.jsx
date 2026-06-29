@@ -20541,7 +20541,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       evs.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
       return {...c,member,evs};
     }).sort((a,b)=>a.phone.localeCompare(b.phone));
-    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰 구매 후 29CM 신규 구매한 고객',f5:'29CM 구매 후 자사몰 신규 구매한 고객',f4:'29CM 구매 후 자사몰 회원가입만',f45:'29CM 구매 후 자사몰 이동 고객',f2:'29CM 구매 고객',f6:'자사몰 회원 등록만 → 29CM 신규 구매'}[segment]||segment;
+    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰 구매 후 29CM 신규 구매한 고객',f5:'29CM 구매 후 자사몰 신규 구매한 고객',f4:'29CM 구매 후 자사몰 회원가입만',f45:'29CM 구매 후 자사몰 이동 고객',f2:'29CM 구매 고객',f6:'자사몰 회원 등록 › 자사몰 구매 없이 29CM 구매'}[segment]||segment;
     setNodeDetail({segment,title,rows});
   },[filtered,orders,cafe24Members,kpi]);
   const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
@@ -20675,7 +20675,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                       extra={`${cmFirstTotal>0?(kpi.counts.f4/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelfReg} grow={0} minH={62}
                       footnote="①" onClick={()=>handleNodeClick('f4')}/>
                     {kpi.counts.f6>0&&(
-                      <VSeg name="자사몰 회원 등록 → 29CM 신규 구매" value={kpi.counts.f6}
+                      <VSeg name="자사몰 회원 등록 › 자사몰 구매 없이 29CM 구매" value={kpi.counts.f6}
                         extra={`${cmFirstTotal>0?(kpi.counts.f6/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmReg} grow={kpi.counts.f6} minH={62}
                         footnote="④" onClick={()=>handleNodeClick('f6')}/>
                     )}
@@ -20724,7 +20724,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
             ① 교차 채널 이동: <b style={{ color:PANEL.text }}>이동 채널 최초 구매일</b>이 선택 기간 내인 고객 — 출발 채널 최초 구매는 기간 이전일 수 있음<br/>
             ② '29CM 신규 구매': 자사몰 구매 이력이 있는 고객의 <b style={{ color:PANEL.text }}>29CM 첫 방문 구매</b> (29CM 관점에서는 신규 고객)<br/>
             ③ '자사몰 신규 구매': 29CM 구매 이력이 있는 고객의 <b style={{ color:PANEL.text }}>자사몰 첫 구매</b> (자사몰 관점에서는 신규 고객)<br/>
-            ④ '29CM 구매 고객'에는 자사몰 회원으로 등록했으나 <b style={{ color:PANEL.text }}>자사몰 구매 이력 없이</b> 29CM에서만 구매한 고객이 포함됨 ('자사몰 회원 등록 → 29CM 신규 구매' 노드)
+            ④ '29CM 구매 고객'에는 자사몰 회원으로 등록했으나 <b style={{ color:PANEL.text }}>자사몰 구매 이력 없이</b> 29CM에서만 구매한 고객이 포함됨 ('자사몰 회원 등록 › 자사몰 구매 없이 29CM 구매' 노드)
           </div>
         </div>
 
