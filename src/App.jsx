@@ -20096,9 +20096,9 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
 const FUNNELS=[
   {key:"f1",label:"자사몰 단독 유입",color:"#7EADD4"},
   {key:"f2",label:"29CM 단독 유입",color:"#7EB89E"},
-  {key:"f3",label:"자사몰 구매 후 29CM 재구매",color:"#D4A574"},
+  {key:"f3",label:"자사몰 구매 후 29CM 신규 구매",color:"#D4A574"},
   {key:"f4",label:"29CM 구매 후 자사몰 회원가입",color:"#9E92C8"},
-  {key:"f5",label:"29CM 구매 후 자사몰 재구매",color:"#C0392B"},
+  {key:"f5",label:"29CM 구매 후 자사몰 신규 구매",color:"#C0392B"},
 ];
 
 // 전환일(YYYY-MM-DD) → 주/월/분기 버킷 라벨
@@ -20287,16 +20287,11 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     return {rows:out,guests};
   },[orders,cafe24Members]);
 
-  // 전환일 기준 기간 필터 — 교차 이동(f3/f4/f5)은 출발 채널 구매일(tDateA)도 기간 내여야 집계
-  const filtered=useMemo(()=>{
-    const base=filterByDate(classified.rows,"tDate",period,customStart,customEnd);
-    if(period==="all") return base;
-    return base.filter(c=>{
-      if(c.funnel!=='f3'&&c.funnel!=='f4'&&c.funnel!=='f5') return true;
-      if(!c.tDateA) return true;
-      return filterByDate([c],"tDateA",period,customStart,customEnd).length>0;
-    });
-  },[classified,period,customStart,customEnd]);
+  // 전환일(이동 도착 채널 최초 구매일) 기준 기간 필터 — 출발 채널 구매일은 기간 외여도 집계
+  const filtered=useMemo(
+    ()=>filterByDate(classified.rows,"tDate",period,customStart,customEnd),
+    [classified,period,customStart,customEnd]
+  );
 
   // KPI + 퍼널 카운트 (필터된 고객 기준)
   const kpi=useMemo(()=>{
@@ -20539,7 +20534,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       evs.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
       return {...c,member,evs};
     }).sort((a,b)=>a.phone.localeCompare(b.phone));
-    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰에서 구매 후 29CM에서 재구매한 고객',f5:'29CM 구매 후 자사몰 재구매',f4:'29CM 구매 후 자사몰 회원가입만',f45:'29CM에서 구매 후 자사몰로 이동한 고객',f2:'29CM 순수 이용 고객',f6:'자사몰 회원 등록만 → 29CM 첫 구매'}[segment]||segment;
+    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰 구매 후 29CM 신규 구매한 고객',f5:'29CM 구매 후 자사몰 신규 구매한 고객',f4:'29CM 구매 후 자사몰 회원가입만',f45:'29CM 구매 후 자사몰 이동 고객',f2:'29CM 구매 고객',f6:'자사몰 회원 등록만 → 29CM 신규 구매'}[segment]||segment;
     setNodeDetail({segment,title,rows});
   },[filtered,orders,cafe24Members,kpi]);
   const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
@@ -20663,16 +20658,16 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                 <VSeg name="자사몰 순수 이용 고객" value={kpi.counts.f1}
                   extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}
                   onClick={()=>handleNodeClick('f1')}/>
-                <VSeg name="자사몰에서 구매 후 29CM에서 재구매한 고객" value={kpi.counts.f3}
-                  extraLabel="유출율" extra={`${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
+                <VSeg name="자사몰 구매 후 29CM 신규 구매한 고객" value={kpi.counts.f3}
+                  extra={`${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
                   onClick={()=>handleNodeClick('f3')}/>
-                <VSeg name="29CM 구매 후 자사몰 재구매" value={kpi.counts.f5}
-                  extraLabel="유출율" extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={62}
+                <VSeg name="29CM 구매 후 자사몰 신규 구매" value={kpi.counts.f5}
+                  extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={62}
                   onClick={()=>handleNodeClick('f5')}/>
                 <VSeg name="29CM 구매 후 자사몰 회원가입만" value={kpi.counts.f4}
                   extra={`${cmFirstTotal>0?(kpi.counts.f4/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelfReg} grow={0} minH={62}
                   onClick={()=>handleNodeClick('f4')}/>
-                <VSeg name="29CM 순수 이용 고객" value={kpi.counts.f2+kpi.counts.f6}
+                <VSeg name="29CM 구매 고객" value={kpi.counts.f2+kpi.counts.f6}
                   extra={`${cmFirstTotal>0?((kpi.counts.f2+kpi.counts.f6)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={(kpi.counts.f2+kpi.counts.f6)||1} minH={62}
                   onClick={()=>handleNodeClick('f2')}/>
               </div>
@@ -20705,16 +20700,23 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
               * 주문 배송 정보에 회원 가입 시 기재한 번호와 다른 번호를 기입한 경우가 합산되어 미매칭건으로 이어지기도 합니다.
             </div>
           )}
+          <div style={{ marginTop:12, fontSize:10, color:PANEL.sub, lineHeight:1.8, borderTop:`1px solid ${PANEL.track}`, paddingTop:10 }}>
+            <b style={{ color:PANEL.text }}>집계 기준</b><br/>
+            ① 교차 채널 이동: <b style={{ color:PANEL.text }}>이동 채널 최초 구매일</b>이 선택 기간 내인 고객 — 출발 채널 최초 구매는 기간 이전일 수 있음<br/>
+            ② '29CM 신규 구매': 자사몰 구매 이력이 있는 고객의 <b style={{ color:PANEL.text }}>29CM 첫 방문 구매</b> (29CM 관점에서는 신규 고객)<br/>
+            ③ '자사몰 신규 구매': 29CM 구매 이력이 있는 고객의 <b style={{ color:PANEL.text }}>자사몰 첫 구매</b> (자사몰 관점에서는 신규 고객)<br/>
+            ④ '29CM 구매 고객'에는 자사몰 회원으로 등록했으나 <b style={{ color:PANEL.text }}>자사몰 구매 이력 없이</b> 29CM에서만 구매한 고객이 포함됨 (아래 항목 참조)
+          </div>
           {kpi.counts.f6>0&&(
-            <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${PANEL.track}` }}>
-              <div style={{ fontSize:10.5, fontWeight:700, color:PANEL.sub, marginBottom:6, letterSpacing:0.3 }}>자사몰 회원 등록만 → 29CM 첫 구매</div>
+            <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${PANEL.track}` }}>
+              <div style={{ fontSize:10.5, fontWeight:700, color:PANEL.sub, marginBottom:6, letterSpacing:0.3 }}>자사몰 회원 등록만 → 29CM 신규 구매</div>
               <div style={{ display:"flex", alignItems:"center", gap:20 }}>
                 <div>
                   <span style={{ fontSize:26, fontWeight:800, color:PANEL.text, lineHeight:1 }}>{kpi.counts.f6.toLocaleString()}</span>
                   <span style={{ fontSize:12, fontWeight:700, color:PANEL.text, marginLeft:3 }}>명</span>
                 </div>
                 <div style={{ fontSize:18, fontWeight:800, color:PANEL.sub }}>{kpi.total>0?(kpi.counts.f6/kpi.total*100).toFixed(1):0}%</div>
-                <div style={{ fontSize:10.5, color:PANEL.sub }}>자사몰 구매 이력 없이 29CM에서만 구매한 회원</div>
+                <div style={{ fontSize:10.5, color:PANEL.sub }}>자사몰 회원이지만 자사몰 구매 없이 29CM에서 처음 구매한 고객</div>
               </div>
             </div>
           )}
