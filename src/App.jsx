@@ -20311,6 +20311,26 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     return Object.values(m).sort((a,b)=>a.bucket<b.bucket?-1:1);
   },[filtered,gran]);
 
+  // 고객 동선 조회 — 휴대폰번호로 가입/주문 이벤트를 시간순으로 추적 (검증용)
+  const [query,setQuery]=useState("");
+  const journey=useMemo(()=>{
+    const q=normPhone(query);
+    if(q.length<4) return null;
+    const member=cafe24Members.find(m=>(m.phone_norm||normPhone(m.phone))===q)||null;
+    const evs=[];
+    if(member&&member.join_date) evs.push({date:member.join_date,kind:"join"});
+    orders.forEach(o=>{
+      if((o.orderer_phone||"")!==q) return;
+      if(!o.order_date) return;
+      evs.push({date:o.order_date,kind:"order",channel:o.channel,product:o.product_name,status:o.status,qty:o.qty});
+    });
+    evs.sort((a,b)=>(a.date<b.date?-1:a.date>b.date?1:0));
+    const cls=classified.rows.find(r=>r.phone===q)||null;
+    const selfN=evs.filter(e=>e.kind==="order"&&e.channel==="자사몰").length;
+    const cmN=evs.filter(e=>e.kind==="order"&&e.channel==="29CM").length;
+    return {q,member,evs,funnel:cls?cls.funnel:null,selfN,cmN};
+  },[query,orders,cafe24Members,classified]);
+
   const barData=FUNNELS.map(f=>({label:f.label,value:kpi.counts[f.key],color:f.color}));
   const hasData=classified.rows.length>0;
   const presets=[["3m","최근 3개월"],["6m","최근 6개월"],["1m","최근 한달"],["all","전체"]];
@@ -20333,6 +20353,57 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       </div>
 
       <Cafe24MemberUploader existing={cafe24Members} onDone={onDataChange}/>
+
+      {/* 고객 동선 조회 (검증용) */}
+      <div style={card}>
+        <div style={{ fontSize:13, fontWeight:700, color:D.black, marginBottom:8 }}>고객 동선 조회</div>
+        <input value={query} onChange={e=>setQuery(e.target.value)} inputMode="numeric"
+          placeholder="휴대폰번호 입력 (예: 010-1234-5678)"
+          style={{ width:"100%", boxSizing:"border-box", padding:"9px 12px", fontSize:13,
+            border:`1px solid ${D.border}`, borderRadius:8, outline:"none" }}/>
+        {journey&&(
+          journey.evs.length===0&&!journey.member?(
+            <div style={{ fontSize:12, color:D.textMeta, marginTop:10 }}>조회 결과가 없습니다. (회원·주문 데이터에 해당 휴대폰이 없음)</div>
+          ):(
+            <div style={{ marginTop:12 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:10 }}>
+                <span style={{ fontSize:13, fontWeight:700, color:D.black }}>{journey.q}</span>
+                {journey.member?(
+                  <span style={{ fontSize:11, color:D.textSub }}>
+                    카페24 회원{journey.member.name?` · ${journey.member.name}`:""}{journey.member.grade?` · ${journey.member.grade}`:""}{journey.member.join_date?` · 가입 ${journey.member.join_date}`:""}
+                  </span>
+                ):(
+                  <span style={{ fontSize:11, color:D.textMeta }}>카페24 회원 아님 (비회원)</span>
+                )}
+                {journey.funnel&&(()=>{const f=FUNNELS.find(x=>x.key===journey.funnel);return(
+                  <span style={{ fontSize:10.5, fontWeight:700, color:"#fff", background:f.color, borderRadius:5, padding:"2px 8px" }}>{f.label}</span>
+                );})()}
+                <span style={{ fontSize:10.5, color:D.textMeta }}>자사몰 {journey.selfN}건 · 29CM {journey.cmN}건</span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {journey.evs.map((e,i)=>{
+                  const isJoin=e.kind==="join";
+                  const col=isJoin?D.blue:(CH_COLOR[e.channel]||D.textMeta);
+                  return (
+                    <div key={i} style={{ display:"flex", alignItems:"center", gap:10, fontSize:12 }}>
+                      <span style={{ fontVariantNumeric:"tabular-nums", color:D.textMeta, minWidth:84 }}>{e.date}</span>
+                      <span style={{ width:8, height:8, borderRadius:8, background:col, flexShrink:0 }}/>
+                      {isJoin?(
+                        <span style={{ color:D.blue, fontWeight:600 }}>카페24 회원 가입</span>
+                      ):(
+                        <span style={{ color:D.text }}>
+                          <b style={{ color:col }}>{e.channel}</b> 주문{e.product?` · ${e.product}`:""}
+                          {e.qty?` ×${e.qty}`:""}{e.status&&e.status!=="배송"?` (${e.status})`:""}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        )}
+      </div>
 
       {!hasData?(
         <div style={{ ...card, textAlign:"center", color:D.textMeta, fontSize:12.5, padding:"34px 16px" }}>
