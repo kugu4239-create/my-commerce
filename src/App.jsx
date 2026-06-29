@@ -20426,9 +20426,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     const t=TONE[tone];
     return (
       <div style={{ height:"100%", minHeight:52, background:t.card, borderRadius:8, padding:"12px 10px",
-        display:"flex", flexDirection:"column", justifyContent:"space-between", alignItems:"center", textAlign:"center", boxSizing:"border-box", overflow:"hidden" }}>
+        display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", boxSizing:"border-box", overflow:"hidden" }}>
         <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
-        <div>
+        <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
           <div style={{ fontSize:17, fontWeight:800, color:t.ink, lineHeight:1.1 }}>{value.toLocaleString()}명</div>
           {sub&&<div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:1 }}>{sub}</div>}
         </div>
