@@ -18900,35 +18900,33 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
     return inMonths.length?inMonths[inMonths.length-1].iso:null;
   },[grid]);
 
-  // ── 포스트 임팩트 점수 (0~5★) — 당일 태깅 상품 판매 수량 기준 ──
-  // 산식: dayQty = 포스트 게시일(D+0) 태깅 상품 총 판매 수량
+  // ── 포스트 임팩트 점수 (0~5★) — Pre/Post Sales Lift (당일 포함) ──
+  // 산식: Lift% = (Post_qty - Pre14_qty) / max(Pre14_qty, 1) × 100
+  //   Pre14_qty = 포스트 전 14일간 태깅 상품 총 판매 수량 (D−14 ~ D−1)
+  //   Post_qty  = 포스트 당일 + 후 14일 태깅 상품 총 판매 수량 (D+0 ~ D+14)
   // 별 등급(임계치):
-  //   ≥ 50개 → 5★
-  //   ≥ 20개 → 4★
-  //   ≥ 10개 → 3★
-  //   ≥  5개 → 2★
-  //   ≥  1개 → 1★
-  //        0 → 0★
-  const qtyToStars=(qty)=>{
-    if(qty>=50) return 5;
-    if(qty>=20) return 4;
-    if(qty>=10) return 3;
-    if(qty>=5) return 2;
-    if(qty>=1) return 1;
+  //   ≥ +100% → 5★  |  +50~99% → 4★  |  +20~49% → 3★
+  //   +5~19%  → 2★  |  −5~+5%  → 1★  |  ≤ −5%   → 0★
+  const liftToStars=(lift)=>{
+    if(lift>=100) return 5;
+    if(lift>=50) return 4;
+    if(lift>=20) return 3;
+    if(lift>=5) return 2;
+    if(lift>=-5) return 1;
     return 0;
   };
   const postScores=useMemo(()=>{
-    const map={}; // postId → {stars, dayQty, preQty, postQty, preDays[], postDays[], tagged, WINDOW}
+    const map={}; // postId → {stars, lift, preQty, postQty, preDays[], postDays[], tagged, WINDOW}
     const WINDOW=14;
     const dayMs=86400000;
     igPosts.forEach(post=>{
       const tagged=postProductsMap[post.id]||[];
       if(!tagged.length){
-        map[post.id]={stars:0,dayQty:0,preQty:0,postQty:0,preDays:[],postDays:[],tagged:[],WINDOW,empty:true};
+        map[post.id]={stars:0,lift:0,preQty:0,postQty:0,preDays:[],postDays:[],tagged:[],WINDOW,empty:true};
         return;
       }
       const baseMs=new Date(post.post_date).getTime();
-      const collectDay=(offset)=>{
+      const collect=(offset)=>{
         const iso=new Date(baseMs+offset*dayMs).toISOString().slice(0,10);
         const dd=dailyData[iso];
         let dQty=0;
@@ -18937,16 +18935,14 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         });
         return {iso,qty:dQty};
       };
-      const dayEntry=collectDay(0);
-      const dayQty=dayEntry.qty;
       const preDays=[],postDays=[];
-      for(let i=WINDOW;i>=1;i--) preDays.push(collectDay(-i));
-      for(let i=1;i<=WINDOW;i++) postDays.push(collectDay(i));
+      for(let i=WINDOW;i>=1;i--) preDays.push(collect(-i));
+      for(let i=0;i<WINDOW;i++) postDays.push(collect(i)); // D+0 ~ D+13 (당일 포함 14일)
       const preQty=preDays.reduce((s,d)=>s+d.qty,0);
       const postQty=postDays.reduce((s,d)=>s+d.qty,0);
       const lift=preQty>0?((postQty-preQty)/preQty*100):(postQty>0?100:0);
-      const stars=qtyToStars(dayQty);
-      map[post.id]={stars,dayQty,lift,preQty,postQty,preDays,postDays,tagged,WINDOW};
+      const stars=liftToStars(lift);
+      map[post.id]={stars,lift,preQty,postQty,preDays,postDays,tagged,WINDOW};
     });
     return map;
   },[igPosts,postProductsMap,dailyData]);
@@ -19395,7 +19391,7 @@ function ContentImpact({ orders=[], revenues=[], storeSales=[] }) {
         ① 셀 클릭 → 인스타그램 URL 등록 → 모달에서 소개 상품 검색·태깅<br/>
         ② 하단 중앙 토글로 <b style={{color:D.text}}>포스트 임팩트 분석</b> ON → 상단에 KPI + 판매 속도 timeline + 속도계 + 태그×매출 산점도 + 자동 인사이트 표시. 포스트가 있는 셀은 임팩트 카드로 변형됩니다.<br/>
         ③ 매칭이 다음 달까지 이어지면 셀에 <span style={{color:D.blue,fontWeight:600}}>▸N월</span> 버튼 표시 — 클릭하면 그 달로 이동<br/>
-        <span style={{color:D.text}}>★ 임팩트 점수</span>: 포스팅 당일 태깅 상품 판매 수량을 5★ 등급으로 변환 (0→0★, 1→1★, 5→2★, 10→3★, 20→4★, 50+→5★) — ★를 클릭하면 산식·일별 표 모달
+        <span style={{color:D.text}}>★ 임팩트 점수</span>: 포스팅 전 14일 vs 당일 포함 후 14일(D+0~D+13) 태깅 상품 판매 변화율을 5★ 등급으로 변환 — ★를 클릭하면 산식·일별 표 모달
       </div>
 
       {/* 포스트 등록·관리 모달 */}
@@ -19929,11 +19925,11 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
           boxShadow:"0 8px 40px rgba(0,0,0,0.22)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,gap:10}}>
           <div>
-            <div style={{fontWeight:700,fontSize:16,color:D.black}}>임팩트 점수 — 당일 태깅 상품 판매 수량
+            <div style={{fontWeight:700,fontSize:16,color:D.black}}>임팩트 점수 — Pre/Post Sales Lift
               <span style={{fontSize:12,color:D.textMeta,fontWeight:500,marginLeft:6}}>· {iso}</span>
             </div>
             <div style={{fontSize:11,color:D.textMeta,marginTop:3}}>
-              포스트 게시 <b>당일(D+0)</b> 태깅 상품 총 판매 수량을 5★ 등급으로 변환
+              포스트 게시 <b>전 14일(D−14~D−1)</b> vs <b>당일 포함 후 14일(D+0~D+13)</b> 태깅 상품 판매 수량 변화율(%)로 5★ 점수 산출
             </div>
           </div>
           <button onClick={onClose}
@@ -19945,23 +19941,25 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
         <div style={{background:D.surfaceAlt,borderRadius:8,padding:"12px 14px",marginBottom:14,fontSize:12,color:D.text,lineHeight:1.7}}>
           <div style={{fontWeight:700,marginBottom:6}}>산식</div>
           <div style={{fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:12,marginBottom:8,color:D.textSub}}>
-            dayQty = 포스트 게시일 태깅 상품 총 판매 수량 (D+0)
+            Lift% = (Post14_qty − Pre14_qty) / max(Pre14_qty, 1) × 100<br/>
+            Pre14_qty&nbsp; = 포스트 전 14일간 태깅 상품 총 판매 수량 (D−14 ~ D−1)<br/>
+            Post14_qty = 포스트 당일 포함 14일 태깅 상품 총 판매 수량 (D+0 ~ D+13)
           </div>
-          <div style={{fontWeight:700,marginTop:10,marginBottom:6,color:D.text}}>별 등급</div>
+          <div style={{fontWeight:700,marginTop:10,marginBottom:6,color:D.text}}>별 등급 (업계 통용 임계치)</div>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
             <thead><tr style={{color:D.textMeta}}>
-              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>당일 판매 수량</th>
+              <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>Lift</th>
               <th style={{textAlign:"left",padding:"4px 6px",fontWeight:600}}>의미</th>
               <th style={{textAlign:"center",padding:"4px 6px",fontWeight:600}}>★</th>
             </tr></thead>
             <tbody>
               {[
-                ["≥ 50개","강한 당일 반응",5],
-                ["≥ 20개","매우 유의미",4],
-                ["≥ 10개","유의미",3],
-                ["≥  5개","약한 반응",2],
-                ["≥  1개","미약한 반응",1],
-                ["   0개","당일 판매 없음",0],
+                ["≥ +100%","매출 2배 이상 — 강한 임팩트",5],
+                ["+50 ~ 99%","매우 유의미",4],
+                ["+20 ~ 49%","유의미",3],
+                ["+5 ~ 19%","약한 양의 효과",2],
+                ["−5 ~ +5%","중립 / 변동 범위",1],
+                ["≤ −5%","부정 효과",0],
               ].map(([range,desc,n])=>(
                 <tr key={range} style={{borderTop:`1px solid ${D.border}`}}>
                   <td style={{padding:"4px 6px",fontFamily:"'JetBrains Mono','Courier New',monospace",color:D.text}}>{range}</td>
@@ -19974,6 +19972,9 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
               ))}
             </tbody>
           </table>
+          <div style={{marginTop:10,padding:"6px 10px",background:`${D.amber}10`,border:`1px solid ${D.amber}40`,borderRadius:4,color:D.text,fontSize:11.5}}>
+            <b>한계</b>: 통제군 없는 단순 Pre/Post 비교라 계절성·외부 이벤트 영향을 분리하지 못합니다.
+          </div>
         </div>
 
         {/* 포스트별 실제 계산 */}
@@ -20006,33 +20007,38 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
                 </div>
               </div>
 
-              {/* 요약 지표 — 당일 / Pre / Post */}
+              {/* 요약 지표 — Pre / Post / Lift */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
-                <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}30`,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:D.textMeta}}>당일 판매 <span style={{color:D.textMeta}}>(D+0)</span></div>
-                  <div style={{fontSize:14,fontWeight:700,color:D.blue}}>{(s.dayQty||0).toLocaleString()}개</div>
-                </div>
                 <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
                   <div style={{fontSize:10,color:D.textMeta}}>Pre14_qty <span style={{color:D.textMeta}}>(D−14 ~ D−1)</span></div>
-                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.preQty||0).toLocaleString()}개</div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.preQty||0).toLocaleString()}장</div>
                 </div>
                 <div style={{background:D.surfaceAlt,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:D.textMeta}}>Post14_qty <span style={{color:D.textMeta}}>(D+1 ~ D+14)</span></div>
-                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.postQty||0).toLocaleString()}개</div>
+                  <div style={{fontSize:10,color:D.textMeta}}>Post14_qty <span style={{color:D.textMeta}}>(D+0 ~ D+13)</span></div>
+                  <div style={{fontSize:14,fontWeight:700,color:D.text}}>{(s.postQty||0).toLocaleString()}장</div>
+                </div>
+                <div style={{background:`${(s.lift||0)>=0?D.green:D.red}10`,
+                  border:`1px solid ${(s.lift||0)>=0?D.green:D.red}30`,
+                  borderRadius:6,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:D.textMeta}}>Sales Lift</div>
+                  <div style={{fontSize:14,fontWeight:700,color:(s.lift||0)>=0?D.green:D.red}}>
+                    {(s.lift||0)>=0?"+":""}{(s.lift||0).toFixed(1)}%
+                  </div>
                 </div>
               </div>
 
               {/* 최종 계산 step */}
               <div style={{background:`${D.blue}08`,border:`1px solid ${D.blue}25`,borderRadius:6,padding:"8px 12px",marginBottom:12,
                 fontFamily:"'JetBrains Mono','Courier New',monospace",fontSize:11.5,color:D.text,lineHeight:1.7}}>
-                dayQty = {(s.dayQty||0).toLocaleString()}개 → ★ = qtyToStars({(s.dayQty||0).toLocaleString()}) = <b>{s.stars}/5</b>
+                Lift% = ({(s.postQty||0).toLocaleString()} − {(s.preQty||0).toLocaleString()}) / max({(s.preQty||0).toLocaleString()}, 1) × 100 = <b>{(s.lift||0).toFixed(1)}%</b><br/>
+                ★ = liftToStars({(s.lift||0).toFixed(1)}%) = <b>{s.stars}/5</b>
               </div>
 
               {/* Pre / Post 일별 breakdown */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                 {[
                   {label:"Pre 14일 (D−14 ~ D−1)",rows:s.preDays||[],sign:-1,total:s.preQty||0},
-                  {label:"Post 14일 (D+1 ~ D+14)",rows:s.postDays||[],sign:1,total:s.postQty||0},
+                  {label:"Post 14일 (D+0 ~ D+13)",rows:s.postDays||[],sign:1,total:s.postQty||0},
                 ].map((blk,bi)=>(
                   <div key={bi}>
                     <div style={{fontSize:11,color:D.textMeta,marginBottom:4,fontWeight:600}}>{blk.label}</div>
