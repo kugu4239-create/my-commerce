@@ -20445,8 +20445,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const chCol=ch=>ch==="자사몰"?CH.self:ch==="29CM"?CH.cm:"#8a8a8a";
   // 채널별 요소 카드 색상 (자사몰=블루 톤 / 29CM=그린 톤 / 중립=크림)
   const TONE={
-    self:{ card:"#0E1E3A", ink:"#ffffff", bar:CH.self },
-    cm:{ card:"#0D3526", ink:"#ffffff", bar:CH.cm },
+    self:{ card:"#1E3875", ink:"#ffffff", bar:CH.self },
+    cm:{ card:"#1A6848", ink:"#ffffff", bar:CH.cm },
     neutral:{ card:"#ffffff", ink:"#1a1a1a", bar:"#888880" },
   };
   const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
@@ -20473,7 +20473,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
   // 자사몰에 가까울수록 진한 네이비, 29CM로 기울수록 크림 계열
-  const SEG={ selfFixed:"#0E1E3A", selfToCm:"#1A3E80", cmToSelf:"#186080", cmToSelfReg:"#187068", cmFixed:"#0D3526", cmReg:"#1A6040" };
+  const SEG={ selfFixed:"#1E3875", selfToCm:"#1A3E80", cmToSelf:"#186080", cmToSelfReg:"#187068", cmFixed:"#1A6848", cmReg:"#1A6040" };
   const VSeg=({name,value,extra,extraLabel,footnote,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
@@ -20679,9 +20679,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                   </div>
                 </div>
                 {/* 3) VSeg 노드 스택 */}
-                <div style={{ flex:1, minWidth:400, minHeight:FLOW_H, display:"flex", flexDirection:"column" }}>
+                <div style={{ flex:1, minWidth:400, minHeight:FLOW_H, display:"flex", flexDirection:"column", gap:1, background:"#fff" }}>
                   {/* ── 자사몰 그룹: VBar 자사몰 비율과 동일한 flexGrow ── */}
-                  <div style={{ display:"flex", flexDirection:"column", flexGrow:selfFirstTotal||1, flexBasis:0, minHeight:168 }}>
+                  <div style={{ display:"flex", flexDirection:"column", flexGrow:selfFirstTotal||1, flexBasis:0, minHeight:168, gap:1, background:"#fff" }}>
                     <VSeg name="자사몰 순수 구매 고객" value={kpi.counts.f1}
                       extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={80}
                       onClick={()=>handleNodeClick('f1')}/>
@@ -20690,7 +20690,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                       footnote="①②" onClick={()=>handleNodeClick('f3')}/>
                   </div>
                   {/* ── 29CM 그룹: VBar 29CM 비율과 동일한 flexGrow ── */}
-                  <div style={{ display:"flex", flexDirection:"column", flexGrow:cmFirstTotal||1, flexBasis:0, minHeight:330 }}>
+                  <div style={{ display:"flex", flexDirection:"column", flexGrow:cmFirstTotal||1, flexBasis:0, minHeight:330, gap:1, background:"#fff" }}>
                     <VSeg name="29CM 구매 후 자사몰 신규 유입 고객" value={kpi.counts.f5}
                       extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={80}
                       footnote="①③" onClick={()=>handleNodeClick('f5')}/>
