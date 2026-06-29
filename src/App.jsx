@@ -20097,8 +20097,8 @@ const FUNNELS=[
   {key:"f1",label:"자사몰 단독 유입",color:"#7EADD4"},
   {key:"f2",label:"29CM 단독 유입",color:"#7EB89E"},
   {key:"f3",label:"자사몰 → 29CM 이동",color:"#D4A574"},
-  {key:"f4",label:"29CM → 자사몰 회원가입",color:"#9E92C8"},
-  {key:"f5",label:"29CM → 자사몰 주문",color:"#C0392B"},
+  {key:"f4",label:"29CM에서 첫 구매 후 → 자사몰 회원가입",color:"#9E92C8"},
+  {key:"f5",label:"29CM에서 첫 구매 후 → 자사몰 주문",color:"#C0392B"},
 ];
 
 // 전환일(YYYY-MM-DD) → 주/월/분기 버킷 라벨
