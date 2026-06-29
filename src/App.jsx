@@ -20325,7 +20325,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   },[filtered,gran]);
 
   // 자사몰 회원 가입 수 · 29CM 신규 유입 수 추이 (월/분기/연)
-  const [signupGran,setSignupGran]=useState("month");
+  const [signupGran,setSignupGran]=useState("year");
   const signupSeries=useMemo(()=>{
     // 자사몰 회원 가입: 회원 가입일 기준
     const memberRows=cafe24Members.filter(mm=>mm.join_date).map(mm=>({d:mm.join_date}));
@@ -20347,8 +20347,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     return Object.values(m).sort((a,b)=>a.bucket<b.bucket?-1:1);
   },[cafe24Members,orders,period,customStart,customEnd,signupGran]);
 
-  // 재구매 도넛 드릴다운 — {channel, bucketIdx} 선택 시 고객 전화번호·구매 상품 목록
-  const [drill,setDrill]=useState(null);
+  // 재구매 도넛 드릴다운 — {channel, bucketIdx} 선택 시 고객 전화번호·구매 상품 목록 (기본: 자사몰 5회 이상)
+  const [drill,setDrill]=useState({channel:"자사몰",bucketIdx:4});
   const drillData=useMemo(()=>{
     if(!drill) return null;
     const ch=drill.channel;
@@ -20419,6 +20419,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     neutral:{ card:PANEL.card, ink:PANEL.ink, bar:"#b9b6ad" },
   };
   const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
+  const REPEAT_LABELS=["2회","3회","4회","5회 이상"];   // 재구매 도넛(1회 제외)
   const SELF_SHADES=["#cfe0ef","#a9c8e2","#7EADD4","#5b8fbd","#3f6f9e"];
   const CM_SHADES=["#cfe6da","#a6d0bd","#7EB89E","#5f9c82","#447e68"];
   // 세로 비율 바 (부모 높이를 100% 채워 비율대로 표시 · 항목명 볼드/대형/중앙)
@@ -20427,7 +20428,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     return (
       <div style={{ height:"100%", minHeight:52, background:t.card, borderRadius:8, padding:"12px 10px",
         display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", boxSizing:"border-box", overflow:"hidden" }}>
-        <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
+        <div style={{ flex:"0 0 30%", display:"flex", alignItems:"center" }}>
+          <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
+        </div>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
           <div style={{ fontSize:17, fontWeight:800, color:t.ink, lineHeight:1.1 }}>{value.toLocaleString()}명</div>
           {sub&&<div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:1 }}>{sub}</div>}
@@ -20437,35 +20440,19 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   };
   // 가로 막대 — 전체 고객(total) 모수 대비 채움 + 퍼센트 (항목명 볼드/대형/중앙)
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
-  const StackBar=({title,total,segs})=>(
-    <div>
-      <div style={{ fontSize:13.5, fontWeight:800, color:PANEL.text, textAlign:"center", marginBottom:7 }}>{title}</div>
-      <div style={{ display:"flex", height:28, borderRadius:7, overflow:"hidden", background:PANEL.track }}>
-        {segs.map((s,i)=>(
-          <div key={i} style={{ width:`${total>0?s.value/total*100:0}%`, background:s.color, transition:"width .2s" }}/>
-        ))}
-      </div>
-      <div style={{ display:"flex", justifyContent:"space-between", gap:12, marginTop:7 }}>
-        {segs.map((s,i)=>{
-          const pct=total>0?s.value/total*100:0;
-          const right=i===segs.length-1&&segs.length>1;
-          return (
-            <div key={i} style={{ textAlign:right?"right":"left" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:5, justifyContent:right?"flex-end":"flex-start" }}>
-                <span style={{ width:9, height:9, borderRadius:9, background:s.color, flexShrink:0 }}/>
-                <span style={{ fontSize:12, fontWeight:700, color:PANEL.text }}>{s.name}</span>
-              </div>
-              <div style={{ fontSize:11, color:PANEL.sub, marginTop:2 }}>{s.value.toLocaleString()}명 · {pct.toFixed(1)}%{s.note?` · ${s.note}`:""}</div>
-            </div>
-          );
-        })}
-      </div>
+  // 단일 세로 스택 노드의 한 구간
+  const SEG={ selfFixed:"#3b4db0", selfToCm:"#b8473d", cmToSelf:"#2f8f86", cmFixed:"#1f9d9d" };
+  const VSeg=({name,value,extra,color,grow,minH})=>(
+    <div style={{ flexGrow:grow, flexBasis:0, minHeight:minH, background:color,
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textAlign:"center", padding:"6px 12px", color:"#fff", overflow:"hidden" }}>
+      <div style={{ fontSize:12.5, fontWeight:800, lineHeight:1.25 }}>{name}</div>
+      <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.96 }}>{value.toLocaleString()}명{extra?` · ${extra}`:""}</div>
     </div>
   );
   // 재구매 분포 도넛(링) + 범례 (제목 옆 재구매율 · 범례 클릭 시 고객/상품 드릴다운)
-  const Ring=({title,dist,shades,rate,onPick})=>{
+  const Ring=({title,dist,shades,rate,onPick,labels=DIST_LABELS})=>{
     const sum=dist.reduce((a,b)=>a+b,0);
-    const data=dist.map((v,i)=>({name:DIST_LABELS[i],value:v}));
+    const data=dist.map((v,i)=>({name:labels[i],value:v}));
     return (
       <div style={{ minWidth:182 }}>
         <div style={{ textAlign:"center", marginBottom:6 }}>
@@ -20489,7 +20476,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           </div>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:2, marginTop:8 }}>
-          {DIST_LABELS.map((l,i)=>{
+          {labels.map((l,i)=>{
             const p=sum>0?dist[i]/sum*100:0;
             return (
               <div key={i} onClick={()=>onPick&&onPick(i)}
@@ -20613,45 +20600,74 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                 <VBar label="29CM" value={cmFirstTotal} sub={`${pctOf(cmFirstTotal)}%`} tone="cm"/>
               </div>
             </div>
-            {/* 3) 채널별 단일 스택 막대(고정+이동 색 분할) + 사이 교차 구매 고객 */}
-            <div style={{ flex:"1 1 460px", minWidth:430, height:FLOW_H, display:"flex", flexDirection:"column", gap:FLOW_GAP }}>
-              <div style={{ flexGrow:selfFirstTotal||1, flexBasis:0, display:"flex", alignItems:"center" }}>
-                <div style={{ width:"100%" }}>
-                  <StackBar title={`자사몰 구매고객 · ${selfFirstTotal.toLocaleString()}명`} total={selfFirstTotal} segs={[
-                    {name:"자사몰고정 이용고객",value:kpi.counts.f1,color:CH_COLOR["자사몰"]},
-                    {name:"29CM로 이동",value:kpi.crossSelfFirst,color:CH_COLOR["29CM"],note:"유출"},
-                  ]}/>
-                </div>
+            {/* 3) 단일 세로 스택 노드(고정/이동 4분할) + 교차 구매 브래킷 */}
+            <div style={{ flex:"1 1 440px", minWidth:400, height:FLOW_H, display:"flex", alignItems:"stretch", gap:10 }}>
+              <div style={{ flex:1, display:"flex", flexDirection:"column", borderRadius:14, overflow:"hidden" }}>
+                <VSeg name="자사몰 고정 이용 고객" value={kpi.counts.f1}
+                  extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}/>
+                <VSeg name="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.crossSelfFirst}
+                  extra={`유출율 ${selfFirstTotal>0?(kpi.crossSelfFirst/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={42}/>
+                <VSeg name="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.crossCmFirst}
+                  extra={`유출율 ${cmFirstTotal>0?(kpi.crossCmFirst/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={42}/>
+                <VSeg name="29CM 고정 이용 고객" value={kpi.counts.f2}
+                  extra={`${cmFirstTotal>0?(kpi.counts.f2/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={kpi.counts.f2||1} minH={62}/>
               </div>
-              {/* 교차 구매 고객 — 자사몰/29CM 사이 */}
-              <div style={{ flexShrink:0, display:"flex", justifyContent:"center" }}>
-                <div style={{ display:"inline-flex", alignItems:"center", gap:10, background:PANEL.card, borderRadius:12, padding:"8px 16px" }}>
-                  <span style={{ fontSize:13, fontWeight:800, color:PANEL.ink }}>교차 구매 고객</span>
-                  <span style={{ fontSize:16, fontWeight:800, color:PANEL.ink }}>{kpi.both.toLocaleString()}명</span>
-                  <span style={{ fontSize:12, fontWeight:700, color:PANEL.inkSub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(1)}%</span>
-                </div>
-              </div>
-              <div style={{ flexGrow:cmFirstTotal||1, flexBasis:0, display:"flex", alignItems:"center" }}>
-                <div style={{ width:"100%" }}>
-                  <StackBar title={`29CM 구매고객 · ${cmFirstTotal.toLocaleString()}명`} total={cmFirstTotal} segs={[
-                    {name:"자사몰로 이동",value:kpi.crossCmFirst,color:CH_COLOR["자사몰"],note:"유출"},
-                    {name:"29CM 고정 이용고객",value:kpi.counts.f2,color:CH_COLOR["29CM"]},
-                  ]}/>
+              {/* 교차 구매 고객 — 가운데 이동 구간 묶음 브래킷 */}
+              <div style={{ flex:"0 0 auto", width:92, display:"flex", alignItems:"center" }}>
+                <div style={{ borderLeft:`2px solid ${PANEL.sub}`, paddingLeft:9 }}>
+                  <div style={{ fontSize:12, fontWeight:800, color:PANEL.text }}>교차 구매 고객</div>
+                  <div style={{ fontSize:15, fontWeight:800, color:PANEL.text, marginTop:2 }}>{kpi.both.toLocaleString()}명</div>
+                  <div style={{ fontSize:11, fontWeight:700, color:PANEL.sub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(1)}%</div>
                 </div>
               </div>
             </div>
             {/* 5) 재구매 도넛 (재구매율 + 클릭 드릴다운) */}
             <div style={{ flex:"0 0 auto", display:"flex", flexDirection:"column", gap:20 }}>
-              <Ring title="자사몰 재구매 고객" dist={kpi.selfDist} shades={SELF_SHADES}
+              <Ring title="자사몰 재구매 고객" dist={kpi.selfDist.slice(1)} shades={SELF_SHADES.slice(1)} labels={REPEAT_LABELS}
                 rate={kpi.selfU>0?`${(kpi.selfR/kpi.selfU*100).toFixed(1)}%`:"0%"}
-                onPick={i=>setDrill({channel:"자사몰",bucketIdx:i})}/>
-              <Ring title="29CM 재구매 고객" dist={kpi.cmDist} shades={CM_SHADES}
+                onPick={i=>setDrill({channel:"자사몰",bucketIdx:i+1})}/>
+              <Ring title="29CM 재구매 고객" dist={kpi.cmDist.slice(1)} shades={CM_SHADES.slice(1)} labels={REPEAT_LABELS}
                 rate={kpi.cmU>0?`${(kpi.cmR/kpi.cmU*100).toFixed(1)}%`:"0%"}
-                onPick={i=>setDrill({channel:"29CM",bucketIdx:i})}/>
+                onPick={i=>setDrill({channel:"29CM",bucketIdx:i+1})}/>
             </div>
           </div>
           {classified.guests>0&&(
-            <div style={{ fontSize:10.5, color:PANEL.sub, marginTop:10 }}>※ 회원 미매칭 자사몰 게스트 {classified.guests.toLocaleString()}명은 '자사몰고정 이용고객'에 합산됨 (회원 CSV 최신화 시 정확도 향상)</div>
+            <div style={{ fontSize:10.5, color:PANEL.sub, marginTop:10, lineHeight:1.6 }}>
+              ※ 회원 미매칭 자사몰 게스트 {classified.guests.toLocaleString()}명은 '자사몰고정 이용고객'에 합산됨 (회원 CSV 최신화 시 정확도 향상)<br/>
+              * 주문 배송 정보에 회원 가입 시 기재한 번호와 다른 번호를 기입한 경우가 합산되어 미매칭건으로 이어지기도 합니다.
+            </div>
+          )}
+        </div>
+
+        {/* 회원 가입 · 29CM 신규 유입 추이 (KPI 패널 바로 아래) */}
+        <div style={card}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginBottom:10 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:D.black }}>자사몰 회원 가입 · 29CM 신규 유입 추이</div>
+            <div style={{ display:"inline-flex", gap:4 }}>
+              {[["month","월"],["quarter","분기"],["year","연"]].map(([v,l])=>(
+                <button key={v} data-hf onClick={()=>setSignupGran(v)}
+                  style={{ background:signupGran===v?D.black:"transparent", color:signupGran===v?"#fff":D.textSub,
+                    border:`1px solid ${signupGran===v?D.black:D.border}`, borderRadius:5, padding:"4px 12px",
+                    fontSize:11, cursor:"pointer", fontWeight:signupGran===v?600:400 }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {signupSeries.length===0?(
+            <div style={{ color:D.textMeta, fontSize:12, padding:"20px 0", textAlign:"center" }}>표시할 데이터가 없습니다.</div>
+          ):(
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={signupSeries} margin={{ left:0, right:18, top:6, bottom:4 }} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
+                <XAxis dataKey="bucket" tick={{ fontSize:10, fill:D.textMeta }}/>
+                <YAxis tick={{ fontSize:10, fill:D.textMeta }} allowDecimals={false}/>
+                <Tooltip content={<Tip/>} cursor={{ fill:D.surfaceAlt }}/>
+                <Legend iconSize={9} wrapperStyle={{ fontSize:10.5 }}/>
+                <Bar dataKey="가입" name="자사몰 회원 가입" fill={CH_COLOR["자사몰"]} radius={[3,3,0,0]}/>
+                <Bar dataKey="신규29" name="29CM 신규 유입" fill={CH_COLOR["29CM"]} radius={[3,3,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
           )}
         </div>
 
@@ -20712,37 +20728,6 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           )}
         </div>
 
-        {/* 회원 가입 · 29CM 신규 유입 추이 */}
-        <div style={card}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginBottom:10 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:D.black }}>자사몰 회원 가입 · 29CM 신규 유입 추이</div>
-            <div style={{ display:"inline-flex", gap:4 }}>
-              {[["month","월"],["quarter","분기"],["year","연"]].map(([v,l])=>(
-                <button key={v} data-hf onClick={()=>setSignupGran(v)}
-                  style={{ background:signupGran===v?D.black:"transparent", color:signupGran===v?"#fff":D.textSub,
-                    border:`1px solid ${signupGran===v?D.black:D.border}`, borderRadius:5, padding:"4px 12px",
-                    fontSize:11, cursor:"pointer", fontWeight:signupGran===v?600:400 }}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          </div>
-          {signupSeries.length===0?(
-            <div style={{ color:D.textMeta, fontSize:12, padding:"20px 0", textAlign:"center" }}>표시할 데이터가 없습니다.</div>
-          ):(
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={signupSeries} margin={{ left:0, right:18, top:6, bottom:4 }} barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke={D.border} vertical={false}/>
-                <XAxis dataKey="bucket" tick={{ fontSize:10, fill:D.textMeta }}/>
-                <YAxis tick={{ fontSize:10, fill:D.textMeta }} allowDecimals={false}/>
-                <Tooltip content={<Tip/>} cursor={{ fill:D.surfaceAlt }}/>
-                <Legend iconSize={9} wrapperStyle={{ fontSize:10.5 }}/>
-                <Bar dataKey="가입" name="자사몰 회원 가입" fill={CH_COLOR["자사몰"]} radius={[3,3,0,0]}/>
-                <Bar dataKey="신규29" name="29CM 신규 유입" fill={CH_COLOR["29CM"]} radius={[3,3,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
       </>
       )}
     </div>
