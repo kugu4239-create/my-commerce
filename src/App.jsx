@@ -20447,7 +20447,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const TONE={
     self:{ card:"#0E1E3A", ink:"#ffffff", bar:CH.self },
     cm:{ card:"#0D3526", ink:"#ffffff", bar:CH.cm },
-    neutral:{ card:"#1E1E24", ink:"#ffffff", bar:"#b9b6ad" },
+    neutral:{ card:"#ffffff", ink:"#1a1a1a", bar:"#888880" },
   };
   const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
   const REPEAT_LABELS=["2회","3회","4회","5회 이상"];   // 재구매 도넛(1회 제외)
