@@ -20449,7 +20449,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
         </div>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
-          {sub&&<div style={{ fontSize:39, fontWeight:800, color:t.ink, lineHeight:1.0 }}>{sub}</div>}
+          {sub&&<div style={{ fontSize:27, fontWeight:800, color:t.ink, lineHeight:1.0 }}>{sub}</div>}
           <div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:3 }}>{value.toLocaleString()}명</div>
         </div>
       </div>
@@ -20469,7 +20469,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
         cursor:onClick?"pointer":"default" }}>
       <div style={{ fontSize:11, fontWeight:700, lineHeight:1.2, opacity:0.88, marginBottom:3 }}>{name}</div>
       {extraLabel&&<div style={{ fontSize:11, fontWeight:700, opacity:0.88, lineHeight:1.2 }}>{extraLabel}</div>}
-      {extra&&<div style={{ fontSize:34, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
+      {extra&&<div style={{ fontSize:24, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
       <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.88 }}>{value.toLocaleString()}명</div>
     </div>
   );
