@@ -20615,9 +20615,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                   <div style={{ fontSize:13, fontWeight:700, color:PANEL.inkSub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(1)}%</div>
                 </div>
                 <div style={{ flex:1, display:"flex", flexDirection:"column", gap:14 }}>
-                  <HBar small label="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.crossSelfFirst} total={kpi.total} tone="self"
+                  <HBar small label="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.crossSelfFirst} total={kpi.both} tone="self"
                     extra={`유출율 ${selfFirstTotal>0?(kpi.crossSelfFirst/selfFirstTotal*100).toFixed(1):0}%`}/>
-                  <HBar small label="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.crossCmFirst} total={kpi.total} tone="cm"
+                  <HBar small label="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.crossCmFirst} total={kpi.both} tone="cm"
                     extra={`유출율 ${cmFirstTotal>0?(kpi.crossCmFirst/cmFirstTotal*100).toFixed(1):0}%`}/>
                 </div>
               </div>
