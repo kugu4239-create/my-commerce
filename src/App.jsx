@@ -20272,7 +20272,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       }else if(has자사){
         funnel="f1"; tDate=joinDate||firstSelf;
       }
-      if(funnel&&tDate) out.push({phone:p,funnel,tDate,selfN:self.length,cmN:cm.length,both:has자사&&has29});
+      // 교차몰 구매 방향: 첫 구매가 어느 채널인지로 자사몰→29CM / 29CM→자사몰 구분
+      const cross=(has자사&&has29)?(firstSelf<=first29?"self_first":"cm_first"):null;
+      if(funnel&&tDate) out.push({phone:p,funnel,tDate,selfN:self.length,cmN:cm.length,both:has자사&&has29,cross});
     });
     return {rows:out,guests};
   },[orders,cafe24Members]);
@@ -20286,17 +20288,19 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // KPI + 퍼널 카운트 (필터된 고객 기준)
   const kpi=useMemo(()=>{
     const counts={f1:0,f2:0,f3:0,f4:0,f5:0};
-    let selfU=0,cmU=0,both=0,selfR=0,cmR=0;
+    let selfU=0,cmU=0,both=0,selfR=0,cmR=0,crossSelfFirst=0,crossCmFirst=0;
     filtered.forEach(c=>{
       counts[c.funnel]++;
       if(c.selfN>0) selfU++;
       if(c.cmN>0) cmU++;
       if(c.both) both++;
+      if(c.cross==="self_first") crossSelfFirst++;
+      else if(c.cross==="cm_first") crossCmFirst++;
       if(c.selfN>=2) selfR++;
       if(c.cmN>=2) cmR++;
     });
     const leak=counts.f1+counts.f3>0?counts.f3/(counts.f1+counts.f3):0;
-    return {counts,total:filtered.length,selfU,cmU,both,selfR,cmR,leak};
+    return {counts,total:filtered.length,selfU,cmU,both,crossSelfFirst,crossCmFirst,selfR,cmR,leak};
   },[filtered]);
 
   // 추세 데이터 (버킷 × 퍼널)
@@ -20435,6 +20439,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <Kpi label="자사몰 구매 고객" value={kpi.selfU} color={CH_COLOR["자사몰"]}/>
           <Kpi label="29CM 구매 고객" value={kpi.cmU} color={CH_COLOR["29CM"]}/>
           <Kpi label="교차몰 구매 고객" value={kpi.both} sub="자사몰+29CM 모두 구매"/>
+          <Kpi label="└ 자사몰 → 29CM" value={kpi.crossSelfFirst} color={CH_COLOR["자사몰"]} sub="자사몰 먼저 구매"/>
+          <Kpi label="└ 29CM → 자사몰" value={kpi.crossCmFirst} color={CH_COLOR["29CM"]} sub="29CM 먼저 구매"/>
           <Kpi label="자사몰 재구매 고객" value={kpi.selfR} sub="동일몰 2회 이상"/>
           <Kpi label="29CM 재구매 고객" value={kpi.cmR} sub="동일몰 2회 이상"/>
           <Kpi label="자사몰→29CM 유출률" value={`${(kpi.leak*100).toFixed(1)}%`} color={D.amber} sub="f3 / (f1+f3)"/>
