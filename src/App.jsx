@@ -20418,22 +20418,22 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const hasData=classified.rows.length>0;
   const presets=[["3m","최근 3개월"],["6m","최근 6개월"],["1m","최근 한달"],["all","전체"]];
   const granBtns=[["week","주"],["month","월"],["quarter","분기"]];
-  const PLAY_PERIODS=[["7d","week"],["1m","month"],["3m","month"],["6m","quarter"],["all","month"]];
+  const PLAY_MAX_WEEKS=52;
+  const mkDateStr=daysAgo=>{const d=new Date();d.setDate(d.getDate()-daysAgo);return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
   useEffect(()=>{
     if(!playing) return;
     const id=setTimeout(()=>{
       const next=playIdxRef.current+1;
-      if(next>=PLAY_PERIODS.length){ setPlaying(false); playIdxRef.current=0; }
-      else{ playIdxRef.current=next; setPeriod(PLAY_PERIODS[next][0]); setGran(PLAY_PERIODS[next][1]); }
-    },2000);
+      if(next>PLAY_MAX_WEEKS){ setPlaying(false); playIdxRef.current=0; setPeriod("all"); return; }
+      playIdxRef.current=next;
+      setPeriod("custom"); setCustomStart(mkDateStr(next*7)); setCustomEnd(mkDateStr(0));
+    },1500);
     return()=>clearTimeout(id);
-  },[playing,period]);
+  },[playing,customStart]);
   const handlePlay=()=>{
     if(playing){ setPlaying(false); return; }
-    playIdxRef.current=0;
-    setPeriod(PLAY_PERIODS[0][0]);
-    setGran(PLAY_PERIODS[0][1]);
-    setPlaying(true);
+    playIdxRef.current=1;
+    setPeriod("custom"); setCustomStart(mkDateStr(7)); setCustomEnd(mkDateStr(0)); setPlaying(true);
   };
 
   const card={ background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16, marginBottom:16 };
@@ -20463,8 +20463,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
         </div>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
-          {sub&&<div style={{ fontSize:27, fontWeight:800, color:t.ink, lineHeight:1.0 }}>{sub}</div>}
-          <div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:3 }}>{value.toLocaleString()}명</div>
+          {sub&&<div key={sub} style={{ fontSize:27, fontWeight:800, color:t.ink, lineHeight:1.0, animationName:"digRoll", animationDuration:"0.38s", animationTimingFunction:"cubic-bezier(0.22,1,0.36,1)", animationFillMode:"both", display:"block" }}>{sub}</div>}
+          <div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:3 }}><DigNum v={value}/>명</div>
         </div>
       </div>
     );
@@ -20474,6 +20474,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 단일 세로 스택 노드의 한 구간
   // 자사몰에 가까울수록 진한 네이비, 29CM로 기울수록 크림 계열
   const SEG={ selfFixed:"#1E3875", selfToCm:"#1A3E80", cmToSelf:"#186080", cmToSelfReg:"#187068", cmFixed:"#1A6848", cmReg:"#1A6040" };
+  const DigNum=({v})=><span key={v} style={{display:"inline-block",animationName:"digRoll",animationDuration:"0.38s",animationTimingFunction:"cubic-bezier(0.22,1,0.36,1)",animationFillMode:"both"}}>{v.toLocaleString()}</span>;
   const VSeg=({name,value,extra,extraLabel,footnote,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
@@ -20489,8 +20490,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
         {extraLabel&&<div style={{ fontSize:11, fontWeight:700, opacity:0.7, lineHeight:1.2, marginTop:1 }}>{extraLabel}</div>}
       </div>
       <div style={{ flex:"0 0 auto", textAlign:"right", marginLeft:10 }}>
-        {extra&&<div style={{ fontSize:24, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
-        <div style={{ fontSize:11.5, fontWeight:700, opacity:0.88, marginTop:1 }}>{value.toLocaleString()}명</div>
+        {extra&&<div key={extra} style={{ fontSize:24, fontWeight:800, lineHeight:1.05, animationName:"digRoll", animationDuration:"0.38s", animationTimingFunction:"cubic-bezier(0.22,1,0.36,1)", animationFillMode:"both", display:"block" }}>{extra}</div>}
+        <div style={{ fontSize:11.5, fontWeight:700, opacity:0.88, marginTop:1 }}><DigNum v={value}/>명</div>
       </div>
     </div>
   );
@@ -20659,6 +20660,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           </div>
         </div>
 
+        <style>{`@keyframes digRoll{0%{transform:translateY(-30%) scaleY(0.7);opacity:0}60%{transform:translateY(4%) scaleY(1.04);opacity:1}100%{transform:translateY(0) scaleY(1);opacity:1}}`}</style>
         {/* 채널 유입 플로우 (다크 패널, 좌→우) */}
         <div style={{ background:PANEL.bg, borderRadius:16, padding:"22px 24px", marginBottom:16, overflowX:"auto" }}>
           <div style={{ display:"flex", alignItems:"flex-start", gap:18, minWidth:1000 }}>
