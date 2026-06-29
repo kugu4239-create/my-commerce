@@ -20354,6 +20354,37 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       {sub&&<div style={{ fontSize:10, color:D.textMeta, marginTop:2 }}>{sub}</div>}
     </div>
   );
+  // 출발점 카드 안의 '이후 이동' 한 줄 (비율 막대 포함)
+  const MoveRow=({label,value,total,color})=>{
+    const pct=total>0?value/total*100:0;
+    return (
+      <div style={{ marginBottom:9 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", fontSize:11.5, marginBottom:3 }}>
+          <span style={{ color:D.textSub }}>{label}</span>
+          <span style={{ color:D.black }}><b>{value.toLocaleString()}</b><span style={{ color:D.textMeta, fontSize:10 }}>명 · {pct.toFixed(0)}%</span></span>
+        </div>
+        <div style={{ height:6, background:D.border, borderRadius:4, overflow:"hidden" }}>
+          <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:4 }}/>
+        </div>
+      </div>
+    );
+  };
+  // 출발 채널 카드 (출발점 + 이후 이동)
+  const OriginCard=({title,color,total,subtitle,children})=>(
+    <div style={{ flex:"1 1 320px", minWidth:280, background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+        <span style={{ width:11, height:11, borderRadius:11, background:color, flexShrink:0 }}/>
+        <span style={{ fontSize:13, fontWeight:700, color:D.black }}>{title}</span>
+      </div>
+      <div style={{ fontSize:26, fontWeight:800, color, lineHeight:1.05 }}>{total.toLocaleString()}<span style={{ fontSize:12, color:D.textMeta, fontWeight:600 }}> 명</span></div>
+      <div style={{ fontSize:10.5, color:D.textMeta, marginBottom:12 }}>{subtitle}</div>
+      <div style={{ fontSize:10.5, color:D.textMeta, fontWeight:700, marginBottom:9, borderTop:`1px solid ${D.border}`, paddingTop:10 }}>이후 이동</div>
+      {children}
+    </div>
+  );
+  const originSelf=kpi.counts.f1+kpi.counts.f3;          // 자사몰 첫 유입
+  const origin29=kpi.counts.f2+kpi.counts.f4+kpi.counts.f5; // 29CM 첫 유입
+  const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
 
   return (
     <div style={{ maxWidth:1080, margin:"0 auto", padding:"22px 24px 60px" }}>
@@ -20439,19 +20470,33 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
         </div>
 
-        {/* KPI */}
+        {/* 분석 고객에서 출발 → 채널별 분기 */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <span style={{ fontSize:11, color:D.textMeta }}>분석 고객에서 출발</span>
+          <span style={{ fontSize:15, fontWeight:800, color:D.black }}>{kpi.total.toLocaleString()}명</span>
+          <span style={{ fontSize:11, color:D.textMeta }}>→ 첫 유입 채널별로 분기</span>
+        </div>
+        <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:16 }}>
+          <OriginCard title="자사몰 구매고객" color={CH_COLOR["자사몰"]} total={originSelf}
+            subtitle={`전체의 ${pctOf(originSelf)}% · 자사몰을 첫 채널로 유입`}>
+            <MoveRow label="자사몰 → 29CM 이동" value={kpi.counts.f3} total={originSelf} color={CH_COLOR["29CM"]}/>
+            <div style={{ fontSize:10.5, color:D.amber, fontWeight:700, margin:"-2px 0 9px" }}>29CM 유출률 {(kpi.leak*100).toFixed(1)}%</div>
+            <MoveRow label="자사몰에서만 구매" value={kpi.counts.f1} total={originSelf} color={CH_COLOR["자사몰"]}/>
+          </OriginCard>
+          <OriginCard title="29CM 구매고객" color={CH_COLOR["29CM"]} total={origin29}
+            subtitle={`전체의 ${pctOf(origin29)}% · 29CM을 첫 채널로 유입`}>
+            <MoveRow label="29CM → 자사몰 이동" value={kpi.cm29ToSelf} total={origin29} color={CH_COLOR["자사몰"]}/>
+            <div style={{ fontSize:10.5, color:CH_COLOR["자사몰"], fontWeight:700, margin:"-2px 0 9px" }}>자사몰 전환율 {(kpi.cmConv*100).toFixed(1)}% · 회원가입 {kpi.counts.f4.toLocaleString()} / 주문 {kpi.counts.f5.toLocaleString()}</div>
+            <MoveRow label="29CM에서만 구매" value={kpi.counts.f2} total={origin29} color={CH_COLOR["29CM"]}/>
+          </OriginCard>
+        </div>
+
+        {/* 재구매 고객 (맨 마지막) */}
+        <div style={{ fontSize:11, color:D.textMeta, marginBottom:8 }}>재구매 고객</div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16 }}>
-          <Kpi label="분석 고객(유니크 휴대폰)" value={kpi.total}/>
-          <Kpi label="자사몰 구매 고객" value={kpi.selfU} color={CH_COLOR["자사몰"]}/>
-          <Kpi label="29CM 구매 고객" value={kpi.cmU} color={CH_COLOR["29CM"]}/>
-          <Kpi label="교차몰 구매 고객" value={kpi.both} sub="자사몰+29CM 모두 구매"/>
-          <Kpi label="└ 자사몰 → 29CM" value={kpi.crossSelfFirst} color={CH_COLOR["자사몰"]} sub="자사몰 먼저 구매"/>
-          <Kpi label="└ 29CM → 자사몰" value={kpi.crossCmFirst} color={CH_COLOR["29CM"]} sub="29CM 먼저 구매"/>
-          <Kpi label="자사몰 재구매 고객" value={kpi.selfR} sub="동일몰 2회 이상"/>
-          <Kpi label="29CM 재구매 고객" value={kpi.cmR} sub="동일몰 2회 이상"/>
-          <Kpi label="자사몰→29CM 유출률" value={`${(kpi.leak*100).toFixed(1)}%`} color={D.amber} sub="f3 / (f1+f3)"/>
-          <Kpi label="29CM→자사몰 전환율" value={`${(kpi.cmConv*100).toFixed(1)}%`} color={CH_COLOR["자사몰"]} sub={`순수 29CM ${kpi.cm29Total.toLocaleString()}명 중 자사몰 ${kpi.cm29ToSelf.toLocaleString()}명`}/>
-          <Kpi label="└ 자사몰 주문 전환율" value={`${(kpi.cmConvOrder*100).toFixed(1)}%`} color={CH_COLOR["자사몰"]} sub={`주문까지 ${kpi.cm29ToOrder.toLocaleString()}명 (f5)`}/>
+          <Kpi label="자사몰 재구매 고객" value={kpi.selfR} color={CH_COLOR["자사몰"]} sub="자사몰 2회 이상 구매"/>
+          <Kpi label="29CM 재구매 고객" value={kpi.cmR} color={CH_COLOR["29CM"]} sub="29CM 2회 이상 구매"/>
+          <Kpi label="교차몰 구매 고객" value={kpi.both} sub={`자사몰→29CM ${kpi.crossSelfFirst.toLocaleString()} · 29CM→자사몰 ${kpi.crossCmFirst.toLocaleString()}`}/>
         </div>
 
         {/* 퍼널 막대 */}
