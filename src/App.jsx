@@ -20289,10 +20289,12 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const kpi=useMemo(()=>{
     const counts={f1:0,f2:0,f3:0,f4:0,f5:0};
     let selfU=0,cmU=0,both=0,selfR=0,cmR=0,crossSelfFirst=0,crossCmFirst=0;
+    const selfDist=[0,0,0,0,0], cmDist=[0,0,0,0,0];   // index 0=1회 … 4=5회 이상
+    const bk=n=>Math.min(n,5)-1;
     filtered.forEach(c=>{
       counts[c.funnel]++;
-      if(c.selfN>0) selfU++;
-      if(c.cmN>0) cmU++;
+      if(c.selfN>0){ selfU++; selfDist[bk(c.selfN)]++; }
+      if(c.cmN>0){ cmU++; cmDist[bk(c.cmN)]++; }
       if(c.both) both++;
       if(c.cross==="self_first") crossSelfFirst++;
       else if(c.cross==="cm_first") crossCmFirst++;
@@ -20306,7 +20308,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     const cm29ToOrder=counts.f5;                          // 자사몰 주문까지 전환
     const cmConv=cm29Total>0?cm29ToSelf/cm29Total:0;
     const cmConvOrder=cm29Total>0?cm29ToOrder/cm29Total:0;
-    return {counts,total:filtered.length,selfU,cmU,both,crossSelfFirst,crossCmFirst,selfR,cmR,leak,cm29Total,cm29ToSelf,cm29ToOrder,cmConv,cmConvOrder};
+    return {counts,total:filtered.length,selfU,cmU,both,crossSelfFirst,crossCmFirst,selfR,cmR,leak,cm29Total,cm29ToSelf,cm29ToOrder,cmConv,cmConvOrder,selfDist,cmDist};
   },[filtered]);
 
   // 추세 데이터 (버킷 × 퍼널)
@@ -20323,6 +20325,25 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
 
   // 고객 동선 조회 — 휴대폰번호로 가입/주문 이벤트를 시간순으로 추적 (검증용)
   const [query,setQuery]=useState("");
+  // 마지막 조회 전화번호 복원/저장 (funnel_settings 단일 행)
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const {data}=await db.from("funnel_settings").select("last_phone").eq("id",1).maybeSingle();
+        if(alive&&data?.last_phone) setQuery(data.last_phone);
+      }catch{}
+    })();
+    return()=>{alive=false;};
+  },[]);
+  const saveLastQuery=useCallback(async(val)=>{
+    if(normPhone(val).length<4) return;
+    try{
+      const db=await getSupabase();
+      await db.from("funnel_settings").upsert({id:1,last_phone:val},{onConflict:"id"});
+    }catch{}
+  },[]);
   const journey=useMemo(()=>{
     const q=normPhone(query);
     if(q.length<4) return null;
@@ -20341,53 +20362,86 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     return {q,member,evs,funnel:cls?cls.funnel:null,selfN,cmN};
   },[query,orders,cafe24Members,classified]);
 
-  const barData=FUNNELS.map(f=>({label:f.label,value:kpi.counts[f.key],color:f.color}));
   const hasData=classified.rows.length>0;
   const presets=[["3m","최근 3개월"],["6m","최근 6개월"],["1m","최근 한달"],["all","전체"]];
   const granBtns=[["week","주"],["month","월"],["quarter","분기"]];
 
   const card={ background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16, marginBottom:16 };
-  const Kpi=({label,value,sub,color})=>(
-    <div style={{ background:D.surfaceAlt, border:`1px solid ${D.border}`, borderRadius:10, padding:"11px 13px", minWidth:120, flex:"1 1 130px" }}>
-      <div style={{ fontSize:10.5, color:D.textMeta, marginBottom:4 }}>{label}</div>
-      <div style={{ fontSize:19, fontWeight:800, color:color||D.black, lineHeight:1.1 }}>{typeof value==="number"?value.toLocaleString():value}</div>
-      {sub&&<div style={{ fontSize:10, color:D.textMeta, marginTop:2 }}>{sub}</div>}
-    </div>
-  );
-  // 가로 플로우용 연결 화살표
-  const FlowArrow=()=><span style={{ color:D.borderMid, fontSize:18, flexShrink:0, alignSelf:"center" }}>→</span>;
-  // 출발 채널 노드 (자사몰/29CM 구매고객)
-  const OriginNode=({title,color,total})=>(
-    <div style={{ flex:"0 0 auto", minWidth:150, alignSelf:"center", background:D.surface, border:`1.5px solid ${color}`, borderRadius:11, padding:"12px 14px" }}>
-      <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:3 }}>
-        <span style={{ width:10, height:10, borderRadius:10, background:color, flexShrink:0 }}/>
-        <span style={{ fontSize:12, fontWeight:700, color:D.black }}>{title}</span>
+  // ── 다크 패널 플로우 (목업 디자인) ──────────────────────────
+  const PANEL={ bg:"#1d1d1b", card:"#ece8df", track:"#33332f", text:"#f0ede6", sub:"#9a978f", ink:"#1a1a1a", inkSub:"#55524c" };
+  const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
+  const SELF_SHADES=["#cfe0ef","#a9c8e2","#7EADD4","#5b8fbd","#3f6f9e"];
+  const CM_SHADES=["#cfe6da","#a6d0bd","#7EB89E","#5f9c82","#447e68"];
+  // 크림색 세로 비율 바
+  const VBar=({label,value,sub,h})=>(
+    <div style={{ height:h, minHeight:54, background:PANEL.card, borderRadius:8, padding:"12px 12px",
+      display:"flex", flexDirection:"column", justifyContent:"space-between", boxSizing:"border-box" }}>
+      <div style={{ fontSize:12, fontWeight:600, color:PANEL.ink }}>{label}</div>
+      <div>
+        <div style={{ fontSize:16, fontWeight:800, color:PANEL.ink, lineHeight:1.1 }}>{value.toLocaleString()}명</div>
+        {sub&&<div style={{ fontSize:12, color:PANEL.inkSub, marginTop:1 }}>{sub}</div>}
       </div>
-      <div style={{ fontSize:22, fontWeight:800, color, lineHeight:1 }}>{total.toLocaleString()}<span style={{ fontSize:11, color:D.textMeta, fontWeight:600 }}> 명</span></div>
-      <div style={{ fontSize:10, color:D.textMeta, marginTop:2 }}>전체의 {pctOf(total)}%</div>
     </div>
   );
-  // 이동/잔존 결과 카드 (비율 막대 + 선택적 전환·유출률)
-  const OutcomeCard=({label,value,total,color,rate,rateColor})=>{
-    const pct=total>0?value/total*100:0;
+  // 라벨 + 크림색 가로 막대
+  const HBar=({label,value,widthPct,small})=>(
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+        <span style={{ fontSize:small?11:12.5, fontWeight:600, color:PANEL.text }}>{label}</span>
+        <span style={{ fontSize:small?11:12, fontWeight:700, color:PANEL.text }}>{value.toLocaleString()}명</span>
+      </div>
+      <div style={{ height:small?16:22, background:PANEL.track, borderRadius:6, overflow:"hidden" }}>
+        <div style={{ width:`${Math.max(widthPct,2)}%`, height:"100%", background:PANEL.card, borderRadius:6 }}/>
+      </div>
+    </div>
+  );
+  // 재구매 분포 도넛(링) + 범례
+  const Ring=({title,dist,shades})=>{
+    const sum=dist.reduce((a,b)=>a+b,0);
+    const data=dist.map((v,i)=>({name:DIST_LABELS[i],value:v}));
     return (
-      <div style={{ flex:"0 0 auto", minWidth:148, background:D.surfaceAlt, border:`1px solid ${D.border}`, borderRadius:10, padding:"10px 12px" }}>
-        <div style={{ fontSize:10.5, color:D.textSub, marginBottom:4 }}>{label}</div>
-        <div style={{ fontSize:18, fontWeight:800, color:color||D.black, lineHeight:1 }}>{value.toLocaleString()}<span style={{ fontSize:10, color:D.textMeta, fontWeight:600 }}> 명 · {pct.toFixed(0)}%</span></div>
-        <div style={{ height:5, background:D.border, borderRadius:4, marginTop:6, overflow:"hidden" }}><div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:4 }}/></div>
-        {rate&&<div style={{ fontSize:10, fontWeight:700, marginTop:5, color:rateColor||D.textMeta }}>{rate}</div>}
+      <div style={{ minWidth:170 }}>
+        <div style={{ fontSize:12.5, fontWeight:700, color:PANEL.text, textAlign:"center", marginBottom:6 }}>{title}</div>
+        <div style={{ position:"relative", width:"100%", height:118 }}>
+          <ResponsiveContainer width="100%" height={118}>
+            <PieChart>
+              <Pie data={sum>0?data:[{name:"-",value:1}]} dataKey="value" nameKey="name"
+                cx="50%" cy="50%" innerRadius={38} outerRadius={54} paddingAngle={sum>0?2:0} stroke="none">
+                {(sum>0?data:[{}]).map((d,i)=><Cell key={i} fill={sum>0?shades[i]:PANEL.track}/>)}
+              </Pie>
+              {sum>0&&<Tooltip formatter={(v,n)=>[`${v.toLocaleString()}명 (${(v/sum*100).toFixed(0)}%)`,n]}
+                contentStyle={{ background:PANEL.card, border:"none", borderRadius:7, fontSize:11, color:PANEL.ink }}/>}
+            </PieChart>
+          </ResponsiveContainer>
+          <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+            <div style={{ fontSize:15, fontWeight:800, color:PANEL.text, lineHeight:1 }}>{sum.toLocaleString()}</div>
+            <div style={{ fontSize:9, color:PANEL.sub }}>명</div>
+          </div>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:3, marginTop:8 }}>
+          {DIST_LABELS.map((l,i)=>(
+            <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:10.5, color:PANEL.text }}>
+              <span style={{ width:9, height:9, borderRadius:9, background:shades[i], flexShrink:0 }}/>
+              <span style={{ flex:1 }}>{l}</span>
+              <span style={{ color:PANEL.sub }}>{dist[i].toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   };
-  const originSelf=kpi.counts.f1+kpi.counts.f3;          // 자사몰 첫 유입
-  const origin29=kpi.counts.f2+kpi.counts.f4+kpi.counts.f5; // 29CM 첫 유입
   const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
+  const selfFirstTotal=kpi.counts.f1+kpi.crossSelfFirst;   // 첫 구매 자사몰
+  const cmFirstTotal=kpi.counts.f2+kpi.crossCmFirst;        // 첫 구매 29CM
+  const maxFixed=Math.max(kpi.counts.f1,kpi.counts.f2,1);   // 고정 가로바 기준
+  const maxCross=Math.max(kpi.crossSelfFirst,kpi.crossCmFirst,1);
+  const FLOW_H=470, FLOW_GAP=12;                            // 세로 바 높이 기준
+  const usableH=FLOW_H-FLOW_GAP;
 
   return (
     <div style={{ maxWidth:1080, margin:"0 auto", padding:"22px 24px 60px" }}>
-      <div style={{ marginBottom:6 }}>
+      <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:18, fontWeight:800, color:D.black }}>채널 유입 분석</div>
-        <div style={{ fontSize:12, color:D.textMeta, marginTop:3 }}>카페24(자사몰) ↔ 29CM 유입·이동을 휴대폰 단위로 매칭해 5개 퍼널로 분류합니다. 분석 단위는 주문이 아니라 유니크 휴대폰(고객 1명)입니다.</div>
       </div>
 
       <Cafe24MemberUploader existing={cafe24Members} onDone={onDataChange}/>
@@ -20396,6 +20450,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       <div style={card}>
         <div style={{ fontSize:13, fontWeight:700, color:D.black, marginBottom:8 }}>고객 동선 조회</div>
         <input value={query} onChange={e=>setQuery(e.target.value)} inputMode="numeric"
+          onBlur={e=>saveLastQuery(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter")saveLastQuery(e.target.value);}}
           placeholder="휴대폰번호 입력 (예: 010-1234-5678)"
           style={{ width:"100%", boxSizing:"border-box", padding:"9px 12px", fontSize:13,
             border:`1px solid ${D.border}`, borderRadius:8, outline:"none" }}/>
@@ -20467,61 +20523,42 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
             calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
         </div>
 
-        {/* 분석 고객 → 채널 분기 → 이후 이동 (가로 플로우, 좌→우) */}
-        <div style={{ overflowX:"auto", paddingBottom:6, marginBottom:16 }}>
-          <div style={{ display:"flex", alignItems:"stretch", gap:10, minWidth:"min-content" }}>
-            {/* 시작: 분석 고객 */}
-            <div style={{ flex:"0 0 auto", minWidth:128, alignSelf:"center", background:D.black, color:"#fff", borderRadius:11, padding:"14px 16px" }}>
-              <div style={{ fontSize:11, opacity:0.7, marginBottom:4 }}>분석 고객</div>
-              <div style={{ fontSize:24, fontWeight:800, lineHeight:1 }}>{kpi.total.toLocaleString()}<span style={{ fontSize:12, opacity:0.7, fontWeight:600 }}> 명</span></div>
+        {/* 채널 유입 플로우 (다크 패널, 좌→우) */}
+        <div style={{ background:PANEL.bg, borderRadius:16, padding:"22px 24px", marginBottom:16, overflowX:"auto" }}>
+          <div style={{ display:"flex", alignItems:"stretch", gap:18, minWidth:940 }}>
+            {/* 1) 주문 고객 (전체 세로 바) */}
+            <div style={{ flex:"0 0 auto", width:120 }}>
+              <VBar label="주문 고객" value={kpi.total} h={FLOW_H}/>
             </div>
-            <FlowArrow/>
-            {/* 두 개 레인: 자사몰 / 29CM */}
-            <div style={{ display:"flex", flexDirection:"column", gap:10, flex:"1 1 auto" }}>
-              {/* 자사몰 레인 */}
-              <div style={{ display:"flex", alignItems:"stretch", gap:10 }}>
-                <OriginNode title="자사몰 구매고객" color={CH_COLOR["자사몰"]} total={originSelf}/>
-                <FlowArrow/>
-                <OutcomeCard label="자사몰 → 29CM 이동" value={kpi.counts.f3} total={originSelf} color={CH_COLOR["29CM"]}
-                  rate={`29CM 유출률 ${(kpi.leak*100).toFixed(1)}%`} rateColor={D.amber}/>
-                <OutcomeCard label="자사몰에서만 구매" value={kpi.counts.f1} total={originSelf} color={CH_COLOR["자사몰"]}/>
+            {/* 2) 자사몰 / 29CM 비율 세로 바 */}
+            <div style={{ flex:"0 0 auto", width:120, height:FLOW_H, display:"flex", flexDirection:"column", gap:FLOW_GAP }}>
+              <VBar label="자사몰" value={selfFirstTotal} sub={`${pctOf(selfFirstTotal)}%`} h={usableH*(kpi.total?selfFirstTotal/kpi.total:0)}/>
+              <VBar label="29CM" value={cmFirstTotal} sub={`${pctOf(cmFirstTotal)}%`} h={usableH*(kpi.total?cmFirstTotal/kpi.total:0)}/>
+            </div>
+            {/* 3) 가운데: 고정 / 교차 / 고정 */}
+            <div style={{ flex:"1 1 380px", minWidth:360, height:FLOW_H, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+              <HBar label="자사몰고정 이용고객" value={kpi.counts.f1} widthPct={kpi.counts.f1/maxFixed*100}/>
+              <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+                <div style={{ flex:"0 0 auto", width:150, background:PANEL.card, borderRadius:16, padding:"16px 14px" }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:PANEL.ink, marginBottom:10 }}>교차 구매 고객</div>
+                  <div style={{ fontSize:18, fontWeight:800, color:PANEL.ink, lineHeight:1.05 }}>{kpi.both.toLocaleString()}명</div>
+                  <div style={{ fontSize:12, color:PANEL.inkSub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(0)}%</div>
+                </div>
+                <div style={{ flex:1, display:"flex", flexDirection:"column", gap:14 }}>
+                  <HBar small label="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.crossSelfFirst} widthPct={kpi.crossSelfFirst/maxCross*100}/>
+                  <HBar small label="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.crossCmFirst} widthPct={kpi.crossCmFirst/maxCross*100}/>
+                </div>
               </div>
-              {/* 29CM 레인 */}
-              <div style={{ display:"flex", alignItems:"stretch", gap:10 }}>
-                <OriginNode title="29CM 구매고객" color={CH_COLOR["29CM"]} total={origin29}/>
-                <FlowArrow/>
-                <OutcomeCard label="29CM → 자사몰 이동" value={kpi.cm29ToSelf} total={origin29} color={CH_COLOR["자사몰"]}
-                  rate={`자사몰 전환율 ${(kpi.cmConv*100).toFixed(1)}% · 가입 ${kpi.counts.f4.toLocaleString()}/주문 ${kpi.counts.f5.toLocaleString()}`} rateColor={CH_COLOR["자사몰"]}/>
-                <OutcomeCard label="29CM에서만 구매" value={kpi.counts.f2} total={origin29} color={CH_COLOR["29CM"]}/>
-              </div>
+              <HBar label="29CM 고정 이용고객" value={kpi.counts.f2} widthPct={kpi.counts.f2/maxFixed*100}/>
+            </div>
+            {/* 4) 재구매 도넛 */}
+            <div style={{ flex:"0 0 auto", display:"flex", flexDirection:"column", gap:20 }}>
+              <Ring title="자사몰 재구매 고객" dist={kpi.selfDist} shades={SELF_SHADES}/>
+              <Ring title="29CM 재구매 고객" dist={kpi.cmDist} shades={CM_SHADES}/>
             </div>
           </div>
-        </div>
-
-        {/* 재구매 고객 (맨 마지막) */}
-        <div style={{ fontSize:11, color:D.textMeta, marginBottom:8 }}>재구매 고객</div>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16 }}>
-          <Kpi label="자사몰 재구매 고객" value={kpi.selfR} color={CH_COLOR["자사몰"]} sub="자사몰 2회 이상 구매"/>
-          <Kpi label="29CM 재구매 고객" value={kpi.cmR} color={CH_COLOR["29CM"]} sub="29CM 2회 이상 구매"/>
-          <Kpi label="교차몰 구매 고객" value={kpi.both} sub={`자사몰→29CM ${kpi.crossSelfFirst.toLocaleString()} · 29CM→자사몰 ${kpi.crossCmFirst.toLocaleString()}`}/>
-        </div>
-
-        {/* 퍼널 막대 */}
-        <div style={card}>
-          <div style={{ fontSize:13, fontWeight:700, color:D.black, marginBottom:10 }}>퍼널별 고객 수</div>
-          <ResponsiveContainer width="100%" height={230}>
-            <BarChart data={barData} layout="vertical" margin={{ left:10, right:24, top:4, bottom:4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
-              <XAxis type="number" tick={{ fontSize:10, fill:D.textMeta }} allowDecimals={false}/>
-              <YAxis type="category" dataKey="label" width={140} tick={{ fontSize:10.5, fill:D.textSub }}/>
-              <Tooltip content={<Tip/>} cursor={{ fill:D.surfaceAlt }}/>
-              <Bar dataKey="value" name="고객 수" radius={[0,4,4,0]}>
-                {barData.map((d,i)=><Cell key={i} fill={d.color}/>)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
           {classified.guests>0&&(
-            <div style={{ fontSize:10.5, color:D.textMeta, marginTop:6 }}>※ 회원 미매칭 자사몰 게스트 {classified.guests.toLocaleString()}명은 '자사몰 단독 유입'에 합산됨 (회원 CSV 최신화 시 정확도 향상)</div>
+            <div style={{ fontSize:10.5, color:PANEL.sub, marginTop:10 }}>※ 회원 미매칭 자사몰 게스트 {classified.guests.toLocaleString()}명은 '자사몰고정 이용고객'에 합산됨 (회원 CSV 최신화 시 정확도 향상)</div>
           )}
         </div>
 
