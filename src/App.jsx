@@ -20412,16 +20412,20 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const card={ background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16, marginBottom:16 };
   // ── 다크 패널 플로우 (목업 디자인) ──────────────────────────
   const PANEL={ bg:"#161616", card:"#ece8df", track:"#33332f", text:"#f0ede6", sub:"#9a978f", ink:"#1a1a1a", inkSub:"#55524c" };
+  // 통일 채널 팔레트 — 자사몰=블루 / 29CM=그린 (진하기 단계로 변형)
+  const CH={ self:"#3D6FB4", selfMid:"#6E97CC", selfTint:"#DCE8F6", selfInk:"#244B7C",
+             cm:"#2FA07E", cmMid:"#6CC0A2", cmTint:"#DCEFE6", cmInk:"#1E6049" };
+  const chCol=ch=>ch==="자사몰"?CH.self:ch==="29CM"?CH.cm:"#8a8a8a";
   // 채널별 요소 카드 색상 (자사몰=블루 톤 / 29CM=그린 톤 / 중립=크림)
   const TONE={
-    self:{ card:"#d8e6f2", ink:"#163a55", bar:CH_COLOR["자사몰"] },
-    cm:{ card:"#d7ebe0", ink:"#184436", bar:CH_COLOR["29CM"] },
+    self:{ card:CH.selfTint, ink:CH.selfInk, bar:CH.self },
+    cm:{ card:CH.cmTint, ink:CH.cmInk, bar:CH.cm },
     neutral:{ card:PANEL.card, ink:PANEL.ink, bar:"#b9b6ad" },
   };
   const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
   const REPEAT_LABELS=["2회","3회","4회","5회 이상"];   // 재구매 도넛(1회 제외)
-  const SELF_SHADES=["#cfe0ef","#a9c8e2","#7EADD4","#5b8fbd","#3f6f9e"];
-  const CM_SHADES=["#cfe6da","#a6d0bd","#7EB89E","#5f9c82","#447e68"];
+  const SELF_SHADES=["#CFE0F2","#A7C4E5",CH.selfMid,CH.self,"#2C5790"];
+  const CM_SHADES=["#CDE9DC","#9FD5BF",CH.cmMid,CH.cm,"#226F57"];
   // 세로 비율 바 (부모 높이를 100% 채워 비율대로 표시 · 항목명 볼드/대형/중앙)
   const VBar=({label,value,sub,tone="neutral"})=>{
     const t=TONE[tone];
@@ -20441,7 +20445,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 가로 막대 — 전체 고객(total) 모수 대비 채움 + 퍼센트 (항목명 볼드/대형/중앙)
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
-  const SEG={ selfFixed:"#3b4db0", selfToCm:"#b8473d", cmToSelf:"#2f8f86", cmFixed:"#1f9d9d" };
+  const SEG={ selfFixed:CH.self, selfToCm:CH.selfMid, cmToSelf:CH.cmMid, cmFixed:CH.cm };
   const VSeg=({name,value,extra,color,grow,minH})=>(
     <div style={{ flexGrow:grow, flexBasis:0, minHeight:minH, background:color,
       display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textAlign:"center", padding:"6px 12px", color:"#fff", overflow:"hidden" }}>
@@ -20538,7 +20542,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
               <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                 {journey.evs.map((e,i)=>{
                   const isJoin=e.kind==="join";
-                  const col=isJoin?D.blue:(CH_COLOR[e.channel]||D.textMeta);
+                  const col=isJoin?D.blue:(chCol(e.channel)||D.textMeta);
                   return (
                     <div key={i} style={{ display:"flex", alignItems:"center", gap:10, fontSize:12 }}>
                       <span style={{ fontVariantNumeric:"tabular-nums", color:D.textMeta, minWidth:84 }}>{e.date}</span>
@@ -20664,8 +20668,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                 <YAxis tick={{ fontSize:10, fill:D.textMeta }} allowDecimals={false}/>
                 <Tooltip content={<Tip/>} cursor={{ fill:D.surfaceAlt }}/>
                 <Legend iconSize={9} wrapperStyle={{ fontSize:10.5 }}/>
-                <Bar dataKey="가입" name="자사몰 회원 가입" fill={CH_COLOR["자사몰"]} radius={[3,3,0,0]}/>
-                <Bar dataKey="신규29" name="29CM 신규 유입" fill={CH_COLOR["29CM"]} radius={[3,3,0,0]}/>
+                <Bar dataKey="가입" name="자사몰 회원 가입" fill={CH.self} radius={[3,3,0,0]}/>
+                <Bar dataKey="신규29" name="29CM 신규 유입" fill={CH.cm} radius={[3,3,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -20689,7 +20693,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                   <div key={i} style={{ border:`1px solid ${D.border}`, borderRadius:8, padding:"8px 10px" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
                       <span style={{ fontSize:12, fontWeight:700, color:D.black, fontVariantNumeric:"tabular-nums" }}>{r.phone}</span>
-                      <span style={{ fontSize:11, color:CH_COLOR[drill.channel] }}>{drill.channel} {r.count}건</span>
+                      <span style={{ fontSize:11, color:chCol(drill.channel) }}>{drill.channel} {r.count}건</span>
                     </div>
                     <div style={{ fontSize:11, color:D.textSub, lineHeight:1.7 }}>
                       {r.products.map((p,j)=>(
