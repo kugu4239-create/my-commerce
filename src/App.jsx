@@ -20499,8 +20499,10 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     );
   };
   const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
-  const selfFirstTotal=kpi.counts.f1+kpi.crossSelfFirst;   // 첫 구매 자사몰
-  const cmFirstTotal=kpi.counts.f2+kpi.crossCmFirst;        // 첫 구매 29CM
+  // 퍼널 기준: f1(자사몰만)+f3(자사몰→29CM) vs f2(29CM만)+f4/f5(29CM→자사몰) → 합계 = total(100%)
+  const selfFirstTotal=kpi.counts.f1+kpi.counts.f3;
+  const cmFirstTotal=kpi.counts.f2+kpi.counts.f4+kpi.counts.f5;
+  const crossAll=kpi.counts.f3+kpi.counts.f4+kpi.counts.f5;
   const FLOW_H=470, FLOW_GAP=12;                            // 세로 바 높이 기준
 
   return (
@@ -20609,10 +20611,10 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
               <div style={{ flex:1, display:"flex", flexDirection:"column", borderRadius:14, overflow:"hidden" }}>
                 <VSeg name="자사몰 고정 이용 고객" value={kpi.counts.f1}
                   extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}/>
-                <VSeg name="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.crossSelfFirst}
-                  extra={`유출율 ${selfFirstTotal>0?(kpi.crossSelfFirst/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={42}/>
-                <VSeg name="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.crossCmFirst}
-                  extra={`유출율 ${cmFirstTotal>0?(kpi.crossCmFirst/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={42}/>
+                <VSeg name="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.counts.f3}
+                  extra={`유출율 ${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={42}/>
+                <VSeg name="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.counts.f4+kpi.counts.f5}
+                  extra={`유출율 ${cmFirstTotal>0?((kpi.counts.f4+kpi.counts.f5)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={42}/>
                 <VSeg name="29CM 고정 이용 고객" value={kpi.counts.f2}
                   extra={`${cmFirstTotal>0?(kpi.counts.f2/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={kpi.counts.f2||1} minH={62}/>
               </div>
@@ -20620,8 +20622,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
               <div style={{ flex:"0 0 auto", width:92, display:"flex", alignItems:"center" }}>
                 <div style={{ borderLeft:`2px solid ${PANEL.sub}`, paddingLeft:9 }}>
                   <div style={{ fontSize:12, fontWeight:800, color:PANEL.text }}>교차 구매 고객</div>
-                  <div style={{ fontSize:15, fontWeight:800, color:PANEL.text, marginTop:2 }}>{kpi.both.toLocaleString()}명</div>
-                  <div style={{ fontSize:11, fontWeight:700, color:PANEL.sub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(1)}%</div>
+                  <div style={{ fontSize:15, fontWeight:800, color:PANEL.text, marginTop:2 }}>{crossAll.toLocaleString()}명</div>
+                  <div style={{ fontSize:11, fontWeight:700, color:PANEL.sub }}>{(kpi.total?crossAll/kpi.total*100:0).toFixed(1)}%</div>
                 </div>
               </div>
             </div>
