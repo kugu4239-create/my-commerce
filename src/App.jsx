@@ -20300,7 +20300,13 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       if(c.cmN>=2) cmR++;
     });
     const leak=counts.f1+counts.f3>0?counts.f3/(counts.f1+counts.f3):0;
-    return {counts,total:filtered.length,selfU,cmU,both,crossSelfFirst,crossCmFirst,selfR,cmR,leak};
+    // 순수 29CM 유입(f2+f4+f5) 중 자사몰로 전환된 비율
+    const cm29Total=counts.f2+counts.f4+counts.f5;       // 29CM 선유입 고객 전체
+    const cm29ToSelf=counts.f4+counts.f5;                // 자사몰로 전환(회원가입 이상)
+    const cm29ToOrder=counts.f5;                          // 자사몰 주문까지 전환
+    const cmConv=cm29Total>0?cm29ToSelf/cm29Total:0;
+    const cmConvOrder=cm29Total>0?cm29ToOrder/cm29Total:0;
+    return {counts,total:filtered.length,selfU,cmU,both,crossSelfFirst,crossCmFirst,selfR,cmR,leak,cm29Total,cm29ToSelf,cm29ToOrder,cmConv,cmConvOrder};
   },[filtered]);
 
   // 추세 데이터 (버킷 × 퍼널)
@@ -20444,6 +20450,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <Kpi label="자사몰 재구매 고객" value={kpi.selfR} sub="동일몰 2회 이상"/>
           <Kpi label="29CM 재구매 고객" value={kpi.cmR} sub="동일몰 2회 이상"/>
           <Kpi label="자사몰→29CM 유출률" value={`${(kpi.leak*100).toFixed(1)}%`} color={D.amber} sub="f3 / (f1+f3)"/>
+          <Kpi label="29CM→자사몰 전환율" value={`${(kpi.cmConv*100).toFixed(1)}%`} color={CH_COLOR["자사몰"]} sub={`순수 29CM ${kpi.cm29Total.toLocaleString()}명 중 자사몰 ${kpi.cm29ToSelf.toLocaleString()}명`}/>
+          <Kpi label="└ 자사몰 주문 전환율" value={`${(kpi.cmConvOrder*100).toFixed(1)}%`} color={CH_COLOR["자사몰"]} sub={`주문까지 ${kpi.cm29ToOrder.toLocaleString()}명 (f5)`}/>
         </div>
 
         {/* 퍼널 막대 */}
