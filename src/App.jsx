@@ -20666,11 +20666,11 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
             <div style={{ flex:"1 1 auto", display:"flex", flexDirection:"column", gap:6 }}>
               <div style={{ display:"flex", alignItems:"stretch", gap:0, borderRadius:14, overflow:"hidden" }}>
                 {/* 1) 주문 고객 세로 바 */}
-                <div style={{ width:112, height:FLOW_H }}>
+                <div style={{ width:112 }}>
                   <VBar label="주문 고객" value={kpi.total} radius={0}/>
                 </div>
                 {/* 2) 자사몰 / 29CM 비율 세로 바 */}
-                <div style={{ width:112, height:FLOW_H, display:"flex", flexDirection:"column", gap:0 }}>
+                <div style={{ width:112, display:"flex", flexDirection:"column", gap:0 }}>
                   <div style={{ flexGrow:selfFirstTotal||1, flexBasis:0, minHeight:52 }}>
                     <VBar label="자사몰" value={selfFirstTotal} sub={`${pctOf(selfFirstTotal)}%`} tone="self" radius={0}/>
                   </div>
