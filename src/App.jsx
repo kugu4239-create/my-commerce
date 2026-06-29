@@ -20445,9 +20445,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const chCol=ch=>ch==="자사몰"?CH.self:ch==="29CM"?CH.cm:"#8a8a8a";
   // 채널별 요소 카드 색상 (자사몰=블루 톤 / 29CM=그린 톤 / 중립=크림)
   const TONE={
-    self:{ card:"#0E1E38", ink:"#ffffff", bar:CH.self },
-    cm:{ card:"#7A6040", ink:"#ffffff", bar:CH.cm },
-    neutral:{ card:"#2C3040", ink:"#ffffff", bar:"#b9b6ad" },
+    self:{ card:"#0E2040", ink:"#ffffff", bar:CH.self },
+    cm:{ card:"#1A5C3C", ink:"#ffffff", bar:CH.cm },
+    neutral:{ card:"#2A2E3A", ink:"#ffffff", bar:"#b9b6ad" },
   };
   const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
   const REPEAT_LABELS=["2회","3회","4회","5회 이상"];   // 재구매 도넛(1회 제외)
@@ -20473,7 +20473,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
   // 자사몰에 가까울수록 진한 네이비, 29CM로 기울수록 크림 계열
-  const SEG={ selfFixed:"#0E1E38", selfToCm:"#1A3560", cmToSelf:"#365872", cmToSelfReg:"#546055", cmFixed:"#7A6040", cmReg:"#7A6238" };
+  const SEG={ selfFixed:"#0E2040", selfToCm:"#1A3870", cmToSelf:"#1E5870", cmToSelfReg:"#1E5A50", cmFixed:"#1A5C3C", cmReg:"#1E5E42" };
   const VSeg=({name,value,extra,extraLabel,footnote,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
@@ -20679,7 +20679,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                   </div>
                 </div>
                 {/* 3) VSeg 노드 스택 */}
-                <div style={{ flex:1, minWidth:400, height:FLOW_H, display:"flex", flexDirection:"column" }}>
+                <div style={{ flex:1, minWidth:400, minHeight:FLOW_H, display:"flex", flexDirection:"column" }}>
                   {/* ── 자사몰 그룹: VBar 자사몰 비율과 동일한 flexGrow ── */}
                   <div style={{ display:"flex", flexDirection:"column", flexGrow:selfFirstTotal||1, flexBasis:0, minHeight:168 }}>
                     <VSeg name="자사몰 전용 구매 고객" value={kpi.counts.f1}
