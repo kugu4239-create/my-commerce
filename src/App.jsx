@@ -20246,14 +20246,16 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       const chRaw=o.channel;
       const ch=chRaw==="MERRYON"?"자사몰":chRaw;
       if(ch!=="자사몰"&&ch!=="29CM") return;
-      let c=cust[p]; if(!c) c=cust[p]={self:[],cm:[]};
-      (ch==="자사몰"?c.self:c.cm).push(d);
+      // 동일 주문번호는 1회로 집계 (Map 키: order_no 우선, 없으면 order_id, 없으면 날짜)
+      const oid=o.order_no||o.order_id||d;
+      let c=cust[p]; if(!c) c=cust[p]={selfMap:new Map(),cmMap:new Map()};
+      (ch==="자사몰"?c.selfMap:c.cmMap).set(oid,d);
     });
     const out=[];
     let guests=0;
     Object.keys(cust).forEach(p=>{
-      const self=cust[p].self.sort();
-      const cm=cust[p].cm.sort();
+      const self=[...cust[p].selfMap.values()].sort();
+      const cm=[...cust[p].cmMap.values()].sort();
       const has자사=self.length>0, has29=cm.length>0;
       const first29=cm[0], firstSelf=self[0];
       const isMember=isMemberSet.has(p);
