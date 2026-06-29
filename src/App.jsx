@@ -20449,7 +20449,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
         </div>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
-          {sub&&<div style={{ fontSize:39, fontWeight:800, color:t.ink, lineHeight:1.0 }}>{sub}</div>}
+          {sub&&<div style={{ fontSize:27, fontWeight:800, color:t.ink, lineHeight:1.0 }}>{sub}</div>}
           <div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:3 }}>{value.toLocaleString()}명</div>
         </div>
       </div>
@@ -20458,8 +20458,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 가로 막대 — 전체 고객(total) 모수 대비 채움 + 퍼센트 (항목명 볼드/대형/중앙)
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
-  const SEG={ selfFixed:CH.self, selfToCm:CH.selfMid, cmToSelf:CH.cmMid, cmFixed:CH.cm };
-  const VSeg=({name,value,extra,color,grow,minH,onClick})=>(
+  const SEG={ selfFixed:CH.self, selfToCm:CH.selfMid, cmToSelf:CH.cmMid, cmToSelfReg:"#8BB5AA", cmFixed:CH.cm };
+  const VSeg=({name,value,extra,extraLabel,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
       onMouseLeave={onClick?e=>{e.currentTarget.style.filter=""}:undefined}
@@ -20468,7 +20468,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
         textAlign:"center", padding:"8px 12px", color:"#fff", overflow:"hidden",
         cursor:onClick?"pointer":"default" }}>
       <div style={{ fontSize:11, fontWeight:700, lineHeight:1.2, opacity:0.88, marginBottom:3 }}>{name}</div>
-      {extra&&<div style={{ fontSize:34, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
+      {extraLabel&&<div style={{ fontSize:11, fontWeight:700, opacity:0.88, lineHeight:1.2 }}>{extraLabel}</div>}
+      {extra&&<div style={{ fontSize:24, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
       <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.88 }}>{value.toLocaleString()}명</div>
     </div>
   );
@@ -20519,12 +20520,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   };
   const handleNodeClick=useCallback((segment)=>{
     if(!kpi||!filtered.length) return;
-    const segRows=filtered.filter(c=>
-      segment==='f1'?c.funnel==='f1':
-      segment==='f3'?c.funnel==='f3':
-      segment==='f45'?(c.funnel==='f4'||c.funnel==='f5'):
-      segment==='f2'?c.funnel==='f2':false
-    );
+    const segRows=filtered.filter(c=>c.funnel===segment||(segment==='f45'&&(c.funnel==='f4'||c.funnel==='f5')));
     const phoneOrds={};
     orders.forEach(o=>{
       const p=o.orderer_phone||''; if(!p) return;
@@ -20543,7 +20539,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       evs.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
       return {...c,member,evs};
     }).sort((a,b)=>a.phone.localeCompare(b.phone));
-    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰에서 첫 구매 후 29CM로 이동한 고객',f45:'29CM에서 첫 구매 후 자사몰로 이동한 고객',f2:'29CM 순수 이용 고객'}[segment]||segment;
+    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰에서 구매 후 29CM에서 재구매한 고객',f5:'29CM 구매 후 자사몰 재구매',f4:'29CM 구매 후 자사몰 회원가입만',f45:'29CM에서 구매 후 자사몰로 이동한 고객',f2:'29CM 순수 이용 고객',f6:'자사몰 회원 등록만 → 29CM 첫 구매'}[segment]||segment;
     setNodeDetail({segment,title,rows});
   },[filtered,orders,cafe24Members,kpi]);
   const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
@@ -20668,11 +20664,14 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                   extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}
                   onClick={()=>handleNodeClick('f1')}/>
                 <VSeg name="자사몰에서 구매 후 29CM에서 재구매한 고객" value={kpi.counts.f3}
-                  extra={`유출율 ${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
+                  extraLabel="유출율" extra={`${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
                   onClick={()=>handleNodeClick('f3')}/>
-                <VSeg name="29CM에서 구매 후 자사몰에서 재구매한 고객" value={kpi.counts.f4+kpi.counts.f5}
-                  extra={`유출율 ${cmFirstTotal>0?((kpi.counts.f4+kpi.counts.f5)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={80}
-                  onClick={()=>handleNodeClick('f45')}/>
+                <VSeg name="29CM 구매 후 자사몰 재구매" value={kpi.counts.f5}
+                  extraLabel="유출율" extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={62}
+                  onClick={()=>handleNodeClick('f5')}/>
+                <VSeg name="29CM 구매 후 자사몰 회원가입만" value={kpi.counts.f4}
+                  extra={`${cmFirstTotal>0?(kpi.counts.f4/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelfReg} grow={0} minH={62}
+                  onClick={()=>handleNodeClick('f4')}/>
                 <VSeg name="29CM 순수 이용 고객" value={kpi.counts.f2+kpi.counts.f6}
                   extra={`${cmFirstTotal>0?((kpi.counts.f2+kpi.counts.f6)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={(kpi.counts.f2+kpi.counts.f6)||1} minH={62}
                   onClick={()=>handleNodeClick('f2')}/>
@@ -20680,7 +20679,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
               {/* 교차 구매 고객 브래킷 — 좌측 노드와 동일한 flex 비율로 spacer를 놓아 두 이동 구간에 정확히 정렬 */}
               <div style={{ flex:"0 0 92px", display:"flex", flexDirection:"column" }}>
                 <div style={{ flexGrow:kpi.counts.f1||1, flexBasis:0, minHeight:62 }}/>
-                <div style={{ flexGrow:0, minHeight:160, display:"flex", alignItems:"center" }}>
+                <div style={{ flexGrow:0, minHeight:204, display:"flex", alignItems:"center" }}>
                   <div style={{ borderLeft:`2px solid ${PANEL.sub}`, paddingLeft:9 }}>
                     <div style={{ fontSize:12, fontWeight:800, color:PANEL.text }}>교차 구매 고객</div>
                     <div style={{ fontSize:22, fontWeight:800, color:PANEL.text, marginTop:2 }}>{crossAll.toLocaleString()}명</div>
