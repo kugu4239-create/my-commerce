@@ -20445,9 +20445,9 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const chCol=ch=>ch==="자사몰"?CH.self:ch==="29CM"?CH.cm:"#8a8a8a";
   // 채널별 요소 카드 색상 (자사몰=블루 톤 / 29CM=그린 톤 / 중립=크림)
   const TONE={
-    self:{ card:"#12244A", ink:"#ffffff", bar:CH.self },
-    cm:{ card:"#175E3E", ink:"#ffffff", bar:CH.cm },
-    neutral:{ card:"#2C3244", ink:"#ffffff", bar:"#b9b6ad" },
+    self:{ card:"#0E1E3A", ink:"#ffffff", bar:CH.self },
+    cm:{ card:"#0D3526", ink:"#ffffff", bar:CH.cm },
+    neutral:{ card:"#1E1E24", ink:"#ffffff", bar:"#b9b6ad" },
   };
   const DIST_LABELS=["1회","2회","3회","4회","5회 이상"];
   const REPEAT_LABELS=["2회","3회","4회","5회 이상"];   // 재구매 도넛(1회 제외)
@@ -20473,7 +20473,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
   // 자사몰에 가까울수록 진한 네이비, 29CM로 기울수록 크림 계열
-  const SEG={ selfFixed:"#12244A", selfToCm:"#1D4899", cmToSelf:"#1B6A88", cmToSelfReg:"#1B7A6A", cmFixed:"#175E3E", cmReg:"#257A48" };
+  const SEG={ selfFixed:"#0E1E3A", selfToCm:"#1A3E80", cmToSelf:"#186080", cmToSelfReg:"#187068", cmFixed:"#0D3526", cmReg:"#1A6040" };
   const VSeg=({name,value,extra,extraLabel,footnote,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
@@ -20568,7 +20568,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   const selfFirstTotal=kpi.counts.f1+kpi.counts.f3;
   const cmFirstTotal=kpi.counts.f2+kpi.counts.f4+kpi.counts.f5+kpi.counts.f6;
   const crossAll=kpi.counts.f3+kpi.counts.f4+kpi.counts.f5;
-  const FLOW_H=560, FLOW_GAP=12;                            // 세로 바 높이 기준
+  const FLOW_H=728, FLOW_GAP=12;                            // 세로 바 높이 기준
 
   return (
     <div style={{ maxWidth:1080, margin:"0 auto", padding:"22px 24px 60px" }}>
