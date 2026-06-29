@@ -20664,7 +20664,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <div style={{ display:"flex", alignItems:"flex-start", gap:18, minWidth:1000 }}>
             {/* 1+2+3) 주문고객 · 채널 · VSeg 노드 — 틈 없이 부착, 바깥 테두리만 둥글게 */}
             <div style={{ flex:"1 1 auto", display:"flex", flexDirection:"column", gap:6 }}>
-              <div style={{ display:"flex", alignItems:"stretch", gap:0, borderRadius:14, overflow:"hidden" }}>
+              <div style={{ display:"flex", alignItems:"stretch", gap:1, background:"#fff", borderRadius:14, overflow:"hidden" }}>
                 {/* 1) 주문 고객 세로 바 */}
                 <div style={{ width:112 }}>
                   <VBar label="주문 고객" value={kpi.total} radius={0}/>
