@@ -20453,19 +20453,26 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 가로 막대 — 전체 고객(total) 모수 대비 채움 + 퍼센트 (항목명 볼드/대형/중앙)
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
-  const SEG={ selfFixed:CH.self, selfToCm:CH.selfMid, cmToSelf:CH.cmMid, cmToSelfReg:"#8BB5AA", cmFixed:CH.cm };
-  const VSeg=({name,value,extra,extraLabel,color,grow,minH,onClick})=>(
+  // 자사몰에 가까울수록 진한 네이비, 29CM로 기울수록 크림 계열
+  const SEG={ selfFixed:"#1A3460", selfToCm:"#2B5090", cmToSelf:"#3E6878", cmToSelfReg:"#5A6B5C", cmFixed:"#6B5435", cmReg:"#7A6645" };
+  const VSeg=({name,value,extra,extraLabel,footnote,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
       onMouseLeave={onClick?e=>{e.currentTarget.style.filter=""}:undefined}
       style={{ flexGrow:grow, flexBasis:0, minHeight:minH, background:color,
-        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-        textAlign:"center", padding:"8px 12px", color:"#fff", overflow:"hidden",
+        display:"flex", flexDirection:"row", alignItems:"center",
+        padding:"8px 14px", color:"#fff", overflow:"hidden",
         cursor:onClick?"pointer":"default" }}>
-      <div style={{ fontSize:11, fontWeight:700, lineHeight:1.2, opacity:0.88, marginBottom:3 }}>{name}</div>
-      {extraLabel&&<div style={{ fontSize:11, fontWeight:700, opacity:0.88, lineHeight:1.2 }}>{extraLabel}</div>}
-      {extra&&<div style={{ fontSize:24, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
-      <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.88 }}>{value.toLocaleString()}명</div>
+      <div style={{ flex:1, textAlign:"left" }}>
+        <div style={{ fontSize:11, fontWeight:700, lineHeight:1.3, opacity:0.88 }}>
+          {name}{footnote&&<span style={{ fontSize:9, opacity:0.65, marginLeft:2 }}>{footnote}</span>}
+        </div>
+        {extraLabel&&<div style={{ fontSize:11, fontWeight:700, opacity:0.7, lineHeight:1.2, marginTop:1 }}>{extraLabel}</div>}
+      </div>
+      <div style={{ flex:"0 0 auto", textAlign:"right", marginLeft:10 }}>
+        {extra&&<div style={{ fontSize:24, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
+        <div style={{ fontSize:11.5, fontWeight:700, opacity:0.88, marginTop:1 }}>{value.toLocaleString()}명</div>
+      </div>
     </div>
   );
   // 재구매 분포 도넛(링) + 범례 (제목 옆 재구매율 · 범례 클릭 시 고객/상품 드릴다운)
@@ -20662,24 +20669,24 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                     onClick={()=>handleNodeClick('f1')}/>
                   <VSeg name="자사몰 구매 후 29CM 신규 구매한 고객" value={kpi.counts.f3}
                     extra={`${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={82}
-                    onClick={()=>handleNodeClick('f3')}/>
+                    footnote="①②" onClick={()=>handleNodeClick('f3')}/>
                 </div>
                 {/* ── 29CM 그룹: VBar 29CM 비율과 동일한 flexGrow ── */}
                 <div style={{ display:"flex", flexDirection:"column", flexGrow:cmFirstTotal||1, flexBasis:0, minHeight:248 }}>
                   <VSeg name="29CM 구매 후 자사몰 신규 구매" value={kpi.counts.f5}
                     extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={62}
-                    onClick={()=>handleNodeClick('f5')}/>
+                    footnote="①③" onClick={()=>handleNodeClick('f5')}/>
                   <VSeg name="29CM 구매 후 자사몰 회원가입만" value={kpi.counts.f4}
                     extra={`${cmFirstTotal>0?(kpi.counts.f4/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelfReg} grow={0} minH={62}
-                    onClick={()=>handleNodeClick('f4')}/>
-                  <VSeg name="29CM 구매 고객" value={kpi.counts.f2}
-                    extra={`${cmFirstTotal>0?(kpi.counts.f2/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={kpi.counts.f2||1} minH={62}
-                    onClick={()=>handleNodeClick('f2')}/>
+                    footnote="①" onClick={()=>handleNodeClick('f4')}/>
                   {kpi.counts.f6>0&&(
                     <VSeg name="자사몰 회원 등록 → 29CM 신규 구매" value={kpi.counts.f6}
-                      extra={`${cmFirstTotal>0?(kpi.counts.f6/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={kpi.counts.f6} minH={62}
-                      onClick={()=>handleNodeClick('f6')}/>
+                      extra={`${cmFirstTotal>0?(kpi.counts.f6/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmReg} grow={kpi.counts.f6} minH={62}
+                      footnote="④" onClick={()=>handleNodeClick('f6')}/>
                   )}
+                  <VSeg name="29CM 구매 고객" value={kpi.counts.f2}
+                    extra={`${cmFirstTotal>0?(kpi.counts.f2/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={kpi.counts.f2||1} minH={62}
+                    footnote="④" onClick={()=>handleNodeClick('f2')}/>
                 </div>
               </div>
               {/* 교차 구매 고객 브래킷 — 좌측 노드와 동일한 flex 비율로 spacer를 놓아 두 이동 구간에 정확히 정렬 */}
