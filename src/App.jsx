@@ -20348,7 +20348,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   return (
     <div style={{ maxWidth:1080, margin:"0 auto", padding:"22px 24px 60px" }}>
       <div style={{ marginBottom:6 }}>
-        <div style={{ fontSize:18, fontWeight:800, color:D.black }}>채널 퍼널 분석</div>
+        <div style={{ fontSize:18, fontWeight:800, color:D.black }}>채널 유입 분석</div>
         <div style={{ fontSize:12, color:D.textMeta, marginTop:3 }}>카페24(자사몰) ↔ 29CM 유입·이동을 휴대폰 단위로 매칭해 5개 퍼널로 분류합니다. 분석 단위는 주문이 아니라 유니크 휴대폰(고객 1명)입니다.</div>
       </div>
 
@@ -20622,7 +20622,7 @@ export default function App() {
     {key:"compare",label:"데이터 컴페어"},
     {key:"promo",label:"프로모션 플로우"},
     {key:"impact",label:"콘텐츠 임팩트"},
-    {key:"funnel",label:"채널 퍼널"},
+    {key:"funnel",label:"채널 유입 분석"},
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
     {key:"gmv",label:"GMV 계산기"},
