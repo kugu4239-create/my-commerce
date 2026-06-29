@@ -20096,9 +20096,9 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
 const FUNNELS=[
   {key:"f1",label:"자사몰 단독 유입",color:"#7EADD4"},
   {key:"f2",label:"29CM 단독 유입",color:"#7EB89E"},
-  {key:"f3",label:"자사몰 → 29CM 이동",color:"#D4A574"},
-  {key:"f4",label:"29CM에서 첫 구매 후 → 자사몰 회원가입",color:"#9E92C8"},
-  {key:"f5",label:"29CM에서 첫 구매 후 → 자사몰 주문",color:"#C0392B"},
+  {key:"f3",label:"자사몰 구매 후 29CM 재구매",color:"#D4A574"},
+  {key:"f4",label:"29CM 구매 후 자사몰 회원가입",color:"#9E92C8"},
+  {key:"f5",label:"29CM 구매 후 자사몰 재구매",color:"#C0392B"},
 ];
 
 // 전환일(YYYY-MM-DD) → 주/월/분기 버킷 라벨
@@ -20243,52 +20243,64 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       if(o.status==="취소") return;
       const d=o.order_date;
       if(!d) return;
-      const ch=o.channel;
+      const chRaw=o.channel;
+      const ch=chRaw==="MERRYON"?"자사몰":chRaw;
       if(ch!=="자사몰"&&ch!=="29CM") return;
-      let c=cust[p]; if(!c) c=cust[p]={self:[],cm:[]};
-      (ch==="자사몰"?c.self:c.cm).push(d);
+      // 동일 주문번호는 1회로 집계 (Map 키: order_no 우선, 없으면 order_id, 없으면 날짜)
+      const oid=o.order_no||o.order_id||d;
+      let c=cust[p]; if(!c) c=cust[p]={selfMap:new Map(),cmMap:new Map()};
+      (ch==="자사몰"?c.selfMap:c.cmMap).set(oid,d);
     });
     const out=[];
     let guests=0;
     Object.keys(cust).forEach(p=>{
-      const self=cust[p].self.sort();
-      const cm=cust[p].cm.sort();
+      const self=[...cust[p].selfMap.values()].sort();
+      const cm=[...cust[p].cmMap.values()].sort();
       const has자사=self.length>0, has29=cm.length>0;
       const first29=cm[0], firstSelf=self[0];
       const isMember=isMemberSet.has(p);
       const joinDate=isMember?(memberMap[p]||null):null;
-      let funnel=null, tDate=null;
+      let funnel=null, tDate=null, tDateA=null;
       if(!isMember){
-        if(has29){ funnel="f2"; tDate=first29; }
-        else if(has자사){ funnel="f1"; tDate=firstSelf; guests++; } // 비회원 자사몰(게스트) — f1 합산 + 진단
+        if(has29){ funnel="f2"; tDate=first29; tDateA=first29; }
+        else if(has자사){ funnel="f1"; tDate=firstSelf; tDateA=firstSelf; guests++; } // 비회원 자사몰(게스트) — f1 합산 + 진단
       }else if(has29&&joinDate&&first29<joinDate){
         // 29CM 선(先)구매 후 가입
         const selfAfter=self.filter(d=>d>=joinDate);
-        if(selfAfter.length){ funnel="f5"; tDate=selfAfter[0]; }
-        else { funnel="f4"; tDate=joinDate; }
+        if(selfAfter.length){ funnel="f5"; tDate=selfAfter[0]; tDateA=first29; } // A=첫29CM구매, B=첫자사몰주문
+        else { funnel="f4"; tDate=joinDate; tDateA=first29; } // A=첫29CM구매, B=자사몰가입
       }else if(has29){
-        funnel="f3";
         const after=joinDate?cm.filter(d=>d>=joinDate):cm;
         tDate=after[0]||first29;
+        if(has자사){
+          funnel="f3"; tDateA=firstSelf;  // A=첫자사몰구매, B=첫29CM구매
+        }else{
+          funnel="f6"; tDateA=tDate;  // 자사몰 회원 등록만, 자사몰 구매 없이 29CM에서 첫 구매
+        }
       }else if(has자사){
-        funnel="f1"; tDate=joinDate||firstSelf;
+        funnel="f1"; tDate=joinDate||firstSelf; tDateA=joinDate||firstSelf;
       }
       // 교차몰 구매 방향: 첫 구매가 어느 채널인지로 자사몰→29CM / 29CM→자사몰 구분
       const cross=(has자사&&has29)?(firstSelf<=first29?"self_first":"cm_first"):null;
-      if(funnel&&tDate) out.push({phone:p,funnel,tDate,selfN:self.length,cmN:cm.length,both:has자사&&has29,cross});
+      if(funnel&&tDate) out.push({phone:p,funnel,tDate,tDateA,selfN:self.length,cmN:cm.length,both:has자사&&has29,cross});
     });
     return {rows:out,guests};
   },[orders,cafe24Members]);
 
-  // 전환일 기준 기간 필터
-  const filtered=useMemo(
-    ()=>filterByDate(classified.rows,"tDate",period,customStart,customEnd),
-    [classified,period,customStart,customEnd]
-  );
+  // 전환일 기준 기간 필터 — 교차 이동(f3/f4/f5)은 출발 채널 구매일(tDateA)도 기간 내여야 집계
+  const filtered=useMemo(()=>{
+    const base=filterByDate(classified.rows,"tDate",period,customStart,customEnd);
+    if(period==="all") return base;
+    return base.filter(c=>{
+      if(c.funnel!=='f3'&&c.funnel!=='f4'&&c.funnel!=='f5') return true;
+      if(!c.tDateA) return true;
+      return filterByDate([c],"tDateA",period,customStart,customEnd).length>0;
+    });
+  },[classified,period,customStart,customEnd]);
 
   // KPI + 퍼널 카운트 (필터된 고객 기준)
   const kpi=useMemo(()=>{
-    const counts={f1:0,f2:0,f3:0,f4:0,f5:0};
+    const counts={f1:0,f2:0,f3:0,f4:0,f5:0,f6:0};
     let selfU=0,cmU=0,both=0,selfR=0,cmR=0,crossSelfFirst=0,crossCmFirst=0;
     const selfDist=[0,0,0,0,0], cmDist=[0,0,0,0,0];   // index 0=1회 … 4=5회 이상
     const bk=n=>Math.min(n,5)-1;
@@ -20349,6 +20361,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
 
   // 재구매 도넛 드릴다운 — {channel, bucketIdx} 선택 시 고객 전화번호·구매 상품 목록 (기본: 자사몰 5회 이상)
   const [drill,setDrill]=useState({channel:"자사몰",bucketIdx:4});
+  const [nodeDetail,setNodeDetail]=useState(null);
   const drillData=useMemo(()=>{
     if(!drill) return null;
     const ch=drill.channel;
@@ -20436,8 +20449,8 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
           <div style={{ fontSize:15, fontWeight:800, color:t.ink }}>{label}</div>
         </div>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
-          <div style={{ fontSize:17, fontWeight:800, color:t.ink, lineHeight:1.1 }}>{value.toLocaleString()}명</div>
-          {sub&&<div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:1 }}>{sub}</div>}
+          {sub&&<div style={{ fontSize:39, fontWeight:800, color:t.ink, lineHeight:1.0 }}>{sub}</div>}
+          <div style={{ fontSize:13, fontWeight:700, color:t.ink, opacity:0.72, marginTop:3 }}>{value.toLocaleString()}명</div>
         </div>
       </div>
     );
@@ -20446,11 +20459,17 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
   const SEG={ selfFixed:CH.self, selfToCm:CH.selfMid, cmToSelf:CH.cmMid, cmFixed:CH.cm };
-  const VSeg=({name,value,extra,color,grow,minH})=>(
-    <div style={{ flexGrow:grow, flexBasis:0, minHeight:minH, background:color,
-      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textAlign:"center", padding:"6px 12px", color:"#fff", overflow:"hidden" }}>
-      <div style={{ fontSize:12.5, fontWeight:800, lineHeight:1.25 }}>{name}</div>
-      <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.96 }}>{value.toLocaleString()}명{extra?` · ${extra}`:""}</div>
+  const VSeg=({name,value,extra,color,grow,minH,onClick})=>(
+    <div onClick={onClick}
+      onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
+      onMouseLeave={onClick?e=>{e.currentTarget.style.filter=""}:undefined}
+      style={{ flexGrow:grow, flexBasis:0, minHeight:minH, background:color,
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+        textAlign:"center", padding:"8px 12px", color:"#fff", overflow:"hidden",
+        cursor:onClick?"pointer":"default" }}>
+      <div style={{ fontSize:11, fontWeight:700, lineHeight:1.2, opacity:0.88, marginBottom:3 }}>{name}</div>
+      {extra&&<div style={{ fontSize:34, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
+      <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.88 }}>{value.toLocaleString()}명</div>
     </div>
   );
   // 재구매 분포 도넛(링) + 범례 (제목 옆 재구매율 · 범례 클릭 시 고객/상품 드릴다운)
@@ -20498,10 +20517,39 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
       </div>
     );
   };
+  const handleNodeClick=useCallback((segment)=>{
+    if(!kpi||!filtered.length) return;
+    const segRows=filtered.filter(c=>
+      segment==='f1'?c.funnel==='f1':
+      segment==='f3'?c.funnel==='f3':
+      segment==='f45'?(c.funnel==='f4'||c.funnel==='f5'):
+      segment==='f2'?c.funnel==='f2':false
+    );
+    const phoneOrds={};
+    orders.forEach(o=>{
+      const p=o.orderer_phone||''; if(!p) return;
+      if(!phoneOrds[p]) phoneOrds[p]=[];
+      phoneOrds[p].push(o);
+    });
+    const memberLookup={};
+    cafe24Members.forEach(m=>{const p=m.phone_norm||normPhone(m.phone||''); if(p) memberLookup[p]=m;});
+    const rows=segRows.map(c=>{
+      const member=memberLookup[c.phone]||null;
+      const evs=[];
+      if(member&&member.join_date) evs.push({kind:'join',date:member.join_date});
+      (phoneOrds[c.phone]||[]).forEach(o=>{
+        if(o.order_date&&o.channel) evs.push({kind:'order',date:o.order_date,channel:o.channel,product:o.product_name||'',status:o.status||''});
+      });
+      evs.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+      return {...c,member,evs};
+    }).sort((a,b)=>a.phone.localeCompare(b.phone));
+    const title={f1:'자사몰 순수 이용 고객',f3:'자사몰에서 첫 구매 후 29CM로 이동한 고객',f45:'29CM에서 첫 구매 후 자사몰로 이동한 고객',f2:'29CM 순수 이용 고객'}[segment]||segment;
+    setNodeDetail({segment,title,rows});
+  },[filtered,orders,cafe24Members,kpi]);
   const pctOf=n=>kpi.total>0?Math.round(n/kpi.total*100):0;
   // 퍼널 기준: f1(자사몰만)+f3(자사몰→29CM) vs f2(29CM만)+f4/f5(29CM→자사몰) → 합계 = total(100%)
   const selfFirstTotal=kpi.counts.f1+kpi.counts.f3;
-  const cmFirstTotal=kpi.counts.f2+kpi.counts.f4+kpi.counts.f5;
+  const cmFirstTotal=kpi.counts.f2+kpi.counts.f4+kpi.counts.f5+kpi.counts.f6;
   const crossAll=kpi.counts.f3+kpi.counts.f4+kpi.counts.f5;
   const FLOW_H=470, FLOW_GAP=12;                            // 세로 바 높이 기준
 
@@ -20594,8 +20642,15 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
         <div style={{ background:PANEL.bg, borderRadius:16, padding:"22px 24px", marginBottom:16, overflowX:"auto" }}>
           <div style={{ display:"flex", alignItems:"stretch", gap:18, minWidth:1000 }}>
             {/* 1) 주문 고객 (전체 세로 바, 100% 기준) */}
-            <div style={{ flex:"0 0 auto", width:112, height:FLOW_H }}>
-              <VBar label="주문 고객" value={kpi.total}/>
+            <div style={{ flex:"0 0 auto", width:112, display:"flex", flexDirection:"column", gap:6 }}>
+              <div style={{ height:FLOW_H }}>
+                <VBar label="주문 고객" value={kpi.total}/>
+              </div>
+              {crossAll>0&&(
+                <div style={{ fontSize:10, color:PANEL.sub, textAlign:"center", lineHeight:1.5 }}>
+                  * 교차 구매 고객<br/>{crossAll.toLocaleString()}명 중복 집계
+                </div>
+              )}
             </div>
             {/* 2) 자사몰 / 29CM 비율 세로 바 (주문 고객 카드 높이 내 비율) */}
             <div style={{ flex:"0 0 auto", width:112, height:FLOW_H, display:"flex", flexDirection:"column", gap:FLOW_GAP }}>
@@ -20609,22 +20664,30 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
             {/* 3) 단일 세로 스택 노드(고정/이동 4분할) + 교차 구매 브래킷 */}
             <div style={{ flex:"1 1 440px", minWidth:400, height:FLOW_H, display:"flex", alignItems:"stretch", gap:10 }}>
               <div style={{ flex:1, display:"flex", flexDirection:"column", borderRadius:14, overflow:"hidden" }}>
-                <VSeg name="자사몰 고정 이용 고객" value={kpi.counts.f1}
-                  extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}/>
-                <VSeg name="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.counts.f3}
-                  extra={`유출율 ${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={42}/>
-                <VSeg name="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.counts.f4+kpi.counts.f5}
-                  extra={`유출율 ${cmFirstTotal>0?((kpi.counts.f4+kpi.counts.f5)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={42}/>
-                <VSeg name="29CM 고정 이용 고객" value={kpi.counts.f2}
-                  extra={`${cmFirstTotal>0?(kpi.counts.f2/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={kpi.counts.f2||1} minH={62}/>
+                <VSeg name="자사몰 순수 이용 고객" value={kpi.counts.f1}
+                  extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}
+                  onClick={()=>handleNodeClick('f1')}/>
+                <VSeg name="자사몰에서 구매 후 29CM에서 재구매한 고객" value={kpi.counts.f3}
+                  extra={`유출율 ${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
+                  onClick={()=>handleNodeClick('f3')}/>
+                <VSeg name="29CM에서 구매 후 자사몰에서 재구매한 고객" value={kpi.counts.f4+kpi.counts.f5}
+                  extra={`유출율 ${cmFirstTotal>0?((kpi.counts.f4+kpi.counts.f5)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={80}
+                  onClick={()=>handleNodeClick('f45')}/>
+                <VSeg name="29CM 순수 이용 고객" value={kpi.counts.f2+kpi.counts.f6}
+                  extra={`${cmFirstTotal>0?((kpi.counts.f2+kpi.counts.f6)/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmFixed} grow={(kpi.counts.f2+kpi.counts.f6)||1} minH={62}
+                  onClick={()=>handleNodeClick('f2')}/>
               </div>
-              {/* 교차 구매 고객 — 가운데 이동 구간 묶음 브래킷 */}
-              <div style={{ flex:"0 0 auto", width:92, display:"flex", alignItems:"center" }}>
-                <div style={{ borderLeft:`2px solid ${PANEL.sub}`, paddingLeft:9 }}>
-                  <div style={{ fontSize:12, fontWeight:800, color:PANEL.text }}>교차 구매 고객</div>
-                  <div style={{ fontSize:15, fontWeight:800, color:PANEL.text, marginTop:2 }}>{crossAll.toLocaleString()}명</div>
-                  <div style={{ fontSize:11, fontWeight:700, color:PANEL.sub }}>{(kpi.total?crossAll/kpi.total*100:0).toFixed(1)}%</div>
+              {/* 교차 구매 고객 브래킷 — 좌측 노드와 동일한 flex 비율로 spacer를 놓아 두 이동 구간에 정확히 정렬 */}
+              <div style={{ flex:"0 0 92px", display:"flex", flexDirection:"column" }}>
+                <div style={{ flexGrow:kpi.counts.f1||1, flexBasis:0, minHeight:62 }}/>
+                <div style={{ flexGrow:0, minHeight:160, display:"flex", alignItems:"center" }}>
+                  <div style={{ borderLeft:`2px solid ${PANEL.sub}`, paddingLeft:9 }}>
+                    <div style={{ fontSize:12, fontWeight:800, color:PANEL.text }}>교차 구매 고객</div>
+                    <div style={{ fontSize:22, fontWeight:800, color:PANEL.text, marginTop:2 }}>{crossAll.toLocaleString()}명</div>
+                    <div style={{ fontSize:11, fontWeight:700, color:PANEL.sub }}>{(kpi.total?crossAll/kpi.total*100:0).toFixed(1)}%</div>
+                  </div>
                 </div>
+                <div style={{ flexGrow:(kpi.counts.f2+kpi.counts.f6)||1, flexBasis:0, minHeight:62 }}/>
               </div>
             </div>
             {/* 5) 재구매 도넛 (재구매율 + 클릭 드릴다운) */}
@@ -20643,7 +20706,83 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
               * 주문 배송 정보에 회원 가입 시 기재한 번호와 다른 번호를 기입한 경우가 합산되어 미매칭건으로 이어지기도 합니다.
             </div>
           )}
+          {kpi.counts.f6>0&&(
+            <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${PANEL.track}` }}>
+              <div style={{ fontSize:10.5, fontWeight:700, color:PANEL.sub, marginBottom:6, letterSpacing:0.3 }}>자사몰 회원 등록만 → 29CM 첫 구매</div>
+              <div style={{ display:"flex", alignItems:"center", gap:20 }}>
+                <div>
+                  <span style={{ fontSize:26, fontWeight:800, color:PANEL.text, lineHeight:1 }}>{kpi.counts.f6.toLocaleString()}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:PANEL.text, marginLeft:3 }}>명</span>
+                </div>
+                <div style={{ fontSize:18, fontWeight:800, color:PANEL.sub }}>{kpi.total>0?(kpi.counts.f6/kpi.total*100).toFixed(1):0}%</div>
+                <div style={{ fontSize:10.5, color:PANEL.sub }}>자사몰 구매 이력 없이 29CM에서만 구매한 회원</div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* 노드 클릭 고객 상세 */}
+        {nodeDetail&&(
+          <div style={{ background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16, marginTop:12 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div>
+                <span style={{ fontSize:14, fontWeight:800, color:D.black }}>{nodeDetail.title}</span>
+                <span style={{ fontSize:12, color:D.textSub, marginLeft:8 }}>{nodeDetail.rows.length.toLocaleString()}명</span>
+              </div>
+              <button onClick={()=>setNodeDetail(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:18, color:D.textMeta }}>✕</button>
+            </div>
+            <div style={{ maxHeight:480, overflowY:"auto", display:"flex", flexDirection:"column", gap:10 }}>
+              {nodeDetail.rows.slice(0,200).map((c,i)=>{
+                const isCross=c.funnel==='f3'||c.funnel==='f4'||c.funnel==='f5';
+                // find channel switch event index for highlighting
+                let switchIdx=-1;
+                if(c.funnel==='f3'){
+                  switchIdx=c.evs.findIndex(e=>e.kind==='order'&&e.channel==='29CM');
+                }else if(c.funnel==='f5'){
+                  switchIdx=c.evs.findIndex(e=>e.kind==='order'&&e.channel==='자사몰');
+                }else if(c.funnel==='f4'){
+                  switchIdx=c.evs.findIndex(e=>e.kind==='join');
+                }
+                return (
+                  <div key={i} style={{ background:D.bg, borderRadius:8, padding:"10px 12px", fontSize:12 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:isCross?6:0, flexWrap:"wrap" }}>
+                      <span style={{ fontWeight:700, color:D.black, fontVariantNumeric:"tabular-nums" }}>{c.phone}</span>
+                      {c.member&&<span style={{ color:D.textSub }}>카페24 회원{c.member.name?` · ${c.member.name}`:''}{c.member.grade?` · ${c.member.grade}`:''}{c.member.join_date?` · 가입 ${c.member.join_date}`:''}</span>}
+                      <span style={{ color:D.textMeta }}>자사몰 {c.selfN}건 · 29CM {c.cmN}건</span>
+                    </div>
+                    {isCross&&(
+                      <div style={{ display:"flex", flexDirection:"column", gap:3, paddingLeft:8, borderLeft:`2px solid ${D.border}` }}>
+                        {c.evs.filter(e=>e.kind==='order'||(e.kind==='join'&&(c.funnel==='f4'||c.funnel==='f5'))).map((e,j)=>{
+                          const isSwitch=j===switchIdx;
+                          const isJoin=e.kind==='join';
+                          const chColor=e.channel==='자사몰'?CH.self:e.channel==='29CM'?CH.cm:D.blue;
+                          return (
+                            <div key={j} style={{ display:"flex", alignItems:"center", gap:8, color: isSwitch?'#fff':D.text,
+                              background: isSwitch?(e.channel==='29CM'?CH.cm:CH.self):'transparent',
+                              borderRadius: isSwitch?4:0, padding: isSwitch?'2px 6px':0 }}>
+                              <span style={{ color:isSwitch?'rgba(255,255,255,0.8)':D.textMeta, minWidth:80, fontVariantNumeric:"tabular-nums" }}>{e.date}</span>
+                              {isJoin?(
+                                <span style={{ fontWeight:600, color:isSwitch?'#fff':D.blue }}>카페24 가입{isSwitch?' ← 전환!':''}</span>
+                              ):(
+                                <span>
+                                  <b style={{ color:isSwitch?'#fff':chColor }}>{e.channel}</b>
+                                  {e.product?` · ${e.product}`:''}
+                                  {isSwitch&&<b> ← 채널 이동!</b>}
+                                  {e.status&&e.status!=='배송'&&e.status!=='정상'?` (${e.status})`:''}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {nodeDetail.rows.length>200&&<div style={{ fontSize:11, color:D.textMeta, textAlign:"center", padding:8 }}>상위 200명 표시 중 (전체 {nodeDetail.rows.length.toLocaleString()}명)</div>}
+            </div>
+          </div>
+        )}
 
         {/* 회원 가입 · 29CM 신규 유입 추이 (KPI 패널 바로 아래) */}
         <div style={card}>
