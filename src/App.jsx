@@ -20436,21 +20436,32 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
     );
   };
   // 가로 막대 — 전체 고객(total) 모수 대비 채움 + 퍼센트 (항목명 볼드/대형/중앙)
-  const HBar=({label,value,total,small,tone="neutral",extra})=>{
-    const pct=total>0?value/total*100:0;
-    const t=TONE[tone];
-    return (
-      <div>
-        <div style={{ fontSize:small?13:15, fontWeight:800, color:PANEL.text, textAlign:"center", marginBottom:6 }}>{label}</div>
-        <div style={{ height:small?18:24, background:PANEL.track, borderRadius:6, overflow:"hidden" }}>
-          <div style={{ width:`${Math.max(pct,1.2)}%`, height:"100%", background:t.bar, borderRadius:6 }}/>
-        </div>
-        <div style={{ fontSize:small?11.5:13, fontWeight:700, color:PANEL.text, textAlign:"center", marginTop:5 }}>
-          {value.toLocaleString()}명 · {pct.toFixed(1)}%{extra?<span style={{ color:PANEL.sub }}> · {extra}</span>:null}
-        </div>
+  // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
+  const StackBar=({title,total,segs})=>(
+    <div>
+      <div style={{ fontSize:13.5, fontWeight:800, color:PANEL.text, textAlign:"center", marginBottom:7 }}>{title}</div>
+      <div style={{ display:"flex", height:28, borderRadius:7, overflow:"hidden", background:PANEL.track }}>
+        {segs.map((s,i)=>(
+          <div key={i} style={{ width:`${total>0?s.value/total*100:0}%`, background:s.color, transition:"width .2s" }}/>
+        ))}
       </div>
-    );
-  };
+      <div style={{ display:"flex", justifyContent:"space-between", gap:12, marginTop:7 }}>
+        {segs.map((s,i)=>{
+          const pct=total>0?s.value/total*100:0;
+          const right=i===segs.length-1&&segs.length>1;
+          return (
+            <div key={i} style={{ textAlign:right?"right":"left" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:5, justifyContent:right?"flex-end":"flex-start" }}>
+                <span style={{ width:9, height:9, borderRadius:9, background:s.color, flexShrink:0 }}/>
+                <span style={{ fontSize:12, fontWeight:700, color:PANEL.text }}>{s.name}</span>
+              </div>
+              <div style={{ fontSize:11, color:PANEL.sub, marginTop:2 }}>{s.value.toLocaleString()}명 · {pct.toFixed(1)}%{s.note?` · ${s.note}`:""}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
   // 재구매 분포 도넛(링) + 범례 (제목 옆 재구매율 · 범례 클릭 시 고객/상품 드릴다운)
   const Ring=({title,dist,shades,rate,onPick})=>{
     const sum=dist.reduce((a,b)=>a+b,0);
@@ -20602,27 +20613,31 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                 <VBar label="29CM" value={cmFirstTotal} sub={`${pctOf(cmFirstTotal)}%`} tone="cm"/>
               </div>
             </div>
-            {/* 3) 고정 이용고객(채널 중앙) + 자사몰·29CM 사이에 교차 구매 고객 */}
+            {/* 3) 채널별 단일 스택 막대(고정+이동 색 분할) + 사이 교차 구매 고객 */}
             <div style={{ flex:"1 1 460px", minWidth:430, height:FLOW_H, display:"flex", flexDirection:"column", gap:FLOW_GAP }}>
               <div style={{ flexGrow:selfFirstTotal||1, flexBasis:0, display:"flex", alignItems:"center" }}>
-                <div style={{ width:"100%" }}><HBar label="자사몰고정 이용고객" value={kpi.counts.f1} total={selfFirstTotal} tone="self"/></div>
+                <div style={{ width:"100%" }}>
+                  <StackBar title={`자사몰 구매고객 · ${selfFirstTotal.toLocaleString()}명`} total={selfFirstTotal} segs={[
+                    {name:"자사몰고정 이용고객",value:kpi.counts.f1,color:CH_COLOR["자사몰"]},
+                    {name:"29CM로 이동",value:kpi.crossSelfFirst,color:CH_COLOR["29CM"],note:"유출"},
+                  ]}/>
+                </div>
               </div>
               {/* 교차 구매 고객 — 자사몰/29CM 사이 */}
-              <div style={{ flexShrink:0, display:"flex", alignItems:"center", gap:16 }}>
-                <div style={{ flex:"0 0 auto", width:148, background:PANEL.card, borderRadius:16, padding:"14px", textAlign:"center" }}>
-                  <div style={{ fontSize:15, fontWeight:800, color:PANEL.ink, marginBottom:8 }}>교차 구매 고객</div>
-                  <div style={{ fontSize:19, fontWeight:800, color:PANEL.ink, lineHeight:1.05 }}>{kpi.both.toLocaleString()}명</div>
-                  <div style={{ fontSize:13, fontWeight:700, color:PANEL.inkSub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(1)}%</div>
-                </div>
-                <div style={{ flex:1, display:"flex", flexDirection:"column", gap:14 }}>
-                  <HBar small label="자사몰에서 첫 구매 후 29CM로 이동한 고객" value={kpi.crossSelfFirst} total={kpi.both} tone="self"
-                    extra={`유출율 ${selfFirstTotal>0?(kpi.crossSelfFirst/selfFirstTotal*100).toFixed(1):0}%`}/>
-                  <HBar small label="29CM에서 첫 구매 후 자사몰로 이동한 고객" value={kpi.crossCmFirst} total={kpi.both} tone="cm"
-                    extra={`유출율 ${cmFirstTotal>0?(kpi.crossCmFirst/cmFirstTotal*100).toFixed(1):0}%`}/>
+              <div style={{ flexShrink:0, display:"flex", justifyContent:"center" }}>
+                <div style={{ display:"inline-flex", alignItems:"center", gap:10, background:PANEL.card, borderRadius:12, padding:"8px 16px" }}>
+                  <span style={{ fontSize:13, fontWeight:800, color:PANEL.ink }}>교차 구매 고객</span>
+                  <span style={{ fontSize:16, fontWeight:800, color:PANEL.ink }}>{kpi.both.toLocaleString()}명</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:PANEL.inkSub }}>{(kpi.total?kpi.both/kpi.total*100:0).toFixed(1)}%</span>
                 </div>
               </div>
               <div style={{ flexGrow:cmFirstTotal||1, flexBasis:0, display:"flex", alignItems:"center" }}>
-                <div style={{ width:"100%" }}><HBar label="29CM 고정 이용고객" value={kpi.counts.f2} total={cmFirstTotal} tone="cm"/></div>
+                <div style={{ width:"100%" }}>
+                  <StackBar title={`29CM 구매고객 · ${cmFirstTotal.toLocaleString()}명`} total={cmFirstTotal} segs={[
+                    {name:"자사몰로 이동",value:kpi.crossCmFirst,color:CH_COLOR["자사몰"],note:"유출"},
+                    {name:"29CM 고정 이용고객",value:kpi.counts.f2,color:CH_COLOR["29CM"]},
+                  ]}/>
+                </div>
               </div>
             </div>
             {/* 5) 재구매 도넛 (재구매율 + 클릭 드릴다운) */}
