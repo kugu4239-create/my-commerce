@@ -168,6 +168,10 @@ const normChannel = raw => {
   return v;
 };
 
+// 휴대폰번호 정규화 — 숫자만 남긴다 ('010-7168-1564' → '01071681564').
+// 카페24 회원(cafe24_members.phone_norm) ↔ 주문(order_headers.orderer_phone) 매칭 키.
+const normPhone = raw => String(raw || "").replace(/[^0-9]/g, "");
+
 // 이지어드민 CS 컬럼 → 내부 상태 (정상=배송, 배송후 전체 교환=교환, 배송후 전체 취소=반품)
 const normCS = raw => {
   if (!raw) return "배송";
@@ -12733,6 +12737,8 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
           const optionCol  = findCol("옵션명","옵션","option") || f.option;
           const csCol          = findCol("CS","cs처리","cs상태","cs") || f.cs;
           const statusCol      = findCol("상태","status") || f.status;
+          // 주문자휴대폰 (채널 퍼널 회원 매칭용) — 없으면 빈 값으로 둔다
+          const phoneCol       = findCol("주문자휴대폰","주문자연락처","주문자전화","주문자핸드폰","수령인휴대폰","휴대폰","핸드폰","연락처","phone");
           const qtyCol         = findCol("주문수량","수량","qty","quantity") || f.qty;
           // 판매가 (상품별, 29CM·무신사 AOV용 SUM)
           const salePriceCol   = findCol("판매가","상품금액","상품판매가","item_price");
@@ -12772,6 +12778,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
             const deliveryDateVal=toDate(r[deliveryDateCol]);
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
+            const phoneVal=phoneCol?normPhone(r[phoneCol]):"";
             // ── 상태 분류 (파싱 집계 규칙) ──────────────────────────
             //   주문 KPI    = 모든 행 (상태 무관)
             //   배송(총 출고) = 상태 컬럼 = "배송"  (CS 무관)
@@ -12804,8 +12811,10 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
                 delivery_date:deliveryDateVal||null,channel:ch,
                 product_name:prod,option_name:opt,
                 qty:0,amount:0,sale_price:0,payment_amount:0,
+                orderer_phone:phoneVal,
                 status,raw_status:csRaw||statusRaw};
             }
+            if(phoneVal&&!grouped[dbKey].orderer_phone) grouped[dbKey].orderer_phone=phoneVal;
             grouped[dbKey].qty+=qty;
             grouped[dbKey].amount+=amt;                                        // 하위 호환
             grouped[dbKey].sale_price+=salePriceVal;                          // 상품별 합산 (29CM·무신사)
@@ -12825,7 +12834,9 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
           setInRange(validRows);
           setOutRows(noDateRows);
           setDupInfo({total:validRows.length,newCount:validRows.length,updateCount:0,sameCount:0});
-          setResult({type:"info",msg:`주문일 ${autoStart} ~ ${autoEnd} · ${validRows.length}건 파싱 완료`+(noDateRows.length>0?` (주문일 없는 ${noDateRows.length}건 제외)`:"")+` | 주문번호: "${orderIdCol}" · 배송일: "${deliveryDateCol}"`});
+          const phoneCount=parsed.filter(r=>r.orderer_phone).length;
+          const phoneNote=phoneCol?` · 주문자휴대폰: "${phoneCol}" (${phoneCount}건)`:` · 주문자휴대폰: 미감지`;
+          setResult({type:"info",msg:`주문일 ${autoStart} ~ ${autoEnd} · ${validRows.length}건 파싱 완료`+(noDateRows.length>0?` (주문일 없는 ${noDateRows.length}건 제외)`:"")+` | 주문번호: "${orderIdCol}" · 배송일: "${deliveryDateCol}"${phoneNote}`});
         }catch(e){setResult({type:"error",msg:e.message});}
       },e=>setResult({type:"error",msg:e.message}));
   },[]);
@@ -12868,10 +12879,12 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
           order_date:r.order_date,
           channel:r.channel,
           payment_amount:r.payment_amount||0,
+          orderer_phone:r.orderer_phone||"",
         };
-      } else if((r.payment_amount||0)>0){
-        // 동일 order_no 다중 행: payment_amount 양수 우선
-        headersMap[r.order_no].payment_amount=r.payment_amount;
+      } else {
+        // 동일 order_no 다중 행: payment_amount 양수 우선, 휴대폰은 빈 값 채우기
+        if((r.payment_amount||0)>0) headersMap[r.order_no].payment_amount=r.payment_amount;
+        if(r.orderer_phone&&!headersMap[r.order_no].orderer_phone) headersMap[r.order_no].orderer_phone=r.orderer_phone;
       }
       itemsList.push({
         order_no:r.order_no,
@@ -20076,10 +20089,337 @@ function ImpactScoreModal({ iso, posts, postScores, onClose }) {
 }
 
 // ─────────────────────────────────────────────
+// CHANNEL FUNNEL — 카페24 ↔ 29CM 유입/이동 퍼널 분석
+// ─────────────────────────────────────────────
+
+// 5개 퍼널 정의 (상호배타, 가장 진전된 단계 우선)
+const FUNNELS=[
+  {key:"f1",label:"자사몰 단독 유입",color:"#7EADD4"},
+  {key:"f2",label:"29CM 단독 유입",color:"#7EB89E"},
+  {key:"f3",label:"자사몰 → 29CM 이동",color:"#D4A574"},
+  {key:"f4",label:"29CM → 자사몰 회원가입",color:"#9E92C8"},
+  {key:"f5",label:"29CM → 자사몰 주문",color:"#C0392B"},
+];
+
+// 전환일(YYYY-MM-DD) → 주/월/분기 버킷 라벨
+function funnelBucket(ds,gran){
+  if(!ds) return "";
+  if(gran==="month") return ds.slice(0,7);                 // YYYY-MM
+  if(gran==="quarter"){
+    const [y,m]=ds.split("-").map(Number);
+    return `${y}-Q${Math.floor((m-1)/3)+1}`;
+  }
+  // week — 월요일 시작 (filterByDate의 week 로직과 동일)
+  const [y,m,d]=ds.split("-").map(Number);
+  const dt=new Date(y,m-1,d);
+  const dow=dt.getDay()||7;
+  dt.setDate(dt.getDate()-dow+1);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+}
+
+// 카페24 회원 CSV 업로더 — 휴대폰번호 유니크화 후 cafe24_members 업서트
+function Cafe24MemberUploader({ existing=[], onDone }){
+  const [fileName,setFileName]=useState("");
+  const [rows,setRows]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+
+  const handleFile=useCallback(file=>{
+    if(!file) return;
+    setFileName(file.name); setResult(null); setRows(null);
+    parseAnyFile(file,{header:true,skipEmptyLines:true,transformHeader:h=>h.trim()},({data})=>{
+      try{
+        if(!data.length) throw new Error("데이터가 없습니다");
+        const allCols=Object.keys(data[0]);
+        const nrm=s=>String(s).trim().normalize("NFC");
+        const findCol=(...names)=>{
+          for(const n of names){ const c=allCols.find(h=>nrm(h)===nrm(n)); if(c) return c; }
+          for(const n of names){ const c=allCols.find(h=>nrm(h).includes(nrm(n))); if(c) return c; }
+          return null;
+        };
+        const phoneCol=findCol("휴대폰번호","휴대폰","핸드폰","연락처","phone");
+        const joinCol =findCol("회원 가입일","회원가입일","가입일","가입날짜");
+        const nameCol =findCol("이름","name");
+        const gradeCol=findCol("회원등급","등급","grade");
+        if(!phoneCol) throw new Error(`휴대폰번호 컬럼을 찾을 수 없습니다 (헤더: ${allCols.join(", ")})`);
+        if(!joinCol)  throw new Error(`회원 가입일 컬럼을 찾을 수 없습니다 (헤더: ${allCols.join(", ")})`);
+
+        // 기존 회원으로 시드 → 같은 휴대폰은 가장 이른 가입일 유지
+        const existMap={};
+        existing.forEach(m=>{ if(m.phone_norm) existMap[m.phone_norm]=m; });
+        const touched={};
+        let withDate=0;
+        data.forEach(r=>{
+          const p=normPhone(r[phoneCol]);
+          if(!p) return;
+          const jd=toDate(r[joinCol])||"";
+          if(jd) withDate++;
+          const nm=nameCol?String(r[nameCol]||"").trim():"";
+          const gr=gradeCol?String(r[gradeCol]||"").trim():"";
+          let cur=touched[p];
+          if(!cur){
+            const ex=existMap[p];
+            cur=touched[p]={phone_norm:p,join_date:ex?.join_date||"",name:ex?.name||"",grade:ex?.grade||""};
+          }
+          if(jd&&(!cur.join_date||jd<cur.join_date)) cur.join_date=jd;  // 가장 이른 가입일
+          if(nm) cur.name=nm;
+          if(gr) cur.grade=gr;
+        });
+        const list=Object.values(touched);
+        if(!list.length) throw new Error("유효한 휴대폰번호가 없습니다");
+        setRows(list);
+        setResult({type:"info",msg:`유니크 휴대폰 ${list.length.toLocaleString()}명 · 가입일 ${withDate.toLocaleString()}건 파싱 완료`});
+      }catch(e){ setResult({type:"error",msg:e.message}); }
+    },e=>setResult({type:"error",msg:e.message}));
+  },[existing]);
+
+  const handleUpload=useCallback(async()=>{
+    if(!rows?.length) return;
+    setLoading(true); setResult(null);
+    try{
+      const db=await getSupabase();
+      for(let i=0;i<rows.length;i+=500){
+        const {error}=await db.from("cafe24_members").upsert(rows.slice(i,i+500),{onConflict:"phone_norm"});
+        if(error) throw new Error(error.message);
+      }
+      try{
+        await db.from("upload_logs").insert({
+          upload_type:"cafe24_members",file_name:fileName,
+          row_count:rows.length,inserted:rows.length,updated:0,skipped:0,
+          date_start:"",date_end:"",
+        });
+      }catch{}
+      setResult({type:"success",msg:`${rows.length.toLocaleString()}명 등록 완료`});
+      setRows(null); setFileName("");
+      if(onDone) onDone();
+    }catch(e){ setResult({type:"error",msg:"업로드 실패: "+e.message}); }
+    setLoading(false);
+  },[rows,fileName,onDone]);
+
+  const c=result?.type==="error"?D.red:result?.type==="success"?D.green:D.textMeta;
+  return (
+    <div style={{ background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16, marginBottom:18 }}>
+      <div style={{ fontSize:13, fontWeight:700, color:D.black, marginBottom:4 }}>카페24 회원 정보 업로드</div>
+      <div style={{ fontSize:11, color:D.textMeta, marginBottom:10 }}>자료의 최신화를 위해 카페24 회원 정보를 다운 받아 업로드해주세요. (휴대폰번호 기준 유니크 · 가장 이른 가입일 유지)</div>
+      <DropZone onFile={handleFile} fileName={fileName} columns="휴대폰번호 · 회원 가입일 · 이름 · 회원등급"/>
+      {result&&<div style={{ fontSize:11, color:c, marginTop:8 }}>{result.msg}</div>}
+      {rows&&rows.length>0&&(
+        <button onClick={handleUpload} disabled={loading}
+          style={{ marginTop:10, background:loading?D.borderMid:D.black, color:"#fff", border:"none",
+            borderRadius:7, padding:"8px 16px", fontSize:12, fontWeight:600, cursor:loading?"default":"pointer" }}>
+          {loading?"업로드 중…":`${rows.length.toLocaleString()}명 업로드`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
+  const [gran,setGran]=useState("month");
+  const [period,setPeriod]=useState("all");
+  const [customStart,setCustomStart]=useState("");
+  const [customEnd,setCustomEnd]=useState("");
+  const [calOpenFor,setCalOpenFor]=useState(null);
+
+  // 고객(유니크 휴대폰) 단위 퍼널 분류 — 동일 휴대폰의 반복 주문은 신규 유입으로 잡지 않는다.
+  const classified=useMemo(()=>{
+    // 회원 맵: phone_norm → 가입일(없으면 null)
+    const memberMap={};      // phone → join_date (truthy) / null
+    const isMemberSet=new Set();
+    cafe24Members.forEach(m=>{
+      const p=m.phone_norm||normPhone(m.phone);
+      if(!p) return;
+      isMemberSet.add(p);
+      const jd=m.join_date||"";
+      if(jd&&(!memberMap[p]||jd<memberMap[p])) memberMap[p]=jd;
+      else if(!(p in memberMap)) memberMap[p]=memberMap[p]||"";
+    });
+    // 휴대폰별 채널 주문일 수집 (자사몰 / 29CM, 취소 제외)
+    const cust={};
+    orders.forEach(o=>{
+      const p=o.orderer_phone||"";
+      if(!p) return;
+      if(o.status==="취소") return;
+      const d=o.order_date;
+      if(!d) return;
+      const ch=o.channel;
+      if(ch!=="자사몰"&&ch!=="29CM") return;
+      let c=cust[p]; if(!c) c=cust[p]={self:[],cm:[]};
+      (ch==="자사몰"?c.self:c.cm).push(d);
+    });
+    const out=[];
+    let guests=0;
+    Object.keys(cust).forEach(p=>{
+      const self=cust[p].self.sort();
+      const cm=cust[p].cm.sort();
+      const has자사=self.length>0, has29=cm.length>0;
+      const first29=cm[0], firstSelf=self[0];
+      const isMember=isMemberSet.has(p);
+      const joinDate=isMember?(memberMap[p]||null):null;
+      let funnel=null, tDate=null;
+      if(!isMember){
+        if(has29){ funnel="f2"; tDate=first29; }
+        else if(has자사){ funnel="f1"; tDate=firstSelf; guests++; } // 비회원 자사몰(게스트) — f1 합산 + 진단
+      }else if(has29&&joinDate&&first29<joinDate){
+        // 29CM 선(先)구매 후 가입
+        const selfAfter=self.filter(d=>d>=joinDate);
+        if(selfAfter.length){ funnel="f5"; tDate=selfAfter[0]; }
+        else { funnel="f4"; tDate=joinDate; }
+      }else if(has29){
+        funnel="f3";
+        const after=joinDate?cm.filter(d=>d>=joinDate):cm;
+        tDate=after[0]||first29;
+      }else if(has자사){
+        funnel="f1"; tDate=joinDate||firstSelf;
+      }
+      if(funnel&&tDate) out.push({phone:p,funnel,tDate,selfN:self.length,cmN:cm.length,both:has자사&&has29});
+    });
+    return {rows:out,guests};
+  },[orders,cafe24Members]);
+
+  // 전환일 기준 기간 필터
+  const filtered=useMemo(
+    ()=>filterByDate(classified.rows,"tDate",period,customStart,customEnd),
+    [classified,period,customStart,customEnd]
+  );
+
+  // KPI + 퍼널 카운트 (필터된 고객 기준)
+  const kpi=useMemo(()=>{
+    const counts={f1:0,f2:0,f3:0,f4:0,f5:0};
+    let selfU=0,cmU=0,both=0,selfR=0,cmR=0;
+    filtered.forEach(c=>{
+      counts[c.funnel]++;
+      if(c.selfN>0) selfU++;
+      if(c.cmN>0) cmU++;
+      if(c.both) both++;
+      if(c.selfN>=2) selfR++;
+      if(c.cmN>=2) cmR++;
+    });
+    const leak=counts.f1+counts.f3>0?counts.f3/(counts.f1+counts.f3):0;
+    return {counts,total:filtered.length,selfU,cmU,both,selfR,cmR,leak};
+  },[filtered]);
+
+  // 추세 데이터 (버킷 × 퍼널)
+  const trend=useMemo(()=>{
+    const m={};
+    filtered.forEach(c=>{
+      const b=funnelBucket(c.tDate,gran);
+      if(!b) return;
+      if(!m[b]) m[b]={bucket:b,f1:0,f2:0,f3:0,f4:0,f5:0};
+      m[b][c.funnel]++;
+    });
+    return Object.values(m).sort((a,b)=>a.bucket<b.bucket?-1:1);
+  },[filtered,gran]);
+
+  const barData=FUNNELS.map(f=>({label:f.label,value:kpi.counts[f.key],color:f.color}));
+  const hasData=classified.rows.length>0;
+  const presets=[["3m","최근 3개월"],["6m","최근 6개월"],["1m","최근 한달"],["all","전체"]];
+  const granBtns=[["week","주"],["month","월"],["quarter","분기"]];
+
+  const card={ background:D.surface, border:`1px solid ${D.border}`, borderRadius:12, padding:16, marginBottom:16 };
+  const Kpi=({label,value,sub,color})=>(
+    <div style={{ background:D.surfaceAlt, border:`1px solid ${D.border}`, borderRadius:10, padding:"11px 13px", minWidth:120, flex:"1 1 130px" }}>
+      <div style={{ fontSize:10.5, color:D.textMeta, marginBottom:4 }}>{label}</div>
+      <div style={{ fontSize:19, fontWeight:800, color:color||D.black, lineHeight:1.1 }}>{typeof value==="number"?value.toLocaleString():value}</div>
+      {sub&&<div style={{ fontSize:10, color:D.textMeta, marginTop:2 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth:1080, margin:"0 auto", padding:"22px 24px 60px" }}>
+      <div style={{ marginBottom:6 }}>
+        <div style={{ fontSize:18, fontWeight:800, color:D.black }}>채널 퍼널 분석</div>
+        <div style={{ fontSize:12, color:D.textMeta, marginTop:3 }}>카페24(자사몰) ↔ 29CM 유입·이동을 휴대폰 단위로 매칭해 5개 퍼널로 분류합니다. 분석 단위는 주문이 아니라 유니크 휴대폰(고객 1명)입니다.</div>
+      </div>
+
+      <Cafe24MemberUploader existing={cafe24Members} onDone={onDataChange}/>
+
+      {!hasData?(
+        <div style={{ ...card, textAlign:"center", color:D.textMeta, fontSize:12.5, padding:"34px 16px" }}>
+          분류할 데이터가 없습니다.<br/>
+          <span style={{ fontSize:11 }}>① 위에서 카페24 회원 CSV를 업로드하고, ② '데이터 입력 &gt; 주문 배송 데이터'에서 <b>주문자휴대폰</b>이 포함된 주문 CSV를 (재)업로드하면 분석이 표시됩니다.</span>
+        </div>
+      ):(
+      <>
+        {/* 컨트롤 */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginBottom:14 }}>
+          <div style={{ display:"inline-flex", gap:4 }}>
+            {granBtns.map(([v,l])=>(
+              <button key={v} data-hf onClick={()=>setGran(v)}
+                style={{ background:gran===v?D.black:"transparent", color:gran===v?"#fff":D.textSub,
+                  border:`1px solid ${gran===v?D.black:D.border}`, borderRadius:5, padding:"4px 12px",
+                  fontSize:11, cursor:"pointer", fontWeight:gran===v?600:400 }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <CalDrop id="funnel" period={period} setPeriod={setPeriod} presets={presets}
+            start={customStart} setStart={setCustomStart} end={customEnd} setEnd={setCustomEnd}
+            calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor}/>
+        </div>
+
+        {/* KPI */}
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16 }}>
+          <Kpi label="분석 고객(유니크 휴대폰)" value={kpi.total}/>
+          <Kpi label="자사몰 구매 고객" value={kpi.selfU} color={CH_COLOR["자사몰"]}/>
+          <Kpi label="29CM 구매 고객" value={kpi.cmU} color={CH_COLOR["29CM"]}/>
+          <Kpi label="교차몰 구매 고객" value={kpi.both} sub="자사몰+29CM 모두 구매"/>
+          <Kpi label="자사몰 재구매 고객" value={kpi.selfR} sub="동일몰 2회 이상"/>
+          <Kpi label="29CM 재구매 고객" value={kpi.cmR} sub="동일몰 2회 이상"/>
+          <Kpi label="자사몰→29CM 유출률" value={`${(kpi.leak*100).toFixed(1)}%`} color={D.amber} sub="f3 / (f1+f3)"/>
+        </div>
+
+        {/* 퍼널 막대 */}
+        <div style={card}>
+          <div style={{ fontSize:13, fontWeight:700, color:D.black, marginBottom:10 }}>퍼널별 고객 수</div>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={barData} layout="vertical" margin={{ left:10, right:24, top:4, bottom:4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={D.border} horizontal={false}/>
+              <XAxis type="number" tick={{ fontSize:10, fill:D.textMeta }} allowDecimals={false}/>
+              <YAxis type="category" dataKey="label" width={140} tick={{ fontSize:10.5, fill:D.textSub }}/>
+              <Tooltip content={<Tip/>} cursor={{ fill:D.surfaceAlt }}/>
+              <Bar dataKey="value" name="고객 수" radius={[0,4,4,0]}>
+                {barData.map((d,i)=><Cell key={i} fill={d.color}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {classified.guests>0&&(
+            <div style={{ fontSize:10.5, color:D.textMeta, marginTop:6 }}>※ 회원 미매칭 자사몰 게스트 {classified.guests.toLocaleString()}명은 '자사몰 단독 유입'에 합산됨 (회원 CSV 최신화 시 정확도 향상)</div>
+          )}
+        </div>
+
+        {/* 추세 라인 */}
+        <div style={card}>
+          <div style={{ fontSize:13, fontWeight:700, color:D.black, marginBottom:10 }}>기간별 퍼널 추세 (전환 발생 시점 기준)</div>
+          {trend.length===0?(
+            <div style={{ color:D.textMeta, fontSize:12, padding:"20px 0", textAlign:"center" }}>선택한 기간에 데이터가 없습니다.</div>
+          ):(
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={trend} margin={{ left:0, right:18, top:6, bottom:4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={D.border}/>
+                <XAxis dataKey="bucket" tick={{ fontSize:10, fill:D.textMeta }}/>
+                <YAxis tick={{ fontSize:10, fill:D.textMeta }} allowDecimals={false}/>
+                <Tooltip content={<Tip/>}/>
+                <Legend iconSize={9} wrapperStyle={{ fontSize:10.5 }}/>
+                {FUNNELS.map(f=>(
+                  <Line key={f.key} type="monotone" dataKey={f.key} name={f.label}
+                    stroke={f.color} strokeWidth={1.8} dot={false}/>
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","promo","input","compare","impact","reorder","gmv"];
+  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","gmv"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
@@ -20092,6 +20432,7 @@ export default function App() {
   const [stocks,setStocks]=useState([]);
   const [revenues,setRevenues]=useState([]);
   const [storeSales,setStoreSales]=useState([]);
+  const [cafe24Members,setCafe24Members]=useState([]);
   const [appLoading,setAppLoading]=useState(true);
   const firstLoad=useRef(true);
   const [ts,setTs]=useState(()=>{
@@ -20115,12 +20456,13 @@ export default function App() {
       return rows;
     }
 
-    const [allHeaders,allItems,allStocks,allRevRaw,allStoreSales,tsRes]=await Promise.all([
+    const [allHeaders,allItems,allStocks,allRevRaw,allStoreSales,allMembers,tsRes]=await Promise.all([
       fetchAll("order_headers","order_date",true),
       fetchAll("order_items","item_id",true),
       fetchAll("stock_uploads","upload_date",false),
       fetchAll("revenues","date",false),
       fetchAll("store_sales","sale_date",true),
+      fetchAll("cafe24_members","phone_norm",true).catch(()=>[]),
       db.from("upload_ts").select("*").order("id",{ascending:true}).limit(1),
     ]);
 
@@ -20142,6 +20484,7 @@ export default function App() {
         delivery_date:it.delivery_date||null,   // items에 위치
         channel:h.channel||"",
         payment_amount:h.payment_amount||0,
+        orderer_phone:h.orderer_phone||"",       // 채널 퍼널 회원 매칭 키
         product_name:it.product_name,
         option_name:it.option_name,
         qty:it.qty,
@@ -20178,6 +20521,7 @@ export default function App() {
     setStocks(allStocks);
     setRevenues(allRevenues);
     setStoreSales(activeStoreSales);
+    setCafe24Members(allMembers||[]);
     const tsData=tsRes?.data;
     if(tsData&&tsData.length>0){
       const t=tsData[0];
@@ -20207,6 +20551,7 @@ export default function App() {
     {key:"compare",label:"데이터 컴페어"},
     {key:"promo",label:"프로모션 플로우"},
     {key:"impact",label:"콘텐츠 임팩트"},
+    {key:"funnel",label:"채널 퍼널"},
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
     {key:"gmv",label:"GMV 계산기"},
@@ -20263,6 +20608,7 @@ export default function App() {
         {page==="promo"&&<PromoFlow revenues={revenues} storeSales={storeSales} orders={orders}/>}
         {page==="compare"&&<DataCompare revenues={revenues} storeSales={storeSales} orders={orders} stocks={stocks} ts={ts}/>}
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
+        {page==="funnel"&&<ChannelFunnel orders={orders} cafe24Members={cafe24Members} onDataChange={loadData}/>}
         {page==="reorder"&&<ReorderPage/>}
         {page==="gmv"&&<GmvCalculator orders={orders} revenues={revenues} storeSales={storeSales} stocks={stocks}/>}
         {page==="input"&&(
