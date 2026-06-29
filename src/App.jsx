@@ -20459,7 +20459,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
   // 채널 단일 스택 막대 — 고정/이동을 한 노드에서 색으로 나누고 항목명 표시
   // 단일 세로 스택 노드의 한 구간
   const SEG={ selfFixed:CH.self, selfToCm:CH.selfMid, cmToSelf:CH.cmMid, cmToSelfReg:"#8BB5AA", cmFixed:CH.cm };
-  const VSeg=({name,value,extra,color,grow,minH,onClick})=>(
+  const VSeg=({name,value,extra,extraLabel,color,grow,minH,onClick})=>(
     <div onClick={onClick}
       onMouseEnter={onClick?e=>{e.currentTarget.style.filter="brightness(1.1)"}:undefined}
       onMouseLeave={onClick?e=>{e.currentTarget.style.filter=""}:undefined}
@@ -20468,6 +20468,7 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
         textAlign:"center", padding:"8px 12px", color:"#fff", overflow:"hidden",
         cursor:onClick?"pointer":"default" }}>
       <div style={{ fontSize:11, fontWeight:700, lineHeight:1.2, opacity:0.88, marginBottom:3 }}>{name}</div>
+      {extraLabel&&<div style={{ fontSize:11, fontWeight:700, opacity:0.88, lineHeight:1.2 }}>{extraLabel}</div>}
       {extra&&<div style={{ fontSize:34, fontWeight:800, lineHeight:1.05 }}>{extra}</div>}
       <div style={{ fontSize:11.5, fontWeight:700, marginTop:2, opacity:0.88 }}>{value.toLocaleString()}명</div>
     </div>
@@ -20663,10 +20664,10 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
                   extra={`${selfFirstTotal>0?(kpi.counts.f1/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfFixed} grow={kpi.counts.f1||1} minH={62}
                   onClick={()=>handleNodeClick('f1')}/>
                 <VSeg name="자사몰에서 구매 후 29CM에서 재구매한 고객" value={kpi.counts.f3}
-                  extra={`유출율 ${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
+                  extraLabel="유출율" extra={`${selfFirstTotal>0?(kpi.counts.f3/selfFirstTotal*100).toFixed(1):0}%`} color={SEG.selfToCm} grow={0} minH={80}
                   onClick={()=>handleNodeClick('f3')}/>
                 <VSeg name="29CM 구매 후 자사몰 재구매" value={kpi.counts.f5}
-                  extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={62}
+                  extraLabel="유출율" extra={`${cmFirstTotal>0?(kpi.counts.f5/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelf} grow={0} minH={62}
                   onClick={()=>handleNodeClick('f5')}/>
                 <VSeg name="29CM 구매 후 자사몰 회원가입만" value={kpi.counts.f4}
                   extra={`${cmFirstTotal>0?(kpi.counts.f4/cmFirstTotal*100).toFixed(1):0}%`} color={SEG.cmToSelfReg} grow={0} minH={62}
