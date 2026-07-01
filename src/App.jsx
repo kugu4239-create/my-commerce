@@ -16680,6 +16680,13 @@ function RevenueSankeyChart({periods,svgW}){
 
   const maxTotal=Math.max(...periods.map(p=>p.total),1);
   const heightScale=AVAIL_H/maxTotal;
+  // 기간(컬럼)이 많을수록 간격이 좁아지므로 합계·증감률·라벨 폰트를 자동 축소해 겹침 방지
+  const colGap=periods.length<=1?svgW:(svgW-2*PAD_H-CH_LABEL_W-NODE_W)/(periods.length-1);
+  const fScale=Math.max(0.6,Math.min(1,(colGap-28)/80));
+  const FS_TOTAL=Math.round(13*fScale);
+  const FS_PCT=Math.round(11*fScale);
+  const FS_LABEL=Math.max(8,Math.round(10*fScale));
+  const FS_CH=Math.max(7,Math.round(9*fScale));
 
   const cols=useMemo(()=>periods.map((p,pi)=>{
     const colX=periods.length===1?(svgW-NODE_W)/2
@@ -16840,7 +16847,7 @@ function RevenueSankeyChart({periods,svgW}){
                 {firstVisPi[n.ch]===pi&&n.h>=14&&(
                   <text x={n.x+NODE_W/2} y={n.y+n.h/2}
                     textAnchor="middle" dominantBaseline="middle"
-                    fontSize={9} fontWeight={700} fill="#fff"
+                    fontSize={FS_CH} fontWeight={700} fill="#fff"
                     style={{pointerEvents:"none",userSelect:"none"}}>
                     {n.ch==="오프라인 스토어"?"오프라인":n.ch}
                   </text>
@@ -16849,7 +16856,7 @@ function RevenueSankeyChart({periods,svgW}){
             ))}
             {/* 기간 라벨 */}
             <text x={col.colX+NODE_W/2} y={SVG_H-PAD_B+18}
-              textAnchor="middle" fontSize={10} fill="#111111" style={{pointerEvents:"none"}}>
+              textAnchor="middle" fontSize={FS_LABEL} fill="#111111" style={{pointerEvents:"none"}}>
               {col.label}
             </text>
             {/* 매출 합계 라벨 — 노드 스택 상단 */}
@@ -16860,7 +16867,7 @@ function RevenueSankeyChart({periods,svgW}){
               return(
                 <text x={col.colX+NODE_W/2} y={top-7}
                   textAnchor="middle" dominantBaseline="auto"
-                  fontSize={13} fontWeight={700} fill="#111111"
+                  fontSize={FS_TOTAL} fontWeight={700} fill="#111111"
                   style={{pointerEvents:"none",userSelect:"none"}}>
                   {fmtAmt(col.total)}
                 </text>
@@ -16881,7 +16888,7 @@ function RevenueSankeyChart({periods,svgW}){
             <g key={`gr_${pi}`} style={{pointerEvents:"none"}}>
               <text x={gapMidX} y={y}
                 textAnchor="middle" dominantBaseline="middle"
-                fontSize={11} fontWeight={700} fill={up?"#7dbf9e":"#c97b7b"} style={{userSelect:"none"}}>
+                fontSize={FS_PCT} fontWeight={700} fill={up?"#7dbf9e":"#c97b7b"} style={{userSelect:"none"}}>
                 {up?"▲":"▼"} {Math.abs(pct).toFixed(1)}%
               </text>
             </g>
@@ -17134,6 +17141,9 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
   const [volPeriod,setVolPeriod]=useState("all");
   const [volCalOpenFor,setVolCalOpenFor]=useState(null);
   const [sliderIdx,setSliderIdx]=useState([0,0]);
+  const [cmpMonth,setCmpMonth]=useState(null);     // 1~12 · 월 비교 모드 선택 월
+  const [cmpQuarter,setCmpQuarter]=useState(null); // 1~4 · 분기 비교 모드 선택 분기
+  const [cmpPickOpen,setCmpPickOpen]=useState(false);
   const containerRef=useRef(null);
   const agingTrendSecRef=useRef(null);
   const reorderSecRef=useRef(null);
@@ -17159,6 +17169,15 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
     if(containerRef.current) obs.observe(containerRef.current);
     return()=>obs.disconnect();
   },[]);
+
+  // 매출 데이터가 존재하는 날짜·연도 (월/분기 비교의 연도 산출 + 최신 기준값)
+  const dataDatesSorted=useMemo(()=>
+    [...revenues.map(r=>r.date),...storeSales.map(r=>r.sale_date)].filter(Boolean).sort()
+  ,[revenues,storeSales]);
+  const dataYears=useMemo(()=>
+    [...new Set(dataDatesSorted.map(d=>+String(d).slice(0,4)))].filter(Boolean).sort((a,b)=>a-b)
+  ,[dataDatesSorted]);
+  const latestDataDate=dataDatesSorted[dataDatesSorted.length-1]||null;
 
   // All available periods from data range to today
   const allVolPeriods=useMemo(()=>{
@@ -17200,7 +17219,25 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
 
   const handleSlider=useCallback(r=>setSliderIdx(r),[]);
 
+  // 월/분기 비교 모드 진입 시 최신 데이터의 월/분기를 기본 선택
+  useEffect(()=>{
+    if(!latestDataDate) return;
+    const m=+String(latestDataDate).slice(5,7);
+    if(volUnit==="monthCmp"&&cmpMonth==null) setCmpMonth(m);
+    if(volUnit==="quarterCmp"&&cmpQuarter==null) setCmpQuarter(Math.floor((m-1)/3)+1);
+  },[volUnit,latestDataDate,cmpMonth,cmpQuarter]);
+
   const volPeriods=useMemo(()=>{
+    // 월 비교: 데이터가 있는 매해의 해당 월
+    if(volUnit==="monthCmp"&&cmpMonth){
+      const mm=String(cmpMonth).padStart(2,"0");
+      return dataYears.map(y=>({label:`${y}.${cmpMonth}`,start:`${y}-${mm}-01`,end:ymd(new Date(y,cmpMonth,0))}));
+    }
+    // 분기 비교: 데이터가 있는 매해의 해당 분기(3개월 합산)
+    if(volUnit==="quarterCmp"&&cmpQuarter){
+      const qs=(cmpQuarter-1)*3+1,qe=qs+2;
+      return dataYears.map(y=>({label:`${y} ${cmpQuarter}Q`,start:`${y}-${String(qs).padStart(2,"0")}-01`,end:ymd(new Date(y,qe,0))}));
+    }
     if(customStart&&customEnd){
       const rangeStart=new Date(customStart),rangeEnd=new Date(customEnd);
       if(rangeStart>rangeEnd) return [];
@@ -17221,25 +17258,31 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
       return res;
     }
     return allVolPeriods.slice(sliderIdx[0],sliderIdx[1]+1);
-  },[volUnit,customStart,customEnd,allVolPeriods,sliderIdx]);
+  },[volUnit,cmpMonth,cmpQuarter,dataYears,customStart,customEnd,allVolPeriods,sliderIdx]);
 
-  const revenueData=useMemo(()=>volPeriods.map(p=>{
-    const byChannel={};
-    COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
-    revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
-      if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0)-(r.refund_amount||0);
+  const revenueData=useMemo(()=>{
+    const arr=volPeriods.map(p=>{
+      const byChannel={};
+      COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
+      revenues.filter(r=>r.date>=p.start&&r.date<=p.end).forEach(r=>{
+        if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0)-(r.refund_amount||0);
+      });
+      storeSales.filter(r=>{const d=r.sale_date||"";return d>=p.start&&d<=p.end;}).forEach(r=>{
+        if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
+        else if(r.status==="반품") byChannel["오프라인 스토어"]-=(r.amount||0);
+      });
+      COMPARE_CHANNELS.forEach(ch=>{if(byChannel[ch]<0) byChannel[ch]=0;});
+      const total=Object.values(byChannel).reduce((a,b)=>a+b,0);
+      return{...p,byChannel,total};
     });
-    storeSales.filter(r=>{const d=r.sale_date||"";return d>=p.start&&d<=p.end;}).forEach(r=>{
-      if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
-      else if(r.status==="반품") byChannel["오프라인 스토어"]-=(r.amount||0);
-    });
-    COMPARE_CHANNELS.forEach(ch=>{if(byChannel[ch]<0) byChannel[ch]=0;});
-    const total=Object.values(byChannel).reduce((a,b)=>a+b,0);
-    return{...p,byChannel,total};
-  }),[revenues,storeSales,volPeriods]);
+    // 월/분기 비교: 해당 월·분기에 매출이 없는 연도는 제외
+    if(volUnit==="monthCmp"||volUnit==="quarterCmp") return arr.filter(p=>p.total>0);
+    return arr;
+  },[revenues,storeSales,volPeriods,volUnit]);
 
   const hasData=revenueData.some(p=>p.total>0);
-  const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1;
+  const isCmpMode=volUnit==="monthCmp"||volUnit==="quarterCmp";
+  const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1&&!isCmpMode;
 
   const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
   const LC=DC;
@@ -17254,7 +17297,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:600,fontSize:16,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
-            {[["year","연"],["month","월"]].map(([u,lbl])=>(
+            {[["year","연"],["month","월"],["monthCmp","월 비교"],["quarterCmp","분기 비교"]].map(([u,lbl])=>(
               <button key={u} data-hf onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
                 style={{background:volUnit===u?DC.text:"transparent",
                   color:volUnit===u?DC.card:DC.sub,
@@ -17264,14 +17307,46 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
                 {lbl}
               </button>
             ))}
+            {/* 월/분기 비교 모드 — 월·분기 선택기 */}
+            {isCmpMode&&(
+              <div style={{position:"relative"}}>
+                <button data-hf onClick={()=>setCmpPickOpen(o=>!o)}
+                  style={{background:"#f0f9f4",color:"#3a8060",border:"1px solid #7EC8A4",
+                    borderRadius:6,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:600}}>
+                  {volUnit==="monthCmp"?`${cmpMonth||"—"}월`:`${cmpQuarter||"—"}분기`} ▾
+                </button>
+                {cmpPickOpen&&(
+                  <div style={{position:"absolute",top:"calc(100% + 4px)",right:0,zIndex:30,
+                    background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:6,
+                    boxShadow:"0 4px 16px rgba(0,0,0,0.1)",display:"grid",
+                    gridTemplateColumns:volUnit==="monthCmp"?"repeat(4,1fr)":"repeat(2,1fr)",
+                    gap:4,minWidth:volUnit==="monthCmp"?184:120}}>
+                    {(volUnit==="monthCmp"?[1,2,3,4,5,6,7,8,9,10,11,12]:[1,2,3,4]).map(v=>{
+                      const active=volUnit==="monthCmp"?cmpMonth===v:cmpQuarter===v;
+                      return(
+                        <button key={v} onClick={()=>{if(volUnit==="monthCmp")setCmpMonth(v);else setCmpQuarter(v);setCmpPickOpen(false);}}
+                          style={{background:active?DC.text:"transparent",color:active?DC.card:DC.sub,
+                            border:`1px solid ${active?DC.text:DC.border}`,borderRadius:5,padding:"5px 8px",
+                            fontSize:13,cursor:"pointer",fontWeight:active?700:400,whiteSpace:"nowrap"}}>
+                          {volUnit==="monthCmp"?`${v}월`:`${v}분기`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             <span style={{color:DC.border,fontSize:16,margin:"0 4px"}}>|</span>
-            <CalDrop id="vol" period={volPeriod} setPeriod={v=>{setVolPeriod(v);if(v!=="custom"){setCustomStart("");setCustomEnd("");}}}
-              presets={[]}
-              start={customStart} setStart={setCustomStart}
-              end={customEnd} setEnd={setCustomEnd}
-              calOpenFor={volCalOpenFor} setCalOpenFor={setVolCalOpenFor}
-              dark={true}/>
-            <span style={{color:DC.border,margin:"0 2px"}}>|</span>
+            {/* 연·월 모드에서만 임의 기간 선택 */}
+            {!isCmpMode&&<>
+              <CalDrop id="vol" period={volPeriod} setPeriod={v=>{setVolPeriod(v);if(v!=="custom"){setCustomStart("");setCustomEnd("");}}}
+                presets={[]}
+                start={customStart} setStart={setCustomStart}
+                end={customEnd} setEnd={setCustomEnd}
+                calOpenFor={volCalOpenFor} setCalOpenFor={setVolCalOpenFor}
+                dark={true}/>
+              <span style={{color:DC.border,margin:"0 2px"}}>|</span>
+            </>}
             <CaptureBtn cardRef={volCardRef} filename="매출볼륨" DC={DC}/>
           </div>
         </div>
