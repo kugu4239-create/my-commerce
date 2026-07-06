@@ -172,18 +172,6 @@ const normChannel = raw => {
 // 카페24 회원(cafe24_members.phone_norm) ↔ 주문(order_headers.orderer_phone) 매칭 키.
 const normPhone = raw => String(raw || "").replace(/[^0-9]/g, "");
 
-// 이지어드민 CS 컬럼 → 내부 상태 (정상=배송, 배송후 전체 교환=교환, 배송후 전체 취소=반품)
-const normCS = raw => {
-  if (!raw) return "배송";
-  const v = String(raw).trim().toLowerCase().replace(/\s/g,"");
-  // 배송 전 취소 = '취소' (반품 아님 — 배송 자체가 일어나지 않은 주문 무효화)
-  if (v.includes("배송전") && v.includes("취소")) return "취소";
-  // 그 외 취소(배송 후/미명시) = 반품 처리
-  if (v.includes("취소")) return "반품";
-  if (v.includes("교환")) return "교환";
-  return "배송";
-};
-
 // 총(gross) 출고 판정 — 실제 출고된 행: 순배송 + 배송후 취소(반품) + 배송후 교환.
 // 배송전 취소('취소')·미배송('주문')은 제외. 반품/교환은 별도 status 로 계속 집계되므로
 // '배송'(총 출고)은 반품·교환을 부분집합으로 포함한다. (반품률 분모 = 총 출고)
@@ -1309,8 +1297,8 @@ const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
 // ─────────────────────────────────────────────
 // ANALYTICS ENGINE
 // ─────────────────────────────────────────────
-// orderRows = 주문일(order_date) 필터, shipRows = 배송일(delivery_date) 필터.
-//   주문·매출·객단가 = orderRows(주문일) / 배송·반품·반품률 = shipRows(배송일)
+// orderRows = 주문일(order_date) 필터, shipRows = ship_date(배송일, 없으면 주문일 폴백) 필터.
+//   주문·매출·객단가 = orderRows(주문일) / 배송·반품·반품률 = shipRows(배송일→주문일 폴백)
 function analyze(orderRows, stockRows, revenueRows, storeRows=[], shipRows=orderRows) {
   // ═══════════════════════════════════════════════════════
   // 데이터 소스 가이드
@@ -1432,7 +1420,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[], shipRows=order
     const ch=r.channel||"미분류";
     // 주문번호 키: 신규 order_no 필드 우선, 없으면 order_id 전체(이전 데이터 호환)
     const oid=r.order_no||r.order_id||"";
-    const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
+    const status=/^CORD/i.test(oid)?"반품":r.status; // CORD(29CM 취소)는 저장 상태와 무관하게 반품
     const qty=(r.qty||1);
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     // 전체 주문 Set: 모든 상태(배송/반품/교환 등) 포함
@@ -1459,7 +1447,7 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[], shipRows=order
     if(isExcl(r)) return;
     const ch=r.channel||"미분류";
     const oid=r.order_no||r.order_id||"";
-    const status=(r.status==="배송"&&/^CORD/i.test(oid))?"반품":r.status;
+    const status=/^CORD/i.test(oid)?"반품":r.status; // CORD(29CM 취소)는 저장 상태와 무관하게 반품
     const qty=(r.qty||1);
     if(!byChannel[ch]) byChannel[ch]={name:ch,revenue:0,orderCount:0,refundCount:0,shipped:0,returned:0};
     if(status==="반품"){
@@ -1589,7 +1577,8 @@ function analyze(orderRows, stockRows, revenueRows, storeRows=[], shipRows=order
   // (라인 카운트 유지: 차트는 추세 시각화 목적이므로 행 단위로 충분)
   const byMonth={};
   shipRows.forEach(r=>{
-    const ym=r.delivery_date?r.delivery_date.slice(0,7):null;   // 배송일 기준
+    const sd=r.ship_date||r.delivery_date;                      // 배송일 기준 (없으면 주문일 폴백)
+    const ym=sd?sd.slice(0,7):null;
     if(!ym) return;
     if(!byMonth[ym]) byMonth[ym]={month:ym,shipped:0,returned:0};
     if(wasShipped(r.status)) byMonth[ym].shipped++;   // 총 출고(배송+반품+교환)
@@ -1883,8 +1872,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   );
 
   const filteredOrders=useMemo(()=>filterByDate(orders,"order_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
-  // 배송·반품 KPI 전용 — 배송일(delivery_date) 기준 기간 필터 (배송일 없는 행은 기간 집계서 제외)
-  const deliveryFilteredOrders=useMemo(()=>filterByDate(orders,"delivery_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
+  // 배송·반품 KPI 전용 — 배송일 기준 기간 필터 (배송일 없는 행은 주문일 폴백 = ship_date)
+  const deliveryFilteredOrders=useMemo(()=>filterByDate(orders,"ship_date",period,customStart,customEnd),[orders,period,customStart,customEnd]);
   const filteredRevenues=useMemo(()=>filterByDate(revenues,"date",period,customStart,customEnd),[revenues,period,customStart,customEnd]);
   const filteredStoreSales=useMemo(()=>filterByDate(storeSales,"sale_date",period,customStart,customEnd),[storeSales,period,customStart,customEnd]);
   const filteredStocks=useMemo(()=>{
@@ -2035,13 +2024,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         topReason:topReason(p.name)}));
   },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd]);
 
-  // 월별 배송량 차트 데이터 — 배송일(delivery_date) 기준 (배송일 없는 행 제외)
+  // 월별 배송량 차트 데이터 — 배송일 기준, 배송일 없는 행은 주문일 폴백(ship_date)
   const shippingChartData=useMemo(()=>{
     const today=localDate(-1);
     if(shippingPeriod==="yd"){
       const yStr=localDate(-1);
       const byDay={};
-      orders.filter(r=>r.delivery_date===yStr).forEach(r=>{
+      orders.filter(r=>r.ship_date===yStr).forEach(r=>{
         if(!byDay[yStr]) byDay[yStr]={date:yStr.slice(5),shipped:0};
         if(wasShipped(r.status)) byDay[yStr].shipped++;
       });
@@ -2053,8 +2042,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       else c.setMonth(c.getMonth()-1);
       const cut=ymd(c);
       const byDay={};
-      orders.filter(r=>r.delivery_date>=cut&&r.delivery_date<=today).forEach(r=>{
-        const d=r.delivery_date;
+      orders.filter(r=>r.ship_date>=cut&&r.ship_date<=today).forEach(r=>{
+        const d=r.ship_date;
         if(!byDay[d]) byDay[d]={date:d.slice(5),shipped:0};
         if(wasShipped(r.status)) byDay[d].shipped++;
       });
@@ -2062,21 +2051,21 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     }
     if(shippingPeriod==="custom"&&shippingCustomStart&&shippingCustomEnd){
       const diff=(new Date(shippingCustomEnd)-new Date(shippingCustomStart))/86400000;
-      const src=orders.filter(r=>r.delivery_date>=shippingCustomStart&&r.delivery_date<=shippingCustomEnd);
+      const src=orders.filter(r=>r.ship_date>=shippingCustomStart&&r.ship_date<=shippingCustomEnd);
       if(diff<=60){
         const byDay={};
-        src.forEach(r=>{const d=r.delivery_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(wasShipped(r.status))byDay[d].shipped++;});
+        src.forEach(r=>{const d=r.ship_date;if(!byDay[d])byDay[d]={date:d.slice(5),shipped:0};if(wasShipped(r.status))byDay[d].shipped++;});
         return Object.values(byDay).sort((a,b)=>a.date>b.date?1:-1);
       }
       const byMonth={};
-      src.forEach(r=>{const ym=r.delivery_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(wasShipped(r.status))byMonth[ym].shipped++;});
+      src.forEach(r=>{const ym=r.ship_date?.slice(0,7);if(!ym)return;if(!byMonth[ym])byMonth[ym]={date:ym,shipped:0};if(wasShipped(r.status))byMonth[ym].shipped++;});
       return Object.values(byMonth).sort((a,b)=>a.date>b.date?1:-1);
     }
     const c=new Date(); c.setMonth(c.getMonth()-3);
     const cut=ymd(c);
     const byMonth={};
-    orders.filter(r=>r.delivery_date>=cut).forEach(r=>{
-      const ym=r.delivery_date?.slice(0,7); if(!ym) return;
+    orders.filter(r=>r.ship_date>=cut).forEach(r=>{
+      const ym=r.ship_date?.slice(0,7); if(!ym) return;
       if(!byMonth[ym]) byMonth[ym]={date:ym,shipped:0};
       if(wasShipped(r.status)) byMonth[ym].shipped++;
     });
@@ -2097,7 +2086,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       const d=new Date(); d.setMonth(d.getMonth()-(returnPeriod==="1m"?1:3));
       start=ymd(d);
     }
-    const filteredRet=orders.filter(r=>r.delivery_date>=start&&r.delivery_date<=end&&r.channel!=="오프라인 스토어");
+    const filteredRet=orders.filter(r=>r.ship_date>=start&&r.ship_date<=end&&r.channel!=="오프라인 스토어");
     const retByCh={};
     filteredRet.forEach(r=>{
       if(r.status==="반품"){
@@ -2109,7 +2098,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     const chs=Object.entries(retByCh).sort((a,b)=>b[1]-a[1]).map(([ch])=>ch).slice(0,5);
     const byDate={};
     filteredRet.forEach(r=>{
-      const d=r.delivery_date; const ch=r.channel||"미분류";
+      const d=r.ship_date; const ch=r.channel||"미분류";
       if(!d||!chs.includes(ch)) return;
       if(!byDate[d]){byDate[d]={date:d.slice(5)};chs.forEach(c=>byDate[d][c]=0);}
       if(r.status==="반품") byDate[d][ch]=(byDate[d][ch]||0)+1;
@@ -12779,27 +12768,30 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
             const csRaw=csCol?String(r[csCol]||"").trim():"";
             const statusRaw=statusCol?String(r[statusCol]||"").trim():"";
             const phoneVal=phoneCol?normPhone(r[phoneCol]):"";
-            // ── 상태 분류 (파싱 집계 규칙) ──────────────────────────
-            //   주문 KPI    = 모든 행 (상태 무관)
-            //   배송(총 출고) = 상태 컬럼 = "배송"  (CS 무관)
-            //   상태=배송 + CS 키워드: 교환→"교환", 취소→"반품" (둘 다 '배송'에 포함되는 부분집합)
-            //   상태≠배송(접수/송장 등): CS 취소→"취소"(판매 Top 제외), 그 외→"주문"  (미출고)
+            // ── 상태 분류 (골든 로직: CS 우선 → 상태 컬럼 보조) ──────────
+            //   주문 KPI  = 모든 행 (상태 무관)
+            //   반품·교환 = CS 컬럼 키워드 우선 — 상태 컬럼과 무관. 반품 처리된 주문은
+            //               이지어드민 상태가 '배송'이 아닐 수 있어(송장/접수) 상태 게이트를
+            //               걸면 반품이 통째로 소실된다.
+            //     · 배송전+취소 → 배송됐으면 "배송", 아니면 "취소" (반품 아님 — 주문 무효화)
+            //     · 배송전+교환 → 배송됐으면 "배송", 아니면 "주문"
+            //     · 그 외 취소/반품/환불 → "반품" (배송후 취소 — 총 출고에 포함)
+            //     · 그 외 교환 → "교환" (총 출고에 포함)
+            //   CS 정상/공백 = 상태 컬럼="배송" → "배송"(총 출고), 그 외(접수/송장) → "주문"(미출고)
+            //   CORD 주문번호 = 29CM 취소 주문 → 상태·CS 무관 "반품"
             const csN=csRaw.toLowerCase().replace(/\s/g,"");
-            let status;
-            if(statusCol&&statusRaw){
-              if(statusRaw==="배송"){
-                status = csN.includes("교환") ? "교환"
-                       : csN.includes("취소") ? "반품"
-                       : "배송";
-              } else {
-                status = csN.includes("취소") ? "취소" : "주문";
-              }
-            } else {
-              // 상태 컬럼 없는 파일(구 형식) — CS 기반 호환 분류
-              status = csRaw ? normCS(csRaw) : "배송";
+            let status=null;
+            if(csN&&csN!=="정상"){
+              if(csN.includes("배송전")&&csN.includes("취소"))      status=deliveryDateVal?"배송":"취소";
+              else if(csN.includes("배송전")&&csN.includes("교환")) status=deliveryDateVal?"배송":"주문";
+              else if(/취소|반품|환불/.test(csN))                    status="반품";
+              else if(csN.includes("교환"))                          status="교환";
             }
-            // CORD prefix = 29CM 취소 주문 → 반품으로 강제
-            if(status==="배송"&&/^CORD/i.test(oid)) status="반품";
+            if(!status){
+              if(statusCol&&statusRaw) status=statusRaw==="배송"?"배송":"주문";
+              else status=deliveryDateVal?"배송":"주문";   // 상태 컬럼 없는 구형 파일
+            }
+            if(/^CORD/i.test(oid)) status="반품";
             const qty=toNum(r[qtyCol])||1;
             const salePriceVal  = salePriceCol  ? toNum(r[salePriceCol])  : 0;
             const paymentAmtVal = paymentAmtCol ? toNum(r[paymentAmtCol]) : 0;
@@ -21045,10 +21037,16 @@ export default function App() {
     allHeaders.forEach(h=>{headerMap[h.order_no]=h;});
     const allOrders=allItems.map(it=>{
       const h=headerMap[it.order_no]||{};
+      // CORD prefix = 29CM 취소 주문 → 반품 (골든 로직 복원 — 저장 시점 파서가 상태 컬럼
+      // '송장/접수' 때문에 '주문'으로 잘못 저장한 과거 행도 재업로드 없이 여기서 교정)
+      const status=/^CORD/i.test(it.order_no||"")?"반품":it.status;
       return {
         order_no:it.order_no,
         order_date:h.order_date||null,
         delivery_date:it.delivery_date||null,   // items에 위치
+        // 배송·반품 집계용 날짜 — 배송일 우선, 없으면 주문일 폴백.
+        // CORD 반품·'N일 지연' 등 배송일이 비어 있는 행이 기간 집계에서 소실되는 것을 방지 (골든 로직 복원)
+        ship_date:it.delivery_date||h.order_date||null,
         channel:h.channel||"",
         payment_amount:h.payment_amount||0,
         orderer_phone:h.orderer_phone||"",       // 채널 퍼널 회원 매칭 키
@@ -21056,7 +21054,7 @@ export default function App() {
         option_name:it.option_name,
         qty:it.qty,
         sale_price:it.sale_price,                // amount 컬럼 없음 — analyze()의 r.amount는 자동 폴백 처리됨
-        status:it.status,
+        status,
         raw_status:it.raw_status,
         // 하위 호환 합성 키 (기존 코드의 r.order_id 폴백용)
         order_id:`${h.order_date||""}||${it.order_no}||${it.product_name||""}||${it.option_name||""}`,
