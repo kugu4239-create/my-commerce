@@ -5577,9 +5577,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const saveSubmitPromosLocal=data=>localStorage.setItem("submit_promos",JSON.stringify(data));
   const [submitPromos,setSubmitPromos]=useState(getSubmitPromos);
   const [showSubmitForm,setShowSubmitForm]=useState(false);
-  const [submitForm,setSubmitForm]=useState({title:"",content:"",eod:""});
+  const [submitForm,setSubmitForm]=useState({title:"",content:"",start_date:"",end_date:"",eod:""});
   const [editingSubmitId,setEditingSubmitId]=useState(null);
-  const [editSubmitForm,setEditSubmitForm]=useState({title:"",content:"",eod:""});
+  const [editSubmitForm,setEditSubmitForm]=useState({title:"",content:"",start_date:"",end_date:"",eod:""});
 
   // Load submit_promotions from Supabase on mount
   useEffect(()=>{
@@ -5600,7 +5600,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     setSubmitPromos(next);saveSubmitPromosLocal(next);
     const db=await getSupabase();
     await db.from("submit_promotions").insert(newS);
-    setSubmitForm({title:"",content:"",eod:""});
+    setSubmitForm({title:"",content:"",start_date:"",end_date:"",eod:""});
   };
   const saveSubmitEdit=async()=>{
     const next=submitPromos.map(s=>s.id===editingSubmitId?{...s,...editSubmitForm}:s);
@@ -6317,6 +6317,18 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 borderRadius:5,padding:"7px 10px",fontSize:13,color:D.text,resize:"vertical",
                 fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
           </div>
+          <div>
+            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 기간</div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <DateDrop id="submit_start" value={submitForm.start_date}
+                onChange={v=>setSubmitForm(f=>({...f,start_date:v}))}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="시작일"/>
+              <span style={{fontSize:12,color:D.textMeta}}>~</span>
+              <DateDrop id="submit_end" value={submitForm.end_date}
+                onChange={v=>setSubmitForm(f=>({...f,end_date:v}))}
+                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료일"/>
+            </div>
+          </div>
           <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
             <div style={{flex:1}}>
               <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>EOD</div>
@@ -6331,7 +6343,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                {["프로모션명","내용","EOD","",""].map((h,i)=>(
+                {["프로모션명","내용","기간","EOD","",""].map((h,i)=>(
                   <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
                     color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap",
                     ...(i===0?{width:240,minWidth:240}:{})}}>{h}</th>
@@ -6357,6 +6369,17 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                           padding:"4px 8px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",resize:"vertical",
                           fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
                     </td>
+                    <td style={{...tdS,whiteSpace:"nowrap"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <DateDrop id={`submit_edit_start_${s.id}`} value={editSubmitForm.start_date||""}
+                          onChange={v=>setEditSubmitForm(f=>({...f,start_date:v}))}
+                          calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="시작일"/>
+                        <span style={{fontSize:11,color:D.textMeta}}>~</span>
+                        <DateDrop id={`submit_edit_end_${s.id}`} value={editSubmitForm.end_date||""}
+                          onChange={v=>setEditSubmitForm(f=>({...f,end_date:v}))}
+                          calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료일"/>
+                      </div>
+                    </td>
                     <td style={tdS}>
                       <SubmitEodPicker value={editSubmitForm.eod||""} onChange={v=>setEditSubmitForm(f=>({...f,eod:v}))}/>
                     </td>
@@ -6376,9 +6399,12 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     <td style={{...tdS,fontWeight:600}}>{s.title}</td>
                     {/* 내용: 줄바꿈 보존(pre-wrap) + 남는 폭 전체 사용 — 한 줄로 뭉개지지 않게 */}
                     <td style={{...tdS,color:D.textSub,width:"100%",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{s.content||"—"}</td>
+                    <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>
+                      {(s.start_date||s.end_date)?`${s.start_date||"?"} ~ ${s.end_date||"?"}`:"—"}
+                    </td>
                     <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>{s.eod?s.eod.replace("T"," "):"—"}</td>
                     <td style={{...tdS,whiteSpace:"nowrap"}}>
-                      <button onClick={()=>{setEditingSubmitId(s.id);setEditSubmitForm({title:s.title,content:s.content||"",eod:s.eod||""});}}
+                      <button onClick={()=>{setEditingSubmitId(s.id);setEditSubmitForm({title:s.title,content:s.content||"",start_date:s.start_date||"",end_date:s.end_date||"",eod:s.eod||""});}}
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
                           padding:"3px 10px",fontSize:12,cursor:"pointer",color:D.textSub,marginRight:4}}>수정</button>
                       <button onClick={()=>delSubmitPromo(s.id)}
