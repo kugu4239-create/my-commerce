@@ -6309,13 +6309,11 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 borderRadius:5,padding:"7px 10px",fontSize:14,color:D.text,fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
           </div>
           <div>
-            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>내용</div>
-            <textarea value={submitForm.content} onChange={e=>setSubmitForm(f=>({...f,content:e.target.value}))}
+            <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>내용 <span style={{opacity:.6,fontWeight:400}}>(드래그 후 하이라이트 가능)</span></div>
+            <HighlightEditor value={submitForm.content||""}
+              onChange={v=>setSubmitForm(f=>({...f,content:v}))}
               placeholder="프로모션 내용 간략히 입력"
-              rows={4}
-              style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
-                borderRadius:5,padding:"7px 10px",fontSize:13,color:D.text,resize:"vertical",
-                fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+              minHeight={96}/>
           </div>
           <div>
             <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 기간</div>
@@ -6363,11 +6361,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                           fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
                     </td>
                     <td style={tdS}>
-                      <textarea value={editSubmitForm.content||""} onChange={e=>setEditSubmitForm(f=>({...f,content:e.target.value}))}
-                        rows={4}
-                        style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
-                          padding:"4px 8px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",resize:"vertical",
-                          fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
+                      <HighlightEditor value={editSubmitForm.content||""}
+                        onChange={v=>setEditSubmitForm(f=>({...f,content:v}))}
+                        placeholder="프로모션 내용 간략히 입력"
+                        minHeight={96} inputStyle={{padding:"4px 8px"}}/>
                     </td>
                     <td style={{...tdS,whiteSpace:"nowrap"}}>
                       <div style={{display:"flex",alignItems:"center",gap:4}}>
@@ -6397,8 +6394,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 return (
                   <tr key={s.id}>
                     <td style={{...tdS,fontWeight:600}}>{s.title}</td>
-                    {/* 내용: 줄바꿈 보존(pre-wrap) + 남는 폭 전체 사용 — 한 줄로 뭉개지지 않게 */}
-                    <td style={{...tdS,color:D.textSub,width:"100%",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{s.content||"—"}</td>
+                    {/* 내용: HighlightEditor HTML(하이라이트) 렌더 — pre-wrap은 구버전 플레인 텍스트 줄바꿈 호환 */}
+                    <td style={{...tdS,color:D.textSub,width:"100%",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                      {s.content?<div dangerouslySetInnerHTML={{__html:s.content}}/>:"—"}
+                    </td>
                     <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>
                       {(s.start_date||s.end_date)?`${s.start_date||"?"} ~ ${s.end_date||"?"}`:"—"}
                     </td>
