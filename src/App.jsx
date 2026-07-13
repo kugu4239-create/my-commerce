@@ -18268,6 +18268,268 @@ function ReorderPage(){
 }
 
 // ─────────────────────────────────────────────
+// 시즌 캐리오버 아이템 셀렉터 — 독립 페이지
+// 소스: inventory_snapshot 최신 스냅샷 (처음입고일·누적입고·누적배송, 옵션 단위)
+// 처음입고일의 월로 시즌 분류(봄1-3/여름4-8/가을9-10/겨울11-12)하고
+// 누적입고/누적배송 수량 필터로 판매 검증된 캐리오버 후보를 선별한다.
+// 리스트는 상품 단위(옵션 합산), 행 클릭 시 옵션 단위 상세를 인라인 확장.
+// ─────────────────────────────────────────────
+const CARRYOVER_SEASONS=[
+  {key:"spring",label:"봄",range:"1-3월",months:[1,2,3],color:"#7EC8A4"},
+  {key:"summer",label:"여름",range:"4-8월",months:[4,5,6,7,8],color:"#7B9EC8"},
+  {key:"fall",label:"가을",range:"9-10월",months:[9,10],color:"#C8A47E"},
+  {key:"winter",label:"겨울",range:"11-12월",months:[11,12],color:"#9B8EC8"},
+];
+const carryoverSeasonOf=dateStr=>{
+  const m=dateStr?parseInt(String(dateStr).slice(5,7),10):null;
+  return m?CARRYOVER_SEASONS.find(s=>s.months.includes(m))||null:null;
+};
+const CARRYOVER_DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+
+function CarryoverPage(){
+  const DC=CARRYOVER_DC;
+  const [rows,setRows]=useState([]);
+  const [snapDate,setSnapDate]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const cardRef=useRef(null);
+
+  useEffect(()=>{(async()=>{
+    setLoading(true);
+    try{
+      const db=await getSupabase();
+      const{data:dates}=await db.from("inventory_snapshot")
+        .select("snapshot_date").order("snapshot_date",{ascending:false}).limit(1);
+      const latest=dates?.[0]?.snapshot_date||null;
+      setSnapDate(latest);
+      if(!latest){setRows([]);return;}
+      const PAGE=1000;
+      let all=[],off=0;
+      while(true){
+        const{data,error}=await db.from("inventory_snapshot")
+          .select("product_code,product_name,option_name,first_inbound_date,cumulative_inbound_qty,cumulative_delivery_qty,current_stock_qty")
+          .eq("snapshot_date",latest).range(off,off+PAGE-1);
+        if(error||!data||data.length===0) break;
+        all=all.concat(data);
+        if(data.length<PAGE) break;
+        off+=PAGE;
+      }
+      setRows(all);
+    }finally{setLoading(false);}
+  })();},[]);
+
+  // 상품 단위 그룹핑 — 옵션(컬러/사이즈) 합산, 대표 처음입고일 = 옵션 중 가장 빠른 날짜
+  const products=useMemo(()=>{
+    const m={};
+    rows.forEach(r=>{
+      const k=r.product_name||"미분류";
+      if(!m[k]) m[k]={name:k,code:"",options:[],inbound:0,delivery:0,stock:0,firstDate:null};
+      const p=m[k];
+      p.options.push(r);
+      p.inbound+=(r.cumulative_inbound_qty||0);
+      p.delivery+=(r.cumulative_delivery_qty||0);
+      p.stock+=(r.current_stock_qty||0);
+      if(!p.code&&r.product_code) p.code=r.product_code;
+      if(r.first_inbound_date&&(!p.firstDate||r.first_inbound_date<p.firstDate)) p.firstDate=r.first_inbound_date;
+    });
+    return Object.values(m).map(p=>{
+      const season=carryoverSeasonOf(p.firstDate);
+      return{...p,seasonKey:season?season.key:null,seasonColor:season?season.color:CARRYOVER_DC.dim,
+        seasonLabel:season?`${p.firstDate.slice(0,4)} ${season.label}`:"—"};
+    });
+  },[rows]);
+
+  // 필터: 시즌 다중 토글 + 수량(누적입고/누적배송 최소값) + 검색
+  const [seasons,setSeasons]=useState(()=>new Set(CARRYOVER_SEASONS.map(s=>s.key)));
+  const [minInbound,setMinInbound]=useState("");
+  const [minDelivery,setMinDelivery]=useState("");
+  const [search,setSearch]=useState("");
+  const [sortKey,setSortKey]=useState("delivery");
+  const [sortDir,setSortDir]=useState("desc");
+  const [expanded,setExpanded]=useState(null);
+
+  const allSeasons=seasons.size===CARRYOVER_SEASONS.length;
+  const toggleSeason=k=>setSeasons(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);return n;});
+  const toggleAllSeasons=()=>setSeasons(allSeasons?new Set():new Set(CARRYOVER_SEASONS.map(s=>s.key)));
+
+  const filtered=useMemo(()=>{
+    const mi=Number(minInbound)||0, md=Number(minDelivery)||0;
+    const q=search.trim().toLowerCase();
+    const list=products.filter(p=>{
+      // 시즌 미상(처음입고일 없음) 상품은 전시즌 상태에서만 노출
+      if(p.seasonKey?!seasons.has(p.seasonKey):!allSeasons) return false;
+      if(p.inbound<mi||p.delivery<md) return false;
+      if(q&&!(p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)
+        ||p.options.some(o=>String(o.option_name||"").toLowerCase().includes(q)))) return false;
+      return true;
+    });
+    const get={name:p=>p.name,code:p=>p.code,season:p=>p.firstDate||"",first:p=>p.firstDate||"",
+      opts:p=>p.options.length,inbound:p=>p.inbound,delivery:p=>p.delivery,stock:p=>p.stock}[sortKey]||(p=>p.delivery);
+    const dir=sortDir==="desc"?-1:1;
+    return [...list].sort((a,b)=>{const va=get(a),vb=get(b);return va>vb?dir:va<vb?-dir:0;});
+  },[products,seasons,allSeasons,minInbound,minDelivery,search,sortKey,sortDir]);
+
+  const skuCount=useMemo(()=>filtered.reduce((s,p)=>s+p.options.length,0),[filtered]);
+
+  const segBtn=(active,color)=>({
+    background:active?(color||DC.text):"transparent",
+    color:active?"#fff":DC.sub,
+    border:`1px solid ${active?(color||DC.text):DC.border}`,
+    borderRadius:5,padding:"4px 12px",fontSize:12,cursor:"pointer",
+    fontWeight:active?600:400,whiteSpace:"nowrap"});
+  const numInp={background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+    padding:"4px 8px",fontSize:12,color:DC.text,width:90,outline:"none",fontFamily:"inherit"};
+
+  // 정렬 헤더 셀 — 일반 함수 호출로 렌더 (컴포넌트 아님: 렌더 중 컴포넌트 생성 lint 회피)
+  const th=(k,label,right)=>(
+    <th key={k} onClick={()=>{if(sortKey===k)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortKey(k);setSortDir("desc");}}}
+      style={{padding:"6px 8px",textAlign:right?"right":"left",cursor:"pointer",whiteSpace:"nowrap",userSelect:"none",
+        color:sortKey===k?DC.text:DC.dim,fontWeight:sortKey===k?700:500,
+        borderBottom:`1px solid ${DC.border}`,fontSize:12}}>
+      {label}{sortKey===k?(sortDir==="desc"?" ↓":" ↑"):""}
+    </th>
+  );
+
+  const DELIVERY_PRESETS=[["전체",""],["100+","100"],["300+","300"],["500+","500"],["1000+","1000"]];
+
+  return(
+    <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
+      <div style={{fontSize:13,color:DC.dim,marginBottom:2}}>
+        데이터 소스: <b style={{color:DC.sub}}>데이터 입력 &gt; 인벤토리</b> — 최신 스냅샷의 처음입고일·누적입고·누적배송 기준
+        {snapDate&&<span> · 스냅샷 기준일: <b style={{color:DC.sub}}>{snapDate}</b></span>}
+      </div>
+      <div ref={cardRef} style={{position:"relative"}}>
+        <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
+          <CaptureBtn cardRef={cardRef} filename="시즌_캐리오버" DC={DC}/>
+        </div>
+        <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"22px 24px",marginTop:10}}>
+          <div style={{fontSize:16,fontWeight:800,color:DC.text,marginBottom:2}}>시즌 캐리오버 아이템 셀렉터</div>
+          <div style={{fontSize:12,color:DC.dim,marginBottom:16,lineHeight:1.7}}>
+            처음 입고일 기준 시즌 분류 — 봄(1-3월) · 여름(4-8월) · 가을(9-10월) · 겨울(11-12월).
+            누적 입고/배송 수량 필터로 판매가 검증된 캐리오버 후보를 추출하고, 상품을 누르면 옵션 단위 상세가 펼쳐집니다.
+          </div>
+
+          {/* 시즌 다중 토글 */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:12,color:DC.dim,marginRight:2}}>시즌</span>
+            <button onClick={toggleAllSeasons} style={segBtn(allSeasons)}>전시즌</button>
+            {CARRYOVER_SEASONS.map(s=>(
+              <button key={s.key} onClick={()=>toggleSeason(s.key)} style={segBtn(seasons.has(s.key),s.color)}>
+                {s.label} <span style={{opacity:.75,fontSize:10}}>{s.range}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 수량 기준 필터 + 검색 */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+            <span style={{fontSize:12,color:DC.dim,marginRight:2}}>누적배송</span>
+            {DELIVERY_PRESETS.map(([l,v])=>(
+              <button key={l} onClick={()=>setMinDelivery(v)} style={segBtn(minDelivery===v)}>{l}</button>
+            ))}
+            <span style={{fontSize:12,color:DC.dim,marginLeft:10}}>누적입고 ≥</span>
+            <input type="number" min="0" value={minInbound} placeholder="0"
+              onChange={e=>setMinInbound(e.target.value)} style={numInp}/>
+            <span style={{fontSize:12,color:DC.dim}}>누적배송 ≥</span>
+            <input type="number" min="0" value={minDelivery} placeholder="0"
+              onChange={e=>setMinDelivery(e.target.value)} style={numInp}/>
+            <input placeholder="상품코드 / 상품명 / 옵션 검색" value={search}
+              onChange={e=>setSearch(e.target.value)}
+              style={{...numInp,width:200,marginLeft:"auto"}}/>
+          </div>
+
+          <div style={{fontSize:13,color:DC.text,marginBottom:8}}>
+            <b>{filtered.length.toLocaleString()}</b>개 상품 · {skuCount.toLocaleString()}개 SKU
+          </div>
+
+          {loading?(
+            <div style={{textAlign:"center",padding:"48px 0",color:DC.dim,fontSize:13}}>스냅샷 로딩 중...</div>
+          ):!snapDate?(
+            <div style={{textAlign:"center",padding:"48px 0",color:DC.dim,fontSize:13}}>
+              인벤토리 스냅샷이 없습니다 — <b>데이터 입력 &gt; 인벤토리</b>에서 스냅샷을 먼저 업로드하세요.
+            </div>
+          ):(
+            <div style={{overflowX:"auto"}}>
+              <style>{`.carryover tbody tr.covrow{transition:background 0.12s;}.carryover tbody tr.covrow:hover td{background:#f4f4f2;}`}</style>
+              <table className="carryover" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
+                <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
+                  <tr>
+                    {th("name","상품명")}
+                    {th("code","상품코드")}
+                    {th("season","시즌")}
+                    {th("first","처음입고일")}
+                    {th("opts","옵션 수",true)}
+                    {th("inbound","누적입고",true)}
+                    {th("delivery","누적배송",true)}
+                    {th("stock","현재고",true)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(p=>{
+                    const open=expanded===p.name;
+                    return(
+                      <React.Fragment key={p.name}>
+                        <tr className="covrow" onClick={()=>setExpanded(open?null:p.name)}
+                          style={{borderBottom:`1px solid ${DC.border}`,cursor:"pointer",userSelect:"none",
+                            background:open?"rgba(126,200,164,0.08)":"transparent"}}>
+                          <td style={{padding:"6px 8px",color:DC.text,fontWeight:600,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>
+                            <span style={{color:DC.dim,fontSize:10,marginRight:6}}>{open?"▾":"▸"}</span>{p.name}
+                          </td>
+                          <td style={{padding:"6px 8px",color:DC.sub,fontFamily:"monospace",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.code}>{p.code||"—"}</td>
+                          <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>
+                            <span style={{background:`${p.seasonColor}22`,color:p.seasonColor,border:`1px solid ${p.seasonColor}66`,
+                              borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>{p.seasonLabel}</span>
+                          </td>
+                          <td style={{padding:"6px 8px",color:DC.sub,whiteSpace:"nowrap"}}>{p.firstDate||"—"}</td>
+                          <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.options.length.toLocaleString()}</td>
+                          <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.inbound.toLocaleString()}</td>
+                          <td style={{padding:"6px 8px",color:DC.text,textAlign:"right",fontWeight:700}}>{p.delivery.toLocaleString()}</td>
+                          <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.stock.toLocaleString()}</td>
+                        </tr>
+                        {open&&(
+                          <tr>
+                            <td colSpan={8} style={{padding:"4px 8px 14px 28px",borderBottom:`1px solid ${DC.border}`,background:"#fbfbf9"}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                                <thead>
+                                  <tr style={{color:DC.dim}}>
+                                    {["옵션","처음입고일","누적입고","누적배송","현재고"].map((h,i)=>(
+                                      <th key={h} style={{padding:"4px 8px",textAlign:i>=2?"right":"left",fontWeight:500,
+                                        borderBottom:`1px solid ${DC.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {[...p.options].sort((a,b)=>(b.cumulative_delivery_qty||0)-(a.cumulative_delivery_qty||0)).map((o,i)=>(
+                                    <tr key={i} style={{borderBottom:`1px solid ${DC.border}`}}>
+                                      <td style={{padding:"4px 8px",color:DC.text}}>{o.option_name||"—"}</td>
+                                      <td style={{padding:"4px 8px",color:DC.sub,whiteSpace:"nowrap"}}>{o.first_inbound_date||"—"}</td>
+                                      <td style={{padding:"4px 8px",color:DC.sub,textAlign:"right"}}>{(o.cumulative_inbound_qty||0).toLocaleString()}</td>
+                                      <td style={{padding:"4px 8px",color:DC.text,textAlign:"right",fontWeight:600}}>{(o.cumulative_delivery_qty||0).toLocaleString()}</td>
+                                      <td style={{padding:"4px 8px",color:DC.sub,textAlign:"right"}}>{(o.current_stock_qty||0).toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  {filtered.length===0&&(
+                    <tr><td colSpan={8} style={{textAlign:"center",padding:"32px 0",color:DC.dim,fontSize:13}}>
+                      조건에 맞는 상품이 없습니다 — 필터를 조정해보세요.
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // CONTENT IMPACT — 콘텐츠(인스타그램 포스트) × 매출 attribution 캘린더
 // ─────────────────────────────────────────────
 // Phase 1: 월 셀렉터 + 빈 캘린더 그리드 (스캐폴드)
@@ -21167,6 +21429,7 @@ export default function App() {
     {key:"funnel",label:"채널 유입 분석"},
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
+    {key:"carryover",label:"시즌 캐리오버"},
     {key:"gmv",label:"GMV 계산기"},
   ];
 
@@ -21223,6 +21486,7 @@ export default function App() {
         {page==="impact"&&<ContentImpact orders={orders} revenues={revenues} storeSales={storeSales}/>}
         {page==="funnel"&&<ChannelFunnel orders={orders} cafe24Members={cafe24Members} onDataChange={loadData}/>}
         {page==="reorder"&&<ReorderPage/>}
+        {page==="carryover"&&<CarryoverPage/>}
         {page==="gmv"&&<GmvCalculator orders={orders} revenues={revenues} storeSales={storeSales} stocks={stocks}/>}
         {page==="input"&&(
           <DataInput
