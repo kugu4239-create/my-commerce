@@ -6312,7 +6312,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>내용</div>
             <textarea value={submitForm.content} onChange={e=>setSubmitForm(f=>({...f,content:e.target.value}))}
               placeholder="프로모션 내용 간략히 입력"
-              rows={2}
+              rows={4}
               style={{width:"100%",boxSizing:"border-box",background:"transparent",border:`1px solid ${D.border}`,
                 borderRadius:5,padding:"7px 10px",fontSize:13,color:D.text,resize:"vertical",
                 fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
@@ -6333,7 +6333,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               <tr style={{background:D.surfaceAlt}}>
                 {["프로모션명","내용","EOD","",""].map((h,i)=>(
                   <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
-                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
+                    color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap",
+                    ...(i===0?{width:240,minWidth:240}:{})}}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -6351,7 +6352,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     </td>
                     <td style={tdS}>
                       <textarea value={editSubmitForm.content||""} onChange={e=>setEditSubmitForm(f=>({...f,content:e.target.value}))}
-                        rows={2}
+                        rows={4}
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
                           padding:"4px 8px",fontSize:13,color:D.text,width:"100%",boxSizing:"border-box",resize:"vertical",
                           fontFamily:"'Pretendard','Noto Sans KR',sans-serif"}}/>
