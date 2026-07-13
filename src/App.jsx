@@ -18407,13 +18407,18 @@ function CarryoverPage(){
   })();},[]);
 
   // 상품 단위 그룹핑 — 옵션(컬러/사이즈) 합산, 대표 처음입고일 = 옵션 중 가장 빠른 날짜
+  // 컬러는 상품명에 [컬러]로 붙기도, 옵션명에 붙기도 함 → 상품명 끝의 [ ... ] 꼬리표를 떼어
+  // 옵션 쪽으로 옮기고, 리스트에는 순수 상품명만 노출 (같은 상품의 컬러 변형이 한 그룹으로 합쳐짐)
   const products=useMemo(()=>{
     const m={};
     rows.forEach(r=>{
-      const k=r.product_name||"미분류";
+      const rawName=String(r.product_name||"미분류").trim();
+      const tail=rawName.match(/^(.*?)\s*(\[[^\]]+\])\s*$/);
+      const k=(tail&&tail[1].trim())?tail[1].trim():rawName;
+      const optLabel=[tail?tail[2]:"",String(r.option_name||"").trim()].filter(Boolean).join(" ");
       if(!m[k]) m[k]={name:k,code:"",options:[],inbound:0,delivery:0,stock:0,firstDate:null};
       const p=m[k];
-      p.options.push(r);
+      p.options.push({...r,_optLabel:optLabel});
       p.inbound+=(r.cumulative_inbound_qty||0);
       p.delivery+=(r.cumulative_delivery_qty||0);
       p.stock+=(r.current_stock_qty||0);
@@ -18427,12 +18432,11 @@ function CarryoverPage(){
     });
   },[rows]);
 
-  // 필터: 시즌 다중 토글 + 수량(누적입고/누적배송 최소값) + 검색
+  // 필터: 시즌 다중 토글 + 수량(누적입고 최소값 — 누적배송 데이터는 불확실해 기준에서 제외) + 검색
   const [seasons,setSeasons]=useState(()=>new Set(CARRYOVER_SEASONS.map(s=>s.key)));
   const [minInbound,setMinInbound]=useState("");
-  const [minDelivery,setMinDelivery]=useState("");
   const [search,setSearch]=useState("");
-  const [sortKey,setSortKey]=useState("delivery");
+  const [sortKey,setSortKey]=useState("inbound");
   const [sortDir,setSortDir]=useState("desc");
   const [expanded,setExpanded]=useState(null);
 
@@ -18441,21 +18445,21 @@ function CarryoverPage(){
   const toggleAllSeasons=()=>setSeasons(allSeasons?new Set():new Set(CARRYOVER_SEASONS.map(s=>s.key)));
 
   const filtered=useMemo(()=>{
-    const mi=Number(minInbound)||0, md=Number(minDelivery)||0;
+    const mi=Number(minInbound)||0;
     const q=search.trim().toLowerCase();
     const list=products.filter(p=>{
       // 시즌 미상(처음입고일 없음) 상품은 전시즌 상태에서만 노출
       if(p.seasonKey?!seasons.has(p.seasonKey):!allSeasons) return false;
-      if(p.inbound<mi||p.delivery<md) return false;
+      if(p.inbound<mi) return false;
       if(q&&!(p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)
-        ||p.options.some(o=>String(o.option_name||"").toLowerCase().includes(q)))) return false;
+        ||p.options.some(o=>String(o._optLabel||o.option_name||"").toLowerCase().includes(q)))) return false;
       return true;
     });
     const get={name:p=>p.name,code:p=>p.code,season:p=>p.firstDate||"",first:p=>p.firstDate||"",
-      opts:p=>p.options.length,inbound:p=>p.inbound,delivery:p=>p.delivery,stock:p=>p.stock}[sortKey]||(p=>p.delivery);
+      opts:p=>p.options.length,inbound:p=>p.inbound,delivery:p=>p.delivery,stock:p=>p.stock}[sortKey]||(p=>p.inbound);
     const dir=sortDir==="desc"?-1:1;
     return [...list].sort((a,b)=>{const va=get(a),vb=get(b);return va>vb?dir:va<vb?-dir:0;});
-  },[products,seasons,allSeasons,minInbound,minDelivery,search,sortKey,sortDir]);
+  },[products,seasons,allSeasons,minInbound,search,sortKey,sortDir]);
 
   const skuCount=useMemo(()=>filtered.reduce((s,p)=>s+p.options.length,0),[filtered]);
 
@@ -18478,7 +18482,7 @@ function CarryoverPage(){
     </th>
   );
 
-  const DELIVERY_PRESETS=[["전체",""],["100+","100"],["300+","300"],["500+","500"],["1000+","1000"]];
+  const INBOUND_PRESETS=[["전체",""],["50+","50"],["100+","100"],["200+","200"],["300+","300"],["400+","400"],["500+","500"],["600+","600"]];
 
   return(
     <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
@@ -18500,7 +18504,7 @@ function CarryoverPage(){
           <div style={{fontSize:16,fontWeight:800,color:DC.text,marginBottom:2}}>시즌 캐리오버 아이템 셀렉터</div>
           <div style={{fontSize:12,color:DC.dim,marginBottom:16,lineHeight:1.7}}>
             처음 입고일 기준 시즌 분류 — 봄(2-3월) · 여름(4-7월) · 가을(8-9월) · 겨울(10-1월).
-            누적 입고/배송 수량 필터로 판매가 검증된 캐리오버 후보를 추출하고, 상품을 누르면 옵션 단위 상세가 펼쳐집니다.
+            누적 입고 수량 필터로 캐리오버 후보를 추출하고, 상품을 누르면 옵션 단위 상세가 펼쳐집니다. (누적배송은 참고용 표시)
           </div>
 
           {/* 시즌 다중 토글 */}
@@ -18514,18 +18518,15 @@ function CarryoverPage(){
             ))}
           </div>
 
-          {/* 수량 기준 필터 + 검색 */}
+          {/* 수량 기준 필터 (누적입고) + 검색 */}
           <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
-            <span style={{fontSize:12,color:DC.dim,marginRight:2}}>누적배송</span>
-            {DELIVERY_PRESETS.map(([l,v])=>(
-              <button key={l} onClick={()=>setMinDelivery(v)} style={segBtn(minDelivery===v)}>{l}</button>
+            <span style={{fontSize:12,color:DC.dim,marginRight:2}}>누적입고</span>
+            {INBOUND_PRESETS.map(([l,v])=>(
+              <button key={l} onClick={()=>setMinInbound(v)} style={segBtn(minInbound===v)}>{l}</button>
             ))}
             <span style={{fontSize:12,color:DC.dim,marginLeft:10}}>누적입고 ≥</span>
             <input type="number" min="0" value={minInbound} placeholder="0"
               onChange={e=>setMinInbound(e.target.value)} style={numInp}/>
-            <span style={{fontSize:12,color:DC.dim}}>누적배송 ≥</span>
-            <input type="number" min="0" value={minDelivery} placeholder="0"
-              onChange={e=>setMinDelivery(e.target.value)} style={numInp}/>
             <input placeholder="상품코드 / 상품명 / 옵션 검색" value={search}
               onChange={e=>setSearch(e.target.value)}
               style={{...numInp,width:200,marginLeft:"auto"}}/>
@@ -18542,7 +18543,8 @@ function CarryoverPage(){
               데이터가 없습니다 — <b>데이터 입력 &gt; 인벤토리</b>에서 <b>시즌 캐리오버 추출기</b>(재고 0 포함 전체 상품) 또는 스냅샷을 먼저 업로드하세요.
             </div>
           ):(
-            <div style={{overflowX:"auto"}}>
+            // maxHeight+overflow:auto 스크롤 컨테이너 — sticky 헤더가 이 안에서 고정됨
+            <div style={{overflow:"auto",maxHeight:"72vh"}}>
               <style>{`.carryover tbody tr.covrow{transition:background 0.12s;}.carryover tbody tr.covrow:hover td{background:#f4f4f2;}`}</style>
               <table className="carryover" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
                 <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
@@ -18575,8 +18577,8 @@ function CarryoverPage(){
                           </td>
                           <td style={{padding:"6px 8px",color:DC.sub,whiteSpace:"nowrap"}}>{p.firstDate||"—"}</td>
                           <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.options.length.toLocaleString()}</td>
-                          <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.inbound.toLocaleString()}</td>
-                          <td style={{padding:"6px 8px",color:DC.text,textAlign:"right",fontWeight:700}}>{p.delivery.toLocaleString()}</td>
+                          <td style={{padding:"6px 8px",color:DC.text,textAlign:"right",fontWeight:700}}>{p.inbound.toLocaleString()}</td>
+                          <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.delivery.toLocaleString()}</td>
                           <td style={{padding:"6px 8px",color:DC.sub,textAlign:"right"}}>{p.stock.toLocaleString()}</td>
                         </tr>
                         {open&&(
@@ -18592,12 +18594,12 @@ function CarryoverPage(){
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {[...p.options].sort((a,b)=>(b.cumulative_delivery_qty||0)-(a.cumulative_delivery_qty||0)).map((o,i)=>(
+                                  {[...p.options].sort((a,b)=>(b.cumulative_inbound_qty||0)-(a.cumulative_inbound_qty||0)).map((o,i)=>(
                                     <tr key={i} style={{borderBottom:`1px solid ${DC.border}`}}>
-                                      <td style={{padding:"4px 8px",color:DC.text}}>{o.option_name||"—"}</td>
+                                      <td style={{padding:"4px 8px",color:DC.text}}>{o._optLabel||o.option_name||"—"}</td>
                                       <td style={{padding:"4px 8px",color:DC.sub,whiteSpace:"nowrap"}}>{o.first_inbound_date||"—"}</td>
-                                      <td style={{padding:"4px 8px",color:DC.sub,textAlign:"right"}}>{(o.cumulative_inbound_qty||0).toLocaleString()}</td>
-                                      <td style={{padding:"4px 8px",color:DC.text,textAlign:"right",fontWeight:600}}>{(o.cumulative_delivery_qty||0).toLocaleString()}</td>
+                                      <td style={{padding:"4px 8px",color:DC.text,textAlign:"right",fontWeight:600}}>{(o.cumulative_inbound_qty||0).toLocaleString()}</td>
+                                      <td style={{padding:"4px 8px",color:DC.sub,textAlign:"right"}}>{(o.cumulative_delivery_qty||0).toLocaleString()}</td>
                                       <td style={{padding:"4px 8px",color:DC.sub,textAlign:"right"}}>{(o.current_stock_qty||0).toLocaleString()}</td>
                                     </tr>
                                   ))}
