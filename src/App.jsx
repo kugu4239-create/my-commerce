@@ -18358,6 +18358,20 @@ const carryoverSeasonOf=dateStr=>{
   return m?CARRYOVER_SEASONS.find(s=>s.months.includes(m))||null:null;
 };
 const CARRYOVER_DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
+// 카페24 어드민 상품관리 검색 링크 — 상품명 앞 2글자로 검색 (사용자 제공 검색 조건 그대로)
+const cafe24ProductSearchUrl=name=>{
+  const q=encodeURIComponent(String(name||"").trim().slice(0,2));
+  return "https://merryon.cafe24.com/disp/admin/shop1/product/productmanage?eField%5B%5D=product_name&eValue%5B%5D="+q
+    +"&Trend%5B%5D=&Brand%5B%5D=&Supplier%5B%5D=&Manufacturer%5B%5D=&Classification%5B%5D=&Condition%5B%5D=N&Globalorigin%5B%5D="
+    +"&origin_level1%5B%5D=F&place_parent_no%5BF%5D%5B%5D=&place_parent_no%5BT%5D%5B%5D=&origin_place_no%5B%5D=&made_in%5B%5D="
+    +"&product_type=all&eToggleDisplay=on&categorys%5B%5D=&categorys%5B%5D=&categorys%5B%5D=&categorys%5B%5D=&category=0"
+    +"&date=regist&date_type=-1&display=A&selling=A&market_selecter=A&market_search_type=market&display_division=&UseStock=A"
+    +"&stockcount%5B%5D=stock&stock_min%5B%5D=&stock_max%5B%5D=&stock_importance=T&use_soldout=A&soldout_status=A"
+    +"&item_display=A&item_selling=A&is_side_product=&price%5B%5D=product&price_min%5B%5D=&price_max%5B%5D=&translate="
+    +"&addService=&nMileAddUse=&nCheckOutUse=&naver_co_use_flag_type=C&naver_sale_method=&page=&orderby=regist_d&limit=100"
+    +"&default_column%5Bproduct_supply_type%5D=T&default_column%5Bshop_product_name%5D=T&default_column%5Bmarket_interlock%5D=T"
+    +"&default_column%5Bsale_price%5D=T&default_column%5Bmobile_sale_price%5D=T&bIsSearchClickAction=T";
+};
 
 function CarryoverPage(){
   const DC=CARRYOVER_DC;
@@ -18565,8 +18579,15 @@ function CarryoverPage(){
                         <tr className="covrow" onClick={()=>setExpanded(open?null:p.name)}
                           style={{borderBottom:`1px solid ${DC.border}`,cursor:"pointer",userSelect:"none",
                             background:open?"rgba(126,200,164,0.08)":"transparent"}}>
-                          <td style={{padding:"6px 8px",color:DC.text,fontWeight:600,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.name}>
-                            <span style={{color:DC.dim,fontSize:10,marginRight:6}}>{open?"▾":"▸"}</span>{p.name}
+                          <td style={{padding:"6px 8px",color:DC.text,fontWeight:600,maxWidth:220,whiteSpace:"nowrap"}} title={p.name}>
+                            <span style={{color:DC.dim,fontSize:10,marginRight:6}}>{open?"▾":"▸"}</span>
+                            <span style={{display:"inline-block",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{p.name}</span>
+                            <button onClick={e=>{e.stopPropagation();window.open(cafe24ProductSearchUrl(p.name),"_blank","noopener");}}
+                              title={`카페24 상품관리에서 '${String(p.name).trim().slice(0,2)}' 검색`}
+                              style={{marginLeft:6,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,
+                                padding:"1px 7px",fontSize:10,color:DC.sub,cursor:"pointer",fontWeight:600,verticalAlign:"middle"}}>
+                              찾기
+                            </button>
                           </td>
                           <td style={{padding:"6px 8px",color:DC.sub,fontFamily:"monospace",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.code}>{p.code||"—"}</td>
                           <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>
