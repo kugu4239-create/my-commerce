@@ -3939,7 +3939,7 @@ function SmallDateButtonPicker({value,onChange}){
   );
 }
 
-function SubmitEodPicker({value,onChange}){
+function SubmitEodPicker({value,onChange,placeholder="날짜/시간 선택"}){
   const [open,setOpen]=useState(false);
   const ref=useRef(null);
   useEffect(()=>{
@@ -3948,7 +3948,7 @@ function SubmitEodPicker({value,onChange}){
     document.addEventListener("mousedown",handler);
     return()=>document.removeEventListener("mousedown",handler);
   },[open]);
-  const display=value?value.replace("T"," "):"날짜/시간 선택";
+  const display=value?value.replace("T"," "):placeholder;
   return(
     <div style={{position:"relative"}} ref={ref}>
       <button onClick={()=>setOpen(v=>!v)}
@@ -6318,13 +6318,15 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           <div>
             <div style={{fontSize:12,color:D.textMeta,marginBottom:3}}>프로모션 기간</div>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <DateDrop id="submit_start" value={submitForm.start_date}
-                onChange={v=>setSubmitForm(f=>({...f,start_date:v}))}
-                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="시작일"/>
+              <div style={{flex:1}}>
+                <SubmitEodPicker value={submitForm.start_date} placeholder="시작 일시"
+                  onChange={v=>setSubmitForm(f=>({...f,start_date:v}))}/>
+              </div>
               <span style={{fontSize:12,color:D.textMeta}}>~</span>
-              <DateDrop id="submit_end" value={submitForm.end_date}
-                onChange={v=>setSubmitForm(f=>({...f,end_date:v}))}
-                calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료일"/>
+              <div style={{flex:1}}>
+                <SubmitEodPicker value={submitForm.end_date} placeholder="종료 일시"
+                  onChange={v=>setSubmitForm(f=>({...f,end_date:v}))}/>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
@@ -6366,15 +6368,12 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                         placeholder="프로모션 내용 간략히 입력"
                         minHeight={96} inputStyle={{padding:"4px 8px"}}/>
                     </td>
-                    <td style={{...tdS,whiteSpace:"nowrap"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:4}}>
-                        <DateDrop id={`submit_edit_start_${s.id}`} value={editSubmitForm.start_date||""}
-                          onChange={v=>setEditSubmitForm(f=>({...f,start_date:v}))}
-                          calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="시작일"/>
-                        <span style={{fontSize:11,color:D.textMeta}}>~</span>
-                        <DateDrop id={`submit_edit_end_${s.id}`} value={editSubmitForm.end_date||""}
-                          onChange={v=>setEditSubmitForm(f=>({...f,end_date:v}))}
-                          calOpenFor={calOpenFor} setCalOpenFor={setCalOpenFor} placeholder="종료일"/>
+                    <td style={{...tdS,whiteSpace:"nowrap",minWidth:210}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        <SubmitEodPicker value={editSubmitForm.start_date||""} placeholder="시작 일시"
+                          onChange={v=>setEditSubmitForm(f=>({...f,start_date:v}))}/>
+                        <SubmitEodPicker value={editSubmitForm.end_date||""} placeholder="종료 일시"
+                          onChange={v=>setEditSubmitForm(f=>({...f,end_date:v}))}/>
                       </div>
                     </td>
                     <td style={tdS}>
@@ -6399,7 +6398,10 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                       {s.content?<div dangerouslySetInnerHTML={{__html:s.content}}/>:"—"}
                     </td>
                     <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>
-                      {(s.start_date||s.end_date)?`${s.start_date||"?"} ~ ${s.end_date||"?"}`:"—"}
+                      {(s.start_date||s.end_date)?(<>
+                        <div>{(s.start_date||"?").replace("T"," ")}</div>
+                        <div>~ {(s.end_date||"?").replace("T"," ")}</div>
+                      </>):"—"}
                     </td>
                     <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>{s.eod?s.eod.replace("T"," "):"—"}</td>
                     <td style={{...tdS,whiteSpace:"nowrap"}}>
