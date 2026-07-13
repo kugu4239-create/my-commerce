@@ -159,6 +159,16 @@ const fmtDays = days => {
   return m > 0 ? `${y}년 ${m}개월` : `${y}년`;
 };
 
+// "YYYY-MM-DDTHH:mm"(또는 날짜만) → "YYYY-MM-DD(요일) HH:mm" — 제출 프로모션 기간 표시용
+const WEEKDAY_KR = ["일","월","화","수","목","금","토"];
+const fmtDateTimeDow = v => {
+  if (!v) return "?";
+  const [datePart, timePart] = String(v).split("T");
+  const d = new Date(datePart + "T00:00:00");
+  const dow = isNaN(d) ? "" : `(${WEEKDAY_KR[d.getDay()]})`;
+  return `${datePart}${dow}${timePart ? " " + timePart : ""}`;
+};
+
 // 판매처 이름 정규화
 const normChannel = raw => {
   if (!raw) return "미분류";
@@ -6408,8 +6418,8 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                     </td>
                     <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>
                       {(s.start_date||s.end_date)?(<>
-                        <div>{(s.start_date||"?").replace("T"," ")}</div>
-                        <div>~ {(s.end_date||"?").replace("T"," ")}</div>
+                        <div>{fmtDateTimeDow(s.start_date)}</div>
+                        <div>~ {fmtDateTimeDow(s.end_date)}</div>
                       </>):"—"}
                     </td>
                     <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>{s.eod?s.eod.replace("T"," "):"—"}</td>
