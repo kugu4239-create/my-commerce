@@ -13889,9 +13889,10 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
   const [selDates,setSelDates]=useState(new Set());
   const [delConfirm,setDelConfirm]=useState(false);
   const [dragOver,setDragOver]=useState(false);
-  const [uploadMode,setUploadMode]=useState("snapshot"); // "snapshot"(날짜별 스냅샷) | "priceDb"(가격 데이터베이스용) | "cafe24"(카페24 상품코드)
+  const [uploadMode,setUploadMode]=useState("snapshot"); // "snapshot"(날짜별 스냅샷) | "priceDb"(가격 데이터베이스용) | "cafe24"(카페24 상품코드) | "carryover"(시즌 캐리오버 추출기)
   const [priceRows,setPriceRows]=useState([]); // 가격 DB 모드 파싱 결과
   const [cafe24Rows,setCafe24Rows]=useState([]); // 카페24 상품코드 모드 파싱 결과
+  const [carryoverRows,setCarryoverRows]=useState([]); // 시즌 캐리오버 추출기 모드 파싱 결과 (재고 0 포함 전체 상품)
 
   const loadHistory=useCallback(async()=>{
     setHistLoading(true);
@@ -13922,7 +13923,16 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 
   const handleFile=useCallback(f=>{
     if(!f) return;
-    setFile(f);setUploadStatus("parsing");setStatusMsg("파일 파싱 중...");setParsedRows([]);setPriceRows([]);setCafe24Rows([]);setSnapDate(null);
+    setFile(f);setUploadStatus("parsing");setStatusMsg("파일 파싱 중...");setParsedRows([]);setPriceRows([]);setCafe24Rows([]);setCarryoverRows([]);setSnapDate(null);
+    if(uploadMode==="carryover"){
+      // 스냅샷과 동일 컬럼 포맷 — 날짜 선택 없이 전체 교체 저장 (재고 0 행도 그대로 수용)
+      parseInvFile(f,rows=>{
+        setUploadStatus(null);setStatusMsg("");
+        if(!rows.length){setUploadStatus("error");setStatusMsg("유효한 데이터 행이 없습니다");return;}
+        setCarryoverRows(rows);
+      },err=>{setUploadStatus("error");setStatusMsg(err);});
+      return;
+    }
     if(uploadMode==="priceDb"){
       parsePriceDbFile(f,rows=>{
         setUploadStatus(null);setStatusMsg("");
@@ -14014,6 +14024,36 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
     }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
   },[cafe24Rows]);
 
+  // 시즌 캐리오버 추출기 — carryover_items 전체 교체 저장 (재고 0 포함 전체 상품, 단일 최신본 유지)
+  const doCarryoverUpload=useCallback(async()=>{
+    if(!carryoverRows.length) return;
+    setUploadStatus("uploading");setStatusMsg("캐리오버 데이터 저장 중...");
+    try{
+      const db=await getSupabase();
+      const{error:de}=await db.from("carryover_items").delete().gte("id",0);
+      if(de) throw new Error(de.message+" — supabase/carryover_items.sql 실행 여부를 확인하세요");
+      // carryover_items 스키마 컬럼만 명시적으로 추출 (리오더 전용 _r_*·snapshot_date 제외)
+      const rows=carryoverRows.map(r=>({
+        product_code:r.product_code||"",product_name:r.product_name,option_name:r.option_name||"",
+        selling_price:r.selling_price||0,supply_price:r.supply_price||0,
+        current_stock_qty:r.current_stock_qty||0,
+        first_inbound_date:r.first_inbound_date||null,first_inbound_qty:r.first_inbound_qty||0,
+        cumulative_inbound_qty:r.cumulative_inbound_qty||0,
+        latest_inbound_date:r.latest_inbound_date||null,latest_inbound_qty:r.latest_inbound_qty||0,
+        last_delivery_date:r.last_delivery_date||null,cumulative_delivery_qty:r.cumulative_delivery_qty||0,
+      }));
+      const CHUNK=500;
+      for(let i=0;i<rows.length;i+=CHUNK){
+        const{error}=await db.from("carryover_items").insert(rows.slice(i,i+CHUNK));
+        if(error) throw new Error(error.message);
+      }
+      const zeroStock=rows.filter(r=>(r.current_stock_qty||0)===0).length;
+      setUploadStatus("done");setStatusMsg(`캐리오버 ${rows.length.toLocaleString()}건 저장 완료 (재고 0 상품 ${zeroStock.toLocaleString()}건 포함) — 시즌 캐리오버 페이지에서 사용됩니다`);
+      setFile(null);setCarryoverRows([]);
+      if(onUploaded) onUploaded();
+    }catch(err){setUploadStatus("error");setStatusMsg(String(err));}
+  },[carryoverRows,onUploaded]);
+
   const handleUploadClick=useCallback(async()=>{
     if(!parsedRows.length||!snapDate) return;
     const db=await getSupabase();
@@ -14041,13 +14081,13 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
 
   return(
     <div>
-      {/* 업로드 모드 토글 — 스냅샷(날짜별) / 가격 DB(판매가·공급가) / 카페24 상품코드 */}
-      <div style={{display:"flex",gap:6,marginBottom:10}}>
-        {[["snapshot","스냅샷 (날짜별)"],["priceDb","가격 DB (판매가·공급가)"],["cafe24","카페24 상품코드"]].map(([m,label])=>{
-          const accent=m==="cafe24"?"#9E92C8":"#7EC8A4";
+      {/* 업로드 모드 토글 — 스냅샷(날짜별) / 가격 DB(판매가·공급가) / 카페24 상품코드 / 시즌 캐리오버 추출기 */}
+      <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+        {[["snapshot","스냅샷 (날짜별)"],["priceDb","가격 DB (판매가·공급가)"],["cafe24","카페24 상품코드"],["carryover","시즌 캐리오버 추출기"]].map(([m,label])=>{
+          const accent=m==="cafe24"?"#9E92C8":m==="carryover"?"#C87B9E":"#7EC8A4";
           return (
-          <button key={m} onClick={()=>{setUploadMode(m);setFile(null);setParsedRows([]);setPriceRows([]);setCafe24Rows([]);setUploadStatus(null);setStatusMsg("");setSnapDate(null);}}
-            style={{flex:1,background:uploadMode===m?accent:"transparent",color:uploadMode===m?(m==="cafe24"?"#fff":"#0a1a12"):DC.sub,
+          <button key={m} onClick={()=>{setUploadMode(m);setFile(null);setParsedRows([]);setPriceRows([]);setCafe24Rows([]);setCarryoverRows([]);setUploadStatus(null);setStatusMsg("");setSnapDate(null);}}
+            style={{flex:1,minWidth:140,background:uploadMode===m?accent:"transparent",color:uploadMode===m?(m==="cafe24"||m==="carryover"?"#fff":"#0a1a12"):DC.sub,
               border:`1px solid ${uploadMode===m?accent:DC.border}`,borderRadius:6,padding:"6px 10px",
               fontSize:12,fontWeight:700,cursor:"pointer"}}>{label}</button>
           );
@@ -14061,6 +14101,12 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
       {uploadMode==="cafe24"&&(
         <div style={{fontSize:11,color:DC.dim,lineHeight:1.6,marginBottom:8}}>
           날짜 입력 없이 <b style={{color:DC.sub}}>상품명·카페24 상품코드</b>만 영구 저장합니다. SKU Risk 다운로드의 카페24 상품코드 매칭에 사용되며, 같은 상품명은 최신 값으로 갱신됩니다.
+        </div>
+      )}
+      {uploadMode==="carryover"&&(
+        <div style={{fontSize:11,color:DC.dim,lineHeight:1.6,marginBottom:8}}>
+          <b style={{color:DC.sub}}>재고 0 상품을 포함한 전체 상품 목록</b>을 별도 저장소에 보관합니다 (스냅샷과 동일한 컬럼 포맷, 날짜 입력 없음).
+          업로드할 때마다 전체가 교체되며, <b style={{color:DC.sub}}>시즌 캐리오버</b> 페이지가 이 데이터를 우선 사용합니다.
         </div>
       )}
       {/* Drop zone */}
@@ -14109,7 +14155,7 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
           </div>
           <div style={{color:DC.dim,fontSize:12}}>상품명 + 판매가/공급가만 있으면 됩니다 (날짜·재고 불필요).</div>
         </div>
-        ):(
+        ):uploadMode==="cafe24"?(
         <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
           <div style={{marginBottom:6}}>
             <span style={{color:"#9E92C8",fontWeight:700,fontSize:13}}>카페24 상품코드</span>
@@ -14121,6 +14167,19 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
             </div>
           </div>
           <div style={{color:DC.dim,fontSize:12}}>상품명 + 카페24 상품코드만 있으면 됩니다 (카페24 상품 엑셀 그대로 사용 가능).</div>
+        </div>
+        ):(
+        <div style={{fontSize:12,lineHeight:1.9,textAlign:"left",display:"inline-block",width:"100%"}}>
+          <div style={{marginBottom:6}}>
+            <span style={{color:"#C87B9E",fontWeight:700,fontSize:13}}>시즌 캐리오버 추출기</span>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"2px 8px",marginTop:3}}>
+              {["상품명","상품코드","옵션","현재고","처음입고일","누적입고","누적배송수량"].map(c=>(
+                <span key={c} style={{background:"rgba(200,123,158,0.1)",border:"1px solid rgba(200,123,158,0.25)",
+                  borderRadius:4,padding:"1px 6px",fontSize:12,color:"#C87B9E",fontFamily:"monospace"}}>{c}</span>
+              ))}
+            </div>
+          </div>
+          <div style={{color:DC.dim,fontSize:12}}>재고 0 상품 포함 전체 상품 엑셀을 올리세요 — 시즌 캐리오버 페이지의 데이터 소스가 됩니다.</div>
         </div>
         )}
         {file&&<div style={{marginTop:6,fontSize:13,color:"#7EC8A4"}}>{file.name}</div>}
@@ -14177,6 +14236,20 @@ function InventoryUploader({DC,onUploaded,onReorderDone}){
             style={{background:"#9E92C8",color:"#fff",border:"none",borderRadius:6,
               padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
             카페24 상품코드 저장
+          </button>
+        </div>
+      )}
+
+      {/* Upload action — 시즌 캐리오버 추출기 모드 */}
+      {uploadMode==="carryover"&&carryoverRows.length>0&&uploadStatus!=="uploading"&&(
+        <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:DC.sub}}>
+            {`전체 상품 ${carryoverRows.length.toLocaleString()}건 준비됨 (재고 0 상품 ${carryoverRows.filter(r=>(r.current_stock_qty||0)===0).length.toLocaleString()}건 포함) — 기존 데이터 전체 교체`}
+          </span>
+          <button onClick={doCarryoverUpload}
+            style={{background:"#C87B9E",color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            캐리오버 데이터 저장
           </button>
         </div>
       )}
@@ -18290,6 +18363,7 @@ function CarryoverPage(){
   const DC=CARRYOVER_DC;
   const [rows,setRows]=useState([]);
   const [snapDate,setSnapDate]=useState(null);
+  const [source,setSource]=useState(null); // "carryover"(추출기 저장소) | "snapshot"(인벤토리 스냅샷 폴백) | null(데이터 없음)
   const [loading,setLoading]=useState(true);
   const cardRef=useRef(null);
 
@@ -18297,23 +18371,38 @@ function CarryoverPage(){
     setLoading(true);
     try{
       const db=await getSupabase();
+      const PAGE=1000;
+      const fetchPaged=async build=>{
+        let all=[],off=0;
+        while(true){
+          const{data,error}=await build().range(off,off+PAGE-1);
+          if(error||!data||data.length===0) break;
+          all=all.concat(data);
+          if(data.length<PAGE) break;
+          off+=PAGE;
+        }
+        return all;
+      };
+      // 1) 시즌 캐리오버 추출기 저장소 우선 — 재고 0 포함 전체 상품 (업로더의 '시즌 캐리오버 추출기' 모드)
+      const covRows=await fetchPaged(()=>db.from("carryover_items")
+        .select("product_code,product_name,option_name,first_inbound_date,cumulative_inbound_qty,cumulative_delivery_qty,current_stock_qty,uploaded_at"));
+      if(covRows.length){
+        setRows(covRows);
+        setSnapDate(covRows.reduce((m,r)=>r.uploaded_at>m?r.uploaded_at:m,"").slice(0,10)||null);
+        setSource("carryover");
+        return;
+      }
+      // 2) 폴백: 인벤토리 최신 스냅샷 (재고 있는 상품만 포함될 수 있음)
       const{data:dates}=await db.from("inventory_snapshot")
         .select("snapshot_date").order("snapshot_date",{ascending:false}).limit(1);
       const latest=dates?.[0]?.snapshot_date||null;
       setSnapDate(latest);
-      if(!latest){setRows([]);return;}
-      const PAGE=1000;
-      let all=[],off=0;
-      while(true){
-        const{data,error}=await db.from("inventory_snapshot")
-          .select("product_code,product_name,option_name,first_inbound_date,cumulative_inbound_qty,cumulative_delivery_qty,current_stock_qty")
-          .eq("snapshot_date",latest).range(off,off+PAGE-1);
-        if(error||!data||data.length===0) break;
-        all=all.concat(data);
-        if(data.length<PAGE) break;
-        off+=PAGE;
-      }
-      setRows(all);
+      if(!latest){setRows([]);setSource(null);return;}
+      const snapRows=await fetchPaged(()=>db.from("inventory_snapshot")
+        .select("product_code,product_name,option_name,first_inbound_date,cumulative_inbound_qty,cumulative_delivery_qty,current_stock_qty")
+        .eq("snapshot_date",latest));
+      setRows(snapRows);
+      setSource("snapshot");
     }finally{setLoading(false);}
   })();},[]);
 
@@ -18394,8 +18483,14 @@ function CarryoverPage(){
   return(
     <div style={{background:DC.bg,minHeight:"100%",padding:"28px 28px 40px"}}>
       <div style={{fontSize:13,color:DC.dim,marginBottom:2}}>
-        데이터 소스: <b style={{color:DC.sub}}>데이터 입력 &gt; 인벤토리</b> — 최신 스냅샷의 처음입고일·누적입고·누적배송 기준
-        {snapDate&&<span> · 스냅샷 기준일: <b style={{color:DC.sub}}>{snapDate}</b></span>}
+        {source==="carryover"?(
+          <>데이터 소스: <b style={{color:DC.sub}}>데이터 입력 &gt; 인벤토리 &gt; 시즌 캐리오버 추출기</b> — 재고 0 포함 전체 상품
+            {snapDate&&<span> · 업로드일: <b style={{color:DC.sub}}>{snapDate}</b></span>}</>
+        ):(
+          <>데이터 소스: <b style={{color:DC.sub}}>데이터 입력 &gt; 인벤토리</b> — 최신 스냅샷의 처음입고일·누적입고·누적배송 기준
+            {snapDate&&<span> · 스냅샷 기준일: <b style={{color:DC.sub}}>{snapDate}</b></span>}
+            {source==="snapshot"&&<span style={{color:"#C87B9E"}}> · 재고 0 상품까지 보려면 '시즌 캐리오버 추출기'로 전체 상품 파일을 업로드하세요</span>}</>
+        )}
       </div>
       <div ref={cardRef} style={{position:"relative"}}>
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
@@ -18442,9 +18537,9 @@ function CarryoverPage(){
 
           {loading?(
             <div style={{textAlign:"center",padding:"48px 0",color:DC.dim,fontSize:13}}>스냅샷 로딩 중...</div>
-          ):!snapDate?(
+          ):!source?(
             <div style={{textAlign:"center",padding:"48px 0",color:DC.dim,fontSize:13}}>
-              인벤토리 스냅샷이 없습니다 — <b>데이터 입력 &gt; 인벤토리</b>에서 스냅샷을 먼저 업로드하세요.
+              데이터가 없습니다 — <b>데이터 입력 &gt; 인벤토리</b>에서 <b>시즌 캐리오버 추출기</b>(재고 0 포함 전체 상품) 또는 스냅샷을 먼저 업로드하세요.
             </div>
           ):(
             <div style={{overflowX:"auto"}}>
