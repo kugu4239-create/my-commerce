@@ -37,9 +37,11 @@ create table if not exists public.submit_promotions (
   eod     text
 );
 
-alter table public.submit_promotions add column if not exists title   text;
-alter table public.submit_promotions add column if not exists content text;
-alter table public.submit_promotions add column if not exists eod     text;
+alter table public.submit_promotions add column if not exists title      text;
+alter table public.submit_promotions add column if not exists content    text;
+alter table public.submit_promotions add column if not exists eod        text;
+alter table public.submit_promotions add column if not exists start_date text;  -- 프로모션 기간 시작일 (YYYY-MM-DD)
+alter table public.submit_promotions add column if not exists end_date   text;  -- 프로모션 기간 종료일 (YYYY-MM-DD)
 
 -- 3) 가려진 종료 프로모션 (가리기 기능) — 기기 간 동기화용
 create table if not exists public.hidden_promo_log (
