@@ -18358,9 +18358,11 @@ const carryoverSeasonOf=dateStr=>{
   return m?CARRYOVER_SEASONS.find(s=>s.months.includes(m))||null:null;
 };
 const CARRYOVER_DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
-// 카페24 어드민 상품관리 검색 링크 — 상품명 앞 2글자로 검색 (사용자 제공 검색 조건 그대로)
+// 카페24 어드민 상품관리 검색어 — 앞의 (사용X) 같은 괄호 태그를 떼고 상품명 앞 4글자
+const cafe24SearchTerm=name=>String(name||"").trim().replace(/^(\([^)]*\)\s*)+/,"").trim().slice(0,4).trim();
+// 카페24 어드민 상품관리 검색 링크 (사용자 제공 검색 조건 그대로)
 const cafe24ProductSearchUrl=name=>{
-  const q=encodeURIComponent(String(name||"").trim().slice(0,2));
+  const q=encodeURIComponent(cafe24SearchTerm(name));
   return "https://merryon.cafe24.com/disp/admin/shop1/product/productmanage?eField%5B%5D=product_name&eValue%5B%5D="+q
     +"&Trend%5B%5D=&Brand%5B%5D=&Supplier%5B%5D=&Manufacturer%5B%5D=&Classification%5B%5D=&Condition%5B%5D=N&Globalorigin%5B%5D="
     +"&origin_level1%5B%5D=F&place_parent_no%5BF%5D%5B%5D=&place_parent_no%5BT%5D%5B%5D=&origin_place_no%5B%5D=&made_in%5B%5D="
@@ -18558,7 +18560,8 @@ function CarryoverPage(){
           ):(
             // maxHeight+overflow:auto 스크롤 컨테이너 — sticky 헤더가 이 안에서 고정됨
             <div style={{overflow:"auto",maxHeight:"72vh"}}>
-              <style>{`.carryover tbody tr.covrow{transition:background 0.12s;}.carryover tbody tr.covrow:hover td{background:#f4f4f2;}`}</style>
+              <style>{`.carryover tbody tr.covrow{transition:background 0.12s;}.carryover tbody tr.covrow:hover td{background:#f4f4f2;}
+.covfind .covtip{display:none;}.covfind:hover .covtip{display:block;}`}</style>
               <table className="carryover" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
                 <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                   <tr>
@@ -18582,12 +18585,21 @@ function CarryoverPage(){
                           <td style={{padding:"6px 8px",color:DC.text,fontWeight:600,maxWidth:220,whiteSpace:"nowrap"}} title={p.name}>
                             <span style={{color:DC.dim,fontSize:10,marginRight:6}}>{open?"▾":"▸"}</span>
                             <span style={{display:"inline-block",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{p.name}</span>
-                            <button onClick={e=>{e.stopPropagation();window.open(cafe24ProductSearchUrl(p.name),"_blank","noopener");}}
-                              title={`카페24 상품관리에서 '${String(p.name).trim().slice(0,2)}' 검색`}
-                              style={{marginLeft:6,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,
-                                padding:"1px 7px",fontSize:10,color:DC.sub,cursor:"pointer",fontWeight:600,verticalAlign:"middle"}}>
-                              찾기
-                            </button>
+                            {/* 찾기 + 오른쪽 호버 툴팁 — pointer-events:none 이라 클릭을 방해하지 않음 */}
+                            <span className="covfind" style={{position:"relative",display:"inline-block",verticalAlign:"middle"}}>
+                              <button onClick={e=>{e.stopPropagation();window.open(cafe24ProductSearchUrl(p.name),"_blank","noopener");}}
+                                style={{marginLeft:6,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,
+                                  padding:"1px 7px",fontSize:10,color:DC.sub,cursor:"pointer",fontWeight:600}}>
+                                찾기
+                              </button>
+                              <span className="covtip" style={{position:"absolute",left:"calc(100% + 8px)",top:"50%",transform:"translateY(-50%)",
+                                background:"rgba(30,30,30,0.94)",color:"#fff",borderRadius:6,padding:"7px 10px",width:240,
+                                fontSize:11,fontWeight:400,lineHeight:1.6,whiteSpace:"normal",zIndex:60,pointerEvents:"none",
+                                boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>
+                                카페24 상품관리에서 <b>{`'${cafe24SearchTerm(p.name)}'`}</b> 검색<br/>
+                                카페24에 로그인되어 있을 경우에만 상품 검색으로 자동으로 이어지며, 띄어쓰기·상품명 편집 등으로 자동 검색되지 않을 수 있습니다.
+                              </span>
+                            </span>
                           </td>
                           <td style={{padding:"6px 8px",color:DC.sub,fontFamily:"monospace",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.code}>{p.code||"—"}</td>
                           <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>
