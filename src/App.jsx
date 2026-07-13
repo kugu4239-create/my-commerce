@@ -5593,20 +5593,29 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     })();
   },[]);
 
+  // DB 저장 실패를 조용히 넘기지 않는다 — 실패 시 로컬에만 남아 새로고침 때 사라진 것처럼 보임
+  // (start_date/end_date 컬럼 미생성 시 insert/update 전체가 거부됨 → supabase/promotions.sql 실행 필요)
+  const alertSubmitDbError=error=>{
+    if(!error) return;
+    alert("DB 저장 실패 — 새로고침하면 변경이 사라집니다.\n"+error.message
+      +"\n\n컬럼 누락 오류라면 Supabase SQL Editor에서 supabase/promotions.sql 의 ALTER 문을 실행해주세요.");
+  };
   const addSubmitPromo=async()=>{
     if(!submitForm.title)return;
     const newS={id:Date.now(),...submitForm};
     const next=[...submitPromos,newS];
     setSubmitPromos(next);saveSubmitPromosLocal(next);
     const db=await getSupabase();
-    await db.from("submit_promotions").insert(newS);
+    const{error}=await db.from("submit_promotions").insert(newS);
+    alertSubmitDbError(error);
     setSubmitForm({title:"",content:"",start_date:"",end_date:"",eod:""});
   };
   const saveSubmitEdit=async()=>{
     const next=submitPromos.map(s=>s.id===editingSubmitId?{...s,...editSubmitForm}:s);
     setSubmitPromos(next);saveSubmitPromosLocal(next);
     const db=await getSupabase();
-    await db.from("submit_promotions").update(editSubmitForm).eq("id",editingSubmitId);
+    const{error}=await db.from("submit_promotions").update(editSubmitForm).eq("id",editingSubmitId);
+    alertSubmitDbError(error);
     setEditingSubmitId(null);
   };
   const delSubmitPromo=async id=>{
