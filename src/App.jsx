@@ -18358,9 +18358,11 @@ const carryoverSeasonOf=dateStr=>{
   return m?CARRYOVER_SEASONS.find(s=>s.months.includes(m))||null:null;
 };
 const CARRYOVER_DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
-// 카페24 어드민 상품관리 검색 링크 — 상품명 앞 2글자로 검색 (사용자 제공 검색 조건 그대로)
+// 카페24 어드민 상품관리 검색어 — 앞의 (사용X) 같은 괄호 태그를 떼고 상품명 앞 4글자
+const cafe24SearchTerm=name=>String(name||"").trim().replace(/^(\([^)]*\)\s*)+/,"").trim().slice(0,4).trim();
+// 카페24 어드민 상품관리 검색 링크 (사용자 제공 검색 조건 그대로)
 const cafe24ProductSearchUrl=name=>{
-  const q=encodeURIComponent(String(name||"").trim().slice(0,2));
+  const q=encodeURIComponent(cafe24SearchTerm(name));
   return "https://merryon.cafe24.com/disp/admin/shop1/product/productmanage?eField%5B%5D=product_name&eValue%5B%5D="+q
     +"&Trend%5B%5D=&Brand%5B%5D=&Supplier%5B%5D=&Manufacturer%5B%5D=&Classification%5B%5D=&Condition%5B%5D=N&Globalorigin%5B%5D="
     +"&origin_level1%5B%5D=F&place_parent_no%5BF%5D%5B%5D=&place_parent_no%5BT%5D%5B%5D=&origin_place_no%5B%5D=&made_in%5B%5D="
@@ -18583,7 +18585,7 @@ function CarryoverPage(){
                             <span style={{color:DC.dim,fontSize:10,marginRight:6}}>{open?"▾":"▸"}</span>
                             <span style={{display:"inline-block",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{p.name}</span>
                             <button onClick={e=>{e.stopPropagation();window.open(cafe24ProductSearchUrl(p.name),"_blank","noopener");}}
-                              title={`카페24 상품관리에서 '${String(p.name).trim().slice(0,2)}' 검색`}
+                              title={`카페24 상품관리에서 '${cafe24SearchTerm(p.name)}' 검색`}
                               style={{marginLeft:6,background:"transparent",border:`1px solid ${DC.border}`,borderRadius:4,
                                 padding:"1px 7px",fontSize:10,color:DC.sub,cursor:"pointer",fontWeight:600,verticalAlign:"middle"}}>
                               찾기
