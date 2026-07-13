@@ -18348,10 +18348,10 @@ function ReorderPage(){
 // 리스트는 상품 단위(옵션 합산), 행 클릭 시 옵션 단위 상세를 인라인 확장.
 // ─────────────────────────────────────────────
 const CARRYOVER_SEASONS=[
-  {key:"spring",label:"봄",range:"1-3월",months:[1,2,3],color:"#7EC8A4"},
-  {key:"summer",label:"여름",range:"4-8월",months:[4,5,6,7,8],color:"#7B9EC8"},
-  {key:"fall",label:"가을",range:"9-10월",months:[9,10],color:"#C8A47E"},
-  {key:"winter",label:"겨울",range:"11-12월",months:[11,12],color:"#9B8EC8"},
+  {key:"spring",label:"봄",range:"2-3월",months:[2,3],color:"#7EC8A4"},
+  {key:"summer",label:"여름",range:"4-7월",months:[4,5,6,7],color:"#7B9EC8"},
+  {key:"fall",label:"가을",range:"8-9월",months:[8,9],color:"#C8A47E"},
+  {key:"winter",label:"겨울",range:"10-1월",months:[10,11,12,1],color:"#9B8EC8"},
 ];
 const carryoverSeasonOf=dateStr=>{
   const m=dateStr?parseInt(String(dateStr).slice(5,7),10):null;
@@ -18499,7 +18499,7 @@ function CarryoverPage(){
         <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"22px 24px",marginTop:10}}>
           <div style={{fontSize:16,fontWeight:800,color:DC.text,marginBottom:2}}>시즌 캐리오버 아이템 셀렉터</div>
           <div style={{fontSize:12,color:DC.dim,marginBottom:16,lineHeight:1.7}}>
-            처음 입고일 기준 시즌 분류 — 봄(1-3월) · 여름(4-8월) · 가을(9-10월) · 겨울(11-12월).
+            처음 입고일 기준 시즌 분류 — 봄(2-3월) · 여름(4-7월) · 가을(8-9월) · 겨울(10-1월).
             누적 입고/배송 수량 필터로 판매가 검증된 캐리오버 후보를 추출하고, 상품을 누르면 옵션 단위 상세가 펼쳐집니다.
           </div>
 
