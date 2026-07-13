@@ -6373,8 +6373,9 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                 return (
                   <tr key={s.id}>
                     <td style={{...tdS,fontWeight:600}}>{s.title}</td>
-                    <td style={{...tdS,color:D.textSub,maxWidth:200,wordBreak:"break-all"}}>{s.content||"—"}</td>
-                    <td style={{...tdS,color:D.textSub}}>{s.eod?s.eod.replace("T"," "):"—"}</td>
+                    {/* 내용: 줄바꿈 보존(pre-wrap) + 남는 폭 전체 사용 — 한 줄로 뭉개지지 않게 */}
+                    <td style={{...tdS,color:D.textSub,width:"100%",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{s.content||"—"}</td>
+                    <td style={{...tdS,color:D.textSub,whiteSpace:"nowrap"}}>{s.eod?s.eod.replace("T"," "):"—"}</td>
                     <td style={{...tdS,whiteSpace:"nowrap"}}>
                       <button onClick={()=>{setEditingSubmitId(s.id);setEditSubmitForm({title:s.title,content:s.content||"",eod:s.eod||""});}}
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
