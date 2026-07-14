@@ -7550,15 +7550,20 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
         const list=ws[XLSX.utils.encode_cell({r,c:4})];
         const listVal=list&&typeof list.v==="number"?list.v:parseFloat(String(list?.v||"").replace(/[^\d.]/g,""));
         if(!listVal||listVal<=0) continue;
-        rows.push({row:r,code:code?.v||"",name:name?.v||"",list:Math.round(listVal)});
+        // I열(판매가·할인기간)이 채워져 있으면 기존 할인율을 역산해 초기값으로 반영
+        // — I열 갱신본(역산 파일) 재업로드 시 할인율이 그대로 나타나 수정·재다운로드 가능
+        const iCell=ws[XLSX.utils.encode_cell({r,c:8})];
+        const iVal=iCell&&typeof iCell.v==="number"?iCell.v:parseFloat(String(iCell?.v||"").replace(/[^\d.]/g,""));
+        const disc=(iVal>0&&iVal<=listVal)?Math.round((1-iVal/listVal)*1000)/10:0;
+        rows.push({row:r,code:code?.v||"",name:name?.v||"",list:Math.round(listVal),disc});
       }
       rawRef.current=rows; setShowResults(true);
       // 새 업로드 시 제거/체크 상태 초기화
       setRemovedRows(new Set()); setCheckedRows(new Set());
       if(!rows.length){ setSummary("데이터 행을 찾지 못했습니다. E열에 정상가가 있는지 확인하세요."); setProcessed([]); return; }
       setProcessed(rows.map(r=>{
-        // 디폴트 기본 할인율 0% (구간/P75 제거)
-        const bd=0;
+        // 기본 할인율: I열에서 역산된 기존 할인율 (없으면 0%)
+        const bd=r.disc||0;
         const basePrice=Math.round(r.list*(1-bd/100)/10)*10;
         const finalPrice=Math.round(basePrice*(1-cpn/100)/10)*10;
         const finalDisc=r.list>0?Math.round((1-finalPrice/r.list)*1000)/10:0;
@@ -7568,7 +7573,8 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
         const m=computeMargin(r.list,bd,selectedScenario.items||[],supply);
         return {...r,baseDisc:bd,basePrice,finalPrice,finalDisc,supply,supplyIncVat,costRatio,...m};
       }));
-      setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행) · 인벤토리 매칭 ${rows.filter(r=>supplyOf(r.name,r.code)>0).length}건`);
+      const discCount=rows.filter(r=>r.disc>0).length;
+      setSummary(`${rows.length}개 처리 완료 (시트: ${sheet}, 헤더 ${headerRow+1}행) · 인벤토리 매칭 ${rows.filter(r=>supplyOf(r.name,r.code)>0).length}건`+(discCount>0?` · I열 기존 할인율 감지 ${discCount}건 반영`:""));
     }catch(err){ setShowResults(true); setProcessed([]); setSummary("파일 읽기 실패: "+(err?.message||err)); }
   };
   const download=async()=>{
@@ -8273,7 +8279,7 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                 style={{border:`1px dashed ${dragOver?D.blue:D.borderMid}`,borderRadius:6,padding:22,textAlign:"center",
                   cursor:"pointer",background:dragOver?"#eef3ff":D.surface}}>
                 <div style={{margin:"0 0 4px",fontSize:11,color:D.text}}>29CM 일괄할인 v2 양식을 끌어다 놓거나 클릭해서 업로드</div>
-                <div style={{fontSize:11,color:D.textMeta}}>E열 정상가 기준 분류 → 쿠폰율 역산한 프런트 판매가를 I열에 입력</div>
+                <div style={{fontSize:11,color:D.textMeta}}>E열 정상가 기준 분류 → 쿠폰율 역산한 프런트 판매가를 I열에 입력<br/>다운로드했던 I열 갱신본을 다시 올리면 I열 할인율이 자동 반영됩니다 (수정 후 재다운로드 가능)</div>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
                   onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);e.target.value="";}}/>
               </div>
@@ -8687,6 +8693,9 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                         {(onCreatePromo||onAttachInlineCalc)&&(
                           <div style={{padding:"12px",borderTop:`1px solid ${D.borderMid}`,display:"flex",justifyContent:"center",background:D.surface}}>
                             <button onClick={()=>{
+                              // 독립 모드(+29CM 프로모션 추가하기)에서는 역산 파일(I열 갱신본)도 자동 다운로드
+                              // eslint-disable-next-line react-hooks/refs -- onClick 이벤트 핸들러 내 호출 (렌더 중 ref 접근 아님)
+                              if(!onAttachInlineCalc) download();
                               // 기본 세일율 그룹 → products.rows (묶음 상품 + 계산기 모든 필드 보존)
                               // 부착 시점에 supplyOf 로 공급가 재조회 — 인벤토리 로딩이 늦었어도
                               // 저장되는 묶음에는 항상 최신 공급가·마진·마크업이 기록됨
