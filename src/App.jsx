@@ -1716,7 +1716,7 @@ async function authLogout(){
 
 export function LoginGate({children}){
   const [session,setSession]=useState(undefined); // undefined=세션 확인 중
-  const [email,setEmail]=useState("");
+  const [initials,setInitials]=useState("");
   const [pw,setPw]=useState("");
   const [err,setErr]=useState("");
   const [busy,setBusy]=useState(false);
@@ -1739,16 +1739,22 @@ export function LoginGate({children}){
       fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>로그인 확인 중…</div>;
   }
   if(session) return children;
-  const submit=async(e)=>{
-    e.preventDefault();
+  // 리오더앱과 동일한 로그인 방식 — 이니셜 3자를 @reorder.app 가상
+  // 이메일로 변환 + 4자리 숫자 PIN. PIN 4자리가 채워지면 자동 제출.
+  const doLogin=async(ini,pin)=>{
     if(busy) return;
     setBusy(true);setErr("");
     try{
       const sb=await getAuthSupabase();
-      const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pw});
-      if(error) setErr(error.message==="Invalid login credentials"?"이메일 또는 비밀번호가 올바르지 않습니다":error.message);
+      const email=`${ini.trim().toLowerCase()}@reorder.app`;
+      const {error}=await sb.auth.signInWithPassword({email,password:pin});
+      if(error){setErr("아이디 또는 비밀번호를 확인하세요.");setPw("");}
     }catch(ex){setErr(ex?.message||"로그인에 실패했습니다");}
     finally{setBusy(false);}
+  };
+  const submit=async(e)=>{
+    e.preventDefault();
+    if(initials.length===3&&pw.length===4) await doLogin(initials,pw);
   };
   const inp={height:38,border:"1px solid #E0DDD7",borderRadius:8,padding:"0 12px",fontSize:13,outline:"none",background:"#fff"};
   return (
@@ -1761,17 +1767,27 @@ export function LoginGate({children}){
           <span style={{fontWeight:800,fontSize:15,letterSpacing:"0.08em",color:"#111"}}>MERRYON</span>
           <span style={{fontSize:10,color:"#999",letterSpacing:"0.06em"}}>COMMERCE · 로그인</span>
         </div>
-        <input type="email" required autoComplete="username" placeholder="이메일"
-          value={email} onChange={e=>setEmail(e.target.value)} style={inp}/>
-        <input type="password" required autoComplete="current-password" placeholder="비밀번호"
-          value={pw} onChange={e=>setPw(e.target.value)} style={inp}/>
+        <input type="text" required autoComplete="username" placeholder="이니셜 3자 (예: abc)"
+          value={initials} maxLength={3}
+          onChange={e=>setInitials(e.target.value.replace(/[^a-zA-Z]/g,"").toLowerCase())}
+          style={{...inp,letterSpacing:"0.35em",textTransform:"lowercase"}}/>
+        <input type="password" required autoComplete="current-password" placeholder="비밀번호 4자리"
+          value={pw} maxLength={4} inputMode="numeric" pattern="[0-9]*"
+          onChange={e=>{
+            const v=e.target.value.replace(/\D/g,"").slice(0,4);
+            setPw(v);
+            // 리오더앱과 동일 — 4자리가 채워지면 자동 로그인.
+            if(v.length===4&&initials.length===3) void doLogin(initials,v);
+          }}
+          style={{...inp,letterSpacing:"0.35em"}}/>
         {err&&<div style={{color:"#c14242",fontSize:12}}>{err}</div>}
-        <button type="submit" disabled={busy}
+        <button type="submit" disabled={busy||initials.length!==3||pw.length!==4}
           style={{height:38,border:"none",borderRadius:8,background:"#111",color:"#fff",
-            fontSize:13,fontWeight:600,cursor:"pointer",opacity:busy?0.6:1}}>
+            fontSize:13,fontWeight:600,cursor:"pointer",
+            opacity:busy||initials.length!==3||pw.length!==4?0.5:1}}>
           {busy?"로그인 중…":"로그인"}
         </button>
-        <div style={{fontSize:11,color:"#999",lineHeight:1.5}}>리오더앱과 동일한 계정으로 로그인합니다.</div>
+        <div style={{fontSize:11,color:"#999",lineHeight:1.5}}>리오더앱과 동일한 이니셜/비밀번호로 로그인합니다.</div>
       </form>
     </div>
   );
