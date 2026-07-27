@@ -18828,8 +18828,9 @@ function CarryoverPage(){
               데이터가 없습니다 — <b>데이터 입력 &gt; 인벤토리</b>에서 <b>시즌 캐리오버 추출기</b>(재고 0 포함 전체 상품) 또는 스냅샷을 먼저 업로드하세요.
             </div>
           ):(
-            // maxHeight+overflow:auto 스크롤 컨테이너 — sticky 헤더가 이 안에서 고정됨
-            <div style={{overflow:"auto",maxHeight:"72vh"}}>
+            // maxHeight+overflow:auto 스크롤 컨테이너 — sticky 헤더가 이 안에서 고정됨.
+            // data-capture-expand: 이미지 저장 시 리스트 끝까지 펼쳐 캡처.
+            <div data-capture-expand style={{overflow:"auto",maxHeight:"72vh"}}>
               <style>{`.carryover tbody tr.covrow{transition:background 0.12s;}.carryover tbody tr.covrow:hover td{background:#f4f4f2;}
 .covfind .covtip{display:none;}.covfind:hover .covtip{display:block;}`}</style>
               <table className="carryover" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
