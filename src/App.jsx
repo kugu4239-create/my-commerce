@@ -18731,6 +18731,26 @@ function CarryoverPage(){
       window.alert("삭제 실패: "+(e?.message||e));
     }finally{setDeleting(false);}
   };
+  // 엑셀 다운로드 — 현재 필터/정렬 상태의 목록을 옵션 상세까지 포함해
+  // 내보냄 (사용자 요청). 상품 요약 행 + 그 아래 옵션 행들.
+  const downloadExcel=async(list)=>{
+    if(!list.length){window.alert("내보낼 상품이 없습니다");return;}
+    const XLSX=await getXLSX();
+    const header=["상품명","옵션","상품코드","시즌","처음입고일","누적입고","현재고"];
+    const aoa=[header];
+    list.forEach(p=>{
+      aoa.push([p.name,"",p.code||"",p.seasonLabel,p.firstDate||"",p.inbound,p.stock]);
+      [...p.options].sort((a,b)=>(b.cumulative_inbound_qty||0)-(a.cumulative_inbound_qty||0)).forEach(o=>{
+        aoa.push(["",o._optLabel||o.option_name||"—",o.product_code||"",
+          "",o.first_inbound_date||"",o.cumulative_inbound_qty||0,o.current_stock_qty||0]);
+      });
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=[{wch:32},{wch:22},{wch:14},{wch:12},{wch:12},{wch:10},{wch:10}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"시즌 캐리오버");
+    XLSX.writeFile(wb,`시즌_캐리오버_${localDate(0)}.xlsx`);
+  };
 
   const allSeasons=seasons.size===CARRYOVER_SEASONS.length;
   const toggleSeason=k=>setSeasons(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);return n;});
@@ -18855,6 +18875,11 @@ function CarryoverPage(){
 
           <div style={{fontSize:13,color:DC.text,marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
             <span><b>{filtered.length.toLocaleString()}</b>개 상품 · {skuCount.toLocaleString()}개 SKU</span>
+            <button data-capture-hide onClick={()=>downloadExcel(filtered)}
+              style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              엑셀 다운로드
+            </button>
             {selected.size>0&&(
               <button data-capture-hide onClick={()=>deleteSelected(filtered)} disabled={deleting}
                 style={{background:"#c14242",color:"#fff",border:"none",borderRadius:5,
