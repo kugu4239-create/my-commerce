@@ -1692,8 +1692,11 @@ async function getSupabase() {
 // Supabase 프로젝트를 바라봐 같은 아이디/비밀번호로 로그인한다.
 // env(VITE_AUTH_SUPABASE_URL/KEY) 미설정 시 게이트 없이 통과 —
 // 로컬/미설정 환경에서 앱이 잠기지 않도록 (mock supabase 패턴과 동일).
-const AUTH_URL = typeof import.meta!=="undefined"&&import.meta.env?.VITE_AUTH_SUPABASE_URL||"";
-const AUTH_KEY = typeof import.meta!=="undefined"&&import.meta.env?.VITE_AUTH_SUPABASE_ANON_KEY||"";
+// 기본값 하드코딩 — 리오더앱 프로젝트의 publishable(공개 클라이언트)
+// 키라 코드 포함 무방 (브라우저에 노출되는 값, 보안은 RLS 가 담당).
+// env(VITE_AUTH_*)가 설정되면 그 값이 우선.
+const AUTH_URL = (typeof import.meta!=="undefined"&&import.meta.env?.VITE_AUTH_SUPABASE_URL)||"https://fvvxhyiaypfwsqaeralf.supabase.co";
+const AUTH_KEY = (typeof import.meta!=="undefined"&&import.meta.env?.VITE_AUTH_SUPABASE_ANON_KEY)||"sb_publishable_cdHKUOWYVaoyxlbGU-EeAQ_4SfSA9yR";
 const AUTH_ENABLED = !!(AUTH_URL&&AUTH_KEY);
 let _authSupabase=null;
 async function getAuthSupabase(){
