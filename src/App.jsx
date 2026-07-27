@@ -17381,7 +17381,7 @@ function VolumeSlider({total,range,onChange,DC}){
   );
 }
 
-function CaptureBtn({cardRef,filename,DC}){
+function CaptureBtn({cardRef,filename,DC,captureWidth}){
   const [busy,setBusy]=useState(false);
   const btnRef=useRef(null);
   const feedback=()=>{
@@ -17409,9 +17409,12 @@ function CaptureBtn({cardRef,filename,DC}){
     btns.forEach(b=>{b._prevVis=b.style.visibility;b.style.visibility="hidden";});
     // 스크롤 컨테이너(모달 등)는 보이는 영역만 잡히므로, 높이 제약을 잠시 풀어
     // 폭(현재 뷰 비율)은 그대로 두고 전체 스크롤 높이로 펼쳐 캡처 후 복원
-    const prevStyle={maxHeight:el.style.maxHeight,height:el.style.height,overflow:el.style.overflow};
+    const prevStyle={maxHeight:el.style.maxHeight,height:el.style.height,overflow:el.style.overflow,width:el.style.width,maxWidth:el.style.maxWidth};
     const prevScroll=el.scrollTop;
     el.style.maxHeight="none";el.style.height="auto";el.style.overflow="visible";
+    // captureWidth — 캡처 동안만 카드 폭을 좁혀 컬럼 간격을 압축
+    // (전체 화면 폭 그대로 찍으면 열 간격이 과하게 벌어지는 문제).
+    if(captureWidth){el.style.width=captureWidth+"px";el.style.maxWidth=captureWidth+"px";}
     // 내부 스크롤 컨테이너 중 data-capture-expand 마크된 것만 펼쳐 캡처 (예: 묶음 표 maxHeight:280)
     const innerScrolls=Array.from(el.querySelectorAll("[data-capture-expand]"));
     innerScrolls.forEach(n=>{
@@ -17422,6 +17425,7 @@ function CaptureBtn({cardRef,filename,DC}){
     const fullH=el.scrollHeight;
     const restore=()=>{
       el.style.maxHeight=prevStyle.maxHeight;el.style.height=prevStyle.height;el.style.overflow=prevStyle.overflow;
+      el.style.width=prevStyle.width;el.style.maxWidth=prevStyle.maxWidth;
       el.scrollTop=prevScroll;
       innerScrolls.forEach(n=>{
         if(!n._prevCap) return;
@@ -18778,7 +18782,7 @@ function CarryoverPage(){
       </div>
       <div ref={cardRef} style={{position:"relative"}}>
         <div style={{position:"absolute",top:20,right:20,zIndex:10}}>
-          <CaptureBtn cardRef={cardRef} filename="시즌_캐리오버" DC={DC}/>
+          <CaptureBtn cardRef={cardRef} filename="시즌_캐리오버" DC={DC} captureWidth={980}/>
         </div>
         <div style={{background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"22px 24px",marginTop:10}}>
           <div style={{fontSize:16,fontWeight:800,color:DC.text,marginBottom:2}}>시즌 캐리오버 아이템 셀렉터</div>
