@@ -18671,11 +18671,15 @@ function CarryoverPage(){
       const optLabel=[tail?tail[2]:"",String(r.option_name||"").trim()].filter(Boolean).join(" ");
       if(!m[k]) m[k]={name:k,code:"",options:[],inbound:0,stock:0,firstDate:null};
       const p=m[k];
-      p.options.push({...r,_optLabel:optLabel});
+      // 2022년 입고일은 2023년으로 하드코딩 (사용자 요청) — 상품
+      // 대표 처음입고일/옵션 상세/시즌 라벨/연도 토글 모두 2023 취급.
+      const fd=r.first_inbound_date&&String(r.first_inbound_date).slice(0,4)==="2022"
+        ?"2023"+String(r.first_inbound_date).slice(4):r.first_inbound_date;
+      p.options.push({...r,first_inbound_date:fd,_optLabel:optLabel});
       p.inbound+=(r.cumulative_inbound_qty||0);
       p.stock+=(r.current_stock_qty||0);
       if(!p.code&&r.product_code) p.code=r.product_code;
-      if(r.first_inbound_date&&(!p.firstDate||r.first_inbound_date<p.firstDate)) p.firstDate=r.first_inbound_date;
+      if(fd&&(!p.firstDate||fd<p.firstDate)) p.firstDate=fd;
     });
     return Object.values(m)
       // 2022년 이전(대표 처음입고일 기준) 상품은 파싱 단계에서 제거
