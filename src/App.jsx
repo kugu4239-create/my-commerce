@@ -1686,6 +1686,95 @@ async function getSupabase() {
 }
 
 // ─────────────────────────────────────────────
+// AUTH CLIENT — 리오더앱과 동일 계정 로그인 게이트
+// ─────────────────────────────────────────────
+// 데이터용 프로젝트(VITE_SUPABASE_URL)와 별개로, 인증만 리오더앱의
+// Supabase 프로젝트를 바라봐 같은 아이디/비밀번호로 로그인한다.
+// env(VITE_AUTH_SUPABASE_URL/KEY) 미설정 시 게이트 없이 통과 —
+// 로컬/미설정 환경에서 앱이 잠기지 않도록 (mock supabase 패턴과 동일).
+const AUTH_URL = typeof import.meta!=="undefined"&&import.meta.env?.VITE_AUTH_SUPABASE_URL||"";
+const AUTH_KEY = typeof import.meta!=="undefined"&&import.meta.env?.VITE_AUTH_SUPABASE_ANON_KEY||"";
+const AUTH_ENABLED = !!(AUTH_URL&&AUTH_KEY);
+let _authSupabase=null;
+async function getAuthSupabase(){
+  if(_authSupabase) return _authSupabase;
+  const { createClient }=await import("@supabase/supabase-js");
+  // storageKey 분리 — 데이터 프로젝트 클라이언트와 로컬 세션 충돌 방지.
+  _authSupabase=createClient(AUTH_URL,AUTH_KEY,{
+    auth:{storageKey:"mc-auth",persistSession:true,autoRefreshToken:true},
+  });
+  return _authSupabase;
+}
+async function authLogout(){
+  if(!AUTH_ENABLED) return;
+  const sb=await getAuthSupabase();
+  await sb.auth.signOut(); // onAuthStateChange 가 게이트를 다시 잠근다
+}
+
+export function LoginGate({children}){
+  const [session,setSession]=useState(undefined); // undefined=세션 확인 중
+  const [email,setEmail]=useState("");
+  const [pw,setPw]=useState("");
+  const [err,setErr]=useState("");
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{
+    if(!AUTH_ENABLED){setSession(null);return;}
+    let alive=true,sub=null;
+    (async()=>{
+      const sb=await getAuthSupabase();
+      const {data}=await sb.auth.getSession();
+      if(alive) setSession(data?.session??null);
+      const res=sb.auth.onAuthStateChange((_ev,s)=>{if(alive)setSession(s??null);});
+      sub=res?.data?.subscription??null;
+    })();
+    return()=>{alive=false;sub?.unsubscribe?.();};
+  },[]);
+  if(!AUTH_ENABLED) return children;
+  if(session===undefined){
+    return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",
+      background:"#FAF9F7",color:"#999",fontSize:13,
+      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>로그인 확인 중…</div>;
+  }
+  if(session) return children;
+  const submit=async(e)=>{
+    e.preventDefault();
+    if(busy) return;
+    setBusy(true);setErr("");
+    try{
+      const sb=await getAuthSupabase();
+      const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pw});
+      if(error) setErr(error.message==="Invalid login credentials"?"이메일 또는 비밀번호가 올바르지 않습니다":error.message);
+    }catch(ex){setErr(ex?.message||"로그인에 실패했습니다");}
+    finally{setBusy(false);}
+  };
+  const inp={height:38,border:"1px solid #E0DDD7",borderRadius:8,padding:"0 12px",fontSize:13,outline:"none",background:"#fff"};
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FAF9F7",
+      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>
+      <form onSubmit={submit} style={{width:320,background:"#fff",border:"1px solid #E8E5E0",borderRadius:12,
+        padding:"28px 26px",display:"flex",flexDirection:"column",gap:10,
+        boxShadow:"0 1px 2px rgba(0,0,0,0.03), 0 8px 24px rgba(0,0,0,0.05)"}}>
+        <div style={{display:"flex",flexDirection:"column",lineHeight:1.15,marginBottom:8}}>
+          <span style={{fontWeight:800,fontSize:15,letterSpacing:"0.08em",color:"#111"}}>MERRYON</span>
+          <span style={{fontSize:10,color:"#999",letterSpacing:"0.06em"}}>COMMERCE · 로그인</span>
+        </div>
+        <input type="email" required autoComplete="username" placeholder="이메일"
+          value={email} onChange={e=>setEmail(e.target.value)} style={inp}/>
+        <input type="password" required autoComplete="current-password" placeholder="비밀번호"
+          value={pw} onChange={e=>setPw(e.target.value)} style={inp}/>
+        {err&&<div style={{color:"#c14242",fontSize:12}}>{err}</div>}
+        <button type="submit" disabled={busy}
+          style={{height:38,border:"none",borderRadius:8,background:"#111",color:"#fff",
+            fontSize:13,fontWeight:600,cursor:"pointer",opacity:busy?0.6:1}}>
+          {busy?"로그인 중…":"로그인"}
+        </button>
+        <div style={{fontSize:11,color:"#999",lineHeight:1.5}}>리오더앱과 동일한 계정으로 로그인합니다.</div>
+      </form>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
 const PERIOD_TABS=[
@@ -21595,6 +21684,11 @@ export default function App() {
         <div style={{ color:D.textMeta, fontSize:11, flexShrink:0, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:1 }}>
           <span>{new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"})}</span>
           <span style={{fontSize:9,opacity:0.5}}>build {__BUILD_TIME__}</span>
+          {AUTH_ENABLED&&(
+            <button onClick={()=>authLogout()}
+              style={{border:"none",background:"transparent",color:D.textMeta,fontSize:10,
+                cursor:"pointer",padding:0,textDecoration:"underline"}}>로그아웃</button>
+          )}
         </div>
       </div>
 
