@@ -18677,7 +18677,11 @@ function CarryoverPage(){
       if(!p.code&&r.product_code) p.code=r.product_code;
       if(r.first_inbound_date&&(!p.firstDate||r.first_inbound_date<p.firstDate)) p.firstDate=r.first_inbound_date;
     });
-    return Object.values(m).map(p=>{
+    return Object.values(m)
+      // 2022년 이전(대표 처음입고일 기준) 상품은 파싱 단계에서 제거
+      // (사용자 요청). 처음입고일 미상 상품은 유지.
+      .filter(p=>!p.firstDate||p.firstDate.slice(0,4)>="2022")
+      .map(p=>{
       const season=carryoverSeasonOf(p.firstDate);
       return{...p,seasonKey:season?season.key:null,seasonColor:season?season.color:CARRYOVER_DC.dim,
         seasonLabel:season?`${p.firstDate.slice(0,4)} ${season.label}`:"—"};
@@ -18696,12 +18700,32 @@ function CarryoverPage(){
   const toggleSeason=k=>setSeasons(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);return n;});
   const toggleAllSeasons=()=>setSeasons(allSeasons?new Set():new Set(CARRYOVER_SEASONS.map(s=>s.key)));
 
+  // 연도 다중 토글 — 데이터에 존재하는 연도(2022+)를 내림차순 노출.
+  // 기본 = 전체 선택. 연도 미상(처음입고일 없음) 상품은 전연도에서만 노출.
+  const yearList=useMemo(()=>{
+    const ys=new Set();
+    products.forEach(p=>{if(p.firstDate)ys.add(p.firstDate.slice(0,4));});
+    return[...ys].sort().reverse();
+  },[products]);
+  const [years,setYears]=useState(null); // null=전체(연도 목록 미확정 시 포함)
+  const allYears=years===null||years.size===yearList.length;
+  const toggleYear=y=>setYears(prev=>{
+    const base=prev===null?new Set(yearList):new Set(prev);
+    if(base.has(y))base.delete(y);else base.add(y);
+    return base;
+  });
+  const toggleAllYears=()=>setYears(allYears?new Set():null);
+
   const filtered=useMemo(()=>{
     const mi=Number(minInbound)||0;
     const q=search.trim().toLowerCase();
     const list=products.filter(p=>{
       // 시즌 미상(처음입고일 없음) 상품은 전시즌 상태에서만 노출
       if(p.seasonKey?!seasons.has(p.seasonKey):!allSeasons) return false;
+      if(!allYears){
+        if(!p.firstDate) return false;
+        if(!years.has(p.firstDate.slice(0,4))) return false;
+      }
       if(p.inbound<mi) return false;
       if(q&&!(p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)
         ||p.options.some(o=>String(o._optLabel||o.option_name||"").toLowerCase().includes(q)))) return false;
@@ -18711,7 +18735,7 @@ function CarryoverPage(){
       opts:p=>p.options.length,inbound:p=>p.inbound,stock:p=>p.stock}[sortKey]||(p=>p.inbound);
     const dir=sortDir==="desc"?-1:1;
     return [...list].sort((a,b)=>{const va=get(a),vb=get(b);return va>vb?dir:va<vb?-dir:0;});
-  },[products,seasons,allSeasons,minInbound,search,sortKey,sortDir]);
+  },[products,seasons,allSeasons,years,allYears,minInbound,search,sortKey,sortDir]);
 
   const skuCount=useMemo(()=>filtered.reduce((s,p)=>s+p.options.length,0),[filtered]);
 
@@ -18767,6 +18791,15 @@ function CarryoverPage(){
               <button key={s.key} onClick={()=>toggleSeason(s.key)} style={segBtn(seasons.has(s.key),s.color)}>
                 {s.label} <span style={{opacity:.75,fontSize:10}}>{s.range}</span>
               </button>
+            ))}
+          </div>
+
+          {/* 연도 다중 토글 (2022+) */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:12,color:DC.dim,marginRight:2}}>연도</span>
+            <button onClick={toggleAllYears} style={segBtn(allYears)}>전연도</button>
+            {yearList.map(y=>(
+              <button key={y} onClick={()=>toggleYear(y)} style={segBtn(allYears||years.has(y))}>{y}</button>
             ))}
           </div>
 
