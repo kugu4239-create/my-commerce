@@ -18731,22 +18731,18 @@ function CarryoverPage(){
       window.alert("삭제 실패: "+(e?.message||e));
     }finally{setDeleting(false);}
   };
-  // 엑셀 다운로드 — 현재 필터/정렬 상태의 목록을 옵션 상세까지 포함해
-  // 내보냄 (사용자 요청). 상품 요약 행 + 그 아래 옵션 행들.
+  // 엑셀 다운로드 — 현재 필터/정렬 상태의 상품 요약만 내보냄
+  // (옵션 펼침 내용 미포함, 사용자 요청).
   const downloadExcel=async(list)=>{
     if(!list.length){window.alert("내보낼 상품이 없습니다");return;}
     const XLSX=await getXLSX();
-    const header=["상품명","옵션","상품코드","시즌","처음입고일","누적입고","현재고"];
+    const header=["상품명","상품코드","시즌","처음입고일","옵션 수","누적입고","현재고"];
     const aoa=[header];
     list.forEach(p=>{
-      aoa.push([p.name,"",p.code||"",p.seasonLabel,p.firstDate||"",p.inbound,p.stock]);
-      [...p.options].sort((a,b)=>(b.cumulative_inbound_qty||0)-(a.cumulative_inbound_qty||0)).forEach(o=>{
-        aoa.push(["",o._optLabel||o.option_name||"—",o.product_code||"",
-          "",o.first_inbound_date||"",o.cumulative_inbound_qty||0,o.current_stock_qty||0]);
-      });
+      aoa.push([p.name,p.code||"",p.seasonLabel,p.firstDate||"",p.options.length,p.inbound,p.stock]);
     });
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"]=[{wch:32},{wch:22},{wch:14},{wch:12},{wch:12},{wch:10},{wch:10}];
+    ws["!cols"]=[{wch:32},{wch:14},{wch:12},{wch:12},{wch:8},{wch:10},{wch:10}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"시즌 캐리오버");
     XLSX.writeFile(wb,`시즌_캐리오버_${localDate(0)}.xlsx`);
