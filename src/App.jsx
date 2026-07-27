@@ -1716,10 +1716,15 @@ async function authLogout(){
 
 export function LoginGate({children}){
   const [session,setSession]=useState(undefined); // undefined=세션 확인 중
-  const [initials,setInitials]=useState("");
-  const [pw,setPw]=useState("");
-  const [err,setErr]=useState("");
+  // 리오더앱 로그인 화면과 동일한 2단계 플로우 — 이니셜 3칸 → PIN 4칸.
+  const [step,setStep]=useState("initials");
+  const [initials,setInitials]=useState(["","",""]);
+  const [pin,setPin]=useState(["","","",""]);
   const [busy,setBusy]=useState(false);
+  const [koreanHint,setKoreanHint]=useState(false);
+  const [failMsg,setFailMsg]=useState("");
+  const iniRefs=useRef([]);
+  const pinRefs=useRef([]);
   useEffect(()=>{
     if(!AUTH_ENABLED){setSession(null);return;}
     let alive=true,sub=null;
@@ -1727,11 +1732,16 @@ export function LoginGate({children}){
       const sb=await getAuthSupabase();
       const {data}=await sb.auth.getSession();
       if(alive) setSession(data?.session??null);
-      const res=sb.auth.onAuthStateChange((_ev,s)=>{if(alive)setSession(s??null);});
+      const res=sb.auth.onAuthStateChange((_ev,s2)=>{if(alive)setSession(s2??null);});
       sub=res?.data?.subscription??null;
     })();
     return()=>{alive=false;sub?.unsubscribe?.();};
   },[]);
+  useEffect(()=>{
+    if(session!==null||busy) return;
+    const t=setTimeout(()=>{(step==="initials"?iniRefs:pinRefs).current[0]?.focus();},50);
+    return()=>clearTimeout(t);
+  },[step,session,busy]);
   if(!AUTH_ENABLED) return children;
   if(session===undefined){
     return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",
@@ -1739,56 +1749,163 @@ export function LoginGate({children}){
       fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>로그인 확인 중…</div>;
   }
   if(session) return children;
-  // 리오더앱과 동일한 로그인 방식 — 이니셜 3자를 @reorder.app 가상
-  // 이메일로 변환 + 4자리 숫자 PIN. PIN 4자리가 채워지면 자동 제출.
-  const doLogin=async(ini,pin)=>{
-    if(busy) return;
-    setBusy(true);setErr("");
+
+  // 리오더앱과 동일한 이니셜 → 표시 이름 매핑 (인사말용).
+  const NAMES={ljh:"이지훈",lyr:"이예리",jmj:"장미정",jbk:"진보경",jss:"전성수",kdw:"김다원",shb:"서혜빈"};
+  const iniValue=initials.join("");
+
+  const submit=async(ini,pinStr)=>{
+    setBusy(true);setFailMsg("");
     try{
       const sb=await getAuthSupabase();
       const email=`${ini.trim().toLowerCase()}@reorder.app`;
-      const {error}=await sb.auth.signInWithPassword({email,password:pin});
-      if(error){setErr("아이디 또는 비밀번호를 확인하세요.");setPw("");}
-    }catch(ex){setErr(ex?.message||"로그인에 실패했습니다");}
-    finally{setBusy(false);}
+      const {error}=await sb.auth.signInWithPassword({email,password:pinStr});
+      if(error){
+        // 실패 — PIN 만 비우고 비밀번호 단계 유지 (리오더앱과 동일).
+        setFailMsg("아이디 또는 비밀번호를 확인하세요.");
+        setPin(["","","",""]);
+        setStep("password");
+      }
+    }catch{
+      setFailMsg("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      setPin(["","","",""]);
+      setStep("password");
+    }
+    setBusy(false);
   };
-  const submit=async(e)=>{
+
+  const handleIniChange=(i,value)=>{
+    if(value&&!/[a-zA-Z]/.test(value)) setKoreanHint(true);
+    const ch=value.replace(/[^a-zA-Z]/g,"").slice(-1).toUpperCase();
+    const next=[...initials];next[i]=ch;setInitials(next);
+    if(ch&&i<2) iniRefs.current[i+1]?.focus();
+    else if(ch&&i===2&&next.every(c=>c)) setStep("password");
+  };
+  const handleIniKeyDown=(i,e)=>{
+    if(e.key==="Backspace"&&!initials[i]&&i>0) iniRefs.current[i-1]?.focus();
+    else if(e.key==="ArrowLeft"&&i>0) iniRefs.current[i-1]?.focus();
+    else if(e.key==="ArrowRight"&&i<2) iniRefs.current[i+1]?.focus();
+    else if(e.key==="Enter"){e.preventDefault();if(initials.every(c=>c))setStep("password");}
+  };
+  const handleIniPaste=(e)=>{
+    const text=e.clipboardData.getData("text").replace(/[^a-zA-Z]/g,"").slice(0,3).toUpperCase();
+    if(!text) return;
     e.preventDefault();
-    if(initials.length===3&&pw.length===4) await doLogin(initials,pw);
+    const next=["","",""];
+    for(let i=0;i<text.length;i++) next[i]=text[i];
+    setInitials(next);
+    if(next.every(c=>c)) setStep("password");
+    else iniRefs.current[Math.min(text.length,2)]?.focus();
   };
-  const inp={height:38,border:"1px solid #E0DDD7",borderRadius:8,padding:"0 12px",fontSize:13,outline:"none",background:"#fff"};
+  const handlePinChange=(i,value)=>{
+    const digit=value.replace(/\D/g,"").slice(-1);
+    const next=[...pin];next[i]=digit;setPin(next);
+    if(digit&&i<3) pinRefs.current[i+1]?.focus();
+    else if(digit&&i===3&&next.every(d=>d)) void submit(iniValue,next.join(""));
+  };
+  const handlePinKeyDown=(i,e)=>{
+    if(e.key==="Backspace"&&!pin[i]&&i>0) pinRefs.current[i-1]?.focus();
+    else if(e.key==="ArrowLeft"&&i>0) pinRefs.current[i-1]?.focus();
+    else if(e.key==="ArrowRight"&&i<3) pinRefs.current[i+1]?.focus();
+  };
+  const handlePinPaste=(e)=>{
+    const text=e.clipboardData.getData("text").replace(/\D/g,"").slice(0,4);
+    if(!text) return;
+    e.preventDefault();
+    const next=["","","",""];
+    for(let i=0;i<text.length;i++) next[i]=text[i];
+    setPin(next);
+    if(next.every(d=>d)) void submit(iniValue,next.join(""));
+    else pinRefs.current[Math.min(text.length,3)]?.focus();
+  };
+
+  const F="'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif";
+  if(busy){
+    return (
+      <div style={{position:"fixed",inset:0,display:"flex",flexDirection:"column",alignItems:"center",
+        justifyContent:"center",background:"#FAF9F7",padding:"0 24px",fontFamily:F}}>
+        <style>{`@keyframes lgspin{to{transform:rotate(360deg)}}`}</style>
+        <svg style={{display:"block",width:24,height:24,marginBottom:20,color:"#8a8580",animation:"lgspin 1s linear infinite"}}
+          xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle style={{opacity:0.25}} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+          <path style={{opacity:0.75}} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        <p style={{fontSize:15,fontWeight:500,color:"#191817",letterSpacing:"-0.01em",margin:0}}>시스템에 접속 중입니다.</p>
+        <p style={{fontSize:13,color:"#8a8580",marginTop:4}}>잠시만 기다려주세요.</p>
+      </div>
+    );
+  }
+  const box={width:64,height:64,textAlign:"center",borderRadius:10,border:"1px solid #DDD9D2",
+    background:"#FFFFFF",color:"#191817",fontSize:24,fontWeight:600,outline:"none",fontFamily:F};
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FAF9F7",
-      fontFamily:"'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif"}}>
-      <form onSubmit={submit} style={{width:320,background:"#fff",border:"1px solid #E8E5E0",borderRadius:12,
-        padding:"28px 26px",display:"flex",flexDirection:"column",gap:10,
-        boxShadow:"0 1px 2px rgba(0,0,0,0.03), 0 8px 24px rgba(0,0,0,0.05)"}}>
-        <div style={{display:"flex",flexDirection:"column",lineHeight:1.15,marginBottom:8}}>
-          <span style={{fontWeight:800,fontSize:15,letterSpacing:"0.08em",color:"#111"}}>MERRYON</span>
-          <span style={{fontSize:10,color:"#999",letterSpacing:"0.06em"}}>COMMERCE · 로그인</span>
-        </div>
-        <input type="text" required autoComplete="username" placeholder="이니셜 3자 (예: abc)"
-          value={initials} maxLength={3}
-          onChange={e=>setInitials(e.target.value.replace(/[^a-zA-Z]/g,"").toLowerCase())}
-          style={{...inp,letterSpacing:"0.35em",textTransform:"lowercase"}}/>
-        <input type="password" required autoComplete="current-password" placeholder="비밀번호 4자리"
-          value={pw} maxLength={4} inputMode="numeric" pattern="[0-9]*"
-          onChange={e=>{
-            const v=e.target.value.replace(/\D/g,"").slice(0,4);
-            setPw(v);
-            // 리오더앱과 동일 — 4자리가 채워지면 자동 로그인.
-            if(v.length===4&&initials.length===3) void doLogin(initials,v);
-          }}
-          style={{...inp,letterSpacing:"0.35em"}}/>
-        {err&&<div style={{color:"#c14242",fontSize:12}}>{err}</div>}
-        <button type="submit" disabled={busy||initials.length!==3||pw.length!==4}
-          style={{height:38,border:"none",borderRadius:8,background:"#111",color:"#fff",
-            fontSize:13,fontWeight:600,cursor:"pointer",
-            opacity:busy||initials.length!==3||pw.length!==4?0.5:1}}>
-          {busy?"로그인 중…":"로그인"}
-        </button>
-        <div style={{fontSize:11,color:"#999",lineHeight:1.5}}>리오더앱과 동일한 이니셜/비밀번호로 로그인합니다.</div>
+    <div style={{minHeight:"100vh",background:"#FAF9F7",padding:"20vh 24px 48px",display:"flex",
+      flexDirection:"column",alignItems:"center",gap:48,overflow:"hidden",fontFamily:F}}>
+      <style>{`.lg-box:focus{border-color:#191817 !important;box-shadow:0 0 0 2px rgba(25,24,23,0.12)}`}</style>
+      {/* Title — 리오더앱과 동일 레이아웃 */}
+      <header style={{width:"100%",maxWidth:360,textAlign:"center"}}>
+        <h1 style={{fontSize:34,fontWeight:700,color:"#191817",letterSpacing:"-0.02em",lineHeight:1,margin:0}}>MERRYON</h1>
+        <p style={{marginTop:12,fontSize:14,fontWeight:500,color:"#8a8580",letterSpacing:"-0.01em"}}>커머스 시스템</p>
+      </header>
+      {/* Prompt — 1줄/2줄 전환 시 레이아웃 흔들림 방지용 min-height */}
+      <div style={{width:"100%",maxWidth:360,textAlign:"center",minHeight:"3.25rem",display:"flex",
+        flexDirection:"column",alignItems:"center",justifyContent:"flex-end"}}>
+        {step==="initials"?(
+          <p style={{fontSize:13,color:"#8a8580",margin:0}}>이니셜을 입력해주세요</p>
+        ):(
+          <div>
+            <p style={{fontSize:15,fontWeight:500,color:"#191817",margin:0}}>
+              {(NAMES[iniValue.toLowerCase()]||iniValue)}님 안녕하세요
+            </p>
+            <p style={{fontSize:13,color:"#8a8580",margin:"6px 0 0"}}>비밀번호를 입력해주세요</p>
+          </div>
+        )}
+      </div>
+      {/* Inputs — 정사각 박스, 자동 이동/자동 제출 */}
+      <form onSubmit={(e)=>{e.preventDefault();
+        if(step==="initials"){if(initials.every(c=>c))setStep("password");return;}
+        if(pin.every(d=>d)) void submit(iniValue,pin.join(""));
+      }} style={{width:"100%",maxWidth:360}}>
+        {step==="initials"?(
+          <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+            {initials.map((ch,i)=>(
+              <input key={i} ref={el=>{iniRefs.current[i]=el;}} type="text" inputMode="text" lang="en-US"
+                autoComplete={i===0?"username":"off"} autoCapitalize="characters" autoCorrect="off"
+                spellCheck={false} maxLength={1} value={ch} className="lg-box"
+                onChange={e=>handleIniChange(i,e.target.value)}
+                onKeyDown={e=>handleIniKeyDown(i,e)}
+                onPaste={handleIniPaste}
+                onCompositionStart={()=>setKoreanHint(true)}
+                onFocus={e=>e.target.select()}
+                style={{...box,textTransform:"uppercase"}}/>
+            ))}
+          </div>
+        ):(
+          <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+            {pin.map((digit,i)=>(
+              <input key={i} ref={el=>{pinRefs.current[i]=el;}} type="text" inputMode="numeric" pattern="[0-9]*"
+                autoComplete="one-time-code" autoCapitalize="none" autoCorrect="off"
+                spellCheck={false} maxLength={1} value={digit} className="lg-box"
+                onChange={e=>handlePinChange(i,e.target.value)}
+                onKeyDown={e=>handlePinKeyDown(i,e)}
+                onPaste={handlePinPaste}
+                onFocus={e=>e.target.select()}
+                style={{...box,WebkitTextSecurity:"disc",textSecurity:"disc",fontVariantNumeric:"tabular-nums"}}/>
+            ))}
+          </div>
+        )}
       </form>
+      {/* Hint / back — 공간 예약으로 토글 시 흔들림 방지 */}
+      <div style={{width:"100%",maxWidth:360,textAlign:"center",minHeight:"1.5rem"}}>
+        {failMsg&&<p style={{fontSize:12,color:"#c14242",margin:"0 0 6px"}}>{failMsg}</p>}
+        {step==="initials"?(
+          koreanHint&&<p style={{fontSize:12,color:"#c14242",lineHeight:1.6,margin:0}}>영문으로 입력해주세요</p>
+        ):(
+          <button type="button" onClick={()=>{setPin(["","","",""]);setFailMsg("");setStep("initials");}}
+            style={{border:"none",background:"transparent",fontSize:12,color:"#8a8580",cursor:"pointer",fontFamily:F}}>
+            다른 이니셜로 로그인
+          </button>
+        )}
+      </div>
     </div>
   );
 }
