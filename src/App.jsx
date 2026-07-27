@@ -18703,6 +18703,54 @@ function CarryoverPage(){
   const [sortKey,setSortKey]=useState("inbound");
   const [sortDir,setSortDir]=useState("desc");
   const [expanded,setExpanded]=useState(null);
+  // 체크 삭제 — 상품(그룹 키) 단위 선택. 삭제 시 carryover 저장소면
+  // DB(carryover_items)에서도 제거해 새로고침 후에도 유지, 스냅샷
+  // 폴백이면 이 화면에서만 제거(재업로드로 복구 가능).
+  const [selected,setSelected]=useState(()=>new Set());
+  const [deleting,setDeleting]=useState(false);
+  const toggleSelected=k=>setSelected(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);return n;});
+  const deleteSelected=async(list)=>{
+    const targets=list.filter(p=>selected.has(p.name));
+    if(!targets.length||deleting) return;
+    if(!window.confirm(`선택한 ${targets.length}개 상품을 목록에서 삭제하시겠습니까?${source==="carryover"?"\n(저장된 캐리오버 데이터에서도 제거되며, 파일 재업로드 시 복구됩니다)":""}`)) return;
+    setDeleting(true);
+    try{
+      const rawNames=new Set();
+      targets.forEach(p=>p.options.forEach(o=>rawNames.add(String(o.product_name||"미분류").trim())));
+      if(source==="carryover"){
+        const db=await getSupabase();
+        const names=[...rawNames];
+        for(let i=0;i<names.length;i+=100){
+          const{error}=await db.from("carryover_items").delete().in("product_name",names.slice(i,i+100));
+          if(error) throw new Error(error.message);
+        }
+      }
+      setRows(prev=>prev.filter(r=>!rawNames.has(String(r.product_name||"미분류").trim())));
+      setSelected(new Set());
+    }catch(e){
+      window.alert("삭제 실패: "+(e?.message||e));
+    }finally{setDeleting(false);}
+  };
+  // 엑셀 다운로드 — 현재 필터/정렬 상태의 목록을 옵션 상세까지 포함해
+  // 내보냄 (사용자 요청). 상품 요약 행 + 그 아래 옵션 행들.
+  const downloadExcel=async(list)=>{
+    if(!list.length){window.alert("내보낼 상품이 없습니다");return;}
+    const XLSX=await getXLSX();
+    const header=["상품명","옵션","상품코드","시즌","처음입고일","누적입고","현재고"];
+    const aoa=[header];
+    list.forEach(p=>{
+      aoa.push([p.name,"",p.code||"",p.seasonLabel,p.firstDate||"",p.inbound,p.stock]);
+      [...p.options].sort((a,b)=>(b.cumulative_inbound_qty||0)-(a.cumulative_inbound_qty||0)).forEach(o=>{
+        aoa.push(["",o._optLabel||o.option_name||"—",o.product_code||"",
+          "",o.first_inbound_date||"",o.cumulative_inbound_qty||0,o.current_stock_qty||0]);
+      });
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=[{wch:32},{wch:22},{wch:14},{wch:12},{wch:12},{wch:10},{wch:10}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"시즌 캐리오버");
+    XLSX.writeFile(wb,`시즌_캐리오버_${localDate(0)}.xlsx`);
+  };
 
   const allSeasons=seasons.size===CARRYOVER_SEASONS.length;
   const toggleSeason=k=>setSeasons(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);return n;});
@@ -18825,8 +18873,20 @@ function CarryoverPage(){
               style={{...numInp,width:200,marginLeft:"auto"}}/>
           </div>
 
-          <div style={{fontSize:13,color:DC.text,marginBottom:8}}>
-            <b>{filtered.length.toLocaleString()}</b>개 상품 · {skuCount.toLocaleString()}개 SKU
+          <div style={{fontSize:13,color:DC.text,marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+            <span><b>{filtered.length.toLocaleString()}</b>개 상품 · {skuCount.toLocaleString()}개 SKU</span>
+            <button data-capture-hide onClick={()=>downloadExcel(filtered)}
+              style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,
+                padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              엑셀 다운로드
+            </button>
+            {selected.size>0&&(
+              <button data-capture-hide onClick={()=>deleteSelected(filtered)} disabled={deleting}
+                style={{background:"#c14242",color:"#fff",border:"none",borderRadius:5,
+                  padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer",opacity:deleting?0.6:1}}>
+                {deleting?"삭제 중…":`선택 ${selected.size}개 삭제`}
+              </button>
+            )}
           </div>
 
           {loading?(
@@ -18844,6 +18904,12 @@ function CarryoverPage(){
               <table className="carryover" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"auto"}}>
                 <thead style={{position:"sticky",top:0,background:DC.card,zIndex:2}}>
                   <tr>
+                    <th style={{padding:"7px 4px",width:30}}>
+                      <input type="checkbox" data-capture-hide
+                        checked={filtered.length>0&&filtered.every(p=>selected.has(p.name))}
+                        onChange={e=>setSelected(e.target.checked?new Set(filtered.map(p=>p.name)):new Set())}
+                        style={{cursor:"pointer"}}/>
+                    </th>
                     {th("name","상품명")}
                     {th("code","상품코드")}
                     {th("season","시즌")}
@@ -18861,6 +18927,10 @@ function CarryoverPage(){
                         <tr className="covrow" onClick={()=>setExpanded(open?null:p.name)}
                           style={{borderBottom:`1px solid ${DC.border}`,cursor:"pointer",userSelect:"none",
                             background:open?"rgba(126,200,164,0.08)":"transparent"}}>
+                          <td style={{padding:"6px 4px",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+                            <input type="checkbox" data-capture-hide checked={selected.has(p.name)}
+                              onChange={()=>toggleSelected(p.name)} style={{cursor:"pointer"}}/>
+                          </td>
                           <td style={{padding:"6px 8px",color:DC.text,fontWeight:600,maxWidth:220,whiteSpace:"nowrap"}} title={p.name}>
                             <span style={{color:DC.dim,fontSize:10,marginRight:6}}>{open?"▾":"▸"}</span>
                             <span style={{display:"inline-block",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{p.name}</span>
@@ -18893,6 +18963,7 @@ function CarryoverPage(){
                         {/* 옵션 상세 — 본 테이블의 실제 행으로 렌더해 컬럼 위치를 원본 행과 동일하게 정렬 */}
                         {open&&[...p.options].sort((a,b)=>(b.cumulative_inbound_qty||0)-(a.cumulative_inbound_qty||0)).map((o,i)=>(
                           <tr key={`opt-${i}`} style={{borderBottom:`1px solid ${DC.border}`,background:"#fbfbf9"}}>
+                            <td/>
                             <td style={{padding:"4px 8px 4px 30px",color:DC.sub,fontSize:12,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={o._optLabel||o.option_name}>
                               {o._optLabel||o.option_name||"—"}
                             </td>
