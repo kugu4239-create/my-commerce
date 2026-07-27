@@ -2474,18 +2474,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </div>
           <ResponsiveContainer width="100%" height={160}>
             {(()=>{
-              // 오프라인 스토어 → 판교점/일산점 분리 스택
-              const PANKYO_COLOR="#8b5cf6"; const ILSAN_COLOR="#c084fc";
+              // 오프라인 스토어 → 매장별 분리 스택. 판교점/일산점 하드코딩
+              // 대신 offlineBreakdown 의 모든 매장(신규 추가 매장 포함)을
+              // 매출 내림차순으로 동적 렌더 (사용자 요청).
+              const STORE_COLORS=["#8b5cf6","#c084fc","#a78bfa","#d8b4fe","#7c3aed","#e9d5ff"];
+              const bdAll=stats.offlineBreakdown||{};
+              const storeNames=Object.keys(bdAll)
+                .sort((a,b)=>(bdAll[b]?.revenue||0)-(bdAll[a]?.revenue||0));
               const chartData=stats.channelList.slice(0,7).map(c=>{
                 if(c.name==="오프라인 스토어"){
-                  const bd=stats.offlineBreakdown||{};
-                  const pankyo=bd["판교점"]?.revenue||0;
-                  const ilsan=bd["일산점"]?.revenue||0;
-                  const hasBd=(pankyo+ilsan)>0;
-                  return{name:c.name,
-                    revenue:hasBd?0:c.revenue,
-                    판교점:pankyo,
-                    일산점:ilsan};
+                  const per={};let sum=0;
+                  storeNames.forEach(st=>{const v=bdAll[st]?.revenue||0;per[st]=v;sum+=v;});
+                  return{name:c.name,revenue:sum>0?0:c.revenue,...per};
                 }
                 return{name:c.name,revenue:c.revenue};
               });
@@ -2517,8 +2517,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                   <Bar dataKey="revenue" name="매출" stackId="a" radius={[0,3,3,0]}>
                     {chartData.map((c,i)=>(<Cell key={i} fill={chColor(c.name)}/>))}
                   </Bar>
-                  <Bar dataKey="판교점" name="판교점" stackId="a" fill={PANKYO_COLOR} radius={[0,0,0,0]}/>
-                  <Bar dataKey="일산점" name="일산점" stackId="a" fill={ILSAN_COLOR} radius={[0,3,3,0]}/>
+                  {storeNames.map((st,i)=>(
+                    <Bar key={st} dataKey={st} name={st} stackId="a"
+                      fill={STORE_COLORS[i%STORE_COLORS.length]}
+                      radius={i===storeNames.length-1?[0,3,3,0]:[0,0,0,0]}/>
+                  ))}
                 </BarChart>
               );
             })()}
