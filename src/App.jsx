@@ -15941,6 +15941,7 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
 //   reorder_effective_stock integer default 0,
 //   reorder_weekly_sales integer default 0,
 //   reorder_monthly_sales integer default 0,
+//   reorder_store_monthly_sales integer default 0,  -- 4주 매장(오프라인) 판매 (supabase/reorder_recommendations_store_sales.sql)
 //   reorder_expected_daily_sales numeric(10,4) default 0,
 //   reorder_days_left numeric(10,2) default 9999,
 //   reorder_trend_ratio numeric(10,4) default 0,
@@ -15951,6 +15952,30 @@ function InvAgingTrend({DC,snapshotDates,refreshKey,onDateReady,stopRef}){
 async function computeAndSaveReorder(parsedRows,snapDate){
   const rows=parsedRows.filter(r=>r._r_weekly!=null);
   if(!rows.length) return;
+  const db=await getSupabase();
+  // ── 4주 매장(오프라인) 판매량 — store_sales 최근 28일(기준일 포함)을
+  //    SKU(정규화 상품명|옵션)별 순판매(배송 − 반품 qty)로 합산해 판매
+  //    속도에 더한다 (사용자 요청). store_sales 미업로드/조회 실패 시
+  //    0 으로 폴백 — 기존(온라인만) 계산과 동일하게 동작.
+  const storeMap={};
+  try{
+    const fromDate=(()=>{const d=new Date(snapDate+"T00:00:00");d.setDate(d.getDate()-27);
+      return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;})();
+    let sFrom=0;const SPAGE=1000;
+    for(;;){
+      const{data:srows,error:serr}=await db.from("store_sales")
+        .select("product_name,option_name,qty,status")
+        .gte("sale_date",fromDate).lte("sale_date",snapDate)
+        .range(sFrom,sFrom+SPAGE-1);
+      if(serr||!srows||srows.length===0) break;
+      srows.forEach(s=>{
+        const k=normProdName(s.product_name)+"|"+String(s.option_name||"").trim().toLowerCase();
+        storeMap[k]=(storeMap[k]||0)+(s.qty||0)*(s.status==="반품"?-1:1);
+      });
+      if(srows.length<SPAGE) break;
+      sFrom+=SPAGE;
+    }
+  }catch{/* 매장 데이터 조회 실패 — 온라인 판매만으로 계산 진행 */}
   const computed=rows.map(r=>{
     const avail=r._r_avail||0;
     const incoming=r._r_incoming||0;
@@ -15959,7 +15984,11 @@ async function computeAndSaveReorder(parsedRows,snapDate){
     const effective=avail+incoming;
     const daily7=weekly/7;
     const daily28=monthly>0?monthly/28:0;
-    const expectedDaily=(daily7*0.7)+(daily28*0.3);
+    // 매장 4주 순판매 → 일판매 환산해 판매 속도에 가산. 반품 초과로
+    // 음수면 0 처리 (판매 속도를 깎지는 않음).
+    const storeKey=normProdName(r.product_name)+"|"+String(r.option_name||"").trim().toLowerCase();
+    const store4w=Math.max(0,storeMap[storeKey]||0);
+    const expectedDaily=(daily7*0.7)+(daily28*0.3)+store4w/28;
     if(expectedDaily<=0) return null;
     const daysLeft=effective/expectedDaily;
     const trendRatio=daily28>0?daily7/daily28:0;
@@ -15974,13 +16003,13 @@ async function computeAndSaveReorder(parsedRows,snapDate){
       reorder_effective_stock:effective,
       reorder_weekly_sales:weekly,
       reorder_monthly_sales:monthly,
+      reorder_store_monthly_sales:store4w,
       reorder_expected_daily_sales:Math.round(expectedDaily*10000)/10000,
       reorder_days_left:Math.round(daysLeft*100)/100,
       reorder_trend_ratio:Math.round(trendRatio*10000)/10000,
       reorder_recommended_qty:recommended,
     };
   }).filter(r=>r&&r.reorder_days_left<14);
-  const db=await getSupabase();
   // Skip only if existing data is strictly newer (avoid overwriting newer upload with older)
   const{data:latest}=await db.from("reorder_recommendations")
     .select("reorder_data_date").order("reorder_data_date",{ascending:false}).limit(1);
@@ -15990,8 +16019,19 @@ async function computeAndSaveReorder(parsedRows,snapDate){
   await db.from("reorder_recommendations").delete().lte("reorder_created_at",new Date().toISOString());
   if(!computed.length) return;
   const CHUNK=200;
+  // reorder_store_monthly_sales 컬럼 미생성 DB 호환 — 컬럼 에러가 나면
+  // 해당 필드를 뺀 payload 로 폴백해 마이그레이션 전에도 저장이 깨지지
+  // 않게 한다 (매장 판매는 expected_daily 에 이미 반영됨).
+  let hasStoreCol=true;
+  const stripStore=chunk=>chunk.map(r=>{const c={...r};delete c.reorder_store_monthly_sales;return c;});
   for(let i=0;i<computed.length;i+=CHUNK){
-    await db.from("reorder_recommendations").insert(computed.slice(i,i+CHUNK));
+    const chunk=computed.slice(i,i+CHUNK);
+    const{error}=await db.from("reorder_recommendations")
+      .insert(hasStoreCol?chunk:stripStore(chunk));
+    if(error&&hasStoreCol&&String(error.message||"").includes("reorder_store_monthly_sales")){
+      hasStoreCol=false;
+      await db.from("reorder_recommendations").insert(stripStore(chunk));
+    }
   }
 }
 
@@ -16007,7 +16047,21 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
   const [pg,setPg]=useState(0);
   const [selected,setSelected]=useState(()=>new Set());
   const [copied,setCopied]=useState(false);
+  // 화면 전환 — "reorder"(리오더 계산기) / "final"(시즌 종료 전 마지막
+  // 발주 계산기, 우측 위 버튼). 마지막 발주 = 일판매량×14(2주치) −
+  // 실질 가용재고 (사용자 요청).
+  const [view,setView]=useState("reorder");
   const PG=150;
+  const toggleView=()=>{
+    setView(v=>{
+      const next=v==="reorder"?"final":"reorder";
+      // 뷰별 기본 정렬 — 마지막 발주는 수량 큰 순, 리오더는 잔여일 급한 순.
+      if(next==="final"){setSortKey("_final");setSortDir("desc");}
+      else{setSortKey("reorder_days_left");setSortDir("asc");}
+      setPg(0);
+      return next;
+    });
+  };
 
   const load=useCallback(async()=>{
     setLoading(true);
@@ -16047,8 +16101,16 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     return{n,avgDays,totalQty,totalIncoming};
   },[data]);
 
+  // 마지막 발주 뷰 파생 필드 — _need2w(일판매량×14, 2주 필요량) /
+  // _final(2주 필요량 − 실질 가용재고, 0 하한). 저장 데이터 수정 없이
+  // 클라이언트에서 계산.
+  const dataView=useMemo(()=>view!=="final"?data:data.map(r=>{
+    const need2w=Math.round((r.reorder_expected_daily_sales||0)*14);
+    return{...r,_need2w:need2w,_final:Math.max(0,need2w-(r.reorder_effective_stock||0))};
+  }),[data,view]);
+
   const filtered=useMemo(()=>{
-    let rows=data;
+    let rows=dataView;
     if(search) rows=rows.filter(r=>
       (r.reorder_product_name||"").toLowerCase().includes(search.toLowerCase())||
       (r.reorder_product_code||"").toLowerCase().includes(search.toLowerCase())||
@@ -16058,7 +16120,19 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
       const va=a[sortKey]??0,vb=b[sortKey]??0;
       return sortDir==="asc"?(va>vb?1:-1):(va<vb?1:-1);
     });
-  },[data,search,sortKey,sortDir]);
+  },[dataView,search,sortKey,sortDir]);
+
+  // 마지막 발주 뷰 KPI
+  const finalKpi=useMemo(()=>{
+    if(view!=="final"||!dataView.length) return null;
+    const target=dataView.filter(r=>(r._final||0)>0);
+    return{
+      n:target.length,
+      totalFinal:dataView.reduce((s,r)=>s+(r._final||0),0),
+      totalNeed:dataView.reduce((s,r)=>s+(r._need2w||0),0),
+      totalEffective:dataView.reduce((s,r)=>s+(r.reorder_effective_stock||0),0),
+    };
+  },[view,dataView]);
 
   const paged=filtered.slice(pg*PG,(pg+1)*PG);
   const totalPgs=Math.ceil(filtered.length/PG);
@@ -16098,11 +16172,25 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     {label:"실질 가용재고",get:r=>(r.reorder_effective_stock||0).toLocaleString(),align:"center",bold:true},
     {label:"1주 판매",get:r=>(r.reorder_weekly_sales||0).toLocaleString(),align:"center"},
     {label:"4주 판매",get:r=>(r.reorder_monthly_sales||0).toLocaleString(),align:"center"},
+    {label:"4주 매장판매",get:r=>(r.reorder_store_monthly_sales||0).toLocaleString(),align:"center"},
     {label:"예상 일판매",get:r=>(r.reorder_expected_daily_sales||0).toFixed(2),align:"center"},
     {label:"판매 추세",get:r=>trendTag(r).label,align:"center",colorBy:r=>trendTag(r).color},
     {label:"재고잔여일",get:r=>(r.reorder_days_left||0).toFixed(1)+"일",align:"center",bold:true,colorBy:r=>(r.reorder_days_left||0)<7?"#C87B7B":"#C8A87B"},
     {label:"추천 리오더",get:r=>(r.reorder_recommended_qty||0).toLocaleString(),align:"center",bold:true},
   ];
+  // 마지막 발주 뷰 전용 export 컬럼
+  const exportColsFinal=[
+    {label:"상품코드",get:r=>r.reorder_product_code||"",align:"left"},
+    {label:"상품명",get:r=>r.reorder_product_name,align:"left"},
+    {label:"옵션",get:r=>r.reorder_option_name,align:"left"},
+    {label:"4주 판매",get:r=>(r.reorder_monthly_sales||0).toLocaleString(),align:"center"},
+    {label:"4주 매장판매",get:r=>(r.reorder_store_monthly_sales||0).toLocaleString(),align:"center"},
+    {label:"예상 일판매",get:r=>(r.reorder_expected_daily_sales||0).toFixed(2),align:"center"},
+    {label:"2주 필요량",get:r=>(r._need2w||0).toLocaleString(),align:"center"},
+    {label:"실질 가용재고",get:r=>(r.reorder_effective_stock||0).toLocaleString(),align:"center"},
+    {label:"마지막 발주",get:r=>(r._final||0).toLocaleString(),align:"center",bold:true,colorBy:r=>(r._final||0)>0?"#C87B7B":"#1a1a1a"},
+  ];
+  const activeExportCols=view==="final"?exportColsFinal:exportCols;
   const buildExportHtml=(target,cols=exportCols)=>{
     const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     const headerHtml=cols.map(c=>
@@ -16121,9 +16209,9 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     return [cols.map(c=>c.label).join("\t"),...target.map(r=>cols.map(c=>cell(c.get(r))).join("\t"))].join("\n");
   };
   const downloadCSV=(source)=>{
-    const html=buildExportHtml(source||filtered);
+    const html=buildExportHtml(source||filtered,activeExportCols);
     const blob=new Blob(["﻿"+html],{type:"application/vnd.ms-excel;charset=utf-8;"});
-    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`reorder_${localDate(0)}.xls`});
+    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`${view==="final"?"final_order":"reorder"}_${localDate(0)}.xls`});
     a.click();URL.revokeObjectURL(a.href);
   };
 
@@ -16139,8 +16227,9 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
     return s;
   });
   const downloadSelected=()=>downloadCSV(filtered.filter(r=>selected.has(rowKey(r))));
-  // 선택 복사용 컬럼 — 상품명 · 옵션 · 추천 리오더 수만 (상품코드 제외)
-  const copyCols=exportCols.filter(c=>["상품명","옵션","추천 리오더"].includes(c.label));
+  // 선택 복사용 컬럼 — 상품명 · 옵션 · 수량만 (상품코드 제외).
+  // 마지막 발주 뷰에서는 추천 리오더 대신 마지막 발주 수를 복사.
+  const copyCols=activeExportCols.filter(c=>["상품명","옵션",view==="final"?"마지막 발주":"추천 리오더"].includes(c.label));
   const copySelected=async()=>{
     const target=filtered.filter(r=>selected.has(rowKey(r)));
     if(!target.length) return;
@@ -16188,22 +16277,42 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
   return(
     <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 28px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
-        <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>리오더 계산기</span>
+        <span style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px"}}>
+          {view==="final"?"시즌 종료 전 마지막 발주 계산기":"리오더 계산기"}
+        </span>
         {latestDataDate&&<span style={{fontSize:12,color:DC.sub,marginLeft:4}}>· 기준일 {latestDataDate}</span>}
+        {/* 우측 위 화면 전환 버튼 (사용자 요청) */}
+        <button onClick={toggleView}
+          style={{marginLeft:"auto",background:view==="final"?"transparent":"#C8A87B",
+            color:view==="final"?DC.sub:"#fff",border:`1px solid ${view==="final"?DC.border:"#C8A87B"}`,
+            borderRadius:6,padding:"5px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+          {view==="final"?"← 리오더 계산기":"시즌 종료 전 마지막 발주 계산기 →"}
+        </button>
       </div>
-      <div style={{fontSize:13,color:DC.sub,marginBottom:20}}>최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다.</div>
+      <div style={{fontSize:13,color:DC.sub,marginBottom:20}}>
+        {view==="final"
+          ?"시즌 마감 대비 마지막 발주 수량을 계산합니다 — 일판매량 2주치(×14)에서 실질 가용재고를 뺀 수량입니다."
+          :"최근 판매량과 현재 재고를 기반으로 자동 리오더 필요 SKU를 분석합니다."}
+      </div>
 
       {/* Calculation flow card */}
       <div style={{marginBottom:20,background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:10,padding:"14px 18px"}}>
-        <div style={{fontSize:12,fontWeight:700,color:DC.text,letterSpacing:".06em",marginBottom:12}}>계산 기준 — 14일 재고 커버</div>
+        <div style={{fontSize:12,fontWeight:700,color:DC.text,letterSpacing:".06em",marginBottom:12}}>
+          {view==="final"?"계산 기준 — 시즌 종료 전 마지막 발주":"계산 기준 — 14일 재고 커버"}
+        </div>
         <div style={{display:"flex",gap:0,alignItems:"center",flexWrap:"wrap"}}>
-          {[
-            {title:"판매속도",body:"(1주판매÷7)×70% + (4주판매÷28)×30%"},
+          {(view==="final"?[
+            {title:"판매속도",body:"(1주판매÷7)×70% + (4주판매÷28)×30% + 매장4주판매÷28"},
+            {title:"2주 필요량",body:"예상 일판매량 × 14"},
+            {title:"실질 가용재고",body:"가용재고 + 입고대기"},
+            {title:"마지막 발주 수량",body:"2주 필요량 − 실질 가용재고"},
+          ]:[
+            {title:"판매속도",body:"(1주판매÷7)×70% + (4주판매÷28)×30% + 매장4주판매÷28"},
             {title:"실질 가용재고",body:"가용재고 + 입고대기"},
             {title:"예상 재고잔여일",body:"실질가용재고 ÷ 예상일판매량"},
             {title:"14일 미만 → 리오더",body:"days_left < 14일"},
             {title:"추천 리오더 수량",body:"(일판매량×14) − 실질가용재고"},
-          ].map((s,i,a)=>(
+          ]).map((s,i,a)=>(
             <React.Fragment key={s.title}>
               <div style={{background:"rgba(0,0,0,0.03)",borderRadius:8,padding:"10px 14px",textAlign:"center",minWidth:120}}>
                 <div style={{fontSize:12,color:DC.text,marginBottom:5,fontWeight:600}}>{s.title}</div>
@@ -16227,14 +16336,19 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
       {!loading&&data.length>0&&(
         <>
           {/* KPI */}
-          {kpi&&(
+          {(view==="final"?finalKpi:kpi)&&(
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
-              {[
+              {(view==="final"?[
+                {label:"마지막 발주 필요 SKU",value:`${finalKpi.n}개`,color:"#C87B7B"},
+                {label:"총 마지막 발주 수량",value:`${finalKpi.totalFinal.toLocaleString()}개`,color:DC.text},
+                {label:"총 2주 필요량",value:`${finalKpi.totalNeed.toLocaleString()}개`,color:"#C8A87B"},
+                {label:"총 실질 가용재고",value:`${finalKpi.totalEffective.toLocaleString()}개`,color:"#7B9EC8"},
+              ]:[
                 {label:"리오더 추천 SKU",value:`${kpi.n}개`,color:"#C87B7B"},
                 {label:"평균 재고잔여일",value:`${kpi.avgDays.toFixed(1)}일`,color:"#C8A87B"},
                 {label:"총 추천 리오더 수량",value:`${kpi.totalQty.toLocaleString()}개`,color:DC.text},
                 {label:"총 입고대기 수량",value:`${kpi.totalIncoming.toLocaleString()}개`,color:"#7B9EC8"},
-              ].map(c=>(
+              ]).map(c=>(
                 <div key={c.label} style={{background:DC.bg,border:`1px solid ${DC.border}`,borderRadius:8,padding:"13px 15px"}}>
                   <div style={{fontSize:12,color:DC.sub,marginBottom:5}}>{c.label}</div>
                   <div style={{fontSize:18,fontWeight:700,color:c.color,letterSpacing:"-0.3px"}}>{c.value}</div>
@@ -16243,7 +16357,8 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
             </div>
           )}
 
-          {/* Charts */}
+          {/* Charts — 리오더 뷰 전용 */}
+          {view==="reorder"&&(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
             <div style={chartStyle}>
               <div style={{fontSize:14,fontWeight:600,color:DC.text,marginBottom:12}}>판매 상승 SKU Top5 (추세비율)</div>
@@ -16282,6 +16397,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
               </ResponsiveContainer>
             </div>
           </div>
+          )}
 
           {/* Table */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
@@ -16296,7 +16412,7 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                   <button onClick={()=>setSelected(new Set())}
                     style={{background:"transparent",color:DC.sub,border:`1px solid ${DC.border}`,borderRadius:5,
                       padding:"4px 10px",fontSize:13,cursor:"pointer"}}>선택 해제</button>
-                  <button onClick={copySelected} title="상품명 · 옵션 · 추천 리오더 수를 표 형식으로 복사 — 엑셀/구글시트에 바로 붙여넣기"
+                  <button onClick={copySelected} title={`상품명 · 옵션 · ${view==="final"?"마지막 발주":"추천 리오더"} 수를 표 형식으로 복사 — 엑셀/구글시트에 바로 붙여넣기`}
                     style={{background:copied?"#7B9EC8":"transparent",color:copied?"#fff":"#7B9EC8",border:"1px solid #7B9EC8",borderRadius:5,
                       padding:"4px 12px",fontSize:13,cursor:"pointer",fontWeight:600}}>{copied?"복사됨 ✓":"⧉ 선택 복사"}</button>
                   <button onClick={downloadSelected}
@@ -16322,15 +16438,29 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                   <SortTh k="reorder_product_code" label="상품코드"/>
                   <SortTh k="reorder_product_name" label="상품명"/>
                   <SortTh k="reorder_option_name" label="옵션"/>
-                  <SortTh k="reorder_available_stock" label="가용재고"/>
-                  <SortTh k="reorder_incoming_stock" label="입고대기"/>
-                  <SortTh k="reorder_effective_stock" label="실질 가용재고"/>
-                  <SortTh k="reorder_weekly_sales" label="1주 판매"/>
-                  <SortTh k="reorder_monthly_sales" label="4주 판매"/>
-                  <SortTh k="reorder_expected_daily_sales" label="예상 일판매"/>
-                  <SortTh k="reorder_trend_ratio" label="판매 추세"/>
-                  <SortTh k="reorder_days_left" label="재고잔여일"/>
-                  <SortTh k="reorder_recommended_qty" label="추천 리오더"/>
+                  {view==="final"?(
+                    <>
+                      <SortTh k="reorder_monthly_sales" label="4주 판매"/>
+                      <SortTh k="reorder_store_monthly_sales" label="4주 매장판매"/>
+                      <SortTh k="reorder_expected_daily_sales" label="예상 일판매"/>
+                      <SortTh k="_need2w" label="2주 필요량"/>
+                      <SortTh k="reorder_effective_stock" label="실질 가용재고"/>
+                      <SortTh k="_final" label="마지막 발주"/>
+                    </>
+                  ):(
+                    <>
+                      <SortTh k="reorder_available_stock" label="가용재고"/>
+                      <SortTh k="reorder_incoming_stock" label="입고대기"/>
+                      <SortTh k="reorder_effective_stock" label="실질 가용재고"/>
+                      <SortTh k="reorder_weekly_sales" label="1주 판매"/>
+                      <SortTh k="reorder_monthly_sales" label="4주 판매"/>
+                      <SortTh k="reorder_store_monthly_sales" label="4주 매장판매"/>
+                      <SortTh k="reorder_expected_daily_sales" label="예상 일판매"/>
+                      <SortTh k="reorder_trend_ratio" label="판매 추세"/>
+                      <SortTh k="reorder_days_left" label="재고잔여일"/>
+                      <SortTh k="reorder_recommended_qty" label="추천 리오더"/>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -16348,15 +16478,31 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                       <td style={{padding:"4px 6px",color:DC.sub,fontFamily:"monospace",fontSize:12,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.reorder_product_code}>{r.reorder_product_code||"—"}</td>
                       <td style={{padding:"4px 6px",color:DC.text,fontWeight:500,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_product_name}</td>
                       <td style={{padding:"4px 6px",color:DC.sub,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.reorder_option_name||"—"}</td>
-                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"4px 6px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
-                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
-                      <td style={{padding:"4px 6px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
-                      <td style={{padding:"4px 6px",textAlign:"center"}}><span style={{fontSize:12,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
-                      <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
-                      <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                      {view==="final"?(
+                        <>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_store_monthly_sales||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                          <td style={{padding:"4px 6px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r._need2w||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:(r._final||0)>0?"#C87B7B":DC.sub}}>
+                            {(r._final||0)>0?(r._final||0).toLocaleString():"충분"}
+                          </td>
+                        </>
+                      ):(
+                        <>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_available_stock||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_incoming_stock||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.text,textAlign:"center",fontWeight:500}}>{(r.reorder_effective_stock||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_weekly_sales||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_monthly_sales||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.sub,textAlign:"center"}}>{(r.reorder_store_monthly_sales||0).toLocaleString()}</td>
+                          <td style={{padding:"4px 6px",color:DC.text,textAlign:"center"}}>{(r.reorder_expected_daily_sales||0).toFixed(2)}</td>
+                          <td style={{padding:"4px 6px",textAlign:"center"}}><span style={{fontSize:12,fontWeight:600,color:trend.color}}>{trend.label}</span></td>
+                          <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:urgent?"#C87B7B":"#C8A87B"}}>{(r.reorder_days_left||0).toFixed(1)}일</td>
+                          <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,color:DC.text}}>{(r.reorder_recommended_qty||0).toLocaleString()}</td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}
@@ -16372,6 +16518,12 @@ function ReorderCalculator({DC,refreshKey,onDateReady,latestSnapDate}){
                   {i+1}
                 </button>
               ))}
+            </div>
+          )}
+          {view==="final"&&(
+            <div style={{marginTop:12,fontSize:12,color:DC.sub,lineHeight:1.7}}>
+              대상: 재고잔여일 14일 미만 SKU (리오더 계산기와 동일 데이터) · 실질 가용재고가 2주 필요량 이상인 SKU는 <b style={{color:DC.text}}>충분</b>으로 표시 ·
+              4주 매장판매는 매장 판매 CSV(store_sales) 업로드 후 다음 인벤토리 업로드부터 반영
             </div>
           )}
         </>
