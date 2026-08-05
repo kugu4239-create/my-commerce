@@ -17170,6 +17170,59 @@ const COMPARE_CH_COLOR={
 };
 const COMPARE_CHANNELS=["자사몰","29CM","오프라인 스토어","무신사"];
 
+// 연 대비 모드 — 두 연도의 월별 매출을 채널 비중 스택 막대로 비교
+function YearBarChart({data,year1,year2,svgW}){
+  const SVG_H=440,PAD_T=58,PAD_B=46,PAD_L=20,PAD_R=20,AVAIL_H=SVG_H-PAD_T-PAD_B;
+  const SHORT={"자사몰":"자사몰","29CM":"29CM","오프라인 스토어":"오프라인","무신사":"무신사"};
+  const fmtAmt=a=>{
+    if(a>=1e8){const eok=Math.floor(a/1e8);const cheon=Math.floor((a%1e8)/1e7);return eok+"억"+(cheon>0?cheon+"천만":"");}
+    if(a>=1e4) return Math.round(a/1e4)+"만";
+    return a.toLocaleString();
+  };
+  const maxVal=Math.max(...data.flatMap(d=>[d.y1.total,d.y2.total]),1);
+  const groupW=(svgW-PAD_L-PAD_R)/data.length;
+  const barW=Math.min(36,groupW*0.34),inner=5;
+  const stack=(x,col,kp)=>{
+    if(!col||col.total<=0) return null;
+    const out=[];let yCursor=SVG_H-PAD_B;
+    COMPARE_CHANNELS.forEach((ch,ci)=>{
+      const amt=col.byChannel[ch]||0;if(amt<=0) return;
+      const h=amt/maxVal*AVAIL_H,top=yCursor-h;
+      out.push(<rect key={`${kp}r${ci}`} x={x} y={top} width={barW} height={h} fill={COMPARE_CH_COLOR[ch]}/>);
+      if(h>=15) out.push(<text key={`${kp}t${ci}`} x={x+barW/2} y={top+h/2} textAnchor="middle" dominantBaseline="middle" fontSize={8} fontWeight={700} fill="#fff" style={{pointerEvents:"none",userSelect:"none"}}>{SHORT[ch]}</text>);
+      yCursor=top;
+    });
+    out.push(<text key={`${kp}sum`} x={x+barW/2} y={(SVG_H-PAD_B-col.total/maxVal*AVAIL_H)-5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#444" style={{pointerEvents:"none",userSelect:"none"}}>{fmtAmt(col.total)}</text>);
+    return out;
+  };
+  return(
+    <svg width={svgW} height={SVG_H} style={{display:"block"}}>
+      <line x1={PAD_L} y1={SVG_H-PAD_B} x2={svgW-PAD_R} y2={SVG_H-PAD_B} stroke="#e0e0da" strokeWidth={1}/>
+      {data.map((d,i)=>{
+        const gx=PAD_L+i*groupW+groupW/2;
+        const x1=gx-barW-inner/2,x2=gx+inner/2;
+        const both=d.y1.total>0&&d.y2.total>0;
+        const pct=both?((d.y2.total-d.y1.total)/d.y1.total*100):null;
+        const up=pct>=0;
+        return(
+          <g key={i}>
+            {stack(x1,d.y1,`${i}a`)}
+            {stack(x2,d.y2,`${i}b`)}
+            {both&&(
+              <text x={gx} y={PAD_T-28} textAnchor="middle" fontSize={10} fontWeight={700} fill={up?"#7dbf9e":"#c97b7b"} style={{userSelect:"none"}}>
+                {up?"▲":"▼"}{Math.abs(pct).toFixed(0)}%
+              </text>
+            )}
+            {d.y1.total>0&&<text x={x1+barW/2} y={SVG_H-PAD_B+14} textAnchor="middle" fontSize={8} fill="#999" style={{userSelect:"none"}}>{"'"+String(year1).slice(2)}</text>}
+            {d.y2.total>0&&<text x={x2+barW/2} y={SVG_H-PAD_B+14} textAnchor="middle" fontSize={8} fill="#999" style={{userSelect:"none"}}>{"'"+String(year2).slice(2)}</text>}
+            <text x={gx} y={SVG_H-PAD_B+30} textAnchor="middle" fontSize={11} fontWeight={600} fill="#111" style={{userSelect:"none"}}>{d.m}월</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function RevenueSankeyChart({periods,svgW}){
   const wrapRef=useRef(null);
   const [hoveredCh,setHoveredCh]=useState(null);
@@ -17650,6 +17703,9 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
   const [cmpMonth,setCmpMonth]=useState(null);     // 1~12 · 월 비교 모드 선택 월
   const [cmpQuarter,setCmpQuarter]=useState(null); // 1~4 · 분기 비교 모드 선택 분기
   const [cmpPickOpen,setCmpPickOpen]=useState(false);
+  const [cmpYear1,setCmpYear1]=useState(null);   // 연 대비 · 이전 연도
+  const [cmpYear2,setCmpYear2]=useState(null);   // 연 대비 · 최신 연도
+  const [yearPickOpen,setYearPickOpen]=useState(false);
   const containerRef=useRef(null);
   const agingTrendSecRef=useRef(null);
   const reorderSecRef=useRef(null);
@@ -17733,6 +17789,15 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
     if(volUnit==="quarterCmp"&&cmpQuarter==null) setCmpQuarter(Math.floor((m-1)/3)+1);
   },[volUnit,latestDataDate,cmpMonth,cmpQuarter]);
 
+  // 연 대비 모드 진입 시 최신 연도와 직전 연도를 기본 선택
+  useEffect(()=>{
+    if(volUnit==="yearBar"&&dataYears.length&&cmpYear1==null){
+      const latest=dataYears[dataYears.length-1];
+      setCmpYear2(latest);
+      setCmpYear1(dataYears.length>1?dataYears[dataYears.length-2]:latest-1);
+    }
+  },[volUnit,dataYears,cmpYear1]);
+
   const volPeriods=useMemo(()=>{
     // 월 비교: 데이터가 있는 매해의 해당 월
     if(volUnit==="monthCmp"&&cmpMonth){
@@ -17786,9 +17851,32 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
     return arr;
   },[revenues,storeSales,volPeriods,volUnit]);
 
+  // 연 대비: 두 연도의 월별(1~12월) 채널별 매출
+  const yearBarData=useMemo(()=>{
+    if(volUnit!=="yearBar"||!cmpYear1||!cmpYear2) return null;
+    const calc=(year)=>Array.from({length:12},(_,i)=>{
+      const month=i+1,mm=String(month).padStart(2,"0");
+      const start=`${year}-${mm}-01`,end=ymd(new Date(year,month,0));
+      const byChannel={};COMPARE_CHANNELS.forEach(ch=>{byChannel[ch]=0;});
+      revenues.filter(r=>r.date>=start&&r.date<=end).forEach(r=>{
+        if(COMPARE_CHANNELS.includes(r.channel)) byChannel[r.channel]+=(r.amount||0)-(r.refund_amount||0);
+      });
+      storeSales.filter(r=>{const d=r.sale_date||"";return d>=start&&d<=end;}).forEach(r=>{
+        if(r.status==="배송") byChannel["오프라인 스토어"]+=(r.amount||0);
+        else if(r.status==="반품") byChannel["오프라인 스토어"]-=(r.amount||0);
+      });
+      COMPARE_CHANNELS.forEach(ch=>{if(byChannel[ch]<0) byChannel[ch]=0;});
+      return{byChannel,total:Object.values(byChannel).reduce((a,b)=>a+b,0)};
+    });
+    const a=calc(cmpYear1),b=calc(cmpYear2);
+    return Array.from({length:12},(_,i)=>({m:i+1,y1:a[i],y2:b[i]}));
+  },[volUnit,cmpYear1,cmpYear2,revenues,storeSales]);
+  const yearBarHasData=!!yearBarData&&yearBarData.some(d=>d.y1.total>0||d.y2.total>0);
+
   const hasData=revenueData.some(p=>p.total>0);
   const isCmpMode=volUnit==="monthCmp"||volUnit==="quarterCmp";
-  const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1&&!isCmpMode;
+  const isYearBar=volUnit==="yearBar";
+  const showSlider=!customStart&&!customEnd&&allVolPeriods.length>1&&!isCmpMode&&!isYearBar;
 
   const DC={bg:"#f8f8f6",card:"#ffffff",border:"#e0e0da",text:"#111111",sub:"#444444",dim:"#888888"};
   const LC=DC;
@@ -17803,7 +17891,7 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontWeight:600,fontSize:16,color:DC.text}}>전체 매출 볼륨</div>
           <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
-            {[["year","연"],["month","월"],["monthCmp","월 비교"],["quarterCmp","분기 비교"]].map(([u,lbl])=>(
+            {[["year","연"],["month","월"],["monthCmp","월 비교"],["quarterCmp","분기 비교"],["yearBar","연 대비"]].map(([u,lbl])=>(
               <button key={u} data-hf onClick={()=>{setVolUnit(u);setCustomStart("");setCustomEnd("");}}
                 style={{background:volUnit===u?DC.text:"transparent",
                   color:volUnit===u?DC.card:DC.sub,
@@ -17842,9 +17930,41 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
                 )}
               </div>
             )}
+            {/* 연 대비 모드 — 두 연도 선택기 */}
+            {isYearBar&&(
+              <div style={{position:"relative"}}>
+                <button data-hf onClick={()=>setYearPickOpen(o=>!o)}
+                  style={{background:"#f0f9f4",color:"#3a8060",border:"1px solid #7EC8A4",
+                    borderRadius:6,padding:"4px 10px",fontSize:13,cursor:"pointer",fontWeight:600}}>
+                  {cmpYear1||"—"} vs {cmpYear2||"—"} ▾
+                </button>
+                {yearPickOpen&&(
+                  <div style={{position:"absolute",top:"calc(100% + 4px)",right:0,zIndex:30,
+                    background:DC.card,border:`1px solid ${DC.border}`,borderRadius:8,padding:10,
+                    boxShadow:"0 4px 16px rgba(0,0,0,0.1)",minWidth:200}}>
+                    {[["이전",cmpYear1,setCmpYear1,COMPARE_CH_COLOR["오프라인 스토어"]],["최신",cmpYear2,setCmpYear2,COMPARE_CH_COLOR["자사몰"]]].map(([lbl,cur,setter,col])=>(
+                      <div key={lbl} style={{display:"flex",alignItems:"center",gap:6,marginBottom:lbl==="이전"?8:0}}>
+                        <span style={{width:9,height:9,borderRadius:2,background:col,flexShrink:0}}/>
+                        <span style={{fontSize:11,color:DC.sub,width:28,flexShrink:0}}>{lbl}</span>
+                        <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                          {dataYears.map(y=>(
+                            <button key={y} onClick={()=>setter(y)}
+                              style={{background:cur===y?DC.text:"transparent",color:cur===y?DC.card:DC.sub,
+                                border:`1px solid ${cur===y?DC.text:DC.border}`,borderRadius:5,padding:"4px 8px",
+                                fontSize:12,cursor:"pointer",fontWeight:cur===y?700:400}}>
+                              {y}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <span style={{color:DC.border,fontSize:16,margin:"0 4px"}}>|</span>
             {/* 연·월 모드에서만 임의 기간 선택 */}
-            {!isCmpMode&&<>
+            {!isCmpMode&&!isYearBar&&<>
               <CalDrop id="vol" period={volPeriod} setPeriod={v=>{setVolPeriod(v);if(v!=="custom"){setCustomStart("");setCustomEnd("");}}}
                 presets={[]}
                 start={customStart} setStart={setCustomStart}
@@ -17865,11 +17985,17 @@ function DataCompare({revenues,storeSales=[],orders=[],stocks=[],ts={}}){
           ))}
         </div>
         <div ref={containerRef} style={{width:"100%",overflowX:"auto"}}>
-          {hasData
-            ?<RevenueSankeyChart periods={revenueData} svgW={svgW}/>
-            :<div style={{textAlign:"center",padding:"80px 0",color:DC.text,fontSize:15}}>
-              매출 데이터를 업로드하면 그래프가 표시됩니다
-            </div>
+          {isYearBar
+            ?(yearBarHasData
+              ?<YearBarChart data={yearBarData} year1={cmpYear1} year2={cmpYear2} svgW={svgW}/>
+              :<div style={{textAlign:"center",padding:"80px 0",color:DC.text,fontSize:15}}>
+                선택한 연도의 매출 데이터가 없습니다
+              </div>)
+            :(hasData
+              ?<RevenueSankeyChart periods={revenueData} svgW={svgW}/>
+              :<div style={{textAlign:"center",padding:"80px 0",color:DC.text,fontSize:15}}>
+                매출 데이터를 업로드하면 그래프가 표시됩니다
+              </div>)
           }
         </div>
         {showSlider&&(
