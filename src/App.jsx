@@ -5818,6 +5818,7 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [submitForm,setSubmitForm]=useState({title:"",content:"",start_date:"",end_date:"",eod:""});
   const [editingSubmitId,setEditingSubmitId]=useState(null);
   const [editSubmitForm,setEditSubmitForm]=useState({title:"",content:"",start_date:"",end_date:"",eod:""});
+  const [submitDragIdx,setSubmitDragIdx]=useState(null);
 
   // Load submit_promotions from Supabase on mount
   useEffect(()=>{
@@ -5826,7 +5827,15 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       const{data,error}=await db.from("submit_promotions").select("*").order("id",{ascending:true});
       if(!error&&Array.isArray(data)){
         // DB가 단일 진실원천 — 빈 배열이면 그대로 반영(삭제 항목 부활 방지)
-        setSubmitPromos(data);saveSubmitPromosLocal(data);
+        // sort_order가 있으면 그 순서로, 없으면 id 순 유지
+        const sorted=[...data].sort((a,b)=>{
+          const ao=a.sort_order,bo=b.sort_order;
+          if(ao!=null&&bo!=null) return ao-bo;
+          if(ao!=null) return -1;
+          if(bo!=null) return 1;
+          return a.id-b.id;
+        });
+        setSubmitPromos(sorted);saveSubmitPromosLocal(sorted);
       }
     })();
   },[]);
@@ -5865,6 +5874,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
       // 삭제 실패 시 롤백 + 알림 (재등장 방지)
       alert("제출 완료 처리 실패: "+error.message);
       setSubmitPromos(submitPromos);saveSubmitPromosLocal(submitPromos);
+    }
+  };
+  // 드래그로 재배열된 순서를 sort_order로 DB에 저장
+  const persistSubmitOrder=async(arr)=>{
+    const withOrder=arr.map((s,idx)=>({...s,sort_order:idx}));
+    setSubmitPromos(withOrder);saveSubmitPromosLocal(withOrder);
+    const db=await getSupabase();
+    for(const s of withOrder){
+      const{error}=await db.from("submit_promotions").update({sort_order:s.sort_order}).eq("id",s.id);
+      if(error){alertSubmitDbError(error);return;}
     }
   };
 
@@ -6590,19 +6609,21 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:D.surfaceAlt}}>
-                {["프로모션명","내용","기간","EOD","",""].map((h,i)=>(
+                {["","프로모션명","내용","기간","EOD","",""].map((h,i)=>(
                   <th key={i} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,
                     color:D.textSub,borderBottom:`1px solid ${D.border}`,fontSize:12,whiteSpace:"nowrap",
-                    ...(i===0?{width:240,minWidth:240}:{})}}>{h}</th>
+                    ...(i===0?{width:28,minWidth:28}:{}),
+                    ...(i===1?{width:240,minWidth:240}:{})}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {submitPromos.map(s=>{
+              {submitPromos.map((s,i)=>{
                 const isE=editingSubmitId===s.id;
                 const tdS={padding:"7px 8px",borderBottom:`1px solid ${D.border}`,color:D.text};
                 if(isE) return (
                   <tr key={s.id}>
+                    <td style={{...tdS,width:28}}/>
                     <td style={tdS}>
                       <input value={editSubmitForm.title} onChange={e=>setEditSubmitForm(f=>({...f,title:e.target.value}))}
                         style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,
@@ -6638,7 +6659,22 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
                   </tr>
                 );
                 return (
-                  <tr key={s.id}>
+                  <tr key={s.id}
+                    onDragOver={e=>{
+                      if(submitDragIdx===null||submitDragIdx===i) return;
+                      e.preventDefault();e.dataTransfer.dropEffect="move";
+                      const arr=[...submitPromos];
+                      const [moved]=arr.splice(submitDragIdx,1);
+                      arr.splice(i,0,moved);
+                      setSubmitPromos(arr);setSubmitDragIdx(i);
+                    }}
+                    onDrop={e=>e.preventDefault()}
+                    style={{opacity:submitDragIdx===i?0.45:1,transition:"opacity .12s"}}>
+                    <td style={{...tdS,textAlign:"center",width:28,cursor:"grab",color:D.textMeta,userSelect:"none"}}
+                      draggable="true"
+                      onDragStart={e=>{setSubmitDragIdx(i);e.dataTransfer.effectAllowed="move";}}
+                      onDragEnd={()=>{setSubmitDragIdx(null);persistSubmitOrder(submitPromos);}}
+                      title="드래그하여 순서 변경">⋮⋮</td>
                     <td style={{...tdS,fontWeight:600}}>{s.title}</td>
                     {/* 내용: HighlightEditor HTML(하이라이트) 렌더 — pre-wrap은 구버전 플레인 텍스트 줄바꿈 호환 */}
                     <td style={{...tdS,color:D.textSub,width:"100%",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
