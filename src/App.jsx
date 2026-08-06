@@ -7749,6 +7749,31 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
   const [bulkBaseDisc,setBulkBaseDisc]=useState("");
   const [bulkMode,setBulkMode]=useState("all");
   const applyBulk=(v)=>{ if(bulkMode==="checked") applyCheckedBaseDisc(v); else applyAllBaseDisc(v); };
+  // 최종 마크업 목표(2.7)에 맞춰 각 상품의 프런트 할인율을 5% 단위로 역산.
+  //   마크업은 baseDisc 증가에 따라 단조 감소 → 목표(2.7) 이상을 유지하는
+  //   최대 할인율(5% 단위, 0~60% 클램프)을 채택. 공급가 없는 행은 0%.
+  const TARGET_MARKUP=2.7;
+  const solveBaseForMarkup=(list,supply,items,target)=>{
+    if(!((supply||0)>0)) return 0;
+    let best=0;
+    for(let bd=0;bd<=60;bd+=5){
+      const m=computeMargin(list,bd,items,supply);
+      if(m.markup>=target) best=bd; else break;
+    }
+    return best;
+  };
+  const applyTargetMarkup=()=>{
+    setProcessed(prev=>prev.map(r=>{
+      if(bulkMode==="checked"&&!checkedRows.has(r.row)) return r;
+      const supply=r.supply||0;
+      const v=solveBaseForMarkup(r.list,supply,selectedScenario.items||[],TARGET_MARKUP);
+      const basePrice=Math.round(r.list*(1-v/100)/10)*10;
+      const supplyIncVat=Math.round(supply*1.1);
+      const m=computeMargin(r.list,v,selectedScenario.items||[],supply);
+      const finalDisc=r.list>0?Math.round((1-m.finalPrice/r.list)*1000)/10:0;
+      return {...r,baseDisc:v,basePrice,manualBase:v,supplyIncVat,finalDisc,...m};
+    }));
+  };
   // 결론 도출 — 펼친 묶음 상품 그룹 (기본 세일율 %)
   const [expandedGroup,setExpandedGroup]=useState(null);
   // 예시 파일 저장/로드 — 최근 업로드 1개를 Supabase 에 보관해 다른 세션에서도 즉시 미리보기
@@ -8625,6 +8650,12 @@ function SaleCalcModal({ onClose, onCreatePromo, onAttachInlineCalc, attachMode,
                               })}
                             </span>
                           )}
+                          <button onClick={applyTargetMarkup}
+                            title="선택 시나리오 기준, 최종 마크업 2.7 이상을 유지하는 최대 프런트 할인율을 5% 단위로 자동 기재"
+                            style={{background:D.black,color:"#fff",border:`1px solid ${D.black}`,borderRadius:4,
+                              padding:"3px 9px",fontSize:11,cursor:"pointer",fontWeight:800,letterSpacing:"0.01em"}}>
+                            최종 마크업 2.7
+                          </button>
                           {[10,15,20,25,30,40].map(v=>(
                             <button key={v} onClick={()=>applyBulk(v)}
                               style={{background:"transparent",border:`1px solid ${D.borderMid}`,borderRadius:4,
