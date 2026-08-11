@@ -22400,10 +22400,137 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
 }
 
 // ─────────────────────────────────────────────
+// MAIN PHOTO BOARD — 메인 사진 모아보기
+// 원하는 사이트들의 "지금 메인 화면"을 스크린샷으로 한눈에 모아본다.
+// 스크린샷은 WordPress mShots(키 불필요, 무료) 렌더 — 첫 요청 시 생성에
+// 몇 초 걸리고 이후 주기적으로 자동 갱신되는 준실시간 스냅샷.
+// 사이트 목록은 main_photo_sites 테이블(supabase/main_photo_sites.sql)에
+// 공유 저장, 테이블 미생성/실패 시 localStorage 만으로도 동작.
+// ─────────────────────────────────────────────
+const MAIN_PHOTO_LS="main_photo_sites";
+const mshotUrl=(url,tick)=>
+  `https://s0.wp.com/mshots/v1/${encodeURIComponent(url)}?w=1000&vpw=1280&vph=1800&r=${tick}`;
+
+function MainPhotoBoard(){
+  const [sites,setSites]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}
+  });
+  const [dbOk,setDbOk]=useState(true);
+  const [name,setName]=useState("");
+  const [url,setUrl]=useState("");
+  // 분 단위 tick — 재방문/새로고침 시 브라우저 캐시를 넘어 최신 스냅샷 요청
+  const [tick,setTick]=useState(()=>Math.floor(Date.now()/60000));
+
+  useEffect(()=>{(async()=>{
+    try{
+      const db=await getSupabase();
+      const{data,error}=await db.from("main_photo_sites").select("*").order("created_at",{ascending:true});
+      if(error)throw error;
+      if(data){setSites(data);try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(data));}catch{/* noop */}}
+      setDbOk(true);
+    }catch{setDbOk(false);}
+  })();},[]);
+  // 첫 스크린샷 생성 지연(수 초) 대비 — 진입 10초 뒤 한 번 자동 리로드
+  useEffect(()=>{const t=setTimeout(()=>setTick(x=>x+1),10000);return()=>clearTimeout(t);},[]);
+
+  const persistLocal=list=>{try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(list));}catch{/* noop */}};
+  const addSite=async()=>{
+    const u=url.trim();
+    if(!u)return;
+    const withS=/^https?:\/\//i.test(u)?u:`https://${u}`;
+    const row={
+      id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():String(Date.now()),
+      name:name.trim()||withS.replace(/^https?:\/\//,"").replace(/\/.*$/,""),
+      url:withS,
+      created_at:new Date().toISOString(),
+    };
+    const next=[...sites,row];
+    setSites(next);persistLocal(next);setName("");setUrl("");
+    try{
+      const db=await getSupabase();
+      const{error}=await db.from("main_photo_sites").insert({id:row.id,name:row.name,url:row.url});
+      if(error)throw error;
+      setDbOk(true);
+    }catch{setDbOk(false);}
+  };
+  const delSite=async id=>{
+    if(!window.confirm("이 사이트를 목록에서 삭제할까요?"))return;
+    const next=sites.filter(s=>s.id!==id);
+    setSites(next);persistLocal(next);
+    try{const db=await getSupabase();await db.from("main_photo_sites").delete().eq("id",id);}catch{/* noop */}
+  };
+
+  const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+    padding:"7px 10px",fontSize:12,color:D.text,boxSizing:"border-box"};
+
+  return(
+    <div style={{padding:"18px 22px 40px",maxWidth:1500,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:4}}>
+        <span style={{fontWeight:600,fontSize:18,color:D.text,letterSpacing:"-0.2px"}}>메인 사진 모아보기</span>
+        <button onClick={()=>setTick(x=>x+1)}
+          style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,
+            padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          ↻ 전체 새로고침
+        </button>
+      </div>
+      <div style={{fontSize:12,color:D.textMeta,marginBottom:14,lineHeight:1.6}}>
+        등록한 사이트의 현재 메인 화면을 스크린샷으로 모아 보여줍니다. 처음 등록하거나 새로고침하면
+        스냅샷 생성에 몇 초 걸릴 수 있습니다 — 로딩 이미지가 보이면 잠시 후 [전체 새로고침]을 눌러주세요.
+        카드를 클릭하면 사이트가 새 탭으로 열립니다.
+      </div>
+      {!dbOk&&(
+        <div style={{fontSize:11,color:D.red,marginBottom:12}}>
+          서버 저장 실패 — 목록이 이 기기에만 보관됩니다 (Supabase 에 main_photo_sites 테이블 생성 필요:
+          supabase/main_photo_sites.sql)
+        </div>
+      )}
+      {/* 사이트 추가 */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="표시 이름 (선택)"
+          style={{...inp,width:180}}/>
+        <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="사이트 주소 — 예: musinsa.com"
+          onKeyDown={e=>{if(e.key==="Enter")addSite();}}
+          style={{...inp,flex:1,minWidth:260}}/>
+        <button onClick={addSite} disabled={!url.trim()}
+          style={{background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"7px 18px",
+            fontSize:12,fontWeight:600,cursor:"pointer",opacity:url.trim()?1:0.5}}>
+          + 추가
+        </button>
+      </div>
+      {sites.length===0
+        ?<div style={{textAlign:"center",padding:"60px 0",color:D.textMeta,fontSize:13}}>
+           아직 등록된 사이트가 없습니다 — 위에 주소를 입력해 추가하세요.
+         </div>
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+          {sites.map(s=>(
+            <div key={s.id} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
+              overflow:"hidden",display:"flex",flexDirection:"column"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"9px 12px",borderBottom:`1px solid ${D.border}`}}>
+                <span style={{fontSize:12.5,fontWeight:600,color:D.text,flex:1,
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.url}>{s.name||s.url}</span>
+                <button onClick={()=>window.open(s.url,"_blank","noopener")} title="사이트 새 탭 열기"
+                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+                    padding:"2px 8px",fontSize:10,color:D.textSub,cursor:"pointer"}}>열기</button>
+                <button onClick={()=>delSite(s.id)} title="삭제"
+                  style={{background:"transparent",border:"none",color:D.textMeta,fontSize:12,cursor:"pointer",padding:"0 2px"}}>✕</button>
+              </div>
+              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
+              <img src={mshotUrl(s.url,tick)} alt={`${s.name||s.url} 메인 화면`}
+                onClick={()=>window.open(s.url,"_blank","noopener")}
+                style={{display:"block",width:"100%",height:420,objectFit:"cover",objectPosition:"top",
+                  cursor:"pointer",background:D.surfaceAlt}}/>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","gmv"];
+  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","gmv","carryover","mainphotos"];
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
@@ -22546,6 +22673,7 @@ export default function App() {
     {key:"reorder",label:"리오더 계산기"},
     {key:"carryover",label:"시즌 캐리오버"},
     {key:"gmv",label:"GMV 계산기"},
+    {key:"mainphotos",label:"메인 사진 모아보기"},
   ];
 
   const [visible,setVisible]=useState(false);
@@ -22608,6 +22736,7 @@ export default function App() {
         {page==="reorder"&&<ReorderPage/>}
         {page==="carryover"&&<CarryoverPage/>}
         {page==="gmv"&&<GmvCalculator orders={orders} revenues={revenues} storeSales={storeSales} stocks={stocks}/>}
+        {page==="mainphotos"&&<MainPhotoBoard/>}
         {page==="input"&&(
           <DataInput
             onUpdate={updateTs}
