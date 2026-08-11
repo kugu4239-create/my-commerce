@@ -2431,7 +2431,11 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         const m=csMap[normProdName(stripOptDescriptors(p.name))]||null;
         return{...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
           topReason:topReason(m),
-          rSimple:m?.["단순변심"]||0,rSize:m?.["사이즈 미스"]||0,rQuality:m?.["퀄리티"]||0};
+          rSimple:m?.["단순변심"]||0,
+          // 사이즈 미스순 정렬은 세분화 키("사이즈 미스(작아서/커서)")
+          // 까지 합산 — 분화 저장 후에도 정렬 기준은 사이즈 계열 전체.
+          rSize:m?Object.entries(m).filter(([k])=>k.startsWith("사이즈 미스")).reduce((s,[,c])=>s+c,0):0,
+          rQuality:m?.["퀄리티"]||0};
       })
       .sort(sorters[worstSort]||sorters.rate).slice(0,50);
   },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows,worstSort]);
@@ -12199,7 +12203,14 @@ function CSDataInput() {
             // 표기(퀼리티)와 영문(quality)까지 흡수 — 미매칭 시 단순변심
             // 폴백이라 오탈자가 조용히 단순변심으로 새던 문제.
             const s=String(raw||"").toLowerCase();
-            if(s.includes("사이즈")||s.includes("size")||s.includes("미스")) return "사이즈 미스";
+            if(s.includes("사이즈")||s.includes("size")||s.includes("미스")){
+              // "사이즈가 작아서 / 커서" 세분화 (사용자 요청) — 원문에
+              // 방향이 있으면 분화 저장 → 주요 사유 % 도 나뉘어 표시.
+              // 방향 없는 원문은 기존대로 "사이즈 미스".
+              if(s.includes("작아")) return "사이즈 미스(작아서)";
+              if(s.includes("커서")) return "사이즈 미스(커서)";
+              return "사이즈 미스";
+            }
             if(s.includes("퀄리티")||s.includes("퀼리티")||s.includes("quality")||s.includes("불량")||s.includes("품질")) return "퀄리티";
             if(s.includes("배송")&&!s.includes("배송비")&&!s.includes("회수")) return "배송";
             if(s.includes("단순변심")||s.includes("변심")) return "단순변심";
