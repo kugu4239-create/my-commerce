@@ -2278,7 +2278,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         .join(" · ");
     };
     return Object.values(byProd).filter(p=>p.returned>0&&p.shipped>=3)
-      .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
+      .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,50)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         topReason:topReason(p.name)}));
   },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows]);
