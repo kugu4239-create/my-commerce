@@ -2170,6 +2170,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
   const [rankWorstPeriod,setRankWorstPeriod]=useState("1m");
   const [rankWorstChannel,setRankWorstChannel]=useState("전체");
+  // 반품 Top 정렬 필터 — 기본 반품률순 (사용자 요청)
+  const [worstSort,setWorstSort]=useState("rate");
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
   const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
@@ -2403,10 +2405,9 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       if(!csMap[key])csMap[key]={};
       csMap[key][r.return_reason]=(csMap[key][r.return_reason]||0)+1;
     });
-    const topReason=name=>{
+    const topReason=m=>{
       // 상위 2개 사유를 비중(%)과 함께 표시 (사용자 요청).
       // 예: "사이즈 미스 60% · 단순변심 40%"
-      const m=csMap[normProdName(name)];
       if(!m)return"-";
       const entries=Object.entries(m).sort((a,b)=>b[1]-a[1]);
       const total=entries.reduce((s,[,c])=>s+c,0);
@@ -2415,11 +2416,25 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         .map(([reason,c])=>`${reason} ${Math.round((c/total)*100)}%`)
         .join(" · ");
     };
+    // 정렬 필터 (사용자 요청) — 반품률순(기본)/반품 수량순/사유별
+    // (단순변심·사이즈 미스·퀄리티 높은 순, CS 접수건 카운트 기준.
+    //  동수는 반품 수량으로 tie-break).
+    const sorters={
+      rate:(a,b)=>(b.returned/b.orders)-(a.returned/a.orders),
+      qty:(a,b)=>b.returned-a.returned,
+      simple:(a,b)=>(b.rSimple-a.rSimple)||(b.returned-a.returned),
+      size:(a,b)=>(b.rSize-a.rSize)||(b.returned-a.returned),
+      quality:(a,b)=>(b.rQuality-a.rQuality)||(b.returned-a.returned),
+    };
     return Object.values(byProd).filter(p=>p.returned>0&&p.shipped>=3)
-      .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,50)
-      .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
-        topReason:topReason(p.name)}));
-  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows]);
+      .map(p=>{
+        const m=csMap[normProdName(stripOptDescriptors(p.name))]||null;
+        return{...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
+          topReason:topReason(m),
+          rSimple:m?.["단순변심"]||0,rSize:m?.["사이즈 미스"]||0,rQuality:m?.["퀄리티"]||0};
+      })
+      .sort(sorters[worstSort]||sorters.rate).slice(0,50);
+  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows,worstSort]);
 
   // 월별 배송량 차트 데이터 — 배송일 기준, 배송일 없는 행은 주문일 폴백(ship_date)
   const shippingChartData=useMemo(()=>{
@@ -3055,8 +3070,19 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CaptureBtn cardRef={returnTopCardRef} filename="반품Top" DC={{border:D.border,sub:D.textMeta}}/>
           </div>
         </div>
+        {/* 정렬 필터 — 반품률순 기본 (사용자 요청) */}
+        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",margin:"-4px 0 6px"}}>
+          <span style={{fontSize:10,color:D.textMeta}}>정렬</span>
+          {[["rate","반품률순"],["qty","반품 수량순"],["simple","단순변심순"],["size","사이즈 미스순"],["quality","퀄리티순"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setWorstSort(v)}
+              style={{background:worstSort===v?D.black:"transparent",
+                color:worstSort===v?"#fff":D.textSub,
+                border:`1px solid ${worstSort===v?D.black:D.border}`,
+                borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",fontWeight:worstSort===v?600:400}}>{l}</button>
+          ))}
+        </div>
         {/* 반품 수량 vs 주요 사유 집계 기준 차이 안내 (사용자 요청) */}
-        <div style={{fontSize:10.5,color:D.textMeta,margin:"-6px 0 10px",lineHeight:1.6}}>
+        <div style={{fontSize:10.5,color:D.textMeta,margin:"0 0 10px",lineHeight:1.6}}>
           * 반품 수량은 반품 완료 기준, 주요 사유는 현재 접수건까지 합산된 수량으로 시점에 따라 상이할 수 있습니다.
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
@@ -3066,7 +3092,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 onClick:row=>setCmtProd(row.name),
                 fmt:v=>{
                   const n=cmtCountBy[normProdName(v)]||0;
-                  return n>0?<>{v} <span style={{color:"#7B9EC8",fontWeight:700,fontSize:10}}>💬{n}</span></>:v;
+                  if(n<=0) return v;
+                  // 코멘트 달린 상품 — 뮤트 민트 밑줄로 한눈에 구분 (사용자 요청)
+                  return(
+                    <>
+                      <span style={{textDecoration:"underline",textDecorationColor:"#8FC7AD",
+                        textDecorationThickness:2,textUnderlineOffset:2}}>{v}</span>
+                      {" "}<span style={{color:"#7B9EC8",fontWeight:700,fontSize:10}}>💬{n}</span>
+                    </>
+                  );
                 }},
               {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
               {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
