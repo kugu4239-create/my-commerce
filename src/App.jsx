@@ -22426,6 +22426,7 @@ const MAIN_PHOTO_DEFAULT_SITES=[
   ["세터","https://satur.co.kr/"],
   ["시티브리즈","https://www.citybreeze.co.kr/"],
   ["인사일런스","https://insilence.co.kr/"],
+  ["아비에무아","https://aviemuah.com/"],
 ];
 
 function MainPhotoBoard(){
