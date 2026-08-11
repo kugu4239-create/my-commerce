@@ -2054,6 +2054,99 @@ function DateDrop({id,value,onChange,calOpenFor,setCalOpenFor,placeholder="날�
   );
 }
 
+// ── 상품 코멘트 (반품 Top 상품명 클릭) ─────────────────────────────
+// norm_name(정규화 상품명) 키로 저장해 기간/채널이 바뀌어도 같은
+// 상품을 따라다닌다. 로그인 게이트와 동일한 이니셜 → 이름 매핑으로
+// 작성자를 기록. 테이블/실시간 publication: supabase/product_comments.sql
+const COMMENT_AUTHOR_NAMES={ljh:"이지훈",lyr:"이예리",jmj:"장미정",jbk:"진보경",jss:"전성수",kdw:"김다원",shb:"서혜빈"};
+async function getCommentAuthor(){
+  try{
+    const sb=await getAuthSupabase();
+    const{data}=await sb.auth.getSession();
+    const ini=(data?.session?.user?.email||"").split("@")[0].toLowerCase();
+    return COMMENT_AUTHOR_NAMES[ini]||ini.toUpperCase()||"";
+  }catch{return"";}
+}
+
+function ProductCommentModal({name,comments,onClose,onAdded,onDeleted}){
+  const [text,setText]=useState("");
+  const [busy,setBusy]=useState(false);
+  const listRef=useRef(null);
+  // 새 코멘트(실시간 포함)가 오면 목록 맨 아래로
+  useEffect(()=>{
+    const el=listRef.current;
+    if(el) el.scrollTop=el.scrollHeight;
+  },[comments.length]);
+  const add=async()=>{
+    const t=text.trim();
+    if(!t||busy) return;
+    setBusy(true);
+    try{
+      const db=await getSupabase();
+      const author=await getCommentAuthor();
+      const{data,error}=await db.from("product_comments")
+        .insert({product_name:name,norm_name:normProdName(name),comment:t,author})
+        .select().single();
+      if(error) throw error;
+      onAdded(data);
+      setText("");
+    }catch(e){
+      alert("코멘트 저장 실패: "+(e?.message||e)+"\n(Supabase 에 product_comments 테이블이 있는지 확인하세요)");
+    }
+    setBusy(false);
+  };
+  const del=async(id)=>{
+    const db=await getSupabase();
+    const{error}=await db.from("product_comments").delete().eq("id",id);
+    if(!error) onDeleted(id);
+  };
+  return(
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:D.card,border:`1px solid ${D.border}`,borderRadius:12,
+          width:"min(440px,100%)",maxHeight:"80vh",display:"flex",flexDirection:"column",
+          boxShadow:"0 12px 40px rgba(0,0,0,0.25)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
+          <div style={{fontWeight:600,fontSize:13,color:D.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>
+            💬 {name}
+          </div>
+          <button onClick={onClose}
+            style={{background:"transparent",border:"none",color:D.textMeta,fontSize:16,cursor:"pointer",padding:2,lineHeight:1}}>✕</button>
+        </div>
+        <div ref={listRef} style={{flex:1,overflowY:"auto",padding:"10px 16px",minHeight:80}}>
+          {comments.length===0
+            ?<div style={{fontSize:12,color:D.textMeta,textAlign:"center",padding:"24px 0"}}>아직 코멘트가 없습니다</div>
+            :comments.map(c=>(
+              <div key={c.id} style={{padding:"8px 0",borderBottom:`1px solid ${D.border}`}}>
+                <div style={{display:"flex",gap:6,alignItems:"baseline",marginBottom:3}}>
+                  <span style={{fontSize:11,fontWeight:600,color:D.text}}>{c.author||"익명"}</span>
+                  <span style={{fontSize:10,color:D.textMeta}}>{String(c.created_at||"").slice(0,16).replace("T"," ")}</span>
+                  <button onClick={()=>del(c.id)} title="삭제"
+                    style={{marginLeft:"auto",background:"transparent",border:"none",color:D.textMeta,fontSize:11,cursor:"pointer",padding:0}}>✕</button>
+                </div>
+                <div style={{fontSize:12,color:D.text,whiteSpace:"pre-wrap",wordBreak:"break-word",lineHeight:1.5}}>{c.comment}</div>
+              </div>
+            ))}
+        </div>
+        <div style={{display:"flex",gap:6,padding:"12px 16px",borderTop:`1px solid ${D.border}`}}>
+          <textarea value={text} onChange={e=>setText(e.target.value)} rows={2}
+            placeholder="코멘트 입력 — Ctrl+Enter 등록"
+            onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")add();}}
+            style={{flex:1,background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
+              padding:"7px 10px",fontSize:12,color:D.text,resize:"none",fontFamily:"inherit",outline:"none"}}/>
+          <button onClick={add} disabled={busy||!text.trim()}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,padding:"0 16px",
+              fontSize:12,fontWeight:600,cursor:"pointer",opacity:busy||!text.trim()?0.5:1}}>
+            등록
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const isMobile=useWindowWidth()<=1080;
   const [period,setPeriod]=useState("1m");
@@ -2219,6 +2312,37 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         share:(p.qty/totalQty*100).toFixed(1)}));
   },[bestFilteredOrders,rankBestChannel]);
 
+  // ── 상품 코멘트 — 반품 Top 상품명 클릭으로 조회/작성 (사용자 요청).
+  // 실시간 구독으로 모든 사용자에게 즉시 반영 (INSERT/DELETE 이벤트,
+  // 자기 쓰기는 id 중복 체크로 dedup). publication 미등록 상태여도
+  // 마운트 시 로드 + 로컬 반영은 동작한다.
+  const [comments,setComments]=useState([]);
+  const [cmtProd,setCmtProd]=useState(null);
+  useEffect(()=>{
+    let alive=true;let ch=null;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const{data,error}=await db.from("product_comments").select("*").order("created_at",{ascending:true});
+        if(alive&&!error&&data) setComments(data);
+        ch=db.channel("product_comments_feed")
+          .on("postgres_changes",{event:"INSERT",schema:"public",table:"product_comments"},p=>{
+            if(p.new?.id) setComments(prev=>prev.some(c=>c.id===p.new.id)?prev:[...prev,p.new]);
+          })
+          .on("postgres_changes",{event:"DELETE",schema:"public",table:"product_comments"},p=>{
+            if(p.old?.id) setComments(prev=>prev.filter(c=>c.id!==p.old.id));
+          })
+          .subscribe();
+      }catch{/* 테이블 미생성/오프라인 — 코멘트 기능만 조용히 비활성 */}
+    })();
+    return()=>{alive=false;try{ch?.unsubscribe();}catch{/* noop */}};
+  },[]);
+  const cmtCountBy=useMemo(()=>{
+    const m={};
+    comments.forEach(c=>{m[c.norm_name]=(m[c.norm_name]||0)+1;});
+    return m;
+  },[comments]);
+
   // 반품 Top 랭킹
   // 주요 사유 소스(cs_data) — localStorage 캐시로 시작하되 DB 에서
   // 직접 로드해 구독. 기존엔 getCSData()(localStorage 전용)만 읽어서
@@ -2376,9 +2500,13 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           {data.map((row,i)=>(
             <tr key={i} style={{borderBottom:`1px solid ${D.border}`}}>
               <td style={{padding:"5px 7px",color:i<3?D.black:D.textMeta,fontWeight:i<3?600:400}}>{i+1}</td>
-              {cols.map(c=><td key={c.key} style={{padding:"5px 7px",textAlign:c.right?"right":"left",
+              {cols.map(c=><td key={c.key}
+                onClick={c.onClick?()=>c.onClick(row):undefined}
+                title={c.onClick?"클릭해서 코멘트 보기/작성":undefined}
+                style={{padding:"5px 7px",textAlign:c.right?"right":"left",
                 color:c.color||D.text,fontWeight:c.bold?600:400,maxWidth:c.maxW,
-                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                cursor:c.onClick?"pointer":undefined}}>
                 {c.fmt?c.fmt(row[c.key],row):row[c.key]}
               </td>)}
             </tr>
@@ -2916,7 +3044,12 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
             <RankTable data={worstRows} cols={[
-              {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
+              {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d",
+                onClick:row=>setCmtProd(row.name),
+                fmt:v=>{
+                  const n=cmtCountBy[normProdName(v)]||0;
+                  return n>0?<>{v} <span style={{color:"#7B9EC8",fontWeight:700,fontSize:10}}>💬{n}</span></>:v;
+                }},
               {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
               {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
               {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:180},
@@ -2939,8 +3072,18 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
           </ResponsiveContainer>
         </div>
         {getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)&&<div style={{fontSize:10,color:D.textMeta,marginTop:6}}>{getPeriodStr(rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd)}</div>}
-        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 주문·배송 업로드 데이터 (오프라인 제외)</div>
+        <div style={{fontSize:10,color:D.textMeta,marginTop:4}}>주문일 기준 · 소스: 주문·배송 업로드 데이터 (오프라인 제외) · 상품명 클릭 = 코멘트</div>
       </Card>
+
+      {/* 상품 코멘트 모달 — 반품 Top 상품명 클릭 */}
+      {cmtProd&&(
+        <ProductCommentModal
+          name={cmtProd}
+          comments={comments.filter(c=>c.norm_name===normProdName(cmtProd))}
+          onClose={()=>setCmtProd(null)}
+          onAdded={r=>setComments(prev=>prev.some(c=>c.id===r.id)?prev:[...prev,r])}
+          onDeleted={id=>setComments(prev=>prev.filter(c=>c.id!==id))}/>
+      )}
 
       {/* 플랫폼별 반품률 높은 옵션 */}
       {returnOptionStats.length>0&&(
