@@ -22432,6 +22432,48 @@ const MAIN_PHOTO_DEFAULT_SITES=[
   ["아비에무아","https://aviemuah.com/"],
 ];
 
+// 카드 스냅샷 이미지 — 생성 중/실패(404 등)에는 깨진 이미지 아이콘
+// 대신 "준비 중" 플레이스홀더를 보여주고 8초 간격으로 자동 재시도
+// (최대 5회, 이후 [다시 시도] 버튼). 재시도 요청엔 보조 파라미터를
+// 붙여 실패 응답 캐시를 우회한다.
+function MainPhotoShot({site,tick}){
+  const [err,setErr]=useState(false);
+  const [retry,setRetry]=useState(0);
+  useEffect(()=>{setErr(false);setRetry(0);},[tick,site.url]);
+  useEffect(()=>{
+    if(!err||retry>=5) return;
+    const t=setTimeout(()=>{setRetry(r=>r+1);setErr(false);},8000);
+    return()=>clearTimeout(t);
+  },[err,retry]);
+  const open=()=>window.open(site.url,"_blank","noopener");
+  if(err){
+    return(
+      <div onClick={open}
+        style={{width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",gap:10,background:D.surfaceAlt,cursor:"pointer"}}>
+        <span style={{fontSize:12,color:D.textMeta}}>
+          {retry>=5?"스냅샷을 불러오지 못했습니다":"스냅샷 준비 중… 자동 재시도"}
+        </span>
+        {retry>=5&&(
+          <button onClick={e=>{e.stopPropagation();setRetry(1);setErr(false);}}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+              padding:"4px 12px",fontSize:11,color:D.textSub,cursor:"pointer"}}>
+            다시 시도
+          </button>
+        )}
+      </div>
+    );
+  }
+  return(
+    <img src={mshotUrl(site.url,tick)+(retry>0?`&a=${retry}`:"")}
+      alt={`${site.name||site.url} 메인 화면`}
+      onClick={open}
+      onError={()=>setErr(true)}
+      style={{display:"block",width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,
+        objectFit:"cover",objectPosition:"top",cursor:"pointer",background:D.surfaceAlt}}/>
+  );
+}
+
 function MainPhotoBoard(){
   const [sites,setSites]=useState(()=>{
     try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}
@@ -22562,11 +22604,7 @@ function MainPhotoBoard(){
                 <button onClick={()=>delSite(s.id)} title="삭제"
                   style={{background:"transparent",border:"none",color:D.textMeta,fontSize:12,cursor:"pointer",padding:"0 2px"}}>✕</button>
               </div>
-              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
-              <img src={mshotUrl(s.url,tick)} alt={`${s.name||s.url} 메인 화면`}
-                onClick={()=>window.open(s.url,"_blank","noopener")}
-                style={{display:"block",width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,
-                  objectFit:"cover",objectPosition:"top",cursor:"pointer",background:D.surfaceAlt}}/>
+              <MainPhotoShot site={s} tick={tick}/>
             </div>
           ))}
         </div>}
