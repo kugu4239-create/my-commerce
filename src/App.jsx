@@ -22578,7 +22578,9 @@ function MainPhotoBoard(){
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","gmv","carryover","mainphotos"];
+  // gmv(GMV 계산기)는 메뉴/라우팅에서 제거 (사용자 요청, 2026-08-11).
+  // GmvCalculator 컴포넌트 코드는 복원 대비 보존.
+  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","carryover","mainphotos"];
   // 기본(첫 진입) 화면 — 대시보드 대신 메인 사진 모아보기 (사용자 요청).
   // 해시가 있으면 해당 페이지 유지 (북마크/새로고침 동작 불변).
   const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"mainphotos";};
@@ -22722,7 +22724,6 @@ export default function App() {
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
     {key:"carryover",label:"시즌 캐리오버"},
-    {key:"gmv",label:"GMV 계산기"},
     {key:"mainphotos",label:"메인 사진 모아보기"},
   ];
 
@@ -22785,7 +22786,6 @@ export default function App() {
         {page==="funnel"&&<ChannelFunnel orders={orders} cafe24Members={cafe24Members} onDataChange={loadData}/>}
         {page==="reorder"&&<ReorderPage/>}
         {page==="carryover"&&<CarryoverPage/>}
-        {page==="gmv"&&<GmvCalculator orders={orders} revenues={revenues} storeSales={storeSales} stocks={stocks}/>}
         {page==="mainphotos"&&<MainPhotoBoard/>}
         {page==="input"&&(
           <DataInput
