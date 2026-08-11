@@ -3041,6 +3041,10 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CaptureBtn cardRef={returnTopCardRef} filename="반품Top" DC={{border:D.border,sub:D.textMeta}}/>
           </div>
         </div>
+        {/* 반품 수량 vs 주요 사유 집계 기준 차이 안내 (사용자 요청) */}
+        <div style={{fontSize:10.5,color:D.textMeta,margin:"-6px 0 10px",lineHeight:1.6}}>
+          * 반품 수량은 반품 완료 기준, 주요 사유는 현재 접수건까지 합산된 수량이므로 상이할 수 있으므로 추세 참고용으로 해석 부탁드립니다.
+        </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
             <RankTable data={worstRows} cols={[
