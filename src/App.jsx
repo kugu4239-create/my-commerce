@@ -22432,6 +22432,49 @@ const MAIN_PHOTO_DEFAULT_SITES=[
   ["아비에무아","https://aviemuah.com/"],
 ];
 
+// 카드 스냅샷 이미지 — 생성 중/실패(404 등)에는 깨진 이미지 아이콘
+// 대신 "준비 중" 플레이스홀더를 보여주고 8초 간격으로 자동 재시도
+// (최대 5회, 이후 [다시 시도] 버튼). 재시도 요청엔 보조 파라미터를
+// 붙여 실패 응답 캐시를 우회한다.
+function MainPhotoShot({site,tick}){
+  const [err,setErr]=useState(false);
+  const [retry,setRetry]=useState(0);
+  useEffect(()=>{setErr(false);setRetry(0);},[tick,site.url]);
+  useEffect(()=>{
+    if(!err||retry>=5) return;
+    const t=setTimeout(()=>{setRetry(r=>r+1);setErr(false);},8000);
+    return()=>clearTimeout(t);
+  },[err,retry]);
+  const open=()=>window.open(site.url,"_blank","noopener");
+  if(err){
+    return(
+      <div onClick={open}
+        style={{width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",gap:10,background:D.surfaceAlt,cursor:"pointer"}}>
+        <span style={{fontSize:12,color:D.textMeta}}>
+          {retry>=5?"스냅샷을 불러오지 못했습니다":"스냅샷 준비 중… 자동 재시도"}
+        </span>
+        {retry>=5&&(
+          <button onClick={e=>{e.stopPropagation();setRetry(1);setErr(false);}}
+            style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
+              padding:"4px 12px",fontSize:11,color:D.textSub,cursor:"pointer"}}>
+            다시 시도
+          </button>
+        )}
+      </div>
+    );
+  }
+  return(
+    <img src={mshotUrl(site.url,tick)+(retry>0?`&a=${retry}`:"")}
+      alt={`${site.name||site.url} 메인 화면`}
+      onClick={open}
+      onError={()=>setErr(true)}
+      draggable={false}
+      style={{display:"block",width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,
+        objectFit:"cover",objectPosition:"top",cursor:"pointer",background:D.surfaceAlt}}/>
+  );
+}
+
 function MainPhotoBoard(){
   const [sites,setSites]=useState(()=>{
     try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}
@@ -22445,6 +22488,49 @@ function MainPhotoBoard(){
   // [전체 새로고침] 은 수동 카운터를 붙여 즉시 강제 갱신.
   const [manualTick,setManualTick]=useState(0);
   const tick=manualTick===0?localDate(0):`${localDate(0)}-${manualTick}`;
+  // 화면 모드 — "main"(메인 화면) / "sub"(각 사이트의 상품리스트 서브
+  // 링크). 서브도 동일한 mShots 하루 캐시라 첫 요청자만 생성을 기다림.
+  const [viewMode,setViewMode]=useState("main");
+  // 표시 순서 — sort_order(공유 저장) 우선, 없으면 created_at.
+  // 클라이언트 정렬이라 sort_order 컬럼 미생성 DB 에서도 동작.
+  const sortSites=list=>[...list].sort((a,b)=>{
+    const ao=a.sort_order??1e9,bo=b.sort_order??1e9;
+    return (ao-bo)||String(a.created_at||"").localeCompare(String(b.created_at||""));
+  });
+  // 카드 드래그로 순서 변경 → sort_order 를 전체 재부여해 DB 에 공유
+  // 저장 (사용자 요청). 컬럼 미생성/실패 시 로컬만 반영 + 안내 표시.
+  const dragIdxRef=useRef(null);
+  const moveSite=async(from,to)=>{
+    if(from==null||to==null||from===to)return;
+    const next=[...sites];
+    const [sp]=next.splice(from,1);
+    next.splice(to,0,sp);
+    const withOrder=next.map((s,i)=>({...s,sort_order:i}));
+    setSites(withOrder);
+    try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(withOrder));}catch{/* noop */}
+    try{
+      const db=await getSupabase();
+      const results=await Promise.all(withOrder.map((s,i)=>
+        db.from("main_photo_sites").update({sort_order:i}).eq("id",s.id)));
+      const failed=results.find(r=>r.error);
+      if(failed)throw failed.error;
+    }catch{setDbOk(false);}
+  };
+  // 상품리스트(서브) 링크 등록/수정 — 카드의 ✎ 버튼. 비우면 삭제.
+  const editSubUrl=async s=>{
+    const raw=window.prompt("상품리스트(서브) 링크 — 비우면 삭제",s.sub_url||"");
+    if(raw==null)return;
+    const t=raw.trim();
+    const sub=t?(/^https?:\/\//i.test(t)?t:`https://${t}`):"";
+    const next=sites.map(x=>x.id===s.id?{...x,sub_url:sub}:x);
+    setSites(next);
+    try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(next));}catch{/* noop */}
+    try{
+      const db=await getSupabase();
+      const{error}=await db.from("main_photo_sites").update({sub_url:sub}).eq("id",s.id);
+      if(error)throw error;
+    }catch{setDbOk(false);/* sub_url 컬럼 미생성 — 로컬만 반영 */}
+  };
 
   useEffect(()=>{(async()=>{
     const localList=(()=>{try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}})();
@@ -22466,8 +22552,9 @@ function MainPhotoBoard(){
       }else if(list.length===0){
         list=localList; // DB 비어 있고 로컬에만 목록 — 로컬 유지
       }
-      setSites(list);
-      try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(list));}catch{/* noop */}
+      const sorted=sortSites(list);
+      setSites(sorted);
+      try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(sorted));}catch{/* noop */}
       setDbOk(true);
     }catch{
       setDbOk(false);
@@ -22514,11 +22601,22 @@ function MainPhotoBoard(){
     <div style={{padding:"18px 22px 40px",maxWidth:1500,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:4}}>
         <span style={{fontWeight:600,fontSize:18,color:D.text,letterSpacing:"-0.2px"}}>메인 사진 모아보기</span>
-        <button onClick={()=>setManualTick(x=>x+1)}
-          style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,
-            padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-          ↻ 전체 새로고침
-        </button>
+        <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
+          {/* 메인 ↔ 상품리스트(각 사이트의 서브 링크) 화면 전환 (사용자 요청) */}
+          {[["main","메인"],["sub","상품리스트"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setViewMode(v)}
+              style={{background:viewMode===v?D.black:"transparent",color:viewMode===v?"#fff":D.textSub,
+                border:`1px solid ${viewMode===v?D.black:D.border}`,borderRadius:6,
+                padding:"6px 12px",fontSize:12,fontWeight:viewMode===v?600:400,cursor:"pointer"}}>
+              {l}
+            </button>
+          ))}
+          <button onClick={()=>setManualTick(x=>x+1)}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            ↻ 전체 새로고침
+          </button>
+        </div>
       </div>
       <div style={{fontSize:12,color:D.textMeta,marginBottom:14,lineHeight:1.6}}>
         등록한 사이트의 메인 화면 스냅샷을 모아 보여줍니다. 스냅샷은 <b>매일 자정 기준 하루 1회</b> 자동
@@ -22550,23 +22648,35 @@ function MainPhotoBoard(){
            아직 등록된 사이트가 없습니다 — 위에 주소를 입력해 추가하세요.
          </div>
         :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:14}}>
-          {sites.map(s=>(
-            <div key={s.id} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
-              overflow:"hidden",display:"flex",flexDirection:"column"}}>
+          {sites.map((s,i)=>(
+            <div key={s.id} draggable
+              onDragStart={()=>{dragIdxRef.current=i;}}
+              onDragOver={e=>e.preventDefault()}
+              onDrop={e=>{e.preventDefault();moveSite(dragIdxRef.current,i);dragIdxRef.current=null;}}
+              title="드래그해서 순서 변경 — 바뀐 순서는 모든 사용자에게 공유됩니다"
+              style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
+              overflow:"hidden",display:"flex",flexDirection:"column",cursor:"grab"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,padding:"9px 12px",borderBottom:`1px solid ${D.border}`}}>
                 <span style={{fontSize:12.5,fontWeight:600,color:D.text,flex:1,
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.url}>{s.name||s.url}</span>
-                <button onClick={()=>window.open(s.url,"_blank","noopener")} title="사이트 새 탭 열기"
+                <button onClick={()=>editSubUrl(s)} title="상품리스트(서브) 링크 등록/수정"
+                  style={{background:"transparent",border:`1px solid ${(s.sub_url||"").trim()?"#8FC7AD":D.border}`,borderRadius:5,
+                    padding:"2px 7px",fontSize:10,color:(s.sub_url||"").trim()?"#4f9678":D.textSub,cursor:"pointer"}}>✎</button>
+                <button onClick={()=>window.open((viewMode==="sub"&&(s.sub_url||"").trim())?s.sub_url:s.url,"_blank","noopener")} title="새 탭 열기"
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
                     padding:"2px 8px",fontSize:10,color:D.textSub,cursor:"pointer"}}>열기</button>
                 <button onClick={()=>delSite(s.id)} title="삭제"
                   style={{background:"transparent",border:"none",color:D.textMeta,fontSize:12,cursor:"pointer",padding:"0 2px"}}>✕</button>
               </div>
-              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
-              <img src={mshotUrl(s.url,tick)} alt={`${s.name||s.url} 메인 화면`}
-                onClick={()=>window.open(s.url,"_blank","noopener")}
-                style={{display:"block",width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,
-                  objectFit:"cover",objectPosition:"top",cursor:"pointer",background:D.surfaceAlt}}/>
+              {/* 상품리스트 모드 — 서브 링크 미등록 카드는 등록 안내 */}
+              {viewMode==="sub"&&!(s.sub_url||"").trim()
+                ?<div onClick={()=>editSubUrl(s)}
+                   style={{width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,display:"flex",flexDirection:"column",
+                     alignItems:"center",justifyContent:"center",gap:6,background:D.surfaceAlt,cursor:"pointer"}}>
+                   <span style={{fontSize:12,color:D.textMeta}}>상품리스트 링크 미등록</span>
+                   <span style={{fontSize:11,color:D.textMeta}}>클릭해서 등록 (✎)</span>
+                 </div>
+                :<MainPhotoShot site={viewMode==="sub"?{...s,url:s.sub_url}:s} tick={tick}/>}
             </div>
           ))}
         </div>}
@@ -22578,8 +22688,12 @@ function MainPhotoBoard(){
 // APP ROOT
 // ─────────────────────────────────────────────
 export default function App() {
-  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","gmv","carryover","mainphotos"];
-  const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
+  // gmv(GMV 계산기)는 메뉴/라우팅에서 제거 (사용자 요청, 2026-08-11).
+  // GmvCalculator 컴포넌트 코드는 복원 대비 보존.
+  const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","carryover","mainphotos"];
+  // 기본(첫 진입) 화면 — 대시보드 대신 메인 사진 모아보기 (사용자 요청).
+  // 해시가 있으면 해당 페이지 유지 (북마크/새로고침 동작 불변).
+  const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"mainphotos";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
   useEffect(()=>{
@@ -22720,7 +22834,6 @@ export default function App() {
     {key:"input",label:"데이터 입력"},
     {key:"reorder",label:"리오더 계산기"},
     {key:"carryover",label:"시즌 캐리오버"},
-    {key:"gmv",label:"GMV 계산기"},
     {key:"mainphotos",label:"메인 사진 모아보기"},
   ];
 
@@ -22783,7 +22896,6 @@ export default function App() {
         {page==="funnel"&&<ChannelFunnel orders={orders} cafe24Members={cafe24Members} onDataChange={loadData}/>}
         {page==="reorder"&&<ReorderPage/>}
         {page==="carryover"&&<CarryoverPage/>}
-        {page==="gmv"&&<GmvCalculator orders={orders} revenues={revenues} storeSales={storeSales} stocks={stocks}/>}
         {page==="mainphotos"&&<MainPhotoBoard/>}
         {page==="input"&&(
           <DataInput
