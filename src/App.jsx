@@ -2220,6 +2220,23 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   },[bestFilteredOrders,rankBestChannel]);
 
   // 반품 Top 랭킹
+  // 주요 사유 소스(cs_data) — localStorage 캐시로 시작하되 DB 에서
+  // 직접 로드해 구독. 기존엔 getCSData()(localStorage 전용)만 읽어서
+  // CS 데이터 입력 탭을 연 적 없는 사용자/기기에는 주요 사유가 전부
+  // "-" 로 보였다 (업로더=관리자 브라우저에만 로컬 사본이 있던 문제).
+  const [csRows,setCsRows]=useState(getCSData);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const db=await getSupabase();
+        const{data,error}=await db.from("cs_data").select("*").order("id",{ascending:false});
+        if(alive&&!error&&data&&data.length>0){saveCSData(data);setCsRows(data);}
+      }catch{/* 오프라인/조회 실패 — localStorage 캐시 유지 */}
+    })();
+    return()=>{alive=false;};
+  },[ts]);
+
   const worstFilteredOrders=useMemo(()=>
     filterByDate(orders,"order_date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,true),
     [rankWorstPeriod,orders,rankWorstCustomStart,rankWorstCustomEnd]);
@@ -2237,7 +2254,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     });
     // CS 데이터도 반품 Top 순위와 동일한 기간(rankWorstPeriod)으로 필터 —
     // 'CS date(접수일)' 기준. 선택 기간과 주요 사유의 시간 범위를 일치시킨다.
-    const csData=filterByDate(getCSData(),"date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd);
+    const csData=filterByDate(csRows,"date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd);
     // 상품명 정규화(normProdName)로 매칭 — CS '어드민 상품명'과 주문 상품명의
     // 색상/사이즈 대괄호([SKY BLUE]/[핑크,스카이블루/L])·공백 표기 차이를 흡수해
     // 연결률을 높인다(정확 일치 대비 매칭 대폭 증가). 키는 양쪽 모두 정규화해 비교.
@@ -2257,7 +2274,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         topReason:topReason(p.name)}));
-  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd]);
+  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows]);
 
   // 월별 배송량 차트 데이터 — 배송일 기준, 배송일 없는 행은 주문일 폴백(ship_date)
   const shippingChartData=useMemo(()=>{
