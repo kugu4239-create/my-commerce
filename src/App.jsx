@@ -12186,6 +12186,9 @@ function CSDataInput() {
           const reasonCol=findCol("반품사유","반품","사유","reason","취소");
           const dateCol=findCol("날짜","date","일자","접수일","처리일");
           const chCol=findCol("판매처","채널","channel","플랫폼","mall");
+          // 고객 코멘트 열(선택) — 값이 있으면 해당 상품의 상품 코멘트
+          // (product_comments, 반품 Top 상품명 클릭 모달)로 함께 등록.
+          const commentCol=findCol("고객코멘트","코멘트","comment");
           const missingCs=[];
           if(!prodCol)   missingCs.push("상품명");
           if(!reasonCol) missingCs.push("반품사유");
@@ -12231,6 +12234,7 @@ function CSDataInput() {
 
           let lastDate=today;
           const newEntries=[];
+          const commentEntries=[];
           for(const r of data){
             const rawDate=dateCol?String(r[dateCol]||"").trim():"";
             if(rawDate.includes("반품취소")) continue;
@@ -12242,12 +12246,19 @@ function CSDataInput() {
             const reason=extractReason(rawReason);
             const rawCh=chCol?String(r[chCol]||"").trim():"";
             const channel=rawCh?normChannel(rawCh):"자사몰";
+            const rawComment=commentCol?String(r[commentCol]||"").trim():"";
             for(const prod of splitProducts(rawProd)){
               if(!prod) continue;
               // 29CM 식 [COLOR]/[SIZE] 서술자는 저장 시점에 제거 —
               // 주요 사유 매칭 키가 어긋나지 않게 (stripOptDescriptors).
               const cleaned=stripOptDescriptors(prod)||prod;
               newEntries.push({id:csNextId(),date:lastDate,product_name:cleaned,return_reason:reason,channel});
+              // 고객 코멘트 → 상품 코멘트 리스트 등록 (사용자 요청).
+              // created_at 은 CS 접수일(KST 자정)로 기록해 시간순 정렬 유지.
+              if(rawComment){
+                commentEntries.push({product_name:cleaned,norm_name:normProdName(cleaned),
+                  comment:rawComment,author:"고객 CS",created_at:`${lastDate}T00:00:00+09:00`});
+              }
             }
           }
 
@@ -12256,8 +12267,24 @@ function CSDataInput() {
           saveCSData(next);setCSData(next);
           const db=await getSupabase();
           const {error:insErr}=await db.from("cs_data").insert(newEntries);
+          // 고객 코멘트 → product_comments 등록. norm_name+내용 기준으로
+          // 기존과 중복이면 스킵 (같은 파일 재업로드 멱등). 테이블 미생성
+          // /실패 시 코멘트만 조용히 건너뛰고 CS 저장 흐름은 유지.
+          let cmtNote="";
+          if(commentEntries.length){
+            try{
+              const{data:exist}=await db.from("product_comments").select("norm_name,comment");
+              const seen=new Set((exist||[]).map(c=>`${c.norm_name}|${c.comment}`));
+              const fresh=commentEntries.filter(c=>!seen.has(`${c.norm_name}|${c.comment}`));
+              if(fresh.length){
+                const{error:cErr}=await db.from("product_comments").insert(fresh);
+                if(!cErr) cmtNote=` · 고객 코멘트 ${fresh.length}건 등록`;
+                else cmtNote=" · 고객 코멘트 등록 실패 (product_comments 테이블 확인)";
+              }else cmtNote=" · 고객 코멘트는 모두 기존과 중복";
+            }catch{cmtNote=" · 고객 코멘트 등록 실패 (product_comments 테이블 확인)";}
+          }
           if(insErr) setCsvResult({type:"error",msg:`${newEntries.length}건 로컬 저장됨 · DB 저장 실패: ${insErr.message} (Supabase 에 cs_data 테이블이 있는지 확인하세요)`});
-          else setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료`});
+          else setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료${cmtNote}`});
         }catch(e){setCsvResult({type:"error",msg:e.message});}
       },e=>setCsvResult({type:"error",msg:e.message}));
   },[csData,today]);
@@ -12319,10 +12346,11 @@ function CSDataInput() {
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 업로드</div>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:8,lineHeight:1.6}}>
             필수: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
-            선택: [날짜] [판매처]
+            선택: [날짜] [판매처] [고객 코멘트]<br/>
+            고객 코멘트는 반품 Top 상품명 클릭 시 코멘트 리스트에 등록됩니다
           </div>
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
-            columns="날짜 · 판매처 · 상품명 · 반품사유"/>
+            columns="날짜 · 판매처 · 상품명 · 반품사유 · 고객 코멘트"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
         </div>
         <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
