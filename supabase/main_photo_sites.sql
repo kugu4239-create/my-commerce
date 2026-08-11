@@ -16,6 +16,10 @@ create table if not exists public.main_photo_sites (
 alter table public.main_photo_sites
   add column if not exists sub_url text not null default '';
 
+-- 카드 표시 순서 (드래그 정렬, 모든 사용자 공유) — 멱등
+alter table public.main_photo_sites
+  add column if not exists sort_order integer;
+
 -- RLS: 앱은 anon 키로 접근 — 읽기·쓰기·삭제 모두 허용 (팀 내부 도구)
 alter table public.main_photo_sites enable row level security;
 

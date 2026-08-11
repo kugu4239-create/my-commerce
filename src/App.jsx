@@ -22469,6 +22469,7 @@ function MainPhotoShot({site,tick}){
       alt={`${site.name||site.url} 메인 화면`}
       onClick={open}
       onError={()=>setErr(true)}
+      draggable={false}
       style={{display:"block",width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,
         objectFit:"cover",objectPosition:"top",cursor:"pointer",background:D.surfaceAlt}}/>
   );
@@ -22490,6 +22491,31 @@ function MainPhotoBoard(){
   // 화면 모드 — "main"(메인 화면) / "sub"(각 사이트의 상품리스트 서브
   // 링크). 서브도 동일한 mShots 하루 캐시라 첫 요청자만 생성을 기다림.
   const [viewMode,setViewMode]=useState("main");
+  // 표시 순서 — sort_order(공유 저장) 우선, 없으면 created_at.
+  // 클라이언트 정렬이라 sort_order 컬럼 미생성 DB 에서도 동작.
+  const sortSites=list=>[...list].sort((a,b)=>{
+    const ao=a.sort_order??1e9,bo=b.sort_order??1e9;
+    return (ao-bo)||String(a.created_at||"").localeCompare(String(b.created_at||""));
+  });
+  // 카드 드래그로 순서 변경 → sort_order 를 전체 재부여해 DB 에 공유
+  // 저장 (사용자 요청). 컬럼 미생성/실패 시 로컬만 반영 + 안내 표시.
+  const dragIdxRef=useRef(null);
+  const moveSite=async(from,to)=>{
+    if(from==null||to==null||from===to)return;
+    const next=[...sites];
+    const [sp]=next.splice(from,1);
+    next.splice(to,0,sp);
+    const withOrder=next.map((s,i)=>({...s,sort_order:i}));
+    setSites(withOrder);
+    try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(withOrder));}catch{/* noop */}
+    try{
+      const db=await getSupabase();
+      const results=await Promise.all(withOrder.map((s,i)=>
+        db.from("main_photo_sites").update({sort_order:i}).eq("id",s.id)));
+      const failed=results.find(r=>r.error);
+      if(failed)throw failed.error;
+    }catch{setDbOk(false);}
+  };
   // 상품리스트(서브) 링크 등록/수정 — 카드의 ✎ 버튼. 비우면 삭제.
   const editSubUrl=async s=>{
     const raw=window.prompt("상품리스트(서브) 링크 — 비우면 삭제",s.sub_url||"");
@@ -22526,8 +22552,9 @@ function MainPhotoBoard(){
       }else if(list.length===0){
         list=localList; // DB 비어 있고 로컬에만 목록 — 로컬 유지
       }
-      setSites(list);
-      try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(list));}catch{/* noop */}
+      const sorted=sortSites(list);
+      setSites(sorted);
+      try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(sorted));}catch{/* noop */}
       setDbOk(true);
     }catch{
       setDbOk(false);
@@ -22621,9 +22648,14 @@ function MainPhotoBoard(){
            아직 등록된 사이트가 없습니다 — 위에 주소를 입력해 추가하세요.
          </div>
         :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:14}}>
-          {sites.map(s=>(
-            <div key={s.id} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
-              overflow:"hidden",display:"flex",flexDirection:"column"}}>
+          {sites.map((s,i)=>(
+            <div key={s.id} draggable
+              onDragStart={()=>{dragIdxRef.current=i;}}
+              onDragOver={e=>e.preventDefault()}
+              onDrop={e=>{e.preventDefault();moveSite(dragIdxRef.current,i);dragIdxRef.current=null;}}
+              title="드래그해서 순서 변경 — 바뀐 순서는 모든 사용자에게 공유됩니다"
+              style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
+              overflow:"hidden",display:"flex",flexDirection:"column",cursor:"grab"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,padding:"9px 12px",borderBottom:`1px solid ${D.border}`}}>
                 <span style={{fontSize:12.5,fontWeight:600,color:D.text,flex:1,
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.url}>{s.name||s.url}</span>
