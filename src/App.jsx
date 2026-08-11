@@ -11984,9 +11984,13 @@ function CSDataInput() {
           }
 
           const extractReason=raw=>{
+            // "고객부담 > 단순변심" 처럼 카테고리 prefix 가 붙은 포맷도
+            // 키워드 포함 매칭이라 그대로 잡힌다. 퀄리티는 흔한 오탈자
+            // 표기(퀼리티)와 영문(quality)까지 흡수 — 미매칭 시 단순변심
+            // 폴백이라 오탈자가 조용히 단순변심으로 새던 문제.
             const s=String(raw||"").toLowerCase();
             if(s.includes("사이즈")||s.includes("size")||s.includes("미스")) return "사이즈 미스";
-            if(s.includes("퀄리티")||s.includes("불량")||s.includes("품질")) return "퀄리티";
+            if(s.includes("퀄리티")||s.includes("퀼리티")||s.includes("quality")||s.includes("불량")||s.includes("품질")) return "퀄리티";
             if(s.includes("배송")&&!s.includes("배송비")&&!s.includes("회수")) return "배송";
             if(s.includes("단순변심")||s.includes("변심")) return "단순변심";
             return "단순변심";
