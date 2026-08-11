@@ -22445,6 +22445,24 @@ function MainPhotoBoard(){
   // [전체 새로고침] 은 수동 카운터를 붙여 즉시 강제 갱신.
   const [manualTick,setManualTick]=useState(0);
   const tick=manualTick===0?localDate(0):`${localDate(0)}-${manualTick}`;
+  // 화면 모드 — "main"(메인 화면) / "sub"(각 사이트의 상품리스트 서브
+  // 링크). 서브도 동일한 mShots 하루 캐시라 첫 요청자만 생성을 기다림.
+  const [viewMode,setViewMode]=useState("main");
+  // 상품리스트(서브) 링크 등록/수정 — 카드의 ✎ 버튼. 비우면 삭제.
+  const editSubUrl=async s=>{
+    const raw=window.prompt("상품리스트(서브) 링크 — 비우면 삭제",s.sub_url||"");
+    if(raw==null)return;
+    const t=raw.trim();
+    const sub=t?(/^https?:\/\//i.test(t)?t:`https://${t}`):"";
+    const next=sites.map(x=>x.id===s.id?{...x,sub_url:sub}:x);
+    setSites(next);
+    try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(next));}catch{/* noop */}
+    try{
+      const db=await getSupabase();
+      const{error}=await db.from("main_photo_sites").update({sub_url:sub}).eq("id",s.id);
+      if(error)throw error;
+    }catch{setDbOk(false);/* sub_url 컬럼 미생성 — 로컬만 반영 */}
+  };
 
   useEffect(()=>{(async()=>{
     const localList=(()=>{try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}})();
@@ -22514,11 +22532,22 @@ function MainPhotoBoard(){
     <div style={{padding:"18px 22px 40px",maxWidth:1500,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:4}}>
         <span style={{fontWeight:600,fontSize:18,color:D.text,letterSpacing:"-0.2px"}}>메인 사진 모아보기</span>
-        <button onClick={()=>setManualTick(x=>x+1)}
-          style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,
-            padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-          ↻ 전체 새로고침
-        </button>
+        <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
+          {/* 메인 ↔ 상품리스트(각 사이트의 서브 링크) 화면 전환 (사용자 요청) */}
+          {[["main","메인"],["sub","상품리스트"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setViewMode(v)}
+              style={{background:viewMode===v?D.black:"transparent",color:viewMode===v?"#fff":D.textSub,
+                border:`1px solid ${viewMode===v?D.black:D.border}`,borderRadius:6,
+                padding:"6px 12px",fontSize:12,fontWeight:viewMode===v?600:400,cursor:"pointer"}}>
+              {l}
+            </button>
+          ))}
+          <button onClick={()=>setManualTick(x=>x+1)}
+            style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
+              padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            ↻ 전체 새로고침
+          </button>
+        </div>
       </div>
       <div style={{fontSize:12,color:D.textMeta,marginBottom:14,lineHeight:1.6}}>
         등록한 사이트의 메인 화면 스냅샷을 모아 보여줍니다. 스냅샷은 <b>매일 자정 기준 하루 1회</b> 자동
