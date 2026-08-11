@@ -22408,8 +22408,11 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
 // 공유 저장, 테이블 미생성/실패 시 localStorage 만으로도 동작.
 // ─────────────────────────────────────────────
 const MAIN_PHOTO_LS="main_photo_sites";
+// 모바일 화면 비율(390×844, iPhone 급 뷰포트)로 렌더 — 사이트가 모바일
+// 레이아웃의 메인을 보여주고, 카드도 같은 세로 비율로 표시 (사용자 요청).
+const MSHOT_VPW=390,MSHOT_VPH=844;
 const mshotUrl=(url,tick)=>
-  `https://s0.wp.com/mshots/v1/${encodeURIComponent(url)}?w=1000&vpw=1280&vph=1800&r=${tick}`;
+  `https://s0.wp.com/mshots/v1/${encodeURIComponent(url)}?w=480&vpw=${MSHOT_VPW}&vph=${MSHOT_VPH}&r=${tick}`;
 // 기본 사이트 목록 — 목록이 완전히 비어 있는 최초 진입 시 1회 자동
 // 등록 (사용자 전달 목록, 2026-08-11 · umer 는 광고 추적 파라미터 제거).
 // 등록 후에는 UI 에서 자유롭게 추가/삭제 — 재시드되지 않는다.
@@ -22543,7 +22546,7 @@ function MainPhotoBoard(){
         ?<div style={{textAlign:"center",padding:"60px 0",color:D.textMeta,fontSize:13}}>
            아직 등록된 사이트가 없습니다 — 위에 주소를 입력해 추가하세요.
          </div>
-        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:14}}>
           {sites.map(s=>(
             <div key={s.id} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:10,
               overflow:"hidden",display:"flex",flexDirection:"column"}}>
@@ -22559,8 +22562,8 @@ function MainPhotoBoard(){
               {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
               <img src={mshotUrl(s.url,tick)} alt={`${s.name||s.url} 메인 화면`}
                 onClick={()=>window.open(s.url,"_blank","noopener")}
-                style={{display:"block",width:"100%",height:420,objectFit:"cover",objectPosition:"top",
-                  cursor:"pointer",background:D.surfaceAlt}}/>
+                style={{display:"block",width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,
+                  objectFit:"cover",objectPosition:"top",cursor:"pointer",background:D.surfaceAlt}}/>
             </div>
           ))}
         </div>}
