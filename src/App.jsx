@@ -22410,6 +22410,23 @@ function ChannelFunnel({ orders=[], cafe24Members=[], onDataChange }){
 const MAIN_PHOTO_LS="main_photo_sites";
 const mshotUrl=(url,tick)=>
   `https://s0.wp.com/mshots/v1/${encodeURIComponent(url)}?w=1000&vpw=1280&vph=1800&r=${tick}`;
+// 기본 사이트 목록 — 목록이 완전히 비어 있는 최초 진입 시 1회 자동
+// 등록 (사용자 전달 목록, 2026-08-11 · umer 는 광고 추적 파라미터 제거).
+// 등록 후에는 UI 에서 자유롭게 추가/삭제 — 재시드되지 않는다.
+const MAIN_PHOTO_DEFAULT_SITES=[
+  ["글로니","https://glowny.co.kr/"],
+  ["유메르","https://umer.co.kr/"],
+  ["시에","https://sie-official.kr/"],
+  ["망고매니플리즈","https://mangomanyplease.com/"],
+  ["마리떼","https://marithe-official.com/"],
+  ["비터셀즈","https://bittercells.com/"],
+  ["썸웨어버터","https://somewherebutter.kr/"],
+  ["마뗑킴","https://matinkim.com/"],
+  ["FYEO","https://fyeo.kr/"],
+  ["세터","https://satur.co.kr/"],
+  ["시티브리즈","https://www.citybreeze.co.kr/"],
+  ["인사일런스","https://insilence.co.kr/"],
+];
 
 function MainPhotoBoard(){
   const [sites,setSites]=useState(()=>{
@@ -22422,13 +22439,37 @@ function MainPhotoBoard(){
   const [tick,setTick]=useState(()=>Math.floor(Date.now()/60000));
 
   useEffect(()=>{(async()=>{
+    const localList=(()=>{try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}})();
+    const makeSeed=()=>MAIN_PHOTO_DEFAULT_SITES.map(([nm,u])=>({
+      id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():`${Date.now()}-${Math.random()}`,
+      name:nm,url:u,created_at:new Date().toISOString(),
+    }));
     try{
       const db=await getSupabase();
       const{data,error}=await db.from("main_photo_sites").select("*").order("created_at",{ascending:true});
       if(error)throw error;
-      if(data){setSites(data);try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(data));}catch{/* noop */}}
+      let list=data||[];
+      if(list.length===0&&localList.length===0){
+        // 완전 최초 진입 — 기본 목록 시드 (DB 저장 성공 시에만 채택,
+        // 이후 사용자가 삭제해도 재시드되지 않도록 로컬도 함께 기록)
+        const seed=makeSeed();
+        const{error:se}=await db.from("main_photo_sites").insert(seed.map(({id,name:nm,url:u})=>({id,name:nm,url:u})));
+        if(!se) list=seed;
+      }else if(list.length===0){
+        list=localList; // DB 비어 있고 로컬에만 목록 — 로컬 유지
+      }
+      setSites(list);
+      try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(list));}catch{/* noop */}
       setDbOk(true);
-    }catch{setDbOk(false);}
+    }catch{
+      setDbOk(false);
+      if(localList.length===0){
+        // 테이블 미생성 — 이 기기 localStorage 에만 기본 목록 시드
+        const seed=makeSeed();
+        setSites(seed);
+        try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(seed));}catch{/* noop */}
+      }
+    }
   })();},[]);
   // 첫 스크린샷 생성 지연(수 초) 대비 — 진입 10초 뒤 한 번 자동 리로드
   useEffect(()=>{const t=setTimeout(()=>setTick(x=>x+1),10000);return()=>clearTimeout(t);},[]);
