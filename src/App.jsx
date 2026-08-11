@@ -2266,9 +2266,16 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       csMap[key][r.return_reason]=(csMap[key][r.return_reason]||0)+1;
     });
     const topReason=name=>{
+      // 상위 2개 사유를 비중(%)과 함께 표시 (사용자 요청).
+      // 예: "사이즈 미스 60% · 단순변심 40%"
       const m=csMap[normProdName(name)];
       if(!m)return"-";
-      return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]?.[0]||"-";
+      const entries=Object.entries(m).sort((a,b)=>b[1]-a[1]);
+      const total=entries.reduce((s,[,c])=>s+c,0);
+      if(!total)return"-";
+      return entries.slice(0,2)
+        .map(([reason,c])=>`${reason} ${Math.round((c/total)*100)}%`)
+        .join(" · ");
     };
     return Object.values(byProd).filter(p=>p.returned>0&&p.shipped>=3)
       .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,20)
@@ -2912,7 +2919,7 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
               {key:"name",label:"상품명",maxW:160,bold:true,color:"#2d2d2d"},
               {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
               {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
-              {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:130},
+              {key:"topReason",label:"주요 사유",right:false,color:D.textMeta,maxW:180},
               {key:"qty",label:"배송량",right:true,color:D.textSub,fmt:v=>v.toLocaleString()},
             ]}/>
           </div>
@@ -12058,6 +12065,19 @@ function CSDataInput() {
     await Promise.all(ids.map(id=>db.from("cs_data").delete().eq("id",id)));
   };
 
+  // ── 기존 데이터 전체 삭제 (사용자 요청) — 재업로드 전 초기화용.
+  // DB 삭제가 성공했을 때만 로컬 캐시를 비운다 — DB 실패 시 로컬만
+  // 지우면 대시보드(DB 소스)와 이 화면이 어긋난다. 2단계 확인 버튼.
+  const [wipeConfirm,setWipeConfirm]=useState(false);
+  const wipeAll=async()=>{
+    setWipeConfirm(false);
+    const db=await getSupabase();
+    const{error}=await db.from("cs_data").delete().gte("id",0);
+    if(error){setCsvResult({type:"error",msg:"전체 삭제 실패: "+error.message});return;}
+    saveCSData([]);setCSData([]);setSelected(new Set());setDelConfirm(false);
+    setCsvResult({type:"success",msg:"기존 CS 데이터가 전체 삭제되었습니다. 새 파일을 업로드하세요."});
+  };
+
   const startCsEdit=(id,field,val)=>{setEditCell({id,field});setEditVal(String(val??""));};
   const saveCsEdit=async()=>{
     if(!editCell) return;
@@ -12089,6 +12109,29 @@ function CSDataInput() {
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
             columns="날짜 · 판매처 · 상품명 · 반품사유"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
+        </div>
+        <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
+          <div style={{color:D.textMeta,fontSize:10,marginBottom:8,lineHeight:1.6}}>
+            재업로드 전 초기화 — 저장된 반품 사유 데이터를 <strong>모두</strong> 지웁니다 (모든 사용자 공통)
+          </div>
+          {!wipeConfirm
+            ?<button onClick={()=>setWipeConfirm(true)}
+               style={{background:"transparent",color:"#e55",border:"1px solid #e55",borderRadius:6,
+                 padding:"7px 12px",fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>
+               기존 데이터 전체 삭제
+             </button>
+            :<div style={{display:"flex",gap:6}}>
+               <button onClick={wipeAll}
+                 style={{background:"#e55",color:"#fff",border:"none",borderRadius:6,
+                   padding:"7px 12px",fontSize:12,cursor:"pointer",flex:1,fontWeight:600}}>
+                 정말 전체 삭제
+               </button>
+               <button onClick={()=>setWipeConfirm(false)}
+                 style={{background:"transparent",color:D.textSub,border:`1px solid ${D.border}`,borderRadius:6,
+                   padding:"7px 12px",fontSize:12,cursor:"pointer",flex:1}}>
+                 취소
+               </button>
+             </div>}
         </div>
       </Card>
       <Card>
