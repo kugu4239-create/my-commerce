@@ -22627,13 +22627,24 @@ function MainPhotoBoard(){
               <div style={{display:"flex",alignItems:"center",gap:6,padding:"9px 12px",borderBottom:`1px solid ${D.border}`}}>
                 <span style={{fontSize:12.5,fontWeight:600,color:D.text,flex:1,
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.url}>{s.name||s.url}</span>
-                <button onClick={()=>window.open(s.url,"_blank","noopener")} title="사이트 새 탭 열기"
+                <button onClick={()=>editSubUrl(s)} title="상품리스트(서브) 링크 등록/수정"
+                  style={{background:"transparent",border:`1px solid ${(s.sub_url||"").trim()?"#8FC7AD":D.border}`,borderRadius:5,
+                    padding:"2px 7px",fontSize:10,color:(s.sub_url||"").trim()?"#4f9678":D.textSub,cursor:"pointer"}}>✎</button>
+                <button onClick={()=>window.open((viewMode==="sub"&&(s.sub_url||"").trim())?s.sub_url:s.url,"_blank","noopener")} title="새 탭 열기"
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:5,
                     padding:"2px 8px",fontSize:10,color:D.textSub,cursor:"pointer"}}>열기</button>
                 <button onClick={()=>delSite(s.id)} title="삭제"
                   style={{background:"transparent",border:"none",color:D.textMeta,fontSize:12,cursor:"pointer",padding:"0 2px"}}>✕</button>
               </div>
-              <MainPhotoShot site={s} tick={tick}/>
+              {/* 상품리스트 모드 — 서브 링크 미등록 카드는 등록 안내 */}
+              {viewMode==="sub"&&!(s.sub_url||"").trim()
+                ?<div onClick={()=>editSubUrl(s)}
+                   style={{width:"100%",aspectRatio:`${MSHOT_VPW} / ${MSHOT_VPH}`,display:"flex",flexDirection:"column",
+                     alignItems:"center",justifyContent:"center",gap:6,background:D.surfaceAlt,cursor:"pointer"}}>
+                   <span style={{fontSize:12,color:D.textMeta}}>상품리스트 링크 미등록</span>
+                   <span style={{fontSize:11,color:D.textMeta}}>클릭해서 등록 (✎)</span>
+                 </div>
+                :<MainPhotoShot site={viewMode==="sub"?{...s,url:s.sub_url}:s} tick={tick}/>}
             </div>
           ))}
         </div>}

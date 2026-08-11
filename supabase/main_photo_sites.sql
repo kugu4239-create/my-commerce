@@ -8,8 +8,13 @@ create table if not exists public.main_photo_sites (
   id          uuid primary key default gen_random_uuid(),
   name        text not null default '',
   url         text not null,
+  sub_url     text not null default '',   -- 상품리스트(서브) 링크 — [상품리스트] 화면 전환용
   created_at  timestamptz not null default now()
 );
+
+-- 기존에 테이블을 이미 만든 경우 — 서브 링크 컬럼만 추가 (멱등)
+alter table public.main_photo_sites
+  add column if not exists sub_url text not null default '';
 
 -- RLS: 앱은 anon 키로 접근 — 읽기·쓰기·삭제 모두 허용 (팀 내부 도구)
 alter table public.main_photo_sites enable row level security;
