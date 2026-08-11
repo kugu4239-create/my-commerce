@@ -22439,8 +22439,12 @@ function MainPhotoBoard(){
   const [dbOk,setDbOk]=useState(true);
   const [name,setName]=useState("");
   const [url,setUrl]=useState("");
-  // 분 단위 tick — 재방문/새로고침 시 브라우저 캐시를 넘어 최신 스냅샷 요청
-  const [tick,setTick]=useState(()=>Math.floor(Date.now()/60000));
+  // 갱신 주기 — 진입 때마다가 아니라 "하루(자정 기준) 1회" (사용자
+  // 요청). 날짜 문자열을 캐시 키로 써서 같은 날에는 캐시된 스냅샷을
+  // 재사용하고, 자정을 넘기면 키가 바뀌어 자동으로 새 스냅샷을 받는다.
+  // [전체 새로고침] 은 수동 카운터를 붙여 즉시 강제 갱신.
+  const [manualTick,setManualTick]=useState(0);
+  const tick=manualTick===0?localDate(0):`${localDate(0)}-${manualTick}`;
 
   useEffect(()=>{(async()=>{
     const localList=(()=>{try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}})();
@@ -22475,8 +22479,6 @@ function MainPhotoBoard(){
       }
     }
   })();},[]);
-  // 첫 스크린샷 생성 지연(수 초) 대비 — 진입 10초 뒤 한 번 자동 리로드
-  useEffect(()=>{const t=setTimeout(()=>setTick(x=>x+1),10000);return()=>clearTimeout(t);},[]);
 
   const persistLocal=list=>{try{localStorage.setItem(MAIN_PHOTO_LS,JSON.stringify(list));}catch{/* noop */}};
   const addSite=async()=>{
@@ -22512,15 +22514,16 @@ function MainPhotoBoard(){
     <div style={{padding:"18px 22px 40px",maxWidth:1500,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:4}}>
         <span style={{fontWeight:600,fontSize:18,color:D.text,letterSpacing:"-0.2px"}}>메인 사진 모아보기</span>
-        <button onClick={()=>setTick(x=>x+1)}
+        <button onClick={()=>setManualTick(x=>x+1)}
           style={{marginLeft:"auto",background:D.black,color:"#fff",border:"none",borderRadius:6,
             padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
           ↻ 전체 새로고침
         </button>
       </div>
       <div style={{fontSize:12,color:D.textMeta,marginBottom:14,lineHeight:1.6}}>
-        등록한 사이트의 현재 메인 화면을 스크린샷으로 모아 보여줍니다. 처음 등록하거나 새로고침하면
-        스냅샷 생성에 몇 초 걸릴 수 있습니다 — 로딩 이미지가 보이면 잠시 후 [전체 새로고침]을 눌러주세요.
+        등록한 사이트의 메인 화면 스냅샷을 모아 보여줍니다. 스냅샷은 <b>매일 자정 기준 하루 1회</b> 자동
+        갱신되고, 같은 날 재진입 시엔 캐시를 재사용합니다. 지금 즉시 최신으로 보려면 [전체 새로고침]을
+        누르세요 — 새 스냅샷 생성에 몇 초 걸릴 수 있습니다(로딩 이미지가 보이면 잠시 후 다시 한 번).
         카드를 클릭하면 사이트가 새 탭으로 열립니다.
       </div>
       {!dbOk&&(
