@@ -2058,6 +2058,15 @@ function DateDrop({id,value,onChange,calOpenFor,setCalOpenFor,placeholder="날�
 // norm_name(정규화 상품명) 키로 저장해 기간/채널이 바뀌어도 같은
 // 상품을 따라다닌다. 로그인 게이트와 동일한 이니셜 → 이름 매핑으로
 // 작성자를 기록. 테이블/실시간 publication: supabase/product_comments.sql
+// 29CM 식 옵션 서술자 제거 — "델리스 슬랙스[COLOR]CHARCOAL [SIZE]S-Short"
+// 처럼 [COLOR]/[SIZE]/[LENGTH] 태그 뒤에 값이 대괄호 밖으로 나온 표기는
+// normProdName 이 태그만 지우고 값(CHARCOAL, S-Short)을 남겨 상품명
+// 키가 어긋난다 → 주요 사유 매칭 누락 (CS 파일 조사에서 발견).
+// 태그와 그 값을 함께 제거해 순수 상품명만 남긴다.
+const stripOptDescriptors=s=>String(s||"")
+  .replace(/\[(?:COLOR\/SIZE|COLOR|SIZE|LENGTH)\]\s*[^,[\]]*/gi,"")
+  .replace(/\s{2,}/g," ").trim();
+
 const COMMENT_AUTHOR_NAMES={ljh:"이지훈",lyr:"이예리",jmj:"장미정",jbk:"진보경",jss:"전성수",kdw:"김다원",shb:"서혜빈"};
 async function getCommentAuthor(){
   try{
@@ -2105,7 +2114,7 @@ function ProductCommentModal({name,comments,onClose,onAdded,onDeleted}){
       style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:2000,
         display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div onClick={e=>e.stopPropagation()}
-        style={{background:D.card,border:`1px solid ${D.border}`,borderRadius:12,
+        style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:12,
           width:"min(440px,100%)",maxHeight:"80vh",display:"flex",flexDirection:"column",
           boxShadow:"0 12px 40px rgba(0,0,0,0.25)"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 16px",borderBottom:`1px solid ${D.border}`}}>
@@ -2161,6 +2170,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
   const [rankBestCustomEnd,setRankBestCustomEnd]=useState("");
   const [rankWorstPeriod,setRankWorstPeriod]=useState("1m");
   const [rankWorstChannel,setRankWorstChannel]=useState("전체");
+  // 반품 Top 정렬 필터 — 기본 반품률순 (사용자 요청)
+  const [worstSort,setWorstSort]=useState("rate");
   const [rankWorstCustomStart,setRankWorstCustomStart]=useState("");
   const [rankWorstCustomEnd,setRankWorstCustomEnd]=useState("");
   const [chSort,setChSort]=useState({key:"revenue",dir:"desc"});
@@ -2378,21 +2389,25 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
     });
     // CS 데이터도 반품 Top 순위와 동일한 기간(rankWorstPeriod)으로 필터 —
     // 'CS date(접수일)' 기준. 선택 기간과 주요 사유의 시간 범위를 일치시킨다.
-    const csData=filterByDate(csRows,"date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd);
+    // upToYesterday=true — 주문 집계(worstFilteredOrders)와 동일하게
+    // 프리셋 기간을 어제까지로 캡. CS 만 오늘 포함이라 집계 창이 하루
+    // 어긋나던 문제 (사용자 리포트 "하루 차이").
+    const csData=filterByDate(csRows,"date",rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,true);
     // 상품명 정규화(normProdName)로 매칭 — CS '어드민 상품명'과 주문 상품명의
     // 색상/사이즈 대괄호([SKY BLUE]/[핑크,스카이블루/L])·공백 표기 차이를 흡수해
     // 연결률을 높인다(정확 일치 대비 매칭 대폭 증가). 키는 양쪽 모두 정규화해 비교.
     const csMap={};
     csData.forEach(r=>{
-      const key=normProdName(r.product_name);
+      // stripOptDescriptors — [COLOR]/[SIZE] 값이 대괄호 밖에 붙은 과거
+      // 업로드 행도 재업로드 없이 매칭되도록 표시 시점에 함께 정리.
+      const key=normProdName(stripOptDescriptors(r.product_name));
       if(!key)return;
       if(!csMap[key])csMap[key]={};
       csMap[key][r.return_reason]=(csMap[key][r.return_reason]||0)+1;
     });
-    const topReason=name=>{
+    const topReason=m=>{
       // 상위 2개 사유를 비중(%)과 함께 표시 (사용자 요청).
       // 예: "사이즈 미스 60% · 단순변심 40%"
-      const m=csMap[normProdName(name)];
       if(!m)return"-";
       const entries=Object.entries(m).sort((a,b)=>b[1]-a[1]);
       const total=entries.reduce((s,[,c])=>s+c,0);
@@ -2401,11 +2416,25 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
         .map(([reason,c])=>`${reason} ${Math.round((c/total)*100)}%`)
         .join(" · ");
     };
+    // 정렬 필터 (사용자 요청) — 반품률순(기본)/반품 수량순/사유별
+    // (단순변심·사이즈 미스·퀄리티 높은 순, CS 접수건 카운트 기준.
+    //  동수는 반품 수량으로 tie-break).
+    const sorters={
+      rate:(a,b)=>(b.returned/b.orders)-(a.returned/a.orders),
+      qty:(a,b)=>b.returned-a.returned,
+      simple:(a,b)=>(b.rSimple-a.rSimple)||(b.returned-a.returned),
+      size:(a,b)=>(b.rSize-a.rSize)||(b.returned-a.returned),
+      quality:(a,b)=>(b.rQuality-a.rQuality)||(b.returned-a.returned),
+    };
     return Object.values(byProd).filter(p=>p.returned>0&&p.shipped>=3)
-      .sort((a,b)=>(b.returned/b.orders)-(a.returned/a.orders)).slice(0,50)
-      .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
-        topReason:topReason(p.name)}));
-  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows]);
+      .map(p=>{
+        const m=csMap[normProdName(stripOptDescriptors(p.name))]||null;
+        return{...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
+          topReason:topReason(m),
+          rSimple:m?.["단순변심"]||0,rSize:m?.["사이즈 미스"]||0,rQuality:m?.["퀄리티"]||0};
+      })
+      .sort(sorters[worstSort]||sorters.rate).slice(0,50);
+  },[worstFilteredOrders,rankWorstChannel,rankWorstPeriod,rankWorstCustomStart,rankWorstCustomEnd,csRows,worstSort]);
 
   // 월별 배송량 차트 데이터 — 배송일 기준, 배송일 없는 행은 주문일 폴백(ship_date)
   const shippingChartData=useMemo(()=>{
@@ -3041,9 +3070,20 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
             <CaptureBtn cardRef={returnTopCardRef} filename="반품Top" DC={{border:D.border,sub:D.textMeta}}/>
           </div>
         </div>
+        {/* 정렬 필터 — 반품률순 기본 (사용자 요청) */}
+        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",margin:"-4px 0 6px"}}>
+          <span style={{fontSize:10,color:D.textMeta}}>정렬</span>
+          {[["rate","반품률순"],["qty","반품 수량순"],["simple","단순변심순"],["size","사이즈 미스순"],["quality","퀄리티순"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setWorstSort(v)}
+              style={{background:worstSort===v?D.black:"transparent",
+                color:worstSort===v?"#fff":D.textSub,
+                border:`1px solid ${worstSort===v?D.black:D.border}`,
+                borderRadius:5,padding:"3px 9px",fontSize:10,cursor:"pointer",fontWeight:worstSort===v?600:400}}>{l}</button>
+          ))}
+        </div>
         {/* 반품 수량 vs 주요 사유 집계 기준 차이 안내 (사용자 요청) */}
-        <div style={{fontSize:10.5,color:D.textMeta,margin:"-6px 0 10px",lineHeight:1.6}}>
-          * 반품 수량은 반품 완료 기준, 주요 사유는 현재 접수건까지 합산된 수량이므로 상이할 수 있으므로 추세 참고용으로 해석 부탁드립니다.
+        <div style={{fontSize:10.5,color:D.textMeta,margin:"0 0 10px",lineHeight:1.6}}>
+          * 반품 수량은 반품 완료 기준, 주요 사유는 현재 접수건까지 합산된 수량으로 시점에 따라 상이할 수 있습니다.
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,alignItems:"start"}}>
           <div style={{minHeight:546,overflowY:"auto"}}>
@@ -3052,7 +3092,15 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
                 onClick:row=>setCmtProd(row.name),
                 fmt:v=>{
                   const n=cmtCountBy[normProdName(v)]||0;
-                  return n>0?<>{v} <span style={{color:"#7B9EC8",fontWeight:700,fontSize:10}}>💬{n}</span></>:v;
+                  if(n<=0) return v;
+                  // 코멘트 달린 상품 — 뮤트 민트 밑줄로 한눈에 구분 (사용자 요청)
+                  return(
+                    <>
+                      <span style={{textDecoration:"underline",textDecorationColor:"#8FC7AD",
+                        textDecorationThickness:2,textUnderlineOffset:2}}>{v}</span>
+                      {" "}<span style={{color:"#7B9EC8",fontWeight:700,fontSize:10}}>💬{n}</span>
+                    </>
+                  );
                 }},
               {key:"returnRate",label:"반품률",right:true,bold:true,color:D.red,fmt:v=>v+"%"},
               {key:"returned",label:"반품",right:true,color:D.red,fmt:v=>v.toLocaleString()},
@@ -12094,6 +12142,10 @@ function CSDataInput() {
   const [csFilterStart,setCsFilterStart]=useState("");
   const [csFilterEnd,setCsFilterEnd]=useState("");
   const [csCalOpen,setCsCalOpen]=useState(null);
+  // 기간 필터 — 대시보드 반품 Top 과 동일한 CalDrop 프리셋 + 동일한
+  // filterByDate(...,true) 를 사용해 두 화면의 기간 창을 정확히 일치
+  // (사용자 리포트: 하루 차이). 기본 "전체".
+  const [csPeriod,setCsPeriod]=useState("all");
   const inp={background:"transparent",border:`1px solid ${D.border}`,borderRadius:6,
     padding:"7px 10px",fontSize:12,color:D.text,width:"100%",boxSizing:"border-box"};
 
@@ -12177,7 +12229,10 @@ function CSDataInput() {
             const channel=rawCh?normChannel(rawCh):"자사몰";
             for(const prod of splitProducts(rawProd)){
               if(!prod) continue;
-              newEntries.push({id:csNextId(),date:lastDate,product_name:prod,return_reason:reason,channel});
+              // 29CM 식 [COLOR]/[SIZE] 서술자는 저장 시점에 제거 —
+              // 주요 사유 매칭 키가 어긋나지 않게 (stripOptDescriptors).
+              const cleaned=stripOptDescriptors(prod)||prod;
+              newEntries.push({id:csNextId(),date:lastDate,product_name:cleaned,return_reason:reason,channel});
             }
           }
 
@@ -12235,10 +12290,8 @@ function CSDataInput() {
     setEditCell(null);
   };
 
-  const filtered=csData.filter(r=>
-    (!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd)||(r.channel||"").includes(filterProd)||(r.return_reason||"").includes(filterProd))&&
-    (!csFilterStart||r.date>=csFilterStart)&&
-    (!csFilterEnd||r.date<=csFilterEnd)
+  const filtered=filterByDate(csData,"date",csPeriod,csFilterStart,csFilterEnd,true).filter(r=>
+    (!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd)||(r.channel||"").includes(filterProd)||(r.return_reason||"").includes(filterProd))
   );
 
   return (
@@ -12285,9 +12338,12 @@ function CSDataInput() {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
           <div style={{fontWeight:600,fontSize:13}}>반품 사유 내역</div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            <CalRangeDrop id="csFilter" start={csFilterStart} end={csFilterEnd}
-              onRange={(s,e)=>{setCsFilterStart(s);setCsFilterEnd(e);setDelConfirm(false);}}
-              openId={csCalOpen} setOpenId={setCsCalOpen}/>
+            <CalDrop id="csFilter" period={csPeriod}
+              setPeriod={v=>{setCsPeriod(v);setDelConfirm(false);}}
+              presets={[["all","전체"],["1m","최근 한달"],["3m","최근 3개월"]]}
+              start={csFilterStart} setStart={v=>{setCsFilterStart(v);setDelConfirm(false);}}
+              end={csFilterEnd} setEnd={v=>{setCsFilterEnd(v);setDelConfirm(false);}}
+              calOpenFor={csCalOpen} setCalOpenFor={setCsCalOpen}/>
           <input value={filterProd} onChange={e=>{setFilterProd(e.target.value);setDelConfirm(false);}}
             style={{...inp,width:200,fontSize:11,padding:"5px 8px"}} placeholder="날짜·상품명·판매처 검색"/>
           </div>
