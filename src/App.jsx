@@ -22579,7 +22579,9 @@ function MainPhotoBoard(){
 // ─────────────────────────────────────────────
 export default function App() {
   const validPages=["dashboard","promo","input","compare","impact","funnel","reorder","gmv","carryover","mainphotos"];
-  const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"dashboard";};
+  // 기본(첫 진입) 화면 — 대시보드 대신 메인 사진 모아보기 (사용자 요청).
+  // 해시가 있으면 해당 페이지 유지 (북마크/새로고침 동작 불변).
+  const hashPage=()=>{const h=window.location.hash.replace("#","");return validPages.includes(h)?h:"mainphotos";};
   const [page,setPageState]=useState(hashPage);
   const setPage=useCallback(p=>{window.location.hash=p;setPageState(p);},[]);
   useEffect(()=>{
