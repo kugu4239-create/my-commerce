@@ -12186,6 +12186,10 @@ function CSDataInput() {
           const reasonCol=findCol("반품사유","반품","사유","reason","취소");
           const dateCol=findCol("날짜","date","일자","접수일","처리일");
           const chCol=findCol("판매처","채널","channel","플랫폼","mall");
+          // 주문번호 열(선택) — 있으면 같은 주문번호+상품+사유 행은 중복
+          // 적재하지 않는다 (같은 파일/겹치는 기간 재업로드 멱등).
+          // "주문일" 오매칭 방지 위해 '주문번호' 계열 키워드만 사용.
+          const orderCol=findCol("주문번호","orderno","ordernumber","orderid","order_no","order_id");
           // 고객 코멘트 열(선택) — 값이 있으면 해당 상품의 상품 코멘트
           // (product_comments, 반품 Top 상품명 클릭 모달)로 함께 등록.
           const commentCol=findCol("고객코멘트","코멘트","comment");
@@ -12232,6 +12236,13 @@ function CSDataInput() {
             return parts.length?parts:[String(raw||"").trim()];
           };
 
+          // 중복 방지 키 — 주문번호|상품명|사유. 기존 저장분 + 이번 배치
+          // 내에서 같은 키가 다시 나오면 스킵 (주문번호 없는 행은 판별
+          // 불가라 기존대로 전부 적재).
+          const dupKey=r=>`${r.order_no}|${r.product_name}|${r.return_reason}`;
+          const seenKeys=new Set(csData.filter(r=>(r.order_no||"").trim()).map(dupKey));
+          let dupCount=0;
+
           let lastDate=today;
           const newEntries=[];
           const commentEntries=[];
@@ -12246,13 +12257,20 @@ function CSDataInput() {
             const reason=extractReason(rawReason);
             const rawCh=chCol?String(r[chCol]||"").trim():"";
             const channel=rawCh?normChannel(rawCh):"자사몰";
+            const orderNo=orderCol?String(r[orderCol]||"").trim():"";
             const rawComment=commentCol?String(r[commentCol]||"").trim():"";
             for(const prod of splitProducts(rawProd)){
               if(!prod) continue;
               // 29CM 식 [COLOR]/[SIZE] 서술자는 저장 시점에 제거 —
               // 주요 사유 매칭 키가 어긋나지 않게 (stripOptDescriptors).
               const cleaned=stripOptDescriptors(prod)||prod;
-              newEntries.push({id:csNextId(),date:lastDate,product_name:cleaned,return_reason:reason,channel});
+              const entry={id:csNextId(),date:lastDate,product_name:cleaned,return_reason:reason,channel,order_no:orderNo};
+              if(orderNo){
+                const k=dupKey(entry);
+                if(seenKeys.has(k)){dupCount++;continue;}
+                seenKeys.add(k);
+              }
+              newEntries.push(entry);
               // 고객 코멘트 → 상품 코멘트 리스트 등록 (사용자 요청).
               // created_at 은 CS 접수일(KST 자정)로 기록해 시간순 정렬 유지.
               if(rawComment){
@@ -12262,11 +12280,22 @@ function CSDataInput() {
             }
           }
 
-          if(!newEntries.length)throw new Error("유효한 데이터 행이 없습니다");
+          if(!newEntries.length){
+            if(dupCount>0){setCsvResult({type:"success",msg:`모든 행(${dupCount}건)이 기존 데이터와 중복 — 추가된 데이터 없음`});return;}
+            throw new Error("유효한 데이터 행이 없습니다");
+          }
           const next=[...newEntries,...csData];
           saveCSData(next);setCSData(next);
           const db=await getSupabase();
-          const {error:insErr}=await db.from("cs_data").insert(newEntries);
+          let {error:insErr}=await db.from("cs_data").insert(newEntries);
+          // order_no 컬럼 미생성 DB(구버전 SQL) — 주문번호만 빼고 재시도해
+          // CS 저장 자체는 깨지지 않게. 안내 문구로 SQL 재실행 유도.
+          let orderColNote="";
+          if(insErr&&/order_no/i.test(insErr.message||"")){
+            const retry=await db.from("cs_data").insert(newEntries.map(e=>{const c={...e};delete c.order_no;return c;}));
+            insErr=retry.error;
+            if(!insErr) orderColNote=" · 주문번호는 DB 미저장 — supabase/cs_data.sql 재실행으로 order_no 컬럼 추가 필요";
+          }
           // 고객 코멘트 → product_comments 등록. norm_name+내용 기준으로
           // 기존과 중복이면 스킵 (같은 파일 재업로드 멱등). 테이블 미생성
           // /실패 시 코멘트만 조용히 건너뛰고 CS 저장 흐름은 유지.
@@ -12283,8 +12312,9 @@ function CSDataInput() {
               }else cmtNote=" · 고객 코멘트는 모두 기존과 중복";
             }catch{cmtNote=" · 고객 코멘트 등록 실패 (product_comments 테이블 확인)";}
           }
+          const dupNote=dupCount>0?` · 중복 ${dupCount}건 제외`:"";
           if(insErr) setCsvResult({type:"error",msg:`${newEntries.length}건 로컬 저장됨 · DB 저장 실패: ${insErr.message} (Supabase 에 cs_data 테이블이 있는지 확인하세요)`});
-          else setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료${cmtNote}`});
+          else setCsvResult({type:"success",msg:`${newEntries.length}건 추가 완료${dupNote}${cmtNote}${orderColNote}`});
         }catch(e){setCsvResult({type:"error",msg:e.message});}
       },e=>setCsvResult({type:"error",msg:e.message}));
   },[csData,today]);
@@ -12333,7 +12363,7 @@ function CSDataInput() {
   };
 
   const filtered=filterByDate(csData,"date",csPeriod,csFilterStart,csFilterEnd,true).filter(r=>
-    (!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd)||(r.channel||"").includes(filterProd)||(r.return_reason||"").includes(filterProd))
+    (!filterProd||(r.product_name||"").includes(filterProd)||(r.date||"").includes(filterProd)||(r.channel||"").includes(filterProd)||(r.return_reason||"").includes(filterProd)||(r.order_no||"").includes(filterProd))
   );
 
   return (
@@ -12346,11 +12376,12 @@ function CSDataInput() {
           <div style={{color:D.textMeta,fontSize:10,marginBottom:6,letterSpacing:"0.06em",textTransform:"uppercase"}}>CSV 업로드</div>
           <div style={{color:D.textMeta,fontSize:10,marginBottom:8,lineHeight:1.6}}>
             필수: <strong>[상품]</strong> · <strong>[반품 사유]</strong><br/>
-            선택: [날짜] [판매처] [고객 코멘트]<br/>
+            선택: [날짜] [판매처] [주문번호] [고객 코멘트]<br/>
+            주문번호가 있으면 같은 주문번호+상품+사유 행은 재업로드 시 중복 적재하지 않습니다<br/>
             고객 코멘트는 반품 Top 상품명 클릭 시 코멘트 리스트에 등록됩니다
           </div>
           <DropZone onFile={handleCSVFile} label="반품 CS 파일 업로드"
-            columns="날짜 · 판매처 · 상품명 · 반품사유 · 고객 코멘트"/>
+            columns="날짜 · 판매처 · 주문번호 · 상품명 · 반품사유 · 고객 코멘트"/>
           {csvResult&&<Alert type={csvResult.type} msg={csvResult.msg}/>}
         </div>
         <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${D.border}`}}>
@@ -12388,7 +12419,7 @@ function CSDataInput() {
               end={csFilterEnd} setEnd={v=>{setCsFilterEnd(v);setDelConfirm(false);}}
               calOpenFor={csCalOpen} setCalOpenFor={setCsCalOpen}/>
           <input value={filterProd} onChange={e=>{setFilterProd(e.target.value);setDelConfirm(false);}}
-            style={{...inp,width:200,fontSize:11,padding:"5px 8px"}} placeholder="날짜·상품명·판매처 검색"/>
+            style={{...inp,width:200,fontSize:11,padding:"5px 8px"}} placeholder="날짜·상품명·판매처·주문번호 검색"/>
           </div>
         </div>
         {selected.size>0&&(
@@ -12412,7 +12443,7 @@ function CSDataInput() {
                 <input type="checkbox" checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))}
                   onChange={toggleAll} style={{cursor:"pointer"}}/>
               </th>
-              {["날짜","판매처","상품명","반품 사유",""].map(h=>(
+              {["날짜","판매처","주문번호","상품명","반품 사유",""].map(h=>(
                 <th key={h} style={{padding:"6px 8px",textAlign:"left",color:D.textMeta,fontWeight:400}}>{h}</th>
               ))}
             </tr></thead>
@@ -12440,6 +12471,7 @@ function CSDataInput() {
                     </td>
                     {cell("date",<span style={{color:D.textMeta,whiteSpace:"nowrap"}}>{r.date}</span>)}
                     {cell("channel",<span style={{color:chColor(r.channel),fontWeight:600}}>{r.channel}</span>)}
+                    {cell("order_no",<span style={{color:D.textMeta,whiteSpace:"nowrap"}}>{r.order_no||"—"}</span>,{maxWidth:120,overflow:"hidden",textOverflow:"ellipsis"})}
                     {cell("product_name",r.product_name,{maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"})}
                     {cell("return_reason",<span style={{color:D.textSub}}>{r.return_reason}</span>)}
                     <td style={{padding:"5px 8px"}}>
@@ -12449,7 +12481,7 @@ function CSDataInput() {
                   </tr>
                 );
               })}
-              {filtered.length===0&&<tr><td colSpan={6} style={{padding:24,textAlign:"center",color:D.textMeta}}>데이터 없음</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={7} style={{padding:24,textAlign:"center",color:D.textMeta}}>데이터 없음</td></tr>}
             </tbody>
           </table>
         </div>

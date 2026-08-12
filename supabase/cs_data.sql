@@ -16,6 +16,11 @@ create table if not exists public.cs_data (
 
 create index if not exists cs_data_date_idx on public.cs_data(date);
 
+-- 주문번호 — 업로드 파일의 [주문번호] 열 파싱 저장. 같은 주문번호+상품+사유
+-- 행은 재업로드 시 중복 적재하지 않는 멱등 키로 사용된다. (멱등)
+alter table public.cs_data
+  add column if not exists order_no text not null default '';
+
 -- RLS: 앱은 anon 키로 접근하므로 읽기·쓰기·삭제 모두 허용 (단일 사용자/팀 환경)
 alter table public.cs_data enable row level security;
 
