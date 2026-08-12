@@ -22480,6 +22480,10 @@ function MainPhotoBoard(){
     try{return JSON.parse(localStorage.getItem(MAIN_PHOTO_LS)||"[]");}catch{return[];}
   });
   const [dbOk,setDbOk]=useState(true);
+  // 순서(sort_order) 서버 저장 상태 — 목록 저장(dbOk)과 별개. 테이블은
+  // 있는데 sort_order 컬럼만 없는 경우(구버전 SQL 로 생성) 순서 저장만
+  // 실패하므로 전용 안내를 띄운다.
+  const [orderDbOk,setOrderDbOk]=useState(true);
   const [name,setName]=useState("");
   const [url,setUrl]=useState("");
   // 갱신 주기 — 진입 때마다가 아니라 "하루(자정 기준) 1회" (사용자
@@ -22514,7 +22518,8 @@ function MainPhotoBoard(){
         db.from("main_photo_sites").update({sort_order:i}).eq("id",s.id)));
       const failed=results.find(r=>r.error);
       if(failed)throw failed.error;
-    }catch{setDbOk(false);}
+      setOrderDbOk(true);
+    }catch{setOrderDbOk(false);/* sort_order 컬럼 미생성 — 로컬만 반영 */}
   };
   // 상품리스트(서브) 링크 등록/수정 — 카드의 ✎ 버튼. 비우면 삭제.
   const editSubUrl=async s=>{
@@ -22551,6 +22556,19 @@ function MainPhotoBoard(){
         if(!se) list=seed;
       }else if(list.length===0){
         list=localList; // DB 비어 있고 로컬에만 목록 — 로컬 유지
+      }
+      // DB 행에 sort_order 가 하나도 없는데(컬럼 미생성 or 전부 null)
+      // 로컬에는 저장된 순서가 있으면 로컬 순서를 병합 — 순서 서버 저장이
+      // 실패했던 기기에서 재진입 시 순서가 원복되던 문제 방지. DB 에
+      // 순서가 하나라도 있으면 공유 값(DB)이 우선.
+      if(list.length>0&&list.every(r=>r.sort_order==null)&&localList.some(r=>r.sort_order!=null)){
+        const lo=new Map(localList.map(r=>[r.id,r.sort_order]));
+        list=list.map(r=>lo.get(r.id)!=null?{...r,sort_order:lo.get(r.id)}:r);
+        // 컬럼이 그 사이 생성됐을 수 있으니 서버 저장 재시도 (실패해도 무시)
+        Promise.all(list.filter(r=>r.sort_order!=null).map(r=>
+          db.from("main_photo_sites").update({sort_order:r.sort_order}).eq("id",r.id)))
+          .then(rs=>setOrderDbOk(!rs.some(x=>x&&x.error)))
+          .catch(()=>setOrderDbOk(false));
       }
       const sorted=sortSites(list);
       setSites(sorted);
@@ -22628,6 +22646,12 @@ function MainPhotoBoard(){
         <div style={{fontSize:11,color:D.red,marginBottom:12}}>
           서버 저장 실패 — 목록이 이 기기에만 보관됩니다 (Supabase 에 main_photo_sites 테이블 생성 필요:
           supabase/main_photo_sites.sql)
+        </div>
+      )}
+      {dbOk&&!orderDbOk&&(
+        <div style={{fontSize:11,color:D.red,marginBottom:12}}>
+          카드 순서 서버 저장 실패 — 순서가 이 기기에만 보관됩니다. Supabase SQL Editor 에서
+          supabase/main_photo_sites.sql 을 다시 실행해 sort_order 컬럼을 추가하면 모든 사용자에게 공유됩니다.
         </div>
       )}
       {/* 사이트 추가 */}
