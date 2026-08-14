@@ -22471,7 +22471,17 @@ const MAIN_PHOTO_DEFAULT_SITES=[
 function MainPhotoShot({site,tick}){
   const [err,setErr]=useState(false);
   const [retry,setRetry]=useState(0);
-  useEffect(()=>{setErr(false);setRetry(0);},[tick,site.url]);
+  // 폴링 리로드 — mShots 는 새 캡처 생성 중 수 초간 '생성 중' 플레이스홀더를
+  // HTTP 200 으로 반환한다(onError 로 안 잡힘). tick(진입/전체 새로고침) 이후
+  // 같은 캡처 URL(r 불변)을 img remount 로 몇 차례 재요청해 완성본으로 교체한다.
+  // (#371 에서 제거됐던 '진입 후 자동 리로드'를 새로고침에도 적용해 복원)
+  const [poll,setPoll]=useState(0);
+  useEffect(()=>{setErr(false);setRetry(0);setPoll(0);},[tick,site.url]);
+  useEffect(()=>{
+    if(poll>=3) return;   // 진입/새로고침 후 최대 3회(≈7·14·21초) 재요청 — 생성 완료본 확보
+    const t=setTimeout(()=>setPoll(p=>p+1),7000);
+    return()=>clearTimeout(t);
+  },[poll,tick,site.url]);
   useEffect(()=>{
     if(!err||retry>=5) return;
     const t=setTimeout(()=>{setRetry(r=>r+1);setErr(false);},8000);
@@ -22497,7 +22507,8 @@ function MainPhotoShot({site,tick}){
     );
   }
   return(
-    <img src={mshotUrl(site.url,tick)+(retry>0?`&a=${retry}`:"")}
+    <img key={`${tick}-${poll}`}
+      src={mshotUrl(site.url,tick)+(retry>0?`&a=${retry}`:"")}
       alt={`${site.name||site.url} 메인 화면`}
       onClick={open}
       onError={()=>setErr(true)}
