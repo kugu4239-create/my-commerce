@@ -19243,6 +19243,260 @@ function GmvWorkbench({DC,channelCalc,feeRates}){
 // 리오더 계산기 — 독립 페이지 (데이터 컴페어에서 분리)
 // 계산 소스(computeAndSaveReorder)는 '데이터 입력 > 인벤토리' 업로더가 그대로 트리거
 // ─────────────────────────────────────────────
+// 파일로 계산하기 — 리오더 계산기 하단 섹션 (사용자 요청, 2026-08-19)
+// 이지어드민 재고 파일(상품명[컬러]·옵션·가용재고·오더중)을 업로드해:
+//  1단계 — 옵션 행들을 선택해 "짝"(세트) 구성. 선택 행을 상품명 기준
+//    두 편(A/B)으로 나눠 묶는다 (예: 뮤렌 슬랙스[CHARCOAL] S-Short+
+//    S-Long ↔ 뮤렌 뷔스티에[CHARCOAL] S). 짝 구성은 localStorage 에
+//    저장돼 같은 상품 구성의 파일을 다시 올리면 자동 복원된다.
+//  2단계 — 기존 수량 = 가용재고+오더중. 한 편의 [추가 오더]를 5단위로
+//    조절하면 반대편이 "기존 수량 합에서 부족한 만큼" 5단위로 자동
+//    증가해 최종 오더 수가 계산된다. 마지막으로 손댄 편이 수동, 반대
+//    편이 자동(배지 표시) — 반대편을 직접 만지면 역할이 바뀐다. 자동
+//    편이 여러 옵션이면 5장 단위 라운드로빈으로 분배.
+const FILE_CALC_PAIRS_LS="reorder_file_calc_pairs";
+const fcCeil5=n=>Math.max(0,Math.ceil(n/5)*5);
+const fcSnap5=n=>Math.max(0,Math.round((Number(n)||0)/5)*5);
+
+function FileCalcSection({DC}){
+  const [rows,setRows]=useState([]);
+  const [fileName,setFileName]=useState("");
+  const [selected,setSelected]=useState(()=>new Set());
+  const [pairs,setPairs]=useState([]); // {id,a:[keys],b:[keys],manual:"a"|"b"}
+  const [added,setAdded]=useState({}); // key -> 수동 추가 수량
+  const [err,setErr]=useState("");
+
+  const persistPairs=list=>{
+    try{localStorage.setItem(FILE_CALC_PAIRS_LS,JSON.stringify(list.map(({a,b})=>({a,b}))));}catch{/* noop */}
+  };
+
+  const handleFile=file=>{
+    if(!file)return;
+    setErr("");
+    parseAnyFile(file,{header:true,skipEmptyLines:true},({data})=>{
+      try{
+        const cols=Object.keys(data[0]||{});
+        const lc=cols.map(c=>c.toLowerCase().replace(/[\s[\]()]/g,""));
+        const find=(...kws)=>{const i=lc.findIndex(c=>kws.some(k=>c.includes(k)));return i>=0?cols[i]:null;};
+        const nameCol=find("상품명"),optCol=find("옵션"),availCol=find("가용재고"),orderingCol=find("오더중");
+        const codeCol=find("상품코드");
+        const missing=[["상품명",nameCol],["옵션",optCol],["가용재고",availCol],["오더중",orderingCol]]
+          .filter(([,c])=>!c).map(([l])=>l);
+        if(missing.length) throw new Error(`필수 컬럼이 없습니다: ${missing.join(", ")}`);
+        const num=v=>{const n=parseInt(String(v??"").replace(/[,\s]/g,""),10);return Number.isNaN(n)?0:n;};
+        const parsed=data.map(r=>{
+          const name=String(r[nameCol]||"").trim();
+          const option=String(r[optCol]||"").trim();
+          if(!name)return null;
+          const avail=num(r[availCol]),ordering=num(r[orderingCol]);
+          return{key:`${name}|${option}`,code:codeCol?String(r[codeCol]||"").trim():"",
+            name,option,avail,ordering,base:avail+ordering};
+        }).filter(Boolean);
+        if(!parsed.length) throw new Error("파싱된 행이 없습니다 (상품명·옵션·가용재고·오더중 값 확인)");
+        setRows(parsed);setFileName(file.name);setSelected(new Set());setAdded({});
+        // 저장된 짝 복원 — 모든 멤버가 이 파일에 존재하는 짝만
+        try{
+          const saved=JSON.parse(localStorage.getItem(FILE_CALC_PAIRS_LS)||"[]");
+          const keys=new Set(parsed.map(r=>r.key));
+          setPairs(saved.filter(p=>Array.isArray(p.a)&&Array.isArray(p.b)&&[...p.a,...p.b].every(k=>keys.has(k)))
+            .map((p,i)=>({id:`p${i}`,a:p.a,b:p.b,manual:"a"})));
+        }catch{setPairs([]);}
+      }catch(e){setErr(String(e?.message||e));setRows([]);}
+    },e=>setErr(String(e?.message||e)));
+  };
+
+  const rowByKey=useMemo(()=>Object.fromEntries(rows.map(r=>[r.key,r])),[rows]);
+  const pairedKeys=useMemo(()=>new Set(pairs.flatMap(p=>[...p.a,...p.b])),[pairs]);
+
+  // 최종 추가 오더 계산 — 수동 값 + 짝 자동 보정
+  const calc=useMemo(()=>{
+    const finalAdded={};
+    rows.forEach(r=>{finalAdded[r.key]=fcSnap5(added[r.key]||0);});
+    const pairInfo={};
+    pairs.forEach(p=>{
+      const manual=p.manual==="b"?p.b:p.a;
+      const auto=p.manual==="b"?p.a:p.b;
+      const baseSum=keys=>keys.reduce((s,k)=>s+(rowByKey[k]?.base||0),0);
+      const manualTotal=baseSum(manual)+manual.reduce((s,k)=>s+(finalAdded[k]||0),0);
+      const autoBase=baseSum(auto);
+      let need=fcCeil5(manualTotal-autoBase);
+      auto.forEach(k=>{finalAdded[k]=0;});
+      let i=0;
+      while(need>0&&auto.length){finalAdded[auto[i%auto.length]]+=5;need-=5;i++;}
+      pairInfo[p.id]={
+        manualTotal,
+        autoTotal:autoBase+auto.reduce((s,k)=>s+(finalAdded[k]||0),0),
+      };
+    });
+    const totalAdded=rows.reduce((s,r)=>s+(finalAdded[r.key]||0),0);
+    return{finalAdded,pairInfo,totalAdded};
+  },[rows,pairs,added,rowByKey]);
+
+  // 추가 오더 변경 — 짝에서 자동 편을 만지면 그 편이 수동으로 전환되고,
+  // 화면에 보이던 자동 값들은 수동 값으로 고정된 채 이어서 조절된다.
+  const setValue=(key,val)=>{
+    const pair=pairs.find(p=>p.a.includes(key)||p.b.includes(key));
+    const side=pair?(pair.a.includes(key)?"a":"b"):null;
+    setAdded(prev=>{
+      const next={...prev,[key]:fcSnap5(val)};
+      if(pair&&pair.manual!==side){
+        pair[side].forEach(k=>{if(k!==key)next[k]=calc.finalAdded[k]||0;});
+      }
+      return next;
+    });
+    if(pair&&pair.manual!==side){
+      setPairs(prev=>prev.map(p=>p.id===pair.id?{...p,manual:side}:p));
+    }
+  };
+  const bump=(key,delta)=>setValue(key,(calc.finalAdded[key]||0)+delta);
+
+  const makePair=()=>{
+    const sel=rows.filter(r=>selected.has(r.key)&&!pairedKeys.has(r.key));
+    const names=[...new Set(sel.map(r=>r.name))];
+    if(names.length!==2){
+      setErr("서로 다른 두 상품(상품명 기준)의 옵션들을 함께 선택해야 짝을 만들 수 있습니다");
+      return;
+    }
+    setErr("");
+    const a=sel.filter(r=>r.name===names[0]).map(r=>r.key);
+    const b=sel.filter(r=>r.name===names[1]).map(r=>r.key);
+    const next=[...pairs,{id:`p${Date.now()%1e9}`,a,b,manual:"a"}];
+    setPairs(next);persistPairs(next);setSelected(new Set());
+  };
+  const removePair=id=>{
+    const next=pairs.filter(p=>p.id!==id);
+    setPairs(next);persistPairs(next);
+  };
+
+  const cell={padding:"4px 8px",fontSize:12,color:DC.text,borderBottom:`1px solid ${DC.border}`};
+  const th={...cell,color:DC.dim,fontWeight:400,whiteSpace:"nowrap"};
+  const stepBtn={width:22,height:22,border:`1px solid ${DC.border}`,borderRadius:5,
+    background:"transparent",color:DC.text,cursor:"pointer",fontSize:12,lineHeight:1};
+
+  // 한 행 렌더 — inPair=짝 카드 안(체크박스 없음), autoSide=자동 편
+  const renderRow=(r,{inPair=false,autoSide=false}={})=>(
+    <tr key={r.key}>
+      {!inPair&&(
+        <td style={{...cell,width:26,textAlign:"center"}}>
+          <input type="checkbox" checked={selected.has(r.key)}
+            onChange={()=>setSelected(prev=>{const s=new Set(prev);if(s.has(r.key))s.delete(r.key);else s.add(r.key);return s;})}
+            style={{cursor:"pointer"}}/>
+        </td>
+      )}
+      <td style={{...cell,fontWeight:500}}>{r.name}</td>
+      <td style={{...cell,color:DC.sub}}>{r.option||"—"}</td>
+      <td style={{...cell,textAlign:"center",color:r.avail<0?"#c0392b":DC.sub}}>{r.avail}</td>
+      <td style={{...cell,textAlign:"center",color:DC.sub}}>{r.ordering}</td>
+      <td style={{...cell,textAlign:"center",fontWeight:600}}>{r.base}</td>
+      <td style={{...cell,textAlign:"center"}}>
+        {autoSide
+          ?<span style={{fontWeight:700,color:"#1a7a4f"}}>{calc.finalAdded[r.key]||0}<span style={{fontSize:9,fontWeight:400,color:DC.dim}}> 자동</span></span>
+          :<span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+             <button style={stepBtn} onClick={()=>bump(r.key,-5)}>−</button>
+             <span style={{minWidth:26,textAlign:"center",fontWeight:700}}>{calc.finalAdded[r.key]||0}</span>
+             <button style={stepBtn} onClick={()=>bump(r.key,+5)}>＋</button>
+           </span>}
+      </td>
+      <td style={{...cell,textAlign:"center",fontWeight:600}}>{r.base+(calc.finalAdded[r.key]||0)}</td>
+    </tr>
+  );
+
+  const header=inPair=>(
+    <tr>
+      {!inPair&&<th style={th}></th>}
+      <th style={{...th,textAlign:"left"}}>상품명</th>
+      <th style={{...th,textAlign:"left"}}>옵션</th>
+      <th style={th}>가용재고</th>
+      <th style={th}>오더중</th>
+      <th style={th}>기존 합</th>
+      <th style={th}>추가 오더</th>
+      <th style={th}>최종 보유</th>
+    </tr>
+  );
+
+  const unpaired=rows.filter(r=>!pairedKeys.has(r.key));
+
+  return(
+    <div style={{marginTop:16,background:DC.card,border:`1px solid ${DC.border}`,borderRadius:12,padding:"20px 20px 24px"}}>
+      <div style={{fontWeight:600,fontSize:18,color:DC.text,letterSpacing:"-0.2px",marginBottom:4}}>파일로 계산하기</div>
+      <div style={{fontSize:12,color:DC.sub,marginBottom:14,lineHeight:1.7}}>
+        이지어드민 재고 파일(상품명·옵션·가용재고·오더중)을 올린 뒤, ① 세트로 묶일 옵션들을 체크해 [짝 만들기]
+        — 선택 행이 상품명 기준 두 편으로 나뉩니다. ② 한 편의 [추가 오더]를 5장 단위로 조절하면
+        반대편이 기존 수량 합(가용재고+오더중) 기준 부족한 만큼 5장 단위로 자동 증가합니다.
+        마지막으로 조절한 편이 수동, 반대편이 <b style={{color:"#1a7a4f"}}>자동</b> — 반대편을 직접 조절하면 역할이 바뀝니다.
+        짝 구성은 이 브라우저에 저장돼 같은 상품 구성의 파일을 다시 올리면 자동 복원됩니다.
+      </div>
+      <DropZone onFile={handleFile} label="재고 파일 업로드 (.xls/.xlsx/.csv)" fileName={fileName}
+        columns="상품명 · 옵션 · 가용재고 · 오더중"/>
+      {err&&<div style={{marginTop:10,fontSize:12,color:"#c0392b"}}>{err}</div>}
+
+      {rows.length>0&&(
+        <>
+          {/* 짝 카드들 */}
+          {pairs.map((p,pi)=>{
+            const info=calc.pairInfo[p.id]||{manualTotal:0,autoTotal:0};
+            const sideRows=keys=>keys.map(k=>rowByKey[k]).filter(Boolean);
+            const renderSide=(label,keys,isAuto)=>(
+              <div style={{flex:1,minWidth:300}}>
+                <div style={{fontSize:11,color:DC.dim,margin:"2px 0 4px"}}>
+                  {label}{isAuto&&<span style={{marginLeft:6,color:"#1a7a4f",fontWeight:600}}>자동 맞춤</span>}
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>{header(true)}</thead>
+                  <tbody>{sideRows(keys).map(r=>renderRow(r,{inPair:true,autoSide:isAuto}))}</tbody>
+                </table>
+              </div>
+            );
+            const totalA=p.manual==="a"?info.manualTotal:info.autoTotal;
+            const totalB=p.manual==="b"?info.manualTotal:info.autoTotal;
+            return(
+              <div key={p.id} style={{marginTop:16,border:`1px solid ${DC.border}`,borderRadius:10,padding:"12px 14px",background:DC.bg}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:12.5,fontWeight:600,color:DC.text}}>짝 {pi+1}</span>
+                  <span style={{fontSize:11,color:DC.sub}}>최종 합 — A {totalA} : B {totalB}</span>
+                  <button onClick={()=>removePair(p.id)}
+                    style={{marginLeft:"auto",background:"transparent",border:`1px solid ${DC.border}`,borderRadius:5,
+                      padding:"2px 10px",fontSize:11,color:DC.sub,cursor:"pointer"}}>짝 해제</button>
+                </div>
+                <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                  {renderSide("A",p.a,p.manual!=="a")}
+                  {renderSide("B",p.b,p.manual!=="b")}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* 미짝 행 — 선택해서 짝 만들기 */}
+          {unpaired.length>0&&(
+            <div style={{marginTop:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{fontSize:12.5,fontWeight:600,color:DC.text}}>옵션 목록</span>
+                <span style={{fontSize:11,color:DC.dim}}>세트로 묶을 두 상품의 옵션들을 체크 →</span>
+                <button onClick={makePair} disabled={selected.size<2}
+                  style={{background:selected.size<2?"transparent":DC.text,color:selected.size<2?DC.dim:"#fff",
+                    border:`1px solid ${selected.size<2?DC.border:DC.text}`,borderRadius:6,
+                    padding:"3px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>짝 만들기</button>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>{header(false)}</thead>
+                  <tbody>{unpaired.map(r=>renderRow(r))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 합계 */}
+          <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${DC.border}`,display:"flex",gap:18,flexWrap:"wrap",fontSize:12.5,color:DC.sub}}>
+            <span>총 추가 오더: <b style={{color:DC.text,fontSize:14}}>{calc.totalAdded.toLocaleString()}장</b></span>
+            <span>최종 보유 합(기존+추가): <b style={{color:DC.text}}>{(rows.reduce((s,r)=>s+r.base,0)+calc.totalAdded).toLocaleString()}장</b></span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReorderPage(){
   const reorderCardRef=useRef(null);
   const [snapshotDates,setSnapshotDates]=useState([]);
@@ -19264,6 +19518,8 @@ function ReorderPage(){
         </div>
         <ReorderCalculator DC={DC} refreshKey={0} latestSnapDate={latestSnap}/>
       </div>
+      {/* 파일로 계산하기 — 짝(세트) 오더 수량 자동 맞춤 (사용자 요청) */}
+      <FileCalcSection DC={DC}/>
     </div>
   );
 }
