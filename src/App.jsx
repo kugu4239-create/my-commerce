@@ -1295,7 +1295,20 @@ function ProductSankey({ stockRows, orderRows, period="3m", customStart, customE
 }
 
 const getCSData=()=>{try{return JSON.parse(localStorage.getItem("cs_data")||"[]");}catch{return[];}};
-const saveCSData=d=>localStorage.setItem("cs_data",JSON.stringify(d));
+// cs_data 의 원본은 DB(supabase)이고 localStorage 는 오프라인 캐시일 뿐 —
+// 수천 행 파일에서 quota 초과가 나면 예외가 업로드 흐름(DB insert 전)을
+// 통째로 깨뜨렸다. 초과 시 최신 행부터 절반씩 줄여 재시도하고, 그래도
+// 안 들어가면 캐시를 비운다. 절대 throw 하지 않는다.
+const saveCSData=d=>{
+  let rows=d;
+  for(;;){
+    try{localStorage.setItem("cs_data",JSON.stringify(rows));return;}
+    catch{
+      if(!rows.length){try{localStorage.removeItem("cs_data");}catch{/* noop */}return;}
+      rows=rows.slice(0,Math.floor(rows.length/2));
+    }
+  }
+};
 // CS 행 id 생성기 — 단조 증가 정수(safe integer). 기존 Date.now()+Math.random() 는
 // 1.7e12 규모에서 double 분해능 한계로 대량 업로드 시 충돌(5148건 중 ~776건)이 나
 // cs_data PK insert 가 깨졌다. 단조 정수는 한 세션 내 충돌이 없고 다른 세션과도 사실상 겹치지 않는다.
@@ -12287,13 +12300,21 @@ function CSDataInput() {
           const next=[...newEntries,...csData];
           saveCSData(next);setCSData(next);
           const db=await getSupabase();
-          let {error:insErr}=await db.from("cs_data").insert(newEntries);
+          // 대용량 파일(수천 행)은 단일 insert 요청이 페이로드 한도에 걸릴 수
+          // 있어 주문 업로더와 동일하게 500건 배치로 나눠 적재.
+          const batchInsert=async rows=>{
+            for(let i=0;i<rows.length;i+=500){
+              const{error}=await db.from("cs_data").insert(rows.slice(i,i+500));
+              if(error) return error;
+            }
+            return null;
+          };
+          let insErr=await batchInsert(newEntries);
           // order_no 컬럼 미생성 DB(구버전 SQL) — 주문번호만 빼고 재시도해
           // CS 저장 자체는 깨지지 않게. 안내 문구로 SQL 재실행 유도.
           let orderColNote="";
           if(insErr&&/order_no/i.test(insErr.message||"")){
-            const retry=await db.from("cs_data").insert(newEntries.map(e=>{const c={...e};delete c.order_no;return c;}));
-            insErr=retry.error;
+            insErr=await batchInsert(newEntries.map(e=>{const c={...e};delete c.order_no;return c;}));
             if(!insErr) orderColNote=" · 주문번호는 DB 미저장 — supabase/cs_data.sql 재실행으로 order_no 컬럼 추가 필요";
           }
           // 고객 코멘트 → product_comments 등록. norm_name+내용 기준으로
