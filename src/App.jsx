@@ -22720,8 +22720,14 @@ const MAIN_PHOTO_LS="main_photo_sites";
 // 모바일 화면 비율(390×844, iPhone 급 뷰포트)로 렌더 — 사이트가 모바일
 // 레이아웃의 메인을 보여주고, 카드도 같은 세로 비율로 표시 (사용자 요청).
 const MSHOT_VPW=390,MSHOT_VPH=844;
-const mshotUrl=(url,tick)=>
-  `https://s0.wp.com/mshots/v1/${encodeURIComponent(url)}?w=480&vpw=${MSHOT_VPW}&vph=${MSHOT_VPH}&r=${tick}`;
+// forced(전체 새로고침): mShots 는 같은 대상 URL 이면 내부 캐시(최대 ~24h)를
+// 그대로 반환해 r 캐시버스터로는 재캡처가 안 된다 (사용자 리포트: 전체
+// 새로고침이 안 먹힘). 대상 URL 에 무해한 쿼리 파라미터(mshotsr)를 붙여
+// 새 URL 로 인식시켜 즉시 새 캡처를 생성시킨다.
+const mshotUrl=(url,tick,forced=false)=>{
+  const target=forced?`${url}${url.includes("?")?"&":"?"}mshotsr=${tick}`:url;
+  return `https://s0.wp.com/mshots/v1/${encodeURIComponent(target)}?w=480&vpw=${MSHOT_VPW}&vph=${MSHOT_VPH}&r=${tick}`;
+};
 // 기본 사이트 목록 — 목록이 완전히 비어 있는 최초 진입 시 1회 자동
 // 등록 (사용자 전달 목록, 2026-08-11 · umer 는 광고 추적 파라미터 제거).
 // 등록 후에는 UI 에서 자유롭게 추가/삭제 — 재시드되지 않는다.
@@ -22745,7 +22751,7 @@ const MAIN_PHOTO_DEFAULT_SITES=[
 // 대신 "준비 중" 플레이스홀더를 보여주고 8초 간격으로 자동 재시도
 // (최대 5회, 이후 [다시 시도] 버튼). 재시도 요청엔 보조 파라미터를
 // 붙여 실패 응답 캐시를 우회한다.
-function MainPhotoShot({site,tick}){
+function MainPhotoShot({site,tick,forced=false}){
   const [err,setErr]=useState(false);
   const [retry,setRetry]=useState(0);
   // 폴링 리로드 — mShots 는 새 캡처 생성 중 수 초간 '생성 중' 플레이스홀더를
@@ -22753,12 +22759,15 @@ function MainPhotoShot({site,tick}){
   // 같은 캡처 URL(r 불변)을 img remount 로 몇 차례 재요청해 완성본으로 교체한다.
   // (#371 에서 제거됐던 '진입 후 자동 리로드'를 새로고침에도 적용해 복원)
   const [poll,setPoll]=useState(0);
+  // 전체 새로고침은 대상 URL 이 새 것이라 캡처를 처음부터 생성 — 완성까지
+  // 더 걸릴 수 있어 폴링을 5회(≈35초)로 늘린다.
+  const maxPoll=forced?5:3;
   useEffect(()=>{setErr(false);setRetry(0);setPoll(0);},[tick,site.url]);
   useEffect(()=>{
-    if(poll>=3) return;   // 진입/새로고침 후 최대 3회(≈7·14·21초) 재요청 — 생성 완료본 확보
+    if(poll>=maxPoll) return;   // 진입/새로고침 후 재요청 — 생성 완료본 확보
     const t=setTimeout(()=>setPoll(p=>p+1),7000);
     return()=>clearTimeout(t);
-  },[poll,tick,site.url]);
+  },[poll,tick,site.url,maxPoll]);
   useEffect(()=>{
     if(!err||retry>=5) return;
     const t=setTimeout(()=>{setRetry(r=>r+1);setErr(false);},8000);
@@ -22785,7 +22794,7 @@ function MainPhotoShot({site,tick}){
   }
   return(
     <img key={`${tick}-${poll}`}
-      src={mshotUrl(site.url,tick)+(retry>0?`&a=${retry}`:"")}
+      src={mshotUrl(site.url,tick,forced)+(retry>0?`&a=${retry}`:"")}
       alt={`${site.name||site.url} 메인 화면`}
       onClick={open}
       onError={()=>setErr(true)}
@@ -22809,8 +22818,19 @@ function MainPhotoBoard(){
   // 갱신 주기 — 진입 때마다가 아니라 "하루(자정 기준) 1회" (사용자
   // 요청). 날짜 문자열을 캐시 키로 써서 같은 날에는 캐시된 스냅샷을
   // 재사용하고, 자정을 넘기면 키가 바뀌어 자동으로 새 스냅샷을 받는다.
-  // [전체 새로고침] 은 수동 카운터를 붙여 즉시 강제 갱신.
-  const [manualTick,setManualTick]=useState(0);
+  // [전체 새로고침] 은 수동 카운터로 대상 URL 을 바꿔 즉시 새 캡처 생성.
+  // 카운터는 같은 날 안에서 localStorage 에 보존 — 새로고침 후 재진입 시
+  // 강제 갱신 전의 옛 스냅샷으로 되돌아가 보이던 문제 방지.
+  const MP_TICK_LS="main_photo_tick";
+  const [manualTick,setManualTick]=useState(()=>{
+    try{const s=JSON.parse(localStorage.getItem(MP_TICK_LS)||"null");
+      return s&&s.d===localDate(0)?(s.n||0):0;}catch{return 0;}
+  });
+  const bumpTick=()=>setManualTick(n=>{
+    const v=n+1;
+    try{localStorage.setItem(MP_TICK_LS,JSON.stringify({d:localDate(0),n:v}));}catch{/* noop */}
+    return v;
+  });
   const tick=manualTick===0?localDate(0):`${localDate(0)}-${manualTick}`;
   // 화면 모드 — "main"(메인 화면) / "sub"(각 사이트의 상품리스트 서브
   // 링크). 서브도 동일한 mShots 하루 캐시라 첫 요청자만 생성을 기다림.
@@ -22949,7 +22969,7 @@ function MainPhotoBoard(){
               {l}
             </button>
           ))}
-          <button onClick={()=>setManualTick(x=>x+1)}
+          <button onClick={bumpTick}
             style={{background:D.black,color:"#fff",border:"none",borderRadius:6,
               padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
             ↻ 전체 새로고침
@@ -23020,7 +23040,7 @@ function MainPhotoBoard(){
                    <span style={{fontSize:12,color:D.textMeta}}>상품리스트 링크 미등록</span>
                    <span style={{fontSize:11,color:D.textMeta}}>클릭해서 등록 (✎)</span>
                  </div>
-                :<MainPhotoShot site={viewMode==="sub"?{...s,url:s.sub_url}:s} tick={tick}/>}
+                :<MainPhotoShot site={viewMode==="sub"?{...s,url:s.sub_url}:s} tick={tick} forced={manualTick>0}/>}
             </div>
           ))}
         </div>}
@@ -23181,10 +23201,15 @@ export default function App() {
     {key:"mainphotos",label:"메인 사진 모아보기"},
   ];
 
+  // 메인 사진 모아보기(기본 진입 화면)는 주문·재고 데이터가 필요 없으므로
+  // 전체 데이터 로드(appLoading)를 기다리지 않고 즉시 렌더 — 스냅샷
+  // 이미지가 사이트 진입 직후 바로 뜨기 시작한다 (사용자 리포트: 이미지
+  // 로딩 시작이 늦음). 로딩 중 다른 메뉴로 이동하면 기존대로 로딩 화면.
+  const ready=!appLoading||page==="mainphotos";
   const [visible,setVisible]=useState(false);
-  useEffect(()=>{if(!appLoading){const t=setTimeout(()=>setVisible(true),30);return()=>clearTimeout(t);}},[appLoading]);
+  useEffect(()=>{if(ready){const t=setTimeout(()=>setVisible(true),30);return()=>clearTimeout(t);}},[ready]);
 
-  if(appLoading) return <LoadingScreen/>;
+  if(!ready) return <LoadingScreen/>;
 
   const isDark=page==="compare";
   const DK={bg:"#0A0A0A",surface:"#141414",border:"#2a2a2a",text:"#F0F0F0",sub:"#888",active:"#242424"};
