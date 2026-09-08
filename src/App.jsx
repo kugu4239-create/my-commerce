@@ -2331,7 +2331,8 @@ function Dashboard({ orders, stocks, revenues, storeSales=[], ts, onRefresh }) {
       byProd[key].qty+=(r.qty||0); byProd[key].orders++;
     });
     const totalQty=Object.values(byProd).reduce((s,p)=>s+p.qty,0)||1;
-    return Object.values(byProd).sort((a,b)=>b.qty-a.qty).slice(0,20)
+    // 상위 50위까지 표시 (사용자 요청) — 반품 Top 과 동일한 개수
+    return Object.values(byProd).sort((a,b)=>b.qty-a.qty).slice(0,50)
       .map(p=>({...p,returnRate:p.orders>0?(p.returned/p.orders*100).toFixed(1):"0.0",
         share:(p.qty/totalQty*100).toFixed(1)}));
   },[bestFilteredOrders,rankBestChannel]);
