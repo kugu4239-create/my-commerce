@@ -1315,7 +1315,16 @@ const saveCSData=d=>{
 let _csIdSeq=0;
 const csNextId=()=>{ _csIdSeq=Math.max(_csIdSeq+1,Date.now()); return _csIdSeq; };
 const getPromosCache=()=>{try{return JSON.parse(localStorage.getItem("promotions")||"[]").map(p=>({...p,files:p.files||(p.file?[p.file]:[]),file:undefined}));}catch{return[];}};
-const setPromosCache=d=>localStorage.setItem("promotions",JSON.stringify(d));
+// promotions localStorage 캐시 — DB 가 원본, 캐시 쓰기 실패(quota)가 UI 흐름을
+// 깨지 않게 절대 throw 하지 않는다. 초과 시 첨부파일(base64)만 뺀 사본으로
+// 재시도, 그래도 실패하면 캐시 생략 (다음 진입 시 DB 로드로 복구).
+const setPromosCache=d=>{
+  try{localStorage.setItem("promotions",JSON.stringify(d));}
+  catch{
+    try{localStorage.setItem("promotions",JSON.stringify(d.map(p=>({...p,files:[]}))));}
+    catch{/* 캐시 생략 */}
+  }
+};
 
 // ─────────────────────────────────────────────
 // ANALYTICS ENGINE
@@ -5905,7 +5914,16 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
   const [pinnedModal,setPinnedModal]=useState(null); // 핀셋 상품 전체 보기 모달 — { promo } | null
   // Hidden promo log (localStorage only — no schema change needed)
   const getHiddenLog=()=>{try{return JSON.parse(localStorage.getItem("hidden_promo_log")||"[]");}catch{return[];}};
-  const saveHiddenLogLocal=d=>localStorage.setItem("hidden_promo_log",JSON.stringify(d));
+  // localStorage 캐시 쓰기 — quota 초과가 가리기 흐름(뒤따르는 DB upsert)을
+  // 깨던 문제: 절대 throw 하지 않고, 초과 시 첨부파일 데이터를 뺀 사본으로
+  // 재시도한다 (DB 가 원본, 로컬은 캐시).
+  const saveHiddenLogLocal=d=>{
+    try{localStorage.setItem("hidden_promo_log",JSON.stringify(d));}
+    catch{
+      try{localStorage.setItem("hidden_promo_log",JSON.stringify(d.map(h=>({...h,files:(h.files||[]).map(f=>({name:f.name}))}))));}
+      catch{/* 캐시 생략 */}
+    }
+  };
   const [hiddenLog,setHiddenLog]=useState(getHiddenLog);
   const hiddenIds=useMemo(()=>new Set(hiddenLog.map(h=>h.id)),[hiddenLog]);
   const [selHiddenIds,setSelHiddenIds]=useState(new Set());
@@ -6034,13 +6052,21 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
     patchPromo(id,{files:(promo?.files||[]).filter((_,i)=>i!==idx)});
   };
   const hidePromo=async p=>{
-    const entry={...p,hidden_at:new Date().toISOString()};
+    // 스냅샷에서 첨부파일 base64 는 이름만 남기고 제외 — 원본 프로모션
+    // (promotions 테이블)에 파일이 그대로 있고, 수 MB 스냅샷이 localStorage
+    // quota/DB 저장을 깨뜨려 새로고침 시 가리기가 풀리던 문제.
+    const entry={...p,files:(p.files||[]).map(f=>({name:f.name})),hidden_at:new Date().toISOString()};
     const next=[...hiddenLog.filter(h=>h.id!==p.id),entry];
     setHiddenLog(next);saveHiddenLogLocal(next);
     try{
       const db=await getSupabase();
-      await db.from("hidden_promo_log").upsert({id:p.id,hidden_at:entry.hidden_at,data:entry},{onConflict:"id"});
-    }catch{/* 로컬 저장은 완료됨 */}
+      const{error}=await db.from("hidden_promo_log").upsert({id:p.id,hidden_at:entry.hidden_at,data:entry},{onConflict:"id"});
+      if(error) throw error;
+    }catch(err){
+      // 조용히 삼키면 새로고침 때 가리기가 풀린 것처럼 보인다 — 명시 안내
+      alert("가리기 서버 저장 실패 — 새로고침하면 가리기가 풀릴 수 있습니다.\n"
+        +(err?.message||err)+"\n(Supabase 에 hidden_promo_log 테이블이 있는지 확인하세요: supabase/promotions.sql)");
+    }
   };
   const delFromHiddenLog=async ids=>{
     const next=hiddenLog.filter(h=>!ids.has(h.id));
@@ -6309,11 +6335,13 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
               <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
                 <span style={{fontSize:11,color:D.textSub,wordBreak:"break-all",flex:1,textAlign:"left"}}
                   title={f.name}>📎 {f.name}</span>
-                <button data-capture-hide onClick={()=>setFilePreview(f)} title="미리보기"
-                  style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
-                    cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0,lineHeight:1}}>
-                  미리보기
-                </button>
+                {f.data&&(
+                  <button data-capture-hide onClick={()=>setFilePreview(f)} title="미리보기"
+                    style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
+                      cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0,lineHeight:1}}>
+                    미리보기
+                  </button>
+                )}
                 <button data-capture-hide onClick={()=>removeFileFromPromo(p.id,i)} title="첨부파일 삭제"
                   style={{background:"transparent",border:`1px solid ${D.border}`,borderRadius:4,color:D.textMeta,
                     cursor:"pointer",padding:"1px 6px",fontSize:10,whiteSpace:"nowrap",flexShrink:0}}>첨부파일 삭제</button>
