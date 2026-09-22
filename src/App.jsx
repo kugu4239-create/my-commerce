@@ -6225,6 +6225,40 @@ function PromoFlow({ revenues, storeSales=[], orders=[] }) {
             const wd=d?["일","월","화","수","목","금","토"][new Date(d+"T00:00:00").getDay()]:"";
             return <div key={i}><span style={{fontWeight:700,fontSize:13,color:D.text}}>{d}</span>{wd&&<span style={{fontSize:12,color:D.textSub,marginLeft:3}}>({wd})</span>}{t&&<span style={{fontSize:12,color:D.textSub,marginLeft:4}}>{t}</span>}</div>;
           })}
+          {(()=>{
+            // 겹치는 기간에 진행되는 다른 프로모션 — 이름 클릭 시 해당 카드로
+            // 스크롤 이동 (사용자 요청). 가려진 프로모션은 카드가 없으므로 제외.
+            const ps=String(p.start_date||"").slice(0,10);
+            const pe=String(p.end_date||"").slice(0,10)||"9999-12-31";
+            if(!ps) return null;
+            const overlapping=promos.filter(o=>{
+              if(o.id===p.id||hiddenIds.has(o.id)) return false;
+              const os=String(o.start_date||"").slice(0,10);
+              const oe=String(o.end_date||"").slice(0,10)||"9999-12-31";
+              return os&&os<=pe&&oe>=ps;
+            }).sort((a,b)=>a.start_date>b.start_date?1:-1);
+            if(!overlapping.length) return null;
+            return(
+              <div style={{marginTop:8}}>
+                <div style={{fontSize:10,color:D.textMeta,fontWeight:700,marginBottom:3}}>겹치는 기간 프로모션</div>
+                <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                  {overlapping.map(o=>(
+                    <button key={o.id} onClick={()=>{
+                        const el=promoCardRefs.current[o.id];
+                        if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+                      }}
+                      title={`${o.platform} · ${String(o.start_date||"").slice(0,10)} ~ ${String(o.end_date||"").slice(0,10)} — 클릭하면 카드로 이동`}
+                      style={{display:"flex",alignItems:"center",gap:5,background:"transparent",border:"none",
+                        padding:0,cursor:"pointer",textAlign:"left",fontFamily:"inherit",maxWidth:160}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:chColor(o.platform),flexShrink:0}}/>
+                      <span style={{fontSize:11,color:D.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                        textDecoration:"underline",textUnderlineOffset:2}}>{o.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
         <div style={{flex:pins.length>0?"1 1 240px":"3 1 480px",minWidth:200,fontSize:12,color:D.textSub,whiteSpace:"pre-wrap"}}>
           <div style={{fontSize:11,color:D.black,fontWeight:700,marginBottom:2}}>상세 내용</div>
