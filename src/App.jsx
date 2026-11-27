@@ -13476,6 +13476,12 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
   const [dupInfo,setDupInfo]=useState(null);
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
+  // 업로드 모드 — "merge"(기본): 기간 삭제 없이 주문번호 고유 기준으로
+  // 파일에 있는 주문만 갱신·추가 (사용자 요청: 항상 병합). "replace": 파일
+  // 내 주문일 범위를 삭제 후 교체 — 데이터 초기화가 필요할 때만 수동 선택.
+  // 과거 교체 방식은 당일 배송분 파일(배송일 하루·주문일 수 주 분산)을
+  // 올리면 그 주문일 범위의 누적 데이터가 통째로 삭제되던 문제가 있었다.
+  const [uploadMode,setUploadMode]=useState("merge");
 
   // Step 1: 파일 선택 (파싱만, 업로드 X)
   const handleFile=useCallback(file=>{
@@ -13604,6 +13610,8 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
           setInRange(validRows);
           setOutRows(noDateRows);
           setDupInfo({total:validRows.length,newCount:validRows.length,updateCount:0,sameCount:0});
+          // 병합이 항상 기본 (사용자 요청) — 새 파일을 올려도 교체로 되돌리지 않는다
+          setUploadMode("merge");
           const phoneCount=parsed.filter(r=>r.orderer_phone).length;
           const phoneNote=phoneCol?` · 주문자휴대폰: "${phoneCol}" (${phoneCount}건)`:` · 주문자휴대폰: 미감지`;
           setResult({type:"info",msg:`주문일 ${autoStart} ~ ${autoEnd} · ${validRows.length}건 파싱 완료`+(noDateRows.length>0?` (주문일 없는 ${noDateRows.length}건 제외)`:"")+` | 주문번호: "${orderIdCol}" · 배송일: "${deliveryDateCol}"${phoneNote}`});
@@ -13669,6 +13677,55 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
     });
     const newOrderNos=Object.keys(headersMap);
 
+    if(uploadMode==="merge"){
+      // ── 병합 업로드 — 기간 삭제 없음. 파일에 있는 주문만 갱신·추가.
+      //   1) 기존 헤더 조회 → payment_amount/휴대폰은 새 값이 비어 있으면 기존 유지
+      //   2) headers upsert (order_no PK)
+      //   3) 같은 주문의 같은 상품·옵션 기존 라인 삭제 → 파일 라인 insert
+      //      (파일에 없는 기존 라인은 그대로 둔다 — 부분 파일이므로)
+      const inBatches=async(arr,fn)=>{for(let i=0;i<arr.length;i+=500){const err=await fn(arr.slice(i,i+500));if(err)return err;}return null;};
+      let existHeaders=[];
+      for(let i=0;i<newOrderNos.length;i+=500){
+        const{data,error}=await db.from("order_headers").select("order_no,payment_amount,orderer_phone").in("order_no",newOrderNos.slice(i,i+500));
+        if(error){setResult({type:"error",msg:"기존 헤더 조회 실패: "+error.message});setLoading(false);return;}
+        existHeaders=existHeaders.concat(data||[]);
+      }
+      const existH=new Map(existHeaders.map(h=>[h.order_no,h]));
+      const headersList=Object.values(headersMap).map(h=>{
+        const ex=existH.get(h.order_no);
+        return ex?{...h,
+          payment_amount:(h.payment_amount||0)>0?h.payment_amount:(ex.payment_amount||0),
+          orderer_phone:h.orderer_phone||ex.orderer_phone||""}:h;
+      });
+      const upErr=await inBatches(headersList,async b=>(await db.from("order_headers").upsert(b,{onConflict:"order_no"})).error);
+      if(upErr){setResult({type:"error",msg:"헤더 저장 실패: "+upErr.message});setLoading(false);return;}
+      // 기존 라인 중 파일과 (주문번호|상품명|옵션) 이 겹치는 것만 삭제
+      let existItems=[];
+      for(let i=0;i<newOrderNos.length;i+=500){
+        const{data,error}=await db.from("order_items").select("item_id,order_no,product_name,option_name").in("order_no",newOrderNos.slice(i,i+500));
+        if(error){setResult({type:"error",msg:"기존 라인 조회 실패: "+error.message});setLoading(false);return;}
+        existItems=existItems.concat(data||[]);
+      }
+      const lineKey=r=>`${r.order_no}|${String(r.product_name||"").trim()}|${String(r.option_name||"").trim()}`;
+      const fileKeys=new Set(itemsList.map(lineKey));
+      const delIds=existItems.filter(it=>fileKeys.has(lineKey(it))).map(it=>it.item_id);
+      const delErr=await inBatches(delIds,async b=>(await db.from("order_items").delete().in("item_id",b)).error);
+      if(delErr){setResult({type:"error",msg:"기존 라인 교체 실패: "+delErr.message});setLoading(false);return;}
+      const insErr=await inBatches(itemsList,async b=>(await db.from("order_items").insert(b)).error);
+      if(insErr){setResult({type:"error",msg:"아이템 삽입 실패: "+insErr.message});setLoading(false);return;}
+      const ts3=nowStr();
+      await db.from("upload_logs").insert({
+        upload_type:"orders",file_name:fileName,
+        row_count:parsedFile?.length||0,
+        inserted:itemsList.length-delIds.length,updated:delIds.length,
+        skipped:outRows.length,date_start:startDate,date_end:endDate,
+      });
+      setStep(2);
+      setResult({type:"success",msg:`${itemsList.length}건 병합 완료 — 주문 ${newOrderNos.length}건 (기존 라인 ${delIds.length}건 갱신 · 신규 ${itemsList.length-delIds.length}건) · 기간 삭제 없음`,ts:ts3});
+      onUpdate(ts3); setLoading(false);
+      return;
+    }
+
     // 1) 기간 내 헤더 삭제
     const {error:delErr1}=await db.from("order_headers").delete()
       .gte("order_date",startDate).lte("order_date",endDate);
@@ -13705,7 +13762,7 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
     onUpdate(ts2); setLoading(false);
   };
 
-  const reset=()=>{setStep(0);setInRange([]);setOutRows([]);setDupInfo(null);setFileName("");setParsedFile(null);setResult(null);setStartDate("");setEndDate("");};
+  const reset=()=>{setStep(0);setInRange([]);setOutRows([]);setDupInfo(null);setFileName("");setParsedFile(null);setResult(null);setStartDate("");setEndDate("");setUploadMode("merge");};
 
   return (
     <div>
@@ -13733,11 +13790,31 @@ function EasyAdminUploader({ onUpdate, histRefreshKey=0 }) {
               {label:"주문일 없음(제외)",value:`${outRows.length}건`,color:D.textMeta},
             ]}/>}
             <div style={{color:D.textMeta,fontSize:11,marginBottom:8}}>주문일 {startDate} ~ {endDate}</div>
-            {existingCount>0&&<Alert type="warn" msg={uploadReplaceWarn(existingCount,`${startDate}~${endDate} 주문일`)}/>}
+            {/* 업로드 방식 — 교체(스냅샷) / 병합(당일 배송분) */}
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:11,color:D.textSub,fontWeight:600,marginBottom:5}}>업로드 방식</div>
+              <div style={{display:"flex",gap:5}}>
+                {[["merge","병합 (기본)"],["replace","기간 교체"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setUploadMode(v)}
+                    style={{flex:1,background:uploadMode===v?D.black:"transparent",
+                      color:uploadMode===v?"#fff":D.textSub,
+                      border:`1px solid ${uploadMode===v?D.black:D.border}`,
+                      borderRadius:5,padding:"5px 6px",fontSize:11,cursor:"pointer",
+                      fontWeight:uploadMode===v?600:400}}>{l}</button>
+                ))}
+              </div>
+              <div style={{fontSize:10.5,color:D.textMeta,marginTop:5,lineHeight:1.6}}>
+                {uploadMode==="merge"
+                  ?"병합(기본): 기존 데이터를 지우지 않고, 주문번호 기준으로 파일에 있는 주문만 갱신·추가합니다. 당일 배송분 등 일부 주문만 담긴 파일도 안전합니다."
+                  :"기간 교체: 파일의 주문일 범위에 있는 기존 데이터를 전부 지우고 이 파일로 대체합니다 — 기간 전체 데이터를 초기화할 때만 사용하세요."}
+              </div>
+            </div>
+            {uploadMode==="replace"&&existingCount>0&&<Alert type="warn" msg={uploadReplaceWarn(existingCount,`${startDate}~${endDate} 주문일`)}/>}
+            {uploadMode==="merge"&&<Alert type="info" msg="기간 삭제 없음 — 파일에 있는 주문만 갱신/추가됩니다"/>}
             {outRows.length>0&&<Alert type="warn" msg={`주문일 없는 ${outRows.length}건 제외`}/>}
             <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:12}}>
               <Btn onClick={handleUpload} disabled={loading||!inRange.length} style={{width:"100%"}}>
-                {loading?"처리 중...":`확정 업로드 (${dupInfo?.total||0}건)`}
+                {loading?"처리 중...":`${uploadMode==="merge"?"병합":"확정"} 업로드 (${dupInfo?.total||0}건)`}
               </Btn>
               <button onClick={()=>setStep(0)}
                 style={{background:"transparent",border:"none",color:D.textMeta,
@@ -14275,7 +14352,7 @@ function DataInput({ onUpdate, onDataChange, orders=[], stocks=[], revenues=[], 
   const GUIDES={
     revenue:"KPI 카드의 매출, 매출 점유율, 판매처별 매출의 소스입니다.\n매출 금액은 취소/환불이 포함된 금액이며, 엑셀 다운로드 시 각 채널 어드민의 통계에서 확인하세요.\n*매일 전날의 데이터를 업로드하세요.",
     stock:"KPI 카드의 입고 수량, 물류 플로우 섹션 전체의 데이터 소스입니다.\n*매일 전날의 데이터를 업로드하세요.",
-    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필요 컬럼: 주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*매일 최근 한달 데이터(주문건 반품 정보 업데이트)를 업로드하세요.",
+    orders:"KPI 카드의 배송·반품 수, 판매처 상세의 배송·반품 수, 판매·반품 TOP, 플랫폼 별 선호·반품 옵션 랭킹, 객단가 계산의 데이터 소스입니다.\n필요 컬럼: 주문번호 · 주문일 · 배송일 · 판매처 · 상품명 · 옵션 · 수량 · 판매가(29CM·무신사 AOV) · 결제금액(자사몰 AOV) · CS처리\n*업로드는 주문번호 기준 병합이 기본 — 기존 데이터를 지우지 않고 파일에 있는 주문만 갱신·추가합니다 (당일 배송분 파일도 안전).",
     store:"KPI 카드의 매출(오프라인 스토어) 합산, 랭크 지표 내 오프라인 스토어 항목의 데이터 소스입니다.\n*매일 최근 한달의 데이터를 업로드하세요.",
     inventory:"데이터 컴페어(SKU Risk · Aging Trend)와 리오더 계산기의 공통 데이터 소스입니다.\n엑셀에 가용재고 · 입고대기 · 1주발주합계 · 4주발주합계 컬럼이 있으면 리오더 데이터가 자동 계산됩니다.",
     cs:"반품 랭크 상품의 주요 반품 사유 데이터 소스로 매칭됩니다.\n*매일 전날 데이터를 업로드하세요.",
